@@ -1,0 +1,15 @@
+
+.Build
+----
+go build ./cmd/sandbox-list
+----
+
+.Run
+----
+export AWS_PROFILE=pool-manager
+export AWS_REGION=us-east-1
+
+sandbox-list
+sandbox-list -all
+sandbox-list -all -csv
+----
