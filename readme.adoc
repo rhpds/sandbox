@@ -12,10 +12,21 @@ go build ./cmd/sandbox-metrics
 ----
 git clone --depth 1 https://github.com/redhat-gpe/aws-sandbox aws-sandbox
 ----
+. If it doesn't exist yet, create an IAM user in AWS to read-only access to dynamoDB
+. Create the secret file containing the key for the IAM user that has read-only access to DynamoDB
++
+[source,yaml]
+.`aws_sandbox_readonly.yaml`
+----
+aws_sandbox_metrics_ecrets:
+  readonly:
+    aws_access_key_id: ...
+    aws_secret_access_key: ...
+----
 . Install the helm chart
 +
 ----
-helm install  aws-sandbox-metrics aws-sandbox/deploy/helm-metrics/
+helm install  aws-sandbox-metrics aws-sandbox/deploy/helm-metrics/ -f aws_sandbox_readonly.yaml
 ----
 +
 Output should look like:
@@ -27,12 +38,4 @@ NAMESPACE: user-gucore-redhat-com
 STATUS: deployed
 REVISION: 1
 TEST SUITE: None
-----
-. If it doesn't exist yet, create an IAM user in AWS to access dynamoDB in read-only
-. Create the secret for that AWS user
-+
-----
-oc create secret -n aws-sandbox-metrics generic aws-sandbox-readonly \
---from-literal=aws_access_key_id=... \
---from-literal=aws_secret_access_key=...
 ----
