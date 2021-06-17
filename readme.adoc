@@ -1,3 +1,10 @@
+== Build ==
+
+----
+go build ./cmd/sandbox-list
+go build ./cmd/sandbox-metrics
+----
+
 == Deploy Metrics Prometheus ==
 
 . clone this repository
