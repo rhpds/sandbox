@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aws_sandbox_metrics.name" . }}
+  namespace: {{ include "aws_sandbox_metrics.namespaceName" . }}
+  labels:
+    {{- include "aws_sandbox_metrics.labels" . | nindent 4 }}
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      {{- include "aws_sandbox_metrics.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        {{- include "aws_sandbox_metrics.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: aws-sandbox-metrics
+        image: {{ include "aws_sandbox_metrics.image" . }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        livenessProbe:
+          initialDelaySeconds: 30
+          tcpSocket:
+            port: 2112
+          timeoutSeconds: 1
+        ports:
+        - containerPort: 2112
+        env:
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: aws-sandbox-readonly
+              key: aws_access_key_id
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: aws-sandbox-readonly
+              key: aws_secret_access_key

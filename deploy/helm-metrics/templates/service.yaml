@@ -1,0 +1,17 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aws_sandbox_metrics.name" . }}
+  namespace: {{ include "aws_sandbox_metrics.namespaceName" . }}
+  labels:
+    {{- include "aws_sandbox_metrics.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: 2112
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "aws_sandbox_metrics.selectorLabels" . | nindent 4 }}

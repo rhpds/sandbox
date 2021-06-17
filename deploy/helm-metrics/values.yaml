@@ -1,0 +1,24 @@
+namespace:
+  # Specifies whether a namespace should be created
+  create: true
+  # The name of the namespace to use.
+  # If not set and create is true, a name is generated using the name template
+  name:
+
+image:
+  repository: quay.io/redhat-gpte/aws-sandbox-metrics
+  pullPolicy: Always
+  tagOverride: "pr-1"
+
+deploy: true
+
+route:
+  enabled: true
+  annotations: {}
+  tls:
+    insecureEdgeTerminationPolicy: Redirect
+    termination: edge
+
+service:
+  type: ClusterIP
+  port: 80
