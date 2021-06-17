@@ -8,7 +8,7 @@ namespace:
 image:
   repository: quay.io/redhat-gpte/aws-sandbox-metrics
   pullPolicy: Always
-  tagOverride: "pr-1"
+  tagOverride: ""
 
 deploy: true
 
