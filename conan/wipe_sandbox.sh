@@ -30,7 +30,7 @@ sandbox_disable() {
   }
 EOM
 
-    aws --profile pool-manager \
+    $VENV/bin/aws --profile pool-manager \
         --region us-east-1 \
         dynamodb update-item \
         --table-name accounts \
@@ -69,7 +69,7 @@ sandbox_reset() {
     echo "$(date) ${sandbox} reset starting..."
 
     export ANSIBLE_NO_TARGET_SYSLOG=True
-    ansible-playbook -i localhost, \
+    $VENV/bin/ansible-playbook -i localhost, \
                      -e _account_num=${s} \
                      reset_single.yml > ${logfile}
 
