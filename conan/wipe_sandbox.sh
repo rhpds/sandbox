@@ -20,6 +20,7 @@ prepare_workdir() {
         pip install --upgrade pip
         pip install -r ${ORIG}/../playbooks/requirements.txt
     fi
+    . $VENV/bin/activate
 }
 
 sandbox_disable() {
