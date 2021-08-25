@@ -1,0 +1,16 @@
+[Unit]
+Description=Conan the Destroyer of sandboxes
+After=network-online.target
+Documentation=https://github.com/redhat-gpte-devopsautomation/aws-tools/tree/master/conan
+
+[Service]
+User=opentlc-mgr
+Group=opentlc-mgr
+Type=simple
+ExecStart=/bin/bash /home/opentlc-mgr/pool_management/aws-tools/conan/conan.sh
+Restart=on-failure
+StartLimitBurst=3
+StartLimitInterval=60s
+
+[Install]
+WantedBy=multi-user.target

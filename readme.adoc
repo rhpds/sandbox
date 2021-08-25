@@ -1,11 +1,16 @@
-== Build ==
+== Tools ==
+
+* sandbox-list:  Interact with the AWS Sandbox DB in a read-only way.
+* sandbox-metrics: Prometheus Endpoint exposing metrics.
+
+=== Build ===
 
 ----
 go build ./cmd/sandbox-list
 go build ./cmd/sandbox-metrics
 ----
 
-== Deploy Metrics Prometheus ==
+=== Deploy Metrics Prometheus ===
 
 . clone this repository
 +
@@ -39,3 +44,11 @@ STATUS: deployed
 REVISION: 1
 TEST SUITE: None
 ----
+
+== Create AWS sandboxes ==
+
+Use link:playbooks[ansible playbooks].
+
+== Conan - Sandbox Cleanup Daemon ==
+
+See link:conan[conan].

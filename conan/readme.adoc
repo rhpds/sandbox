@@ -1,0 +1,46 @@
+= Conan The Destroyer (of sandboxes)
+
+This tool cleans up sandboxes.
+
+It watches the pool of sandboxes, and look for those marked as `to_cleanup`.
+
+Then it runs link:https://github.com/rebuy-de/aws-nuke[aws-nuke] to wipe them, and put them back in the pool of available sandboxes.
+
+== Dependencies
+
+** ansible
+** link:https://github.com/rebuy-de/aws-nuke[`aws-nuke`] binary
+** IPA client
+** kerberos, `kinit`
+** AWS client and modules (boto3, ...) see link:../playbooks/requirements.txt[virtualenv requirement file]
+* link:../sandbox-list[`sandbox-list`] binary
+* link:https://github.com/shenwei356/rush[`rush`] binary (parallel tool)
+
+== Install ==
+
+
+. login as `opentlc-mgr` user
+. Clone the GPTE aws-tools repo
++
+------------------------------------
+cd
+mkdir pool_management
+cd pool_management
+git clone https://github.com/redhat-gpte-devopsautomation/aws-tools.git
+------------------------------------
+. Install the aws credentials
++
+.`~/.aws/credentials`
+----
+[pool-manager]
+aws_access_key_id=...
+aws_secret_access_key=...
+----
+. Make sure the keytab `~/secrets/hostadmin.keytab` exists. It is the key used in the `infra-aws-sandbox` role to authenticate to IPA.
+. Install the systemd Unit link:conan.service[conan.service]
+. Start and enable the service
++
+----
+systemctl start conan
+systemctl enable conan
+----

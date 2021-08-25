@@ -1,0 +1,22 @@
+#!/usr/bin/env ansible-playbook
+
+- hosts: localhost
+  gather_facts: no
+  connection: local
+  run_once: yes
+  tasks:
+    - fail:
+        msg: Please set _account_num
+      when: _account_num is not defined
+
+    - include_role:
+        name: infra-aws-sandbox
+      vars:
+        aws_master_profile: pool-manager
+        account_name: sandbox{{_account_num}}
+        account_email: sandbox{{_account_num}}@opentlc.com
+        account_destination_ou: sandboxes
+        output_dir: ~/pool_management/output_dir_sandbox
+        kerberos_username: hostadmin
+        kerberos_keytab: ~/secrets/hostadmin.keytab
+        operation: RESET
