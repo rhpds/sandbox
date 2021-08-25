@@ -41,9 +41,7 @@
         dest: "{{ output_dir }}/{{ account_name }}_nuke-config.yml"
 
     - name: Run aws-nuke on sandbox account
-      # TODO: change back
-      shell: >-
-        exit 2;
+      command: >-
         aws-nuke --profile {{ account_name }}
         -c "{{ output_dir }}/{{ account_name }}_nuke-config.yml"
         --no-dry-run
@@ -52,11 +50,10 @@
         stdin: "{{ account_name }}{{ alias_suffix }}"
       register: _awsnuke
       async: 1800
-      poll: 1
+      poll: 30
       ignore_errors: true
       retries: "{{ aws_nuke_retries }}"
-      # TODO: change back
-      delay: 1
+      delay: 30
       until: _awsnuke is succeeded
 
     - debug:
@@ -80,10 +77,10 @@
             stdin: "{{ account_name }}{{ alias_suffix }}"
           register: _awsnuke2
           async: 1800
-          poll: 1
+          poll: 30
           ignore_errors: true
           retries: 0
-          delay: 1
+          delay: 30
           until: _awsnuke2 is succeeded
 
         - debug:
