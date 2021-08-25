@@ -61,6 +61,8 @@
 
     - when: _awsnuke is failed
       block:
+        - include_tasks: global_manual_cleanup.yml
+
         - include_tasks: manual_cleanup.yml
           loop: "{{ all_regions }}"
           loop_control:

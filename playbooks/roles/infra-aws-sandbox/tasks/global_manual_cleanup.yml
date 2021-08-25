@@ -1,0 +1,10 @@
+---
+# IAM
+- name: Delete all signing-certificates
+  shell: |
+    set -e -o pipefail
+    for user in $(aws --profile {{ account_profile | quote }} iam list-users --query 'Users[*].UserName' --output text); do
+      for cert in $(aws --profile {{ account_profile | quote }} iam list-signing-certificates --user-name $user --query 'Certificates[*].CertificateId' --output text); do
+        aws --profile {{ account_profile | quote }} iam delete-signing-certificate --user-name $user --certificate-id $cert
+      done
+    done

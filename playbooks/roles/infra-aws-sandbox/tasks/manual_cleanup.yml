@@ -77,7 +77,6 @@
         rds modify-db-instance
         --db-instance-identifier {{ item }}
         --no-deletion-protection
-
     # EIP
 
     - ec2_eip_info:
