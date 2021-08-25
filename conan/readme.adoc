@@ -8,25 +8,23 @@ Then it runs link:https://github.com/rebuy-de/aws-nuke[aws-nuke] to wipe them, a
 
 == Dependencies
 
-** ansible
-** link:https://github.com/rebuy-de/aws-nuke[`aws-nuke`] binary
-** IPA client
-** kerberos, `kinit`
-** AWS client and modules (boto3, ...) see link:../playbooks/requirements.txt[virtualenv requirement file]
-* link:../sandbox-list[`sandbox-list`] binary
+* link:https://github.com/rebuy-de/aws-nuke[`aws-nuke`] binary
+* IPA client
+* kerberos, `kinit`
+* link:../readme.adoc[`sandbox-list`] binary
 * link:https://github.com/shenwei356/rush[`rush`] binary (parallel tool)
 
 == Install ==
 
 
 . login as `opentlc-mgr` user
-. Clone the GPTE aws-tools repo
+. Clone the GPTE aws-sandbox repo
 +
 ------------------------------------
 cd
 mkdir pool_management
 cd pool_management
-git clone https://github.com/redhat-gpte-devopsautomation/aws-tools.git
+git clone https://github.com/redhat-gpe/aws-sandbox.git
 ------------------------------------
 . Install the aws credentials
 +
