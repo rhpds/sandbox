@@ -11,7 +11,9 @@
 
 - name: Grab or create the public zone
   environment:
-    AWS_PROFILE: "{{ account_profile }}"
+    AWS_ACCESS_KEY_ID: "{{ assumed_role.sts_creds.access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ assumed_role.sts_creds.secret_key }}"
+    AWS_SECURITY_TOKEN: "{{ assumed_role.sts_creds.session_token }}"
   route53_zone:
     zone: "{{ account_name }}{{subdomain_base}}."
   register: _route53zone
