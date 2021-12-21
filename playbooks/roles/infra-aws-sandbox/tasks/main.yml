@@ -5,6 +5,7 @@
   tags: account
 - import_tasks: profile.yml
   tags: profile
+- import_tasks: assume.yml
 - import_tasks: iam.yml
 - import_tasks: alias.yml
 - include_tasks: ou.yml

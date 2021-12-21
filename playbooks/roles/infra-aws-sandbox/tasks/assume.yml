@@ -1,0 +1,8 @@
+---
+- name: Get temporary token for the sandbox (Assume Role)
+  sts_assume_role:
+    profile: "{{ aws_master_profile }}"
+    role_arn: "arn:aws:iam::{{ account_id }}:role/OrganizationAccountAccessRole"
+    role_session_name: "AssumeSandbox"
+    region: aws-global
+  register: assumed_role

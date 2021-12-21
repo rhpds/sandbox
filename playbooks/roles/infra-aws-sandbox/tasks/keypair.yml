@@ -1,23 +1,25 @@
 ---
-- environment:
-    AWS_PROFILE: "{{ account_name }}"
-  block:
-    # TODO: create a list of keys and loop over it instead of doing one by one
+# TODO: create a list of keys and loop over it instead of doing one by one
+- name: Import OPENTLC backdoor key
+  ec2_key:
+    name: opentlc_admin_backdoor
+    region: "{{ _region }}"
+    key_material: "{{ opentlc_admin_backdoor }}"
+    aws_access_key: "{{ assumed_role.sts_creds.access_key }}"
+    aws_secret_key: "{{ assumed_role.sts_creds.secret_key }}"
+    security_token: "{{ assumed_role.sts_creds.session_token }}"
+  loop: "{{ all_regions }}"
+  loop_control:
+    loop_var: _region
 
-    - name: Import OPENTLC backdoor key
-      ec2_key:
-        name: opentlc_admin_backdoor
-        region: "{{ _region }}"
-        key_material: "{{ opentlc_admin_backdoor }}"
-      loop: "{{ all_regions }}"
-      loop_control:
-        loop_var: _region
-
-    - name: Import OPENTLC ocpkey
-      ec2_key:
-        name: ocpkey
-        region: "{{ _region }}"
-        key_material: "{{ ocpkey }}"
-      loop: "{{ all_regions }}"
-      loop_control:
-        loop_var: _region
+- name: Import OPENTLC ocpkey
+  ec2_key:
+    name: ocpkey
+    region: "{{ _region }}"
+    key_material: "{{ ocpkey }}"
+    aws_access_key: "{{ assumed_role.sts_creds.access_key }}"
+    aws_secret_key: "{{ assumed_role.sts_creds.secret_key }}"
+    security_token: "{{ assumed_role.sts_creds.session_token }}"
+  loop: "{{ all_regions }}"
+  loop_control:
+    loop_var: _region
