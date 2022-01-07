@@ -1,6 +1,7 @@
 ---
 - environment:
     AWS_REGION: "{{ _region }}"
+    AWS_DEFAULT_REGION: "{{ _region }}"
     AWS_ACCESS_KEY_ID: "{{ assumed_role.sts_creds.access_key }}"
     AWS_SECRET_ACCESS_KEY: "{{ assumed_role.sts_creds.secret_key }}"
     AWS_SECURITY_TOKEN: "{{ assumed_role.sts_creds.session_token }}"
@@ -8,6 +9,25 @@
   block:
     - debug:
         var: _region
+
+    # Reject all VPC connections
+
+    - name: Get all VPC endpoint connections
+      command: >-
+         aws ec2 --region {{ _region | quote }}
+         describe-vpc-endpoint-connections
+         --query VpcEndpointConnections[] --output json
+
+      register: r_connections
+
+    - loop: "{{ r_connections.stdout | from_json }}"
+      loop_control:
+        loop_var: conn
+      command: >-
+        aws ec2 --region {{ _region | quote }}
+        reject-vpc-endpoint-connections
+        --service-id {{ conn.ServiceId }}
+        --vpc-endpoint-ids {{ conn.VpcEndpointId }}
 
     # Security groups
 
@@ -66,6 +86,7 @@
         --output json
         --query 'DBInstances[*].DBInstanceIdentifier'
       register: r_all_db_instances
+      changed_when: false
 
     - name: Save list as fact
       set_fact:

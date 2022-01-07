@@ -63,6 +63,9 @@
 
     - when: _awsnuke is failed
       block:
+
+        # Get a new token as the current one may have timed out (1h)
+        - include_tasks: assume.yml
         - include_tasks: global_manual_cleanup.yml
 
         - include_tasks: manual_cleanup.yml
