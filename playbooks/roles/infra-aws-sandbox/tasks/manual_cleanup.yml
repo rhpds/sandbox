@@ -20,7 +20,8 @@
 
       register: r_connections
 
-    - loop: "{{ r_connections.stdout | from_json }}"
+    - name: Reject all VPC endpoint connections
+      loop: "{{ r_connections.stdout | from_json }}"
       loop_control:
         loop_var: conn
       command: >-
