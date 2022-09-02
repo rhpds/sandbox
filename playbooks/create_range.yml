@@ -1,0 +1,33 @@
+#!/usr/bin/env ansible-playbook
+
+- hosts: localhost
+  gather_facts: no
+  connection: local
+  run_once: yes
+  tasks:
+    - assert:
+        msg: Please set account_num_start
+        that: account_num_start is defined
+
+    - assert:
+        msg: Please set account_num_start
+        that: account_count is defined
+
+    - include_role:
+        name: infra-aws-sandbox
+      loop: >-
+        {{ range(
+            account_num_start|int,
+            (account_num_start|int + account_count|int)
+        )|list }}
+      loop_control:
+        loop_var: account_num
+      vars:
+        aws_master_profile: pool-manager-admin
+        account_name: sandbox{{account_num}}
+        account_email: sandbox{{account_num}}@opentlc.com
+        account_destination_ou: sandboxes
+        output_dir: ~/pool_management/output_dir_sandbox
+        kerberos_username: hostadmin
+        kerberos_keytab: ~/secrets/hostadmin.keytab
+        operation: CREATE
