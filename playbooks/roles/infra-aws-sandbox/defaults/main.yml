@@ -9,6 +9,7 @@ account_user: student
 operation: CREATE
 
 available_after_reset: true
+available_after_create: false
 alias_suffix: '-gpte'
 aws_master_profile: gpe-gucore
 aws_region: us-east-1
