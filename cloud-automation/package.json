@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "enable-gold-images": "node link-aws-accounts.js"
+  },
+  "dependencies": {
+    "fs": "^0.0.1-security",
+    "path": "^0.12.7",
+    "puppeteer": "^17.1.1",
+    "readline": "^1.3.0"
+  }
+}
