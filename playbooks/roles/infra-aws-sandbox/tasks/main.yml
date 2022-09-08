@@ -18,10 +18,12 @@
   when: operation == 'RESET'
 - import_tasks: user.yml
 - import_tasks: route53.yml
+  tags: route53
 - include_tasks: keypair.yml
   when: operation in ['CREATE', 'RESET']
   tags: keypair
 - include_tasks: ipa.yml
+  tags: ipa
   when:
     - kerberos_user is defined
     - kerberos_password is defined or kerberos_keytab is defined

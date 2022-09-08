@@ -22,6 +22,7 @@
         )|list }}
       loop_control:
         loop_var: account_num
+      tags: create
       vars:
         available_after_create: true
         aws_master_profile: pool-manager-admin
@@ -29,6 +30,6 @@
         account_email: sandbox{{account_num}}@opentlc.com
         account_destination_ou: sandboxes
         output_dir: ~/pool_management/output_dir_sandbox
-        kerberos_username: hostadmin
+        kerberos_user: hostadmin
         kerberos_keytab: ~/secrets/hostadmin.keytab
         operation: CREATE

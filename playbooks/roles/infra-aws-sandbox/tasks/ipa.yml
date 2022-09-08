@@ -20,7 +20,7 @@
   tags:
     - nuke
     - ipa
-  when: nuke_sandbox | bool
+  when: operation == 'CREATE' or nuke_sandbox | bool
   block:
     - when: kerberos_keytab is defined
       name: Login kerberos
@@ -36,13 +36,20 @@
 
     - name: Fetch all NS records for this sandbox
       shell: >-
+        set -o pipefail;
         host -t ns -W 60 -R 10 {{ account_name }}.{{ ipa_domain }}
         | awk '{ print $4 }'
         | perl -pe 's/\.$//'
       register: _recordfind
+      ignore_errors: true
 
-    - set_fact:
+    - when: _recordfind is succeeded
+      set_fact:
         ipa_ns_records: "{{ _recordfind.stdout.split('\n') }}"
+
+    - when: _recordfind is failed
+      set_fact:
+        ipa_ns_records: ""
 
     - name: Delete all NS records that are not needed anymore
       command: >-
