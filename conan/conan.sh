@@ -7,7 +7,7 @@ set -u -o pipefail
 ##############
 
 # Number of aws-nuke to run in parallel
-threads=10
+threads=12
 
 # Pause between each iteration that gets the list of sandboxes to cleanup
 poll_interval=60
