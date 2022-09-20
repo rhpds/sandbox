@@ -185,6 +185,9 @@ func main() {
 	if os.Getenv("AWS_REGION") == "" {
 		os.Setenv("AWS_REGION", "us-east-1")
 	}
+	if os.Getenv("dynamodb_table") == "" {
+		os.Setenv("dynamodb_table", "accounts")
+	}
 	sandboxdb.SetSession()
 
 	filters := []expression.ConditionBuilder{}

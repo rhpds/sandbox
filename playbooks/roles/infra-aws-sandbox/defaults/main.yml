@@ -35,7 +35,10 @@ ocpkey: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC8c3m39CoyA3bbgQUui3MGlJOryfg98NwI
 # variable for RESET operation
 ####################################
 nuke_sandbox: true
-aws_nuke_binary_url: https://github.com/rebuy-de/aws-nuke/releases/download/v2.11.0/aws-nuke-v2.11.0-linux-amd64
+
+aws_nuke_version: v2.19.0
+
+aws_nuke_binary_path: /usr/bin/aws-nuke
 
 aws_nuke_account_blacklist:
   - 017310218799 # Master account

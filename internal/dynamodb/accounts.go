@@ -85,7 +85,7 @@ func GetAccounts(filters []expression.ConditionBuilder) ([]account.Account, erro
 	input := &dynamodb.ScanInput{
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
-		TableName:                 aws.String("accounts"),
+		TableName:                 aws.String(os.Getenv("dynamodb_table")),
 		ProjectionExpression:      expr.Projection(),
 		FilterExpression:          expr.Filter(),
 	}

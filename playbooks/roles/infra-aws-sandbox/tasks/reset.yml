@@ -1,14 +1,4 @@
 ---
-- name: Download aws-nuke
-  become: true
-  get_url:
-    url: "{{ aws_nuke_binary_url }}"
-    dest: /usr/bin/aws-nuke
-    mode: 755
-    owner: root
-    group: root
-  failed_when: false
-
 - name: Grab or create the public zone
   environment:
     AWS_ACCESS_KEY_ID: "{{ assumed_role.sts_creds.access_key }}"
@@ -44,7 +34,7 @@
 
     - name: Run aws-nuke on sandbox account
       command: >-
-        aws-nuke --profile {{ account_name }}
+        {{ aws_nuke_binary_path }} --profile {{ account_name }}
         -c "{{ output_dir }}/{{ account_name }}_nuke-config.yml"
         --no-dry-run
         --force

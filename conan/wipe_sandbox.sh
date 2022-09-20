@@ -31,10 +31,10 @@ sandbox_disable() {
   }
 EOM
 
-    $VENV/bin/aws --profile pool-manager \
+    $VENV/bin/aws --profile "${aws_profile}" \
         --region us-east-1 \
         dynamodb update-item \
-        --table-name accounts \
+        --table-name "${dynamodb_table}" \
         --key "{\"name\": {\"S\": \"${sandbox}\"}}" \
         --update-expression "SET available = :av" \
         --expression-attribute-values "${data}"
@@ -70,8 +70,19 @@ sandbox_reset() {
     echo "$(date) ${sandbox} reset starting..."
 
     export ANSIBLE_NO_TARGET_SYSLOG=True
+
+    if [ "${noop}" != "false" ]; then
+        echo "$(date) ${sandbox} reset OK (noop)"
+        rm $eventlog
+        return
+    fi
+
     $VENV/bin/ansible-playbook -i localhost, \
                      -e _account_num=${s} \
+                     -e aws_master_profile="${aws_profile}" \
+                     -e dynamodb_table="${dynamodb_table}" \
+                     -e dynamodb_region="${dynamodb_region}" \
+                     -e aws_nuke_binary_path="${aws_nuke_binary_path}" \
                      reset_single.yml > ${logfile}
 
     if [ $? = 0 ]; then
