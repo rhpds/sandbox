@@ -61,14 +61,16 @@ pre_checks() {
              rush \
              kinit; do
         if ! command -v $c &>/dev/null; then
-            echo "'${c}' command not found"
-            exit 2
+            echo "'${c}' command not found" >&2
+            sync
+            exit 5
         fi
     done
     sandbox-list --to-cleanup &> /dev/null
     if [ $? != 0 ]; then
         echo "command failed: sandbox-list --to-cleanup"
-        exit 2
+        sync
+        exit 5
     fi
 }
 

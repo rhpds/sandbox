@@ -74,6 +74,7 @@ sandbox_reset() {
         rm $eventlog
     else
         echo "$(date) ${sandbox} reset FAILED. See ${logfile}" >&2
+        sync
         exit 3
     fi
 }
@@ -81,6 +82,7 @@ sandbox_reset() {
 sandbox=$1
 if [ -z "${sandbox}" ]; then
     echo "sandbox not provided"
+    sync
     exit 2
 fi
 
