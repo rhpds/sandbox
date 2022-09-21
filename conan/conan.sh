@@ -45,16 +45,16 @@ ORIG="$(cd "$(dirname "$0")" || exit; pwd)"
 prepare_workdir() {
     mkdir -p ~/pool_management
 
-    if [ ! -d $VENV ]; then
+    if [ ! -d "${VENV}" ]; then
         set -e
         echo "Create python virtualenv"
-        python3 -mvenv $VENV
-        . $VENV/bin/activate
+        python3 -mvenv "${VENV}"
+        . "${VENV}/bin/activate"
         pip install --upgrade pip
-        pip install -r ${ORIG}/../playbooks/requirements.txt
+        pip install -r "${ORIG}/../playbooks/requirements.txt"
         set +e
     fi
-    . $VENV/bin/activate
+    . "$VENV/bin/activate"
 }
 
 
@@ -68,8 +68,7 @@ pre_checks() {
             exit 5
         fi
     done
-    sandbox-list --to-cleanup &> /dev/null
-    if [ $? != 0 ]; then
+    if ! sandbox-list --to-cleanup &> /dev/null; then
         echo "command failed: sandbox-list --to-cleanup"
         sync
         exit 5
@@ -82,7 +81,7 @@ echo "DynamoDB table: ${dynamodb_table}"
 pre_checks
 prepare_workdir
 
-cd ${ORIG}
+cd "${ORIG}"
 
 while true; do
 
@@ -91,7 +90,7 @@ while true; do
         export AWS_REGION=${dynamodb_region}
         export dynamodb_table=${dynamodb_table}
         sandbox-list --to-cleanup --no-headers
-    ) | rush --immediate-output -j ${threads} './wipe_sandbox.sh {1}'
+    ) | rush --immediate-output -j "${threads}" './wipe_sandbox.sh {1}'
 
-    sleep ${poll_interval}
+    sleep "${poll_interval}"
 done
