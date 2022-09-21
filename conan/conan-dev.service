@@ -1,13 +1,15 @@
 [Unit]
-Description=Conan the Destroyer of sandboxes
+Description=Conan the Destroyer of sandboxes (DEV)
 After=network-online.target
 Documentation=https://github.com/rhpds/aws-sandbox/tree/main/conan
 
 [Service]
-Environment=threads=12
-Environment=aws_profile=pool-manager
-Environment=dynamodb_table=accounts
+Environment=threads=2
+Environment=aws_profile=pool-manager-dev
+Environment=dynamodb_table=accounts-dev
 Environment=dynamodb_region=us-east-1
+Environment=aws_nuke_binary_path=/bin/true
+Environment=noop=true
 
 User=opentlc-mgr
 Group=opentlc-mgr

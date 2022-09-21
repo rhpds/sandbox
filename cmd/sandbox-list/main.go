@@ -20,6 +20,12 @@ var debugFlag bool
 var toCleanupFlag bool
 var noHeadersFlag bool
 var padding = 2
+var versionFlag bool
+
+// Build info
+var Version = "development"
+var buildTime = "undefined"
+var buildCommit = "HEAD"
 
 type accountPrint account.Account
 
@@ -109,10 +115,17 @@ func parseFlags() {
 	flag.BoolVar(&toCleanupFlag, "to-cleanup", false, "Print all marked for cleanup.")
 	flag.BoolVar(&noHeadersFlag, "no-headers", false, "Don't print headers.")
 	flag.BoolVar(&debugFlag, "debug", false, "Debug mode.\nEnvironment variable: DEBUG\n")
+	flag.BoolVar(&versionFlag, "version", false, "Print build version.")
 
 	flag.Parse()
 	if e := os.Getenv("DEBUG"); e != "" && e != "false" {
 		debugFlag = true
+	}
+	if versionFlag {
+		fmt.Println("Version:", Version)
+		fmt.Println("Build time:", buildTime)
+		fmt.Println("Build commit:", buildCommit)
+		os.Exit(0)
 	}
 }
 
@@ -184,6 +197,9 @@ func main() {
 	}
 	if os.Getenv("AWS_REGION") == "" {
 		os.Setenv("AWS_REGION", "us-east-1")
+	}
+	if os.Getenv("dynamodb_table") == "" {
+		os.Setenv("dynamodb_table", "accounts")
 	}
 	sandboxdb.SetSession()
 

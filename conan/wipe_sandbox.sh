@@ -7,20 +7,26 @@ MAX_ATTEMPTS=2
 # retry after 48h
 TTL_EVENTLOG=$((3600*24))
 
-VENV=~/pool_management/python_virtualenv
-export VENV
 
-prepare_workdir() {
-    mkdir -p ~/pool_management
+# Mandatory ENV variables
+: "${dynamodb_table:?"dynamodb_table is unset or null"}"
+: "${dynamodb_region:?"dynamodb_region is unset or null"}"
+: "${noop:?"noop is unset or empty"}"
+: "${aws_profile:?"aws_profile is unset or empty"}"
+: "${aws_nuke_binary_path:?"aws_nuke_binary_path is unset or empty"}"
 
-    if [ ! -d $VENV ]; then
-        echo "Create python virtualenv"
-        python3 -mvenv $VENV
-        . $VENV/bin/activate
-        pip install --upgrade pip
-        pip install -r ${ORIG}/../playbooks/requirements.txt
+checks() {
+    if [ -z "${sandbox}" ]; then
+        echo "sandbox not provided"
+        sync
+        exit 2
     fi
-    . $VENV/bin/activate
+
+    if [ -z "${VENV}" ]; then
+        echo "VENV is not defined"
+        sync
+        exit 2
+    fi
 }
 
 sandbox_disable() {
@@ -31,10 +37,10 @@ sandbox_disable() {
   }
 EOM
 
-    $VENV/bin/aws --profile pool-manager \
-        --region us-east-1 \
+    "$VENV/bin/aws" --profile "${aws_profile}" \
+        --region "${dynamodb_region}" \
         dynamodb update-item \
-        --table-name accounts \
+        --table-name "${dynamodb_table}" \
         --key "{\"name\": {\"S\": \"${sandbox}\"}}" \
         --update-expression "SET available = :av" \
         --expression-attribute-values "${data}"
@@ -45,7 +51,7 @@ sandbox_reset() {
     local prevlogfile=~/pool_management/reset_${sandbox}.log.1
     local logfile=~/pool_management/reset_${sandbox}.log
     local eventlog=~/pool_management/reset_${sandbox}.events.log
-    cd ${ORIG}/../playbooks
+    cd "${ORIG}/../playbooks" || exit
 
     # Keep previous log to help troubleshooting
     if [ -e "${logfile}" ]; then
@@ -53,11 +59,11 @@ sandbox_reset() {
     fi
 
     if [ -e "${eventlog}" ]; then
-        local age_eventlog=$(( $(date +%s) - $(date -r $eventlog +%s) ))
+        local age_eventlog=$(( $(date +%s) - $(date -r "${eventlog}" +%s) ))
         # If last attempt was less than 24h (TTL_EVENTLOG) ago
         # and if it failed more than MAX_ATTEMPTS times, skip.
         if [ $age_eventlog -le $TTL_EVENTLOG ] && \
-            [ $(wc -l $eventlog | awk '{print $1}') -ge ${MAX_ATTEMPTS} ]; then
+            [ "$(wc -l "${eventlog}" | awk '{print $1}')" -ge ${MAX_ATTEMPTS} ]; then
             echo "$(date) ${sandbox} Too many attemps, skipping"
             return
         fi
@@ -65,31 +71,39 @@ sandbox_reset() {
 
 
     echo "$(date) reset sandbox${s}" >> ~/pool_management/reset.log
-    echo "$(date) reset sandbox${s}" >> $eventlog
+    echo "$(date) reset sandbox${s}" >> "${eventlog}"
 
     echo "$(date) ${sandbox} reset starting..."
 
     export ANSIBLE_NO_TARGET_SYSLOG=True
-    $VENV/bin/ansible-playbook -i localhost, \
-                     -e _account_num=${s} \
-                     reset_single.yml > ${logfile}
+
+    if [ "${noop}" != "false" ]; then
+        echo "$(date) ${sandbox} reset OK (noop)"
+        rm "${eventlog}"
+        return
+    fi
+
+    "${VENV}/bin/ansible-playbook" -i localhost, \
+                     -e _account_num="${s}" \
+                     -e aws_master_profile="${aws_profile}" \
+                     -e dynamodb_table="${dynamodb_table}" \
+                     -e dynamodb_region="${dynamodb_region}" \
+                     -e aws_nuke_binary_path="${aws_nuke_binary_path}" \
+                     reset_single.yml > "${logfile}"
 
     if [ $? = 0 ]; then
         echo "$(date) ${sandbox} reset OK"
-        rm $eventlog
+        rm "${eventlog}"
     else
         echo "$(date) ${sandbox} reset FAILED. See ${logfile}" >&2
+        sync
         exit 3
     fi
 }
 
 sandbox=$1
-if [ -z "${sandbox}" ]; then
-    echo "sandbox not provided"
-    exit 2
-fi
 
-prepare_workdir
+checks
 
 sandbox_disable "${sandbox}"
 
