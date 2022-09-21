@@ -66,7 +66,7 @@
         - name: Run aws-nuke again
           when: run_aws_nuke_again | default(false)
           command: >-
-            aws-nuke --profile {{ account_name }}
+            {{ aws_nuke_binary_path }} --profile {{ account_name }}
             -c "{{ output_dir }}/{{ account_name }}_nuke-config.yml"
             --no-dry-run
             --force
