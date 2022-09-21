@@ -1,0 +1,6 @@
+export threads=2
+export aws_profile=pool-manager-dev
+export dynamodb_table=accounts-dev
+export dynamodb_region=us-east-1
+export aws_nuke_binary_path=/bin/true
+export noop=true

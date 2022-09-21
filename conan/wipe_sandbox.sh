@@ -7,22 +7,6 @@ MAX_ATTEMPTS=2
 # retry after 48h
 TTL_EVENTLOG=$((3600*24))
 
-VENV=~/pool_management/python_virtualenv
-export VENV
-
-prepare_workdir() {
-    mkdir -p ~/pool_management
-
-    if [ ! -d $VENV ]; then
-        echo "Create python virtualenv"
-        python3 -mvenv $VENV
-        . $VENV/bin/activate
-        pip install --upgrade pip
-        pip install -r ${ORIG}/../playbooks/requirements.txt
-    fi
-    . $VENV/bin/activate
-}
-
 sandbox_disable() {
     local sandbox=$1
     read -r -d '' data << EOM
@@ -32,7 +16,7 @@ sandbox_disable() {
 EOM
 
     $VENV/bin/aws --profile "${aws_profile}" \
-        --region us-east-1 \
+        --region "${dynamodb_region}" \
         dynamodb update-item \
         --table-name "${dynamodb_table}" \
         --key "{\"name\": {\"S\": \"${sandbox}\"}}" \
@@ -99,8 +83,6 @@ if [ -z "${sandbox}" ]; then
     echo "sandbox not provided"
     exit 2
 fi
-
-prepare_workdir
 
 sandbox_disable "${sandbox}"
 

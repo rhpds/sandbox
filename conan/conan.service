@@ -4,6 +4,11 @@ After=network-online.target
 Documentation=https://github.com/redhat-gpe/aws-sandbox/tree/main/conan
 
 [Service]
+Environment=threads=12
+Environment=aws_profile=pool-manager
+Environment=dynamodb_table=accounts
+Environment=dynamodb_region=us-east-1
+
 User=opentlc-mgr
 Group=opentlc-mgr
 Type=simple
