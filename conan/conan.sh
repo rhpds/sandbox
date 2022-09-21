@@ -25,6 +25,9 @@ aws_nuke_binary_path="${aws_nuke_binary_path:-/usr/bin/aws-nuke}"
 # Noop: don't actually touch the sandboxes
 noop=${noop:-false}
 
+# python virtualenv
+VENV=${VENV:-~/pool_management/python_virtualenv}
+
 ##############
 
 export threads
@@ -34,11 +37,10 @@ export dynamodb_region
 export poll_interval
 export aws_nuke_binary_path
 export noop
+export VENV
 
 ORIG="$(cd "$(dirname "$0")" || exit; pwd)"
 
-VENV=~/pool_management/python_virtualenv
-export VENV
 
 prepare_workdir() {
     mkdir -p ~/pool_management
