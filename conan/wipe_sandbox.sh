@@ -11,9 +11,9 @@ TTL_EVENTLOG=$((3600*24))
 # Mandatory ENV variables
 : "${dynamodb_table:?"dynamodb_table is unset or null"}"
 : "${dynamodb_region:?"dynamodb_region is unset or null"}"
-: "${sandbox:?"sandbox is unset or empty"}"
 : "${noop:?"noop is unset or empty"}"
 : "${aws_profile:?"aws_profile is unset or empty"}"
+: "${aws_nuke_binary_path:?"aws_nuke_binary_path is unset or empty"}"
 
 checks() {
     if [ -z "${sandbox}" ]; then
