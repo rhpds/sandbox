@@ -1,7 +1,7 @@
 [Unit]
 Description=Conan the Destroyer of sandboxes (DEV)
 After=network-online.target
-Documentation=https://github.com/redhat-gpe/aws-sandbox/tree/main/conan
+Documentation=https://github.com/rhpds/aws-sandbox/tree/main/conan
 
 [Service]
 Environment=threads=2
