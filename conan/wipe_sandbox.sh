@@ -7,6 +7,20 @@ MAX_ATTEMPTS=2
 # retry after 48h
 TTL_EVENTLOG=$((3600*24))
 
+checks() {
+    if [ -z "${sandbox}" ]; then
+        echo "sandbox not provided"
+        sync
+        exit 2
+    fi
+
+    if [ -z "${VENV}" ]; then
+        echo "VENV is not defined"
+        sync
+        exit 2
+    fi
+}
+
 sandbox_disable() {
     local sandbox=$1
     read -r -d '' data << EOM
@@ -80,11 +94,8 @@ sandbox_reset() {
 }
 
 sandbox=$1
-if [ -z "${sandbox}" ]; then
-    echo "sandbox not provided"
-    sync
-    exit 2
-fi
+
+checks
 
 sandbox_disable "${sandbox}"
 
