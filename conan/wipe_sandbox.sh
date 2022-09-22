@@ -60,7 +60,7 @@ EOM
             rm "${errlog}"
             return 1
         else
-            echo "$(date -uIs) Cannot mark the sandbox as not available"
+            echo "$(date -uIs) Cannot lock the sandbox" >&2
             cat "${errlog}" >&2
             rm "${errlog}"
             exit 1
