@@ -34,7 +34,7 @@ sandbox_disable() {
     local sandbox=$1
     read -r -d '' data << EOM
   {
-        ":av":      {"BOOL": false},
+        ":av": {"BOOL": false},
         ":st": {"S": "cleanup in progress"},
         ":timestamp": {"S": "$(date -uIs)"},
         ":old": {"S": "$(date -uIs -d "now - ${lock_timeout} hour")"},
