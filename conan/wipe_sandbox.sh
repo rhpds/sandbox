@@ -30,7 +30,7 @@ checks() {
     fi
 }
 
-sandbox_disable() {
+sandbox_lock() {
     local sandbox=$1
     read -r -d '' data << EOM
   {
@@ -129,6 +129,6 @@ sandbox=$1
 
 checks
 
-if sandbox_disable "${sandbox}"; then
+if sandbox_lock "${sandbox}"; then
     sandbox_reset "${sandbox}"
 fi
