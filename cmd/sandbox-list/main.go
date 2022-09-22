@@ -3,15 +3,16 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
-	"github.com/redhat-gpe/aws-sandbox/internal/account"
-	"github.com/redhat-gpe/aws-sandbox/internal/log"
-	sandboxdb "github.com/redhat-gpe/aws-sandbox/internal/dynamodb"
 	"os"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
+	"github.com/redhat-gpe/aws-sandbox/internal/account"
+	sandboxdb "github.com/redhat-gpe/aws-sandbox/internal/dynamodb"
+	"github.com/redhat-gpe/aws-sandbox/internal/log"
 )
 
 var csvFlag bool
@@ -55,7 +56,11 @@ func (a accountPrint) String() string {
 	/* Do not write true | false to not break current scripts that filter
            using true|false on the whole line */
 	if a.ToCleanup {
-		toCleanupString = "TO_CLEANUP"
+		if a.ConanStatus == "cleanup in progress" {
+			toCleanupString = fmt.Sprintf("IN_PROGRESS (%s)", a.ConanHostname)
+		} else {
+			toCleanupString = "TO_CLEANUP"
+		}
 	} else {
 		toCleanupString = "no"
 	}
