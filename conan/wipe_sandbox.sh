@@ -30,6 +30,29 @@ checks() {
     fi
 }
 
+sandbox_unlock() {
+    local sandbox=$1
+    read -r -d '' data << EOM
+  {
+        ":st": {"S": ""}
+  }
+EOM
+
+    "$VENV/bin/aws" --profile "${aws_profile}" \
+        --region "${dynamodb_region}" \
+        dynamodb update-item \
+        --table-name "${dynamodb_table}" \
+        --key "{\"name\": {\"S\": \"${sandbox}\"}}" \
+        --update-expression "SET conan_status = :st" \
+        --expression-attribute-values "${data}"
+}
+
+_on_exit() {
+    local exit_status=${1:-$?}
+    sandbox_unlock $sandbox
+    exit $exit_status
+}
+
 sandbox_lock() {
     local sandbox=$1
     read -r -d '' data << EOM
@@ -66,6 +89,10 @@ EOM
             exit 1
         fi
     fi
+
+
+    # If anything happens, unlock the sandbox
+    trap "_on_exit" EXIT
 
     return 0
 }
