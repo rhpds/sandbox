@@ -28,6 +28,14 @@ noop=${noop:-false}
 # python virtualenv
 VENV=${VENV:-~/pool_management/python_virtualenv}
 
+
+# Lock timeout:  the number of hours after which a lock on a sandbox expires.
+# For ex: '2': a conan process will have 2h to cleanup the sandbox before another
+# process can claim the sandbox for cleanup.
+# That parameter prevent a sandbox from being locked forever if something goes wrong with
+# the conan process owning the lock.
+lock_timeout=${lock_timeout:-2}
+
 ##############
 
 export threads
@@ -38,6 +46,7 @@ export poll_interval
 export aws_nuke_binary_path
 export noop
 export VENV
+export lock_timeout
 
 ORIG="$(cd "$(dirname "$0")" || exit; pwd)"
 
@@ -68,7 +77,11 @@ pre_checks() {
             exit 5
         fi
     done
-    if ! sandbox-list --to-cleanup &> /dev/null; then
+    if ! AWS_PROFILE=${aws_profile} \
+        AWS_REGION=${dynamodb_region} \
+        dynamodb_table=${dynamodb_table} \
+        sandbox-list --to-cleanup --no-headers &> /dev/null
+    then
         echo "command failed: sandbox-list --to-cleanup"
         sync
         exit 5

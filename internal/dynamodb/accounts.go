@@ -66,6 +66,9 @@ func GetAccounts(filters []expression.ConditionBuilder) ([]account.Account, erro
 		expression.Name("aws:rep:updatetime"),
 		expression.Name("aws_access_key_id"),
 		expression.Name("aws_secret_access_key"),
+		expression.Name("conan_status"),
+		expression.Name("conan_timestamp"),
+		expression.Name("conan_hostname"),
 	)
 
 	builder := expression.NewBuilder()

@@ -14,6 +14,7 @@ TTL_EVENTLOG=$((3600*24))
 : "${noop:?"noop is unset or empty"}"
 : "${aws_profile:?"aws_profile is unset or empty"}"
 : "${aws_nuke_binary_path:?"aws_nuke_binary_path is unset or empty"}"
+: "${lock_timeout:?"lock_timeout is unset or empty"}"
 
 checks() {
     if [ -z "${sandbox}" ]; then
@@ -29,21 +30,44 @@ checks() {
     fi
 }
 
-sandbox_disable() {
+sandbox_lock() {
     local sandbox=$1
     read -r -d '' data << EOM
   {
-        ":av":      {"BOOL": false}
+        ":av": {"BOOL": false},
+        ":st": {"S": "cleanup in progress"},
+        ":timestamp": {"S": "$(date -uIs)"},
+        ":old": {"S": "$(date -uIs -d "now - ${lock_timeout} hour")"},
+        ":host": {"S": "$(hostname)"}
   }
 EOM
 
-    "$VENV/bin/aws" --profile "${aws_profile}" \
+    errlog=$(mktemp)
+
+    if ! "$VENV/bin/aws" --profile "${aws_profile}" \
         --region "${dynamodb_region}" \
         dynamodb update-item \
         --table-name "${dynamodb_table}" \
         --key "{\"name\": {\"S\": \"${sandbox}\"}}" \
-        --update-expression "SET available = :av" \
-        --expression-attribute-values "${data}"
+        --update-expression "SET available = :av, conan_status = :st, conan_timestamp = :timestamp, conan_hostname = :host" \
+        --condition-expression "conan_status <> :st OR conan_timestamp < :old" \
+        --expression-attribute-values "${data}" \
+        2> "${errlog}"
+    then
+
+        if grep -q ConditionalCheckFailedException "${errlog}"; then
+            echo "$(date -uIs) Another process is already cleaning up ${sandbox}: skipping"
+            rm "${errlog}"
+            return 1
+        else
+            echo "$(date -uIs) Cannot lock the sandbox" >&2
+            cat "${errlog}" >&2
+            rm "${errlog}"
+            exit 1
+        fi
+    fi
+
+    return 0
 }
 
 sandbox_reset() {
@@ -64,21 +88,21 @@ sandbox_reset() {
         # and if it failed more than MAX_ATTEMPTS times, skip.
         if [ $age_eventlog -le $TTL_EVENTLOG ] && \
             [ "$(wc -l "${eventlog}" | awk '{print $1}')" -ge ${MAX_ATTEMPTS} ]; then
-            echo "$(date) ${sandbox} Too many attemps, skipping"
+            echo "$(date -uIs) ${sandbox} Too many attemps, skipping"
             return
         fi
     fi
 
 
-    echo "$(date) reset sandbox${s}" >> ~/pool_management/reset.log
-    echo "$(date) reset sandbox${s}" >> "${eventlog}"
+    echo "$(date -uIs) reset sandbox${s}" >> ~/pool_management/reset.log
+    echo "$(date -uIs) reset sandbox${s}" >> "${eventlog}"
 
-    echo "$(date) ${sandbox} reset starting..."
+    echo "$(date -uIs) ${sandbox} reset starting..."
 
     export ANSIBLE_NO_TARGET_SYSLOG=True
 
     if [ "${noop}" != "false" ]; then
-        echo "$(date) ${sandbox} reset OK (noop)"
+        echo "$(date -uIs) ${sandbox} reset OK (noop)"
         rm "${eventlog}"
         return
     fi
@@ -92,10 +116,10 @@ sandbox_reset() {
                      reset_single.yml > "${logfile}"
 
     if [ $? = 0 ]; then
-        echo "$(date) ${sandbox} reset OK"
+        echo "$(date -uIs) ${sandbox} reset OK"
         rm "${eventlog}"
     else
-        echo "$(date) ${sandbox} reset FAILED. See ${logfile}" >&2
+        echo "$(date -uIs) ${sandbox} reset FAILED. See ${logfile}" >&2
         sync
         exit 3
     fi
@@ -105,6 +129,6 @@ sandbox=$1
 
 checks
 
-sandbox_disable "${sandbox}"
-
-sandbox_reset "${sandbox}"
+if sandbox_lock "${sandbox}"; then
+    sandbox_reset "${sandbox}"
+fi
