@@ -107,6 +107,7 @@ sandbox_reset() {
         return
     fi
 
+    . "$VENV/bin/activate"
     "${VENV}/bin/ansible-playbook" -i localhost, \
                      -e _account_num="${s}" \
                      -e aws_master_profile="${aws_profile}" \
