@@ -69,7 +69,7 @@
   assert:
     that: ns_entries == ns_entries_route53
 
-- name: Ensure Red Hat GOLD AMI are accessible from withing the sandbox
+- name: Ensure Red Hat GOLD AMI are accessible from within the sandbox
   ec2_ami_info:
     aws_access_key: "{{ sandbox_aws_access_key_id }}"
     aws_secret_key: "{{ sandbox_aws_secret_access_key }}"
