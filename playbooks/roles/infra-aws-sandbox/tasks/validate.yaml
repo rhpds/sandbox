@@ -33,7 +33,7 @@
   include_tasks: unvault.yml
 
 - name: Validate AWS access
-  amazon.aws.aws_caller_info:
+  aws_caller_info:
     aws_access_key: "{{ sandbox_aws_access_key_id }}"
     aws_secret_key: "{{ sandbox_aws_secret_access_key }}"
   register: r_caller_info
@@ -53,7 +53,7 @@
 - name: Validate route53 zone
   vars:
     ns_entries: >-
-      {{ lookup('community.general.dig', sandbox_zone, 'qtype=NS').split(',')
+      {{ lookup('dig', sandbox_zone, 'qtype=NS').split(',')
       | sort
       | map('regex_replace', '\.$', '')
       | list
