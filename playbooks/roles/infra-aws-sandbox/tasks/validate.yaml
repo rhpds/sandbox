@@ -53,8 +53,7 @@
 - name: Validate route53 zone
   vars:
     ns_entries: >-
-      {{ lookup('community.general.dig', sandbox_zone, 'qtype=NS')
-      | split(',')
+      {{ lookup('community.general.dig', sandbox_zone, 'qtype=NS').split(',')
       | sort
       | map('regex_replace', '\.$', '')
       | list
@@ -79,7 +78,7 @@
     filters:
       architecture: x86_64
       name: RHEL-9.0*Access*
-      is-public: false
+      is-public: "false"
   register: r_image
 
 - assert:
