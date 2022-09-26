@@ -4,6 +4,16 @@
     path: "{{ output_dir }}"
     state: directory
 
+
+- name: Ensure vault file exists
+  stat:
+    path: "{{ vault_file }}"
+  register: r_path
+
+- assert:
+    that: r_path.stat.exists
+    msg: "{{ vault_file }} doesn't exist, please create it"
+
 - include_tasks: test_ipa.yml
   tags: ipa
   when:

@@ -1,6 +1,5 @@
 ---
 - import_tasks: pre_checks.yml
-- import_tasks: vault.yml
 - import_tasks: account.yml
   tags: account
 - import_tasks: profile.yml
