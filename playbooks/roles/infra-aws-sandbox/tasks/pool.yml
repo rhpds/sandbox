@@ -44,6 +44,30 @@
 
 - when: operation == 'RESET'
   block:
+    - name: Pre-Reset account information for validation
+      vars:
+        _data:
+          name:
+            S: "{{ account_name }}"
+          available:
+            BOOL: false
+          account_id:
+            S: "{{ account_id }}"
+          aws_access_key_id:
+            S: "{{ account_user_access_key }}"
+          aws_secret_access_key:
+            S: "{{ account_user_secret_access_key_encrypted }}"
+          hosted_zone_id:
+            S: "{{ account_hosted_zone_id }}"
+          zone:
+            S: "{{ account_name }}{{subdomain_base}}"
+      command: >-
+        aws --profile {{ aws_master_profile }}
+        --region {{ dynamodb_region }}
+        dynamodb put-item
+        --table-name {{ dynamodb_table }}
+        --item '{{ _data | to_json }}'
+
     - name: Validate Sandbox
       include_tasks: validate.yaml
 
