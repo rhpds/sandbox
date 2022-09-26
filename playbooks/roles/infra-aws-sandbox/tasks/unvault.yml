@@ -1,0 +1,10 @@
+---
+- name: Decrypt secret key from sandbox entry
+  command: ansible-vault decrypt --vault-password-file {{ vault_file | quote }}
+  args:
+    stdin: "{{ vaulted_text }}"
+  register: r_secret
+
+- name: Save decrypted key
+  set_fact:
+    sandbox_aws_secret_access_key: "{{ r_secret.stdout }}"
