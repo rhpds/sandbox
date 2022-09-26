@@ -1,0 +1,35 @@
+#!/usr/bin/env ansible-playbook
+
+- hosts: localhost
+  gather_facts: no
+  connection: local
+  run_once: yes
+  tasks:
+    - assert:
+        msg: Please set account_num_start
+        that: account_num_start is defined
+
+    - assert:
+        msg: Please set account_num_end
+        that: account_num_end is defined
+
+    - include_role:
+        name: infra-aws-sandbox
+        tasks_from: validate
+      loop: >-
+        {{ range( account_num_start|int, account_num_end|int )|list }}
+      loop_control:
+        loop_var: account_num
+      tags: create
+      vars:
+        available_after_create: true
+        aws_master_profile: pool-manager
+        dynamodb_table: accounts
+        pool_region: us-east-1
+        account_name: sandbox{{account_num}}
+        account_email: sandbox{{account_num}}@opentlc.com
+        account_destination_ou: sandboxes
+        output_dir: ~/pool_management/output_dir_sandbox
+        kerberos_user: hostadmin
+        kerberos_keytab: ~/secrets/hostadmin.keytab
+        operation: VALIDATE

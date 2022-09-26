@@ -44,6 +44,9 @@
 
 - when: operation == 'RESET'
   block:
+    - name: Validate Sandbox
+      include_tasks: validate.yaml
+
     - name: Reset account information
       vars:
         _data:
