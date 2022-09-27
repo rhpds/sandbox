@@ -10,6 +10,7 @@ export AWS_PROFILE=pool-manager
 export AWS_REGION=us-east-1
 
 sandbox-list
-sandbox-list -all
-sandbox-list -all -csv
+sandbox-list --all
+sandbox-list --all --csv
+sandbox-list --all --csv --sort name
 ----

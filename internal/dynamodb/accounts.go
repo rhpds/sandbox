@@ -11,6 +11,8 @@ import (
 	"github.com/redhat-gpe/aws-sandbox/internal/account"
 	"github.com/redhat-gpe/aws-sandbox/internal/log"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"strconv"
+	"strings"
 )
 
 var svc *dynamodb.DynamoDB
@@ -25,6 +27,21 @@ func GetSession() *dynamodb.DynamoDB{
 	return svc
 }
 
+func parseNameInt(s string) int {
+	var result strings.Builder
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		if '0' <= b && b <= '9' {
+			result.WriteByte(b)
+		}
+	}
+	resultI, err := strconv.Atoi(result.String())
+	if err != nil {
+		log.Err.Fatal(err)
+	}
+	return resultI
+}
+
 // BuildAccounts returns the list of accounts from dynamodb scan output
 func BuildAccounts(r *dynamodb.ScanOutput) []account.Account {
 	accounts := []account.Account{}
@@ -32,12 +49,13 @@ func BuildAccounts(r *dynamodb.ScanOutput) []account.Account {
 	for _, sandbox := range r.Items {
 		item := account.Account{}
 		err := dynamodbattribute.UnmarshalMap(sandbox, &item)
-
 		if err != nil {
 			fmt.Println("Got error unmarshalling:")
 			fmt.Println(err.Error())
 			os.Exit(1)
 		}
+
+		item.NameInt = parseNameInt(item.Name)
 
 		accounts = append(accounts, item)
 	}

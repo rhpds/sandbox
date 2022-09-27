@@ -47,12 +47,17 @@ func CountToCleanup(accounts []Account) int {
 	return total
 }
 
-// SortUpdateTime sorts accounts by update time
-func SortUpdateTime(accounts []Account) []Account {
+// SortAccounts
+func SortAccounts(by string, accounts []Account) []Account {
 	_accounts := append([]Account{}, accounts...)
 
 	sort.SliceStable(_accounts, func(i, j int) bool {
+		if by == "name" {
+			return _accounts[i].NameInt < _accounts[j].NameInt
+		}
+
 		return _accounts[i].UpdateTime > _accounts[j].UpdateTime
+
 	})
 	return _accounts
 }

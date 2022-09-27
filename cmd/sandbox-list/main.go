@@ -22,6 +22,7 @@ var toCleanupFlag bool
 var noHeadersFlag bool
 var padding = 2
 var versionFlag bool
+var sortFlag string
 
 // Build info
 var Version = "development"
@@ -121,11 +122,20 @@ func parseFlags() {
 	flag.BoolVar(&noHeadersFlag, "no-headers", false, "Don't print headers.")
 	flag.BoolVar(&debugFlag, "debug", false, "Debug mode.\nEnvironment variable: DEBUG\n")
 	flag.BoolVar(&versionFlag, "version", false, "Print build version.")
+	flag.StringVar(&sortFlag, "sort", "UpdateTime", "Sort by column. Possible values: [UpdateTime, Name]")
 
 	flag.Parse()
+
 	if e := os.Getenv("DEBUG"); e != "" && e != "false" {
 		debugFlag = true
 	}
+
+	sortFlag = strings.ToLower(sortFlag)
+	if sortFlag != "updatetime" && sortFlag != "name" {
+		fmt.Print("possible values for --sort: Name, UpdateTime")
+		os.Exit(2)
+	}
+
 	if versionFlag {
 		fmt.Println("Version:", Version)
 		fmt.Println("Build time:", buildTime)
@@ -136,7 +146,7 @@ func parseFlags() {
 
 func printMostRecentlyUsed(accounts []account.Account) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, padding, ' ', 0)
-	m := account.SortUpdateTime(account.Used(accounts))
+	m := account.SortAccounts("UpdateTime", account.Used(accounts))
 
 	fmt.Println()
 	fmt.Println("# Most recently used sandboxes")
@@ -149,7 +159,7 @@ func printMostRecentlyUsed(accounts []account.Account) {
 }
 
 func printOldest(accounts []account.Account) {
-	m := account.SortUpdateTime(account.Used(accounts))
+	m := account.SortAccounts("UpdateTime", account.Used(accounts))
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, padding, ' ', 0)
 
 	fmt.Println()
@@ -219,10 +229,12 @@ func main() {
 		log.Err.Fatal(err)
 	}
 
+	accounts = account.SortAccounts(sortFlag, accounts)
+
 	if allFlag || toCleanupFlag {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, padding, ' ', 0)
 		printHeaders(w)
-		for _, sandbox := range account.SortUpdateTime(accounts) {
+		for _, sandbox := range accounts {
 			fmt.Fprintln(w, accountPrint(sandbox))
 		}
 		w.Flush()

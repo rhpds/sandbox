@@ -2,6 +2,8 @@ package account
 
 type Account struct {
 	Name               string  `json:"name"`
+	// NameInt: Internal plumbing to easily sort Sandboxes
+	NameInt			   int
 	Available          bool    `json:"available"`
 	Guid               string  `json:"guid"`
 	Envtype            string  `json:"envtype"`
