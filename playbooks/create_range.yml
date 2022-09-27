@@ -24,7 +24,7 @@
         loop_var: account_num
       tags: create
       vars:
-        available_after_create: true
+        available_after_create: false
         aws_master_profile: pool-manager-admin
         account_name: sandbox{{account_num}}
         account_email: sandbox{{account_num}}@opentlc.com
