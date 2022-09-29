@@ -26,7 +26,7 @@
       register: _listkeys
       changed_when: false
 
-    - when: operation == 'RESET'
+    - when: operation in ['RESET', 'CREATE']
       name: Delete all access keys
       command: >-
         aws iam delete-access-key
@@ -39,7 +39,7 @@
     # Create keys when there are none or operation == RESET
     - when: >-
         _listkeys.stdout|from_json|list|length == 0
-        or operation == 'RESET'
+        or operation in ['RESET', 'CREATE']
       block:
         - name: create new IAM access keys
           command: aws iam create-access-key --user-name {{ account_user }}
