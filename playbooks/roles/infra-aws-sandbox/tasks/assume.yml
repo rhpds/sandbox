@@ -6,3 +6,6 @@
     role_session_name: "AssumeSandbox"
     region: aws-global
   register: assumed_role
+  retries: 5
+  delay: "{{ 30|random(start=3, step=1) }}"
+  until: assumed_role is succeeded
