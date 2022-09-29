@@ -11,6 +11,10 @@
   loop: "{{ all_regions }}"
   loop_control:
     loop_var: _region
+  register: r_import
+  retries: 5
+  delay: "{{ 30|random(start=3, step=1) }}"
+  until: r_import is succeeded
 
 - name: Import OPENTLC ocpkey
   ec2_key:
@@ -23,3 +27,7 @@
   loop: "{{ all_regions }}"
   loop_control:
     loop_var: _region
+  register: r_import2
+  retries: 5
+  delay: "{{ 30|random(start=3, step=1) }}"
+  until: r_import2 is succeeded
