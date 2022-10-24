@@ -74,6 +74,7 @@ func GetAccounts(filters []expression.ConditionBuilder) ([]account.Account, erro
 		expression.Name("available"),
 		expression.Name("to_cleanup"),
 		expression.Name("guid"),
+		expression.Name("service_uuid"),
 		expression.Name("envtype"),
 		expression.Name("owner"),
 		expression.Name("zone"),

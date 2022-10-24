@@ -6,6 +6,7 @@ type Account struct {
 	NameInt			   int
 	Available          bool    `json:"available"`
 	Guid               string  `json:"guid"`
+	ServiceUUID        string  `json:"service_uuid"`
 	Envtype            string  `json:"envtype"`
 	AccountID          string  `json:"account_id"`
 	Owner              string  `json:"owner"`

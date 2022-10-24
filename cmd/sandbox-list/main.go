@@ -77,6 +77,7 @@ func (a accountPrint) String() string {
 		a.Zone,
 		a.HostedZoneID,
 		supdatetime,
+		a.ServiceUUID,
 		toCleanupString,
 		a.Comment,
 	}, separator)
@@ -105,6 +106,7 @@ func printHeaders(w *tabwriter.Writer) {
 		"Zone",
 		"HostedZoneId",
 		"UpdateTime",
+		"UUID",
 		"ToCleanup?",
 		"Comment",
 	}
