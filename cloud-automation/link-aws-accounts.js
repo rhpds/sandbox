@@ -136,8 +136,7 @@ async function linkAwsAccounts({ browser, page }) {
         promises.push(
           new Promise((resolve) => {
             setTimeout(async () => {
-              await page.click("#cloud_accounts_filter_AWS", { clickCount: 3 });
-              await page.keyboard.press("Backspace");
+              await page.$eval("#cloud_accounts_filter_AWS", (el) => (el.value = ""));
               await page.type("#cloud_accounts_filter_AWS", account.accountId);
               page
                 .waitForFunction(
