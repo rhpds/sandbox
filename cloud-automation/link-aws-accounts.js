@@ -6,6 +6,7 @@ const path = require("path");
 const headless = true;
 const username = process.env.USERNAME;
 const password = process.env.PASSWORD;
+const separator = "    ";
 
 class Job {
   constructor(id, cb) {
@@ -117,6 +118,7 @@ async function linkAwsAccounts({ browser, page }) {
   await page.waitForFunction('[...document.querySelectorAll("a")].some(x => x.innerText.includes("AWS Accounts"))', {
     timeout: 120000,
   });
+  await page.click('[href="#cloud_accounts_AWS"]');
   const promises = [];
   await new Promise((resolve) => {
     const readInterface = readline.createInterface({
@@ -129,11 +131,14 @@ async function linkAwsAccounts({ browser, page }) {
       .on("line", function (line) {
         lineno++;
         if (lineno === 0) return;
-        const [sandboxName, accountId] = line.split(" ");
-        const account = { accountId, sandboxName };
+        const [sandboxName, accountId] = line.split(separator);
+        const account = { accountId: accountId.trim(), sandboxName: sandboxName.trim() };
         promises.push(
           new Promise((resolve) => {
-            setTimeout(() => {
+            setTimeout(async () => {
+              await page.click("#cloud_accounts_filter_AWS", { clickCount: 3 });
+              await page.keyboard.press("Backspace");
+              await page.type("#cloud_accounts_filter_AWS", account.accountId);
               page
                 .waitForFunction(
                   `[...document.querySelectorAll("td")].some(x => x.innerText.includes("${account.accountId}"))`
@@ -147,7 +152,7 @@ async function linkAwsAccounts({ browser, page }) {
                   jobQueue.enqueue(job);
                   resolve(`Job ${account.accountId} enqueued`);
                 });
-            }, 500 * lineno);
+            }, 1500 * lineno);
           })
         );
       })
