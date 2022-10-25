@@ -152,7 +152,7 @@ async function linkAwsAccounts({ browser, page }) {
                   jobQueue.enqueue(job);
                   resolve(`Job ${account.accountId} enqueued`);
                 });
-            }, 1500 * lineno);
+            }, 2000 * lineno);
           })
         );
       })
