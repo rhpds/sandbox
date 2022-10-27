@@ -143,3 +143,5 @@ dynamodb_region: us-east-1
 
 # local vars
 account_altready_exists: false
+
+force_create: false
