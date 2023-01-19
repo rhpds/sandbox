@@ -5,6 +5,10 @@
 [opentlc-mgr@admin (PROD) ~]$ . ~/pool_management/python_virtualenv/bin/activate
 (python_virtualenv) [opentlc-mgr@admin (PROD) ~]$ cd pool_management/aws-sandbox/playbooks
 
-# .create 10 AWS sandbox accounts: sandbox1918 .. sandbox1928
-./create_range.yml -e account_num_start=1918 -e account_count=10
+# .create 10 AWS sandbox accounts: sandbox3001 .. sandbox3010
+./create_range.yml -e account_num_start=3001 -e account_count=10
+
+# Add GOLD IMAGES to the new accounts
+#TODO: Document
+./validate.yml -e account_num_start=3001 -e account_num_end=3010
 ----

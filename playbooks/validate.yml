@@ -17,7 +17,7 @@
         name: infra-aws-sandbox
         tasks_from: validate
       loop: >-
-        {{ range( account_num_start|int, account_num_end|int )|list }}
+        {{ range( account_num_start|int, account_num_end|int + 1)|list }}
       loop_control:
         loop_var: account_num
       tags: validate
