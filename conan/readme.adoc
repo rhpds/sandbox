@@ -24,7 +24,7 @@ Then it runs link:https://github.com/rebuy-de/aws-nuke[aws-nuke] to wipe them, a
 cd
 mkdir pool_management
 cd pool_management
-git clone https://github.com/redhat-gpe/aws-sandbox.git
+git clone https://github.com/rhpds/aws-sandbox.git
 ------------------------------------
 . Install the aws credentials
 +

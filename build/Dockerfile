@@ -8,6 +8,7 @@ USER ${USER_UID}
 
 COPY ./ ./
 ENV GOOS=linux
+ENV CGO_ENABLED=0
 RUN go build ./cmd/sandbox-metrics
 RUN go build ./cmd/sandbox-list
 

@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
-	"github.com/redhat-gpe/aws-sandbox/internal/account"
-	sandboxdb "github.com/redhat-gpe/aws-sandbox/internal/dynamodb"
-	"github.com/redhat-gpe/aws-sandbox/internal/log"
+	"github.com/rhpds/aws-sandbox/internal/account"
+	sandboxdb "github.com/rhpds/aws-sandbox/internal/dynamodb"
+	"github.com/rhpds/aws-sandbox/internal/log"
 )
 
 var csvFlag bool

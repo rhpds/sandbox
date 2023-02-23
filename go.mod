@@ -1,4 +1,4 @@
-module github.com/redhat-gpe/aws-sandbox
+module github.com/rhpds/aws-sandbox
 
 go 1.16
 

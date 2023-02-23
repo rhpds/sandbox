@@ -15,7 +15,7 @@ go build ./cmd/sandbox-metrics
 . clone this repository
 +
 ----
-git clone --depth 1 https://github.com/redhat-gpe/aws-sandbox aws-sandbox
+git clone --depth 1 https://github.com/rhpds/aws-sandbox aws-sandbox
 ----
 . If it doesn't exist yet, create an IAM user in AWS to read-only access to dynamoDB
 . Create the secret file containing the key for the IAM user that has read-only access to DynamoDB
