@@ -1,0 +1,439 @@
+openapi: "3.0.3"
+info:
+  description: AWS Sandbox API
+  version: 1.0.0
+  title: Sandbox API
+  license:
+    name: MIT
+servers:
+  - url: http://localhost:8080/api/v1
+tags:
+  - name: placement
+    description: anything related to Placements. Ex, booking or releasing sandboxes
+  - name: account
+    description: anything related to Accounts.
+  - name: cleanup
+    description: Related to cleanup. Usually manual or override operations.
+  - name: protected
+    description: Protected endpoints, only accessible to admin or infra admins
+paths:
+  /placements:
+    get:
+      parameters:
+        - in: query
+          name: min-age
+          description: The minimum age of the placements to return
+          required: false
+          example: 15
+          schema:
+            type: integer
+            minimum: 0
+        - in: query
+          name: max-age
+          description: The maximum age of the placements to return
+          required: false
+          example: 1
+          schema:
+            type: integer
+            minimum: 0
+        - in: query
+          name: unit
+          description: The unit for min-age and max-age.
+          required: false
+          example: day
+          schema:
+            type: string
+            default: day
+            enum:
+              - day
+              - hour
+              - minute
+              - second
+      tags:
+        - placement
+        - protected
+      operationId: getPlacements
+      summary: Get all placements
+      responses:
+        '200':
+          description: The list of placements
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Placements"
+        default:
+          description: getPlacements unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Create a new placement; book a new sandbox.
+      operationId: book
+      tags:
+        - placement
+      requestBody:
+        description: JSON object to specify UUID and other annotations when booking a sandbox.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookQuery"
+      responses:
+        '200':
+          description: The Placement given, containing the sandbox that can be used.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlacementWithCreds"
+
+        '404':
+          description: NotFound
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: book unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /placements/{uuid}:
+    parameters:
+      - name: uuid
+        in: path
+        required: true
+        description: The UUID of the service.
+        schema:
+          $ref: "#/components/schemas/UUID"
+    get:
+      tags:
+        - placement
+      operationId: getPlacement
+      summary: Get information about a placement
+      responses:
+        '200':
+          description: The placement assigned to this uuid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Placement"
+        '404':
+          description: getPlacement Placement not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getPlacement unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    delete:
+      tags:
+        - placement
+        - cleanup
+      operationId: deletePlacement
+      summary: Delete the placement assigned to a specific uuid.
+      description: |-
+        You usually call this endpoint once your service is destroyed.
+
+        This action will cascade cleanup for all the accounts associated with the placement.
+      responses:
+        '200':
+          description: The placement assigned to this uuid is deleted. The sandboxes associated to this placement are marked for cleanup. The sandboxes marked for cleanup are returned in the response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Accounts"
+        '404':
+          description: deletePlacement Placement not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: deletePlacement unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /accounts:
+    parameters:
+      - name: available
+        in: query
+        description: Boolean to filter if available or taken.
+        schema:
+          type: boolean
+    get:
+      tags:
+        - account
+        - protected
+      operationId: getAccounts
+      summary: Get all accounts
+      responses:
+        '200':
+          description: The list of accounts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Accounts"
+        default:
+          description: getAccounts unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /accounts/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: The name of the sandbox
+        schema:
+          type: string
+    get:
+      tags:
+        - account
+      operationId: getAccount
+      summary: Get information about an account
+      responses:
+        '200':
+          description: The account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        '404':
+          description: getAccount account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /accounts/{name}/cleanup:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: The name of the sandbox to mark for cleanup.
+        schema:
+          type: string
+    put:
+      tags:
+        - cleanup
+        - account
+      operationId: markForCleanup
+      summary: Manually mark a sandbox (account) for cleanup.
+      description: |-
+        This is an ad-hoc operation, deleting placement should be preferred for regular cleanup of sandboxes.
+        If the sandbox is part of a placement, the corresponding placement will be updated:
+          - The sandbox is removed from the placement.
+
+        The placement is automatically deleted if there is no more sandboxes.
+      responses:
+        '200':
+          description: The account is marked for cleanup.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: markForCleanup unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+
+components:
+  schemas:
+    UUID:
+      type: string
+      description: The UUID of the service. Sandboxes are assigned uuid when booked.
+      format: uuid
+
+    BookQuery:
+      type: object
+      required:
+        - uuid
+      properties:
+        uuid:
+          $ref: "#/components/schemas/UUID"
+        count:
+          description: Number of sandboxes wanted
+          type: integer
+          default: 1
+          example: 1
+        annotations:
+          $ref: "#/components/schemas/Annotations"
+
+    Annotations:
+      description: Key / Value map to provide optional information.
+      type: object
+      additionalProperties:
+        type: string
+        minLength: 1
+      example:
+        guid: abcde
+        env_type: ocp4-cluster
+
+    Placement:
+      type: object
+      description: A placement is a record of service(uuid) / accounts(name) / when(date)
+      required:
+        - uuid
+        - accounts
+        - creation_timestamp
+        - annotations
+      properties:
+        uuid:
+          $ref: "#/components/schemas/UUID"
+        accounts:
+          $ref: "#/components/schemas/Accounts"
+        creation_timestamp:
+          description: The date (UTC and RFC3339 format) the placement was made.
+          type: string
+          format: date-time
+          example: 2023-03-13T09:42:33+01:00
+        annotations:
+          $ref: "#/components/schemas/Annotations"
+
+    PlacementWithCreds:
+      allOf:
+        - $ref: '#/components/schemas/Placement'
+        - type: object
+          properties:
+            accounts:
+              $ref: "#/components/schemas/AccountsWithCreds"
+
+    Account:
+      type: object
+      required:
+        - name
+        - available
+        - account_id
+        - zone
+        - hosted_zone_id
+      properties:
+        name:
+          type: string
+          example: sandbox123
+        available:
+          description: True if the sandbox has no placement associated.
+          type: boolean
+          default: true
+          example: false
+        service_uuid:
+          $ref: '#/components/schemas/UUID'
+        annotations:
+          $ref: '#/components/schemas/Annotations'
+        account_id:
+          type: string
+          example: '0123456'
+        zone:
+          type: string
+          example: sandbox123.domain.com
+        hosted_zone_id:
+          type: string
+          example: Z019612345AH4C7KTTZJ0
+        to_cleanup:
+          type: boolean
+          default: false
+          example: true
+        conan_status:
+          type: string
+          example: cleanup in progress
+        conan_timestamp:
+          type: string
+          format: date-time
+          example: 2023-03-09T07:22:42+00:00
+        conan_hostname:
+          type: string
+          example: conan2.domain.com
+
+    Credential:
+      type: object
+      required:
+        - name
+        - aws_access_key_id
+        - aws_secret_access_key
+      additionalProperties:
+        type: string
+      properties:
+        name:
+          type: string
+          example: IAM key
+        aws_access_key_id:
+          type: string
+          example: AKIAR2AI7M4QU6KCVIWJ
+        aws_secret_access_key:
+          type: string
+          example: 1234567890abcdefghij
+
+    Credentials:
+      type: array
+      items:
+        $ref: '#/components/schemas/Credential'
+
+    AccountWithCreds:
+      allOf:
+        - $ref: '#/components/schemas/Account'
+        - type: object
+          properties:
+            credentials:
+              $ref: '#/components/schemas/Credentials'
+
+    Accounts:
+      type: array
+      items:
+        $ref: '#/components/schemas/Account'
+
+    AccountsWithCreds:
+      type: array
+      items:
+        $ref: '#/components/schemas/AccountWithCreds'
+
+    Placements:
+      type: array
+      items:
+        $ref: '#/components/schemas/Placement'
+
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: integer
+          format: integer
+          example: 502
+        message:
+          type: string
+          example: Unexpected Error
+
+    Message:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          example: Account successfully marked for cleanup
