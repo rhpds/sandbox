@@ -1,6 +1,6 @@
 openapi: "3.0.3"
 info:
-  description: AWS Sandbox API
+  description: Sandbox API
   version: 1.0.0
   title: Sandbox API
   license:
@@ -68,7 +68,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
     post:
-      summary: Create a new placement; book a new sandbox.
+      summary: Create a new placement; book a sandbox.
       operationId: book
       tags:
         - placement
@@ -276,11 +276,23 @@ components:
       properties:
         uuid:
           $ref: "#/components/schemas/UUID"
-        count:
-          description: Number of sandboxes wanted
-          type: integer
-          default: 1
-          example: 1
+        request:
+          description: Request resources
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                default: AwsSandbox
+                example: AwsSandbox
+                enum:
+                  - AwsSandbox
+              count:
+                type: integer
+                minimum: 1
+                default: 1
+                example: 1
         annotations:
           $ref: "#/components/schemas/Annotations"
 
@@ -296,17 +308,17 @@ components:
 
     Placement:
       type: object
-      description: A placement is a record of service(uuid) / accounts(name) / when(date)
+      description: A placement is a record of service(uuid) / resource(name) / when(date)
       required:
         - uuid
-        - accounts
+        - resources
         - creation_timestamp
         - annotations
       properties:
         uuid:
           $ref: "#/components/schemas/UUID"
-        accounts:
-          $ref: "#/components/schemas/Accounts"
+        resources:
+          $ref: "#/components/schemas/Resources"
         creation_timestamp:
           description: The date (UTC and RFC3339 format) the placement was made.
           type: string
@@ -321,9 +333,56 @@ components:
         - type: object
           properties:
             accounts:
-              $ref: "#/components/schemas/AccountsWithCreds"
+              $ref: "#/components/schemas/ResourcesWithCreds"
 
     Account:
+      oneOf:
+        - $ref: '#/components/schemas/AwsAccount'
+      discriminator:
+        propertyName: account_type
+        mapping:
+          aws: '#/components/schemas/AwsAccount'
+
+    AccountWithCreds:
+      oneOf:
+        - $ref: '#/components/schemas/AwsAccountWithCreds'
+      discriminator:
+        propertyName: account_type
+        mapping:
+          aws: '#/components/schemas/AwsAccountWithCreds'
+
+    Resource:
+      oneOf:
+        - $ref: '#/components/schemas/Account'
+      discriminator:
+        propertyName: resource_type
+        mapping:
+          account: '#/components/schemas/Account'
+
+    ResourceWithCreds:
+      oneOf:
+        - $ref: '#/components/schemas/AccountWithCreds'
+      discriminator:
+        propertyName: resource_type
+        mapping:
+          account: '#/components/schemas/AccountWithCreds'
+
+    Resources:
+      type: array
+      items:
+        $ref: '#/components/schemas/Resource'
+
+    Credentials:
+      type: array
+      items:
+        anyOf:
+          - $ref: '#/components/schemas/AwsCredential'
+      discriminator:
+        propertyName: credential_type
+        mapping:
+          aws: '#/components/schemas/AwsCredential'
+
+    AwsAccount:
       type: object
       required:
         - name
@@ -368,7 +427,15 @@ components:
           type: string
           example: conan2.domain.com
 
-    Credential:
+    AwsCredential:
+      anyOf:
+        - $ref: '#/components/schemas/AwsIamKey'
+      discriminator:
+        propertyName: credential_type
+        mapping:
+          iam_key: '#/components/schemas/AwsIamKey'
+
+    AwsIamKey:
       type: object
       required:
         - name
@@ -377,7 +444,7 @@ components:
       additionalProperties:
         type: string
       properties:
-        name:
+        type:
           type: string
           example: IAM key
         aws_access_key_id:
@@ -387,18 +454,15 @@ components:
           type: string
           example: 1234567890abcdefghij
 
-    Credentials:
-      type: array
-      items:
-        $ref: '#/components/schemas/Credential'
-
-    AccountWithCreds:
+    AwsAccountWithCreds:
       allOf:
-        - $ref: '#/components/schemas/Account'
+        - $ref: '#/components/schemas/AwsAccount'
         - type: object
           properties:
             credentials:
-              $ref: '#/components/schemas/Credentials'
+              type: array
+              items:
+                $ref: '#/components/schemas/AwsCredential'
 
     Accounts:
       type: array
@@ -409,6 +473,11 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/AccountWithCreds'
+
+    ResourcesWithCreds:
+      type: array
+      items:
+        $ref: '#/components/schemas/ResourceWithCreds'
 
     Placements:
       type: array
