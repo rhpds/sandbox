@@ -9,9 +9,9 @@ servers:
   - url: http://localhost:8080/api/v1
 tags:
   - name: placement
-    description: anything related to Placements. Ex, booking or releasing sandboxes
+    description: Anything related to Placements. Ex, booking or releasing sandboxes
   - name: account
-    description: anything related to Accounts.
+    description: Anything related to Accounts.
   - name: cleanup
     description: Related to cleanup. Usually manual or override operations.
   - name: protected
@@ -73,14 +73,14 @@ paths:
       tags:
         - placement
       requestBody:
-        description: JSON object to specify UUID and other annotations when booking a sandbox.
+        description: JSON object to specify UUID and other annotations when requesting a resource.
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/BookQuery"
+              $ref: "#/components/schemas/PlacementRequest"
       responses:
         '200':
-          description: The Placement given, containing the sandbox that can be used.
+          description: The Placement given, containing the resource(s) that can be used.
           content:
             application/json:
               schema:
@@ -143,11 +143,14 @@ paths:
         This action will cascade cleanup for all the accounts associated with the placement.
       responses:
         '200':
-          description: The placement assigned to this uuid is deleted. The sandboxes associated to this placement are marked for cleanup. The sandboxes marked for cleanup are returned in the response.
+          description: The placement assigned to this uuid is deleted. The resources associated with this placement are marked for cleanup.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Accounts"
+                $ref: "#/components/schemas/Message"
+              example:
+                message: Placement successfuly deleted
+
         '404':
           description: deletePlacement Placement not found
           content:
@@ -168,6 +171,13 @@ paths:
         description: Boolean to filter if available or taken.
         schema:
           type: boolean
+      - name: cloud
+        in: query
+        description: Filter accounts by cloud
+        schema:
+          type: string
+          example: aws
+          default: aws
     get:
       tags:
         - account
@@ -240,7 +250,7 @@ paths:
         If the sandbox is part of a placement, the corresponding placement will be updated:
           - The sandbox is removed from the placement.
 
-        The placement is automatically deleted if there is no more sandboxes.
+        The placement is automatically deleted if there is no more resources.
       responses:
         '200':
           description: The account is marked for cleanup.
@@ -269,7 +279,7 @@ components:
       description: The UUID of the service. Sandboxes are assigned uuid when booked.
       format: uuid
 
-    BookQuery:
+    PlacementRequest:
       type: object
       required:
         - uuid
