@@ -12,10 +12,6 @@ tags:
     description: Anything related to Placements. Ex, booking or releasing sandboxes
   - name: account
     description: Anything related to Accounts.
-  - name: cleanup
-    description: Related to cleanup. Usually manual or override operations.
-  - name: protected
-    description: Protected endpoints, only accessible to admin or infra admins
 paths:
   /placements:
     get:
@@ -51,7 +47,6 @@ paths:
               - second
       tags:
         - placement
-        - protected
       operationId: getPlacements
       summary: Get all placements
       responses:
@@ -80,7 +75,7 @@ paths:
               $ref: "#/components/schemas/PlacementRequest"
       responses:
         '200':
-          description: The Placement given, containing the resource(s) that can be used.
+          description: The Placement, containing the allocated resource(s), with credentials.
           content:
             application/json:
               schema:
@@ -134,7 +129,6 @@ paths:
     delete:
       tags:
         - placement
-        - cleanup
       operationId: deletePlacement
       summary: Delete the placement assigned to a specific uuid.
       description: |-
@@ -181,7 +175,6 @@ paths:
     get:
       tags:
         - account
-        - protected
       operationId: getAccounts
       summary: Get all accounts
       responses:
@@ -241,7 +234,6 @@ paths:
           type: string
     put:
       tags:
-        - cleanup
         - account
       operationId: markForCleanup
       summary: Manually mark a sandbox (account) for cleanup.
