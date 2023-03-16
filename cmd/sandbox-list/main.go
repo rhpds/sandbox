@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
-	"github.com/rhpds/sandbox/internal/account"
+	"github.com/rhpds/sandbox/internal/models"
 	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"github.com/rhpds/sandbox/internal/log"
 )
@@ -29,7 +29,7 @@ var Version = "development"
 var buildTime = "undefined"
 var buildCommit = "HEAD"
 
-type accountPrint account.Account
+type accountPrint models.AwsAccount
 
 func (a accountPrint) String() string {
 	var separator string
@@ -146,9 +146,9 @@ func parseFlags() {
 	}
 }
 
-func printMostRecentlyUsed(accounts []account.Account) {
+func printMostRecentlyUsed(accounts []models.AwsAccount) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, padding, ' ', 0)
-	m := account.SortAccounts("UpdateTime", account.Used(accounts))
+	m := models.SortAccounts("UpdateTime", models.Used(accounts))
 
 	fmt.Println()
 	fmt.Println("# Most recently used sandboxes")
@@ -160,8 +160,8 @@ func printMostRecentlyUsed(accounts []account.Account) {
 	w.Flush()
 }
 
-func printOldest(accounts []account.Account) {
-	m := account.SortAccounts("UpdateTime", account.Used(accounts))
+func printOldest(accounts []models.AwsAccount) {
+	m := models.SortAccounts("UpdateTime", models.Used(accounts))
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, padding, ' ', 0)
 
 	fmt.Println()
@@ -174,7 +174,7 @@ func printOldest(accounts []account.Account) {
 	w.Flush()
 }
 
-func printBroken(accounts []account.Account) {
+func printBroken(accounts []models.AwsAccount) {
 	m := []string{}
 	for _, sandbox := range accounts {
 		if sandbox.AwsAccessKeyID == "" {
@@ -231,7 +231,7 @@ func main() {
 		log.Err.Fatal(err)
 	}
 
-	accounts = account.SortAccounts(sortFlag, accounts)
+	accounts = models.SortAccounts(sortFlag, accounts)
 
 	if allFlag || toCleanupFlag {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, padding, ' ', 0)
@@ -243,7 +243,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	usedAccounts := account.Used(accounts)
+	usedAccounts := models.Used(accounts)
 	fmt.Println()
 	fmt.Println("Total Used:", len(usedAccounts), "/", len(accounts))
 

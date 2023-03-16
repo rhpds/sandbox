@@ -314,15 +314,19 @@ components:
       required:
         - uuid
         - resources
-        - creation_timestamp
         - annotations
       properties:
         uuid:
           $ref: "#/components/schemas/UUID"
         resources:
           $ref: "#/components/schemas/Resources"
-        creation_timestamp:
+        created_at:
           description: The date (UTC and RFC3339 format) the placement was made.
+          type: string
+          format: date-time
+          example: 2023-03-13T09:42:33+01:00
+        updated_at:
+          description: The date (UTC and RFC3339 format) the placement was last updated.
           type: string
           format: date-time
           example: 2023-03-13T09:42:33+01:00
@@ -379,10 +383,6 @@ components:
       items:
         anyOf:
           - $ref: '#/components/schemas/AwsCredential'
-      discriminator:
-        propertyName: credential_type
-        mapping:
-          aws: '#/components/schemas/AwsCredential'
 
     AwsAccount:
       type: object

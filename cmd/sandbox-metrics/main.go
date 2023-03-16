@@ -6,7 +6,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rhpds/sandbox/internal/account"
+	"github.com/rhpds/sandbox/internal/models"
 	"github.com/rhpds/sandbox/internal/log"
 	"net/http"
 	"os"
@@ -70,8 +70,8 @@ func createMetrics() {
 			if err != nil {
 				log.Err.Fatal(err)
 			}
-			used.Set(float64(account.CountUsed(accounts)))
-			toCleanup.Set(float64(account.CountToCleanup(accounts)))
+			used.Set(float64(models.CountUsed(accounts)))
+			toCleanup.Set(float64(models.CountToCleanup(accounts)))
 			total.Set(float64(len(accounts)))
 			gaugeVec.Reset()
 			for _, sandbox := range accounts {
@@ -98,24 +98,12 @@ func createMetrics() {
 		}
 	}()
 }
-func checkEnv() {
-	if os.Getenv("AWS_PROFILE") == "" &&  os.Getenv("AWS_ACCESS_KEY_ID") == "" {
-		log.Err.Fatal("You must define env var AWS_PROFILE or AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY")
-	}
-	if os.Getenv("AWS_PROFILE") != "" &&  os.Getenv("AWS_ACCESS_KEY_ID") != "" {
-		log.Err.Fatal("You must chose between AWS_PROFILE and AWS_ACCESS_KEY_ID")
-	}
-
-	if os.Getenv("AWS_REGION") == "" {
-		os.Setenv("AWS_REGION", "us-east-1")
-	}
-}
 
 func main() {
 	parseFlags()
 	log.InitLoggers(debugFlag)
 
-	checkEnv()
+	sandboxdb.CheckEnv()
 
 	createMetrics()
 
