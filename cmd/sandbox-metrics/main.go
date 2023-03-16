@@ -6,11 +6,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rhpds/aws-sandbox/internal/account"
-	"github.com/rhpds/aws-sandbox/internal/log"
+	"github.com/rhpds/sandbox/internal/account"
+	"github.com/rhpds/sandbox/internal/log"
 	"net/http"
 	"os"
-	sandboxdb "github.com/rhpds/aws-sandbox/internal/dynamodb"
+	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"time"
 )
 

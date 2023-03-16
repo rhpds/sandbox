@@ -20,12 +20,14 @@ mv aws-nuke-v2.19.0-linux-amd64 /usr/bin/
 ln -s /usr/bin/aws-nuke-v2.19.0-linux-amd64 /usr/bin/aws-nuke
 mv rush /usr/bin/
 
-sudo -u opentlc-mgr git clone https://github.com/rhpds/aws-sandbox.git ~opentlc-mgr/pool_management/aws-sandbox
+sudo -u opentlc-mgr git clone https://github.com/rhpds/sandbox.git ~opentlc-mgr/pool_management/sandbox
+# Create symlink to sandbox (compatibility with old scripts)
+sudo -u opentlc-mgr ln -s ~opentlc-mgr/pool_management/sandbox/ ~opentlc-mgr/pool_management/aws-sandbox
 
 echo "Edit ~opentlc-mgr/.aws/credentials"
 echo "Setup IPA access (ipa-client-install)"
 echo "copy secret: hostadmin.keytab into ~opentlc-mgr/secrets/"
 echo "copy secret: infra-sandbox-vault into ~opentlc-mgr/secrets/"
 
-sudo cp ~opentlc-mgr/pool_management/aws-sandbox/conan/conan.service /etc/systemd/system/
+sudo cp ~opentlc-mgr/pool_management/sandbox/conan/conan.service /etc/systemd/system/
 sudo systemctl daemon-reload

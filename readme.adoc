@@ -15,7 +15,7 @@ go build ./cmd/sandbox-metrics
 . clone this repository
 +
 ----
-git clone --depth 1 https://github.com/rhpds/aws-sandbox aws-sandbox
+git clone --depth 1 https://github.com/rhpds/sandbox sandbox
 ----
 . If it doesn't exist yet, create an IAM user in AWS to read-only access to dynamoDB
 . Create the secret file containing the key for the IAM user that has read-only access to DynamoDB
@@ -31,13 +31,13 @@ aws_sandbox_metrics_ecrets:
 . Install the helm chart
 +
 ----
-helm install  aws-sandbox-metrics aws-sandbox/deploy/helm-metrics/ -f aws_sandbox_readonly.yaml
+helm install  sandbox-metrics sandbox/deploy/helm-metrics/ -f aws_sandbox_readonly.yaml
 ----
 +
 Output should look like:
 +
 ----
-NAME: aws-sandbox-metrics
+NAME: sandbox-metrics
 LAST DEPLOYED: Thu Jun 17 09:30:04 2021
 NAMESPACE: user-gucore-redhat-com
 STATUS: deployed

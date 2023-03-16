@@ -3,7 +3,7 @@
 .on admin host
 ----
 [opentlc-mgr@admin (PROD) ~]$ . ~/pool_management/python_virtualenv/bin/activate
-(python_virtualenv) [opentlc-mgr@admin (PROD) ~]$ cd pool_management/aws-sandbox/playbooks
+(python_virtualenv) [opentlc-mgr@admin (PROD) ~]$ cd pool_management/sandbox/playbooks
 
 # .create 10 AWS sandbox accounts: sandbox3001 .. sandbox3010
 ./create_range.yml -e account_num_start=3001 -e account_count=10

@@ -1,7 +1,7 @@
 [Unit]
 Description=Conan the Destroyer of sandboxes (DEV)
 After=network-online.target
-Documentation=https://github.com/rhpds/aws-sandbox/tree/main/conan
+Documentation=https://github.com/rhpds/sandbox/tree/main/conan
 
 [Service]
 Environment=threads=2
@@ -14,7 +14,7 @@ Environment=noop=true
 User=opentlc-mgr
 Group=opentlc-mgr
 Type=simple
-ExecStart=/bin/bash /home/opentlc-mgr/pool_management/aws-sandbox/conan/conan.sh
+ExecStart=/bin/bash /home/opentlc-mgr/pool_management/sandbox/conan/conan.sh
 Restart=on-failure
 StartLimitBurst=3
 StartLimitInterval=60s
