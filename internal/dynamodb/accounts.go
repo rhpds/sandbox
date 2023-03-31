@@ -16,20 +16,7 @@ import (
 	"errors"
 )
 
-var svc *dynamodb.DynamoDB
-
 var ErrAccountNotFound = errors.New("account not found")
-
-// SetSession returns the current session
-func SetSession() *dynamodb.DynamoDB {
-	svc = dynamodb.New(session.New())
-	return svc
-}
-
-// GetSession returns the current session
-func GetSession() *dynamodb.DynamoDB {
-	return svc
-}
 
 func parseNameInt(s string) int {
 	var result strings.Builder
@@ -67,8 +54,18 @@ func BuildAccounts(r *dynamodb.ScanOutput) []models.AwsAccount {
 }
 
 
-// GetAccount return an account from dynamodb
-func GetAccount(name string) (models.AwsAccount, error) {
+
+type AwsAccountDynamoDBRepository struct {
+	svc *dynamodb.DynamoDB
+}
+
+func NewAwsAccountDynamoDBRepository() *AwsAccountDynamoDBRepository {
+	return &AwsAccountDynamoDBRepository{
+		svc: dynamodb.New(session.Must(session.NewSession())),
+	}
+}
+
+func (a *AwsAccountDynamoDBRepository) GetAccount(name string) (models.AwsAccount, error) {
 	sandbox := models.AwsAccount{Name: name}
 
 	// Build the Get query input parameters
@@ -82,7 +79,7 @@ func GetAccount(name string) (models.AwsAccount, error) {
 	}
 
 	// Get the item from the table
-	output, errget := svc.GetItem(input)
+	output, errget := a.svc.GetItem(input)
 
 	if errget != nil {
 		if aerr, ok := errget.(awserr.Error); ok {
@@ -121,7 +118,20 @@ func GetAccount(name string) (models.AwsAccount, error) {
 }
 
 // GetAccounts returns the list of accounts from dynamodb
-func GetAccounts(filters []expression.ConditionBuilder) ([]models.AwsAccount, error) {
+func (a *AwsAccountDynamoDBRepository) GetAccounts() ([]models.AwsAccount, error) {
+	filters := []expression.ConditionBuilder{}
+	return getAccounts(a.svc, filters)
+}
+
+// GetAccountsToCleanup returns the list of accounts from dynamodb
+func (a *AwsAccountDynamoDBRepository) GetAccountsToCleanup() ([]models.AwsAccount, error) {
+	filters := []expression.ConditionBuilder{}
+	filter := expression.Name("to_cleanup").Equal(expression.Value(true))
+	filters = append(filters, filter)
+	return getAccounts(a.svc, filters)
+}
+
+func getAccounts(svc *dynamodb.DynamoDB,filters []expression.ConditionBuilder) ([]models.AwsAccount, error) {
 	accounts := []models.AwsAccount{}
 
 	// Build dynamod query

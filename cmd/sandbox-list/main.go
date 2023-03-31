@@ -9,10 +9,9 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
-	"github.com/rhpds/sandbox/internal/models"
 	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"github.com/rhpds/sandbox/internal/log"
+	"github.com/rhpds/sandbox/internal/models"
 )
 
 var csvFlag bool
@@ -55,7 +54,7 @@ func (a accountPrint) String() string {
 
 	var toCleanupString string
 	/* Do not write true | false to not break current scripts that filter
-           using true|false on the whole line */
+	   using true|false on the whole line */
 	if a.ToCleanup {
 		if a.ConanStatus == "cleanup in progress" {
 			toCleanupString = fmt.Sprintf("IN_PROGRESS (%s)", a.ConanHostname)
@@ -218,17 +217,22 @@ func main() {
 	if os.Getenv("dynamodb_table") == "" {
 		os.Setenv("dynamodb_table", "accounts")
 	}
-	sandboxdb.SetSession()
 
-	filters := []expression.ConditionBuilder{}
+	accountRepo := sandboxdb.NewAwsAccountDynamoDBRepository()
+
+	var accounts []models.AwsAccount
+	var err error
+
 	if toCleanupFlag {
-		filt := expression.Name("to_cleanup").Equal(expression.Value(true))
-		filters = append(filters, filt)
-	}
-
-	accounts, err := sandboxdb.GetAccounts(filters)
-	if err != nil {
-		log.Err.Fatal(err)
+		accounts, err = accountRepo.GetAccountsToCleanup()
+		if err != nil {
+			log.Err.Fatal(err)
+		}
+	} else {
+		accounts, err = accountRepo.GetAccounts()
+		if err != nil {
+			log.Err.Fatal(err)
+		}
 	}
 
 	accounts = models.SortAccounts(sortFlag, accounts)

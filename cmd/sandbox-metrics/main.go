@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -59,14 +58,13 @@ func createMetrics() {
 		Help: "Total accounts",
 	})
 
-	sandboxdb.SetSession()
+	accountRepo := sandboxdb.NewAwsAccountDynamoDBRepository()
 
 	// Update metrics every 30 seconds
 	go func() {
 		for {
 			// no filter, we grab all accounts at once, then we filter because the DB is not that big.
-			filters := []expression.ConditionBuilder{}
-			accounts, err := sandboxdb.GetAccounts(filters)
+			accounts, err := accountRepo.GetAccounts()
 			if err != nil {
 				log.Err.Fatal(err)
 			}

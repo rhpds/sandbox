@@ -8,11 +8,12 @@ import (
 	"github.com/rhpds/sandbox/internal/api/v1"
 	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"github.com/rhpds/sandbox/internal/log"
+	"github.com/rhpds/sandbox/internal/models"
 
 	"context"
-	"github.com/jackc/pgx/v4/pgxpool"
-	"golang.org/x/exp/slog"
 	"os"
+
+	"github.com/jackc/pgx/v4/pgxpool"
 )
 
 func healthHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
@@ -25,9 +26,19 @@ func checkEnv() error {
 	return nil
 }
 
+type BaseHandler struct {
+	accountRepo models.AwsAccountRepository
+}
+
+func NewBaseHandler(accountRepo models.AwsAccountRepository) *BaseHandler {
+	return &BaseHandler{
+		accountRepo: accountRepo,
+	}
+}
+
 // GetAccountHandler returns an account
 // GET /account
-func GetAccountHandler(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (h *BaseHandler) GetAccountHandler(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", " ")
@@ -36,7 +47,7 @@ func GetAccountHandler(w http.ResponseWriter, r *http.Request, p httprouter.Para
 	accountName := p.ByName("account")
 
 	// Get the account from DynamoDB
-	sandbox, err := sandboxdb.GetAccount(accountName)
+	sandbox, err := h.accountRepo.GetAccount(accountName)
 	if err != nil {
 		if err == sandboxdb.ErrAccountNotFound {
 			log.Logger.Warn("GET account", err)
@@ -96,15 +107,18 @@ func main() {
 	}
 	defer dbPool.Close()
 
-	// Legacy DB, DynamoDB
+	// DynamoDB
 	sandboxdb.CheckEnv()
-	sandboxdb.SetSession()
+	accountRepo := sandboxdb.NewAwsAccountDynamoDBRepository()
+	getAccountHandler := NewBaseHandler(accountRepo).GetAccountHandler
+
+	// GetAccountHandler using DynamoDB
 
 	// HTTP router
 	router := httprouter.New()
 
 	router.GET("/health", healthHandler)
-	router.GET("/account/:account", GetAccountHandler)
+	router.GET("/account/:account", getAccountHandler)
 	router.GET("/placements", GetPlacementsHandler)
 
 	log.Err.Fatal(http.ListenAndServe(":8080", router))

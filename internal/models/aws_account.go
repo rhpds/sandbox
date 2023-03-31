@@ -29,9 +29,12 @@ type AwsAccount struct {
 	ConanHostname      string  `json:"conan_hostname"`
 }
 
+// AwsAccountRepository interface to interact with different databases:
+// dynamodb and postgresql
 type AwsAccountRepository interface {
-	GetAll() ([]AwsAccount, error)
-	FindByName(name string) (AwsAccount, error)
+	GetAccount(name string) (AwsAccount, error)
+	GetAccounts() ([]AwsAccount, error)
+	GetAccountsToCleanup() ([]AwsAccount, error)
 }
 
 // Used return the account in use
