@@ -344,6 +344,7 @@ components:
     Account:
       oneOf:
         - $ref: '#/components/schemas/AwsAccount'
+        - $ref: '#/components/schemas/AzureAccount'
       discriminator:
         propertyName: account_type
         mapping:
@@ -358,6 +359,21 @@ components:
           aws: '#/components/schemas/AwsAccountWithCreds'
 
     Resource:
+      type: object
+      required:
+        - available
+        - to_cleanup
+      properties:
+        to_cleanup:
+          description: True if the resource is marked for cleanup
+          type: boolean
+          default: false
+          example: false
+        available:
+          description: True if the resource has no placement associated.
+          type: boolean
+          default: true
+          example: false
       oneOf:
         - $ref: '#/components/schemas/Account'
       discriminator:
@@ -383,12 +399,21 @@ components:
       items:
         anyOf:
           - $ref: '#/components/schemas/AwsCredential'
+      discriminator:
+        propertyName: credential_type
+        mapping:
+          aws: '#/components/schemas/AwsCredential'
 
+    AzureAccount:
+      type: object
+      properties:
+        name:
+          type: string
+          example: sandbox123
     AwsAccount:
       type: object
       required:
         - name
-        - available
         - account_id
         - zone
         - hosted_zone_id
@@ -396,11 +421,6 @@ components:
         name:
           type: string
           example: sandbox123
-        available:
-          description: True if the sandbox has no placement associated.
-          type: boolean
-          default: true
-          example: false
         service_uuid:
           $ref: '#/components/schemas/UUID'
         annotations:
@@ -435,7 +455,7 @@ components:
       discriminator:
         propertyName: credential_type
         mapping:
-          iam_key: '#/components/schemas/AwsIamKey'
+          aws_iam_key: '#/components/schemas/AwsIamKey'
 
     AwsIamKey:
       type: object
@@ -446,7 +466,7 @@ components:
       additionalProperties:
         type: string
       properties:
-        type:
+        name:
           type: string
           example: IAM key
         aws_access_key_id:

@@ -7,27 +7,29 @@ import (
 
 type AwsAccount struct {
 	Name               string  `json:"name"`
-	// NameInt: Internal plumbing to easily sort Sandboxes
-	NameInt			   int
-	Available          bool    `json:"available"`
-	Guid               string  `json:"guid"`
-	ServiceUUID        string  `json:"service_uuid"`
-	Envtype            string  `json:"envtype"`
 	AccountID          string  `json:"account_id"`
-	Owner              string  `json:"owner"`
-	OwnerEmail         string  `json:"owner_email"`
 	Zone               string  `json:"zone"`
 	HostedZoneID       string  `json:"hosted_zone_id"`
-	UpdateTime         float64 `json:"aws:rep:updatetime"`
-	Comment            string  `json:"comment"`
+}
+
+type AwsAccountWithCreds struct {
+	AwsAccount
+
+	Credentials []AwsCredential `json:"credentials"`
+}
+
+type AwsCredential struct {
+	CredentialType string `json:"credential_type"`
+
+	AwsIamKey // CredentialType == "aws_iam_key"
+}
+
+type AwsIamKey struct {
+	Name		string `json:"name"`
 	AwsAccessKeyID     string  `json:"aws_access_key_id"`
 	AwsSecretAccessKey string  `json:"aws_secret_access_key"`
-	// Conan
-	ToCleanup          bool    `json:"to_cleanup"`
-	ConanStatus        string  `json:"conan_status"`
-	ConanTimestamp     string  `json:"conan_timestamp"`
-	ConanHostname      string  `json:"conan_hostname"`
 }
+
 
 // AwsAccountRepository interface to interact with different databases:
 // dynamodb and postgresql

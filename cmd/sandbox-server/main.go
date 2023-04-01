@@ -1,14 +1,11 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/julienschmidt/httprouter"
-	"github.com/rhpds/sandbox/internal/api/v1"
 	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"github.com/rhpds/sandbox/internal/log"
-	"github.com/rhpds/sandbox/internal/models"
 
 	"context"
 	"os"
@@ -16,74 +13,12 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 )
 
-func healthHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-
-}
-
 // checkEnv checks that the environment variables are set correctly
 // and returns an error if not.
 func checkEnv() error {
 	return nil
 }
 
-type BaseHandler struct {
-	accountRepo models.AwsAccountRepository
-}
-
-func NewBaseHandler(accountRepo models.AwsAccountRepository) *BaseHandler {
-	return &BaseHandler{
-		accountRepo: accountRepo,
-	}
-}
-
-// GetAccountHandler returns an account
-// GET /account
-func (h *BaseHandler) GetAccountHandler(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	w.Header().Set("Content-Type", "application/json")
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", " ")
-
-	// Grab the parameters from Params
-	accountName := p.ByName("account")
-
-	// Get the account from DynamoDB
-	sandbox, err := h.accountRepo.GetAccount(accountName)
-	if err != nil {
-		if err == sandboxdb.ErrAccountNotFound {
-			log.Logger.Warn("GET account", err)
-			w.WriteHeader(http.StatusNotFound)
-			enc.Encode(v1.Error{
-				Code:    http.StatusNotFound,
-				Message: "Account not found",
-			})
-			return
-		}
-		log.Logger.Error("GET account", err)
-
-		w.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(v1.Error{
-			Code:    500,
-			Message: "Error reading account",
-		})
-		return
-	}
-	// Print account using JSON
-	if err := enc.Encode(sandbox); err != nil {
-		log.Logger.Error("GET account", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(v1.Error{
-			Code:    500,
-			Message: "Error reading account",
-		})
-	}
-}
-
-func GetPlacementsHandler(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	w.Header().Set("Content-Type", "application/json")
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", " ")
-
-}
 
 func main() {
 	log.InitLoggers(false)
@@ -96,13 +31,18 @@ func main() {
 		log.Logger.Error("DATABASE_URL environment variable not set")
 		os.Exit(1)
 	}
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
 
 	connStr := os.Getenv("DB_CONNECTION")
 
-	// New DB, postgresql
+	// Postgresql
 	dbPool, err := pgxpool.Connect(context.Background(), connStr)
 	if err != nil {
-		log.Logger.Error("Error opening database connection", err)
+		log.Logger.Error("Error opening database connection", "error", err)
 		os.Exit(1)
 	}
 	defer dbPool.Close()
@@ -110,16 +50,26 @@ func main() {
 	// DynamoDB
 	sandboxdb.CheckEnv()
 	accountRepo := sandboxdb.NewAwsAccountDynamoDBRepository()
-	getAccountHandler := NewBaseHandler(accountRepo).GetAccountHandler
 
-	// GetAccountHandler using DynamoDB
+	// Pass dynamodDB "repository" which implements the AwsAccountRepository interface
+	// to the handler maker.
+	// When we need to migrate to Postgresql, we can pass a different "repository" which will
+	// implement the same interface.
+	accountHandler := NewAccountHandler(accountRepo)
+
+	// Factory for handlers which need connections to both databases
+	baseHandler := NewBaseHandler(accountRepo.Svc, dbPool)
 
 	// HTTP router
 	router := httprouter.New()
 
-	router.GET("/health", healthHandler)
-	router.GET("/account/:account", getAccountHandler)
+	router.GET("/health", baseHandler.HealthHandler)
+	router.GET("/accounts", accountHandler.GetAccountsHandler)
+	router.GET("/accounts/:account", accountHandler.GetAccountHandler)
 	router.GET("/placements", GetPlacementsHandler)
 
-	log.Err.Fatal(http.ListenAndServe(":8080", router))
+	log.Logger.Info("Listening on port " + port)
+
+	// Main server loop
+	log.Err.Fatal(http.ListenAndServe(":"+port, router))
 }

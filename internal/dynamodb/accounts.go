@@ -33,6 +33,31 @@ func parseNameInt(s string) int {
 	return resultI
 }
 
+// Internal Type to represent the dynamodb table
+type AwsAccountDynamoDB struct {
+	Name               string  `json:"name"`
+	// NameInt: Internal plumbing to easily sort Sandboxes
+	NameInt			   int
+	Available          bool    `json:"available"`
+	Guid               string  `json:"guid"`
+	ServiceUUID        string  `json:"service_uuid"`
+	Envtype            string  `json:"envtype"`
+	AccountID          string  `json:"account_id"`
+	Owner              string  `json:"owner"`
+	OwnerEmail         string  `json:"owner_email"`
+	Zone               string  `json:"zone"`
+	HostedZoneID       string  `json:"hosted_zone_id"`
+	UpdateTime         float64 `json:"aws:rep:updatetime"`
+	Comment            string  `json:"comment"`
+	AwsAccessKeyID     string  `json:"aws_access_key_id"`
+	AwsSecretAccessKey string  `json:"aws_secret_access_key"`
+	// Conan
+	ToCleanup          bool    `json:"to_cleanup"`
+	ConanStatus        string  `json:"conan_status"`
+	ConanTimestamp     string  `json:"conan_timestamp"`
+	ConanHostname      string  `json:"conan_hostname"`
+}
+
 // BuildAccounts returns the list of accounts from dynamodb scan output
 func BuildAccounts(r *dynamodb.ScanOutput) []models.AwsAccount {
 	accounts := []models.AwsAccount{}
@@ -56,12 +81,12 @@ func BuildAccounts(r *dynamodb.ScanOutput) []models.AwsAccount {
 
 
 type AwsAccountDynamoDBRepository struct {
-	svc *dynamodb.DynamoDB
+	Svc *dynamodb.DynamoDB
 }
 
 func NewAwsAccountDynamoDBRepository() *AwsAccountDynamoDBRepository {
 	return &AwsAccountDynamoDBRepository{
-		svc: dynamodb.New(session.Must(session.NewSession())),
+		Svc: dynamodb.New(session.Must(session.NewSession())),
 	}
 }
 
@@ -79,7 +104,7 @@ func (a *AwsAccountDynamoDBRepository) GetAccount(name string) (models.AwsAccoun
 	}
 
 	// Get the item from the table
-	output, errget := a.svc.GetItem(input)
+	output, errget := a.Svc.GetItem(input)
 
 	if errget != nil {
 		if aerr, ok := errget.(awserr.Error); ok {
@@ -120,7 +145,7 @@ func (a *AwsAccountDynamoDBRepository) GetAccount(name string) (models.AwsAccoun
 // GetAccounts returns the list of accounts from dynamodb
 func (a *AwsAccountDynamoDBRepository) GetAccounts() ([]models.AwsAccount, error) {
 	filters := []expression.ConditionBuilder{}
-	return getAccounts(a.svc, filters)
+	return getAccounts(a.Svc, filters)
 }
 
 // GetAccountsToCleanup returns the list of accounts from dynamodb
@@ -128,7 +153,7 @@ func (a *AwsAccountDynamoDBRepository) GetAccountsToCleanup() ([]models.AwsAccou
 	filters := []expression.ConditionBuilder{}
 	filter := expression.Name("to_cleanup").Equal(expression.Value(true))
 	filters = append(filters, filter)
-	return getAccounts(a.svc, filters)
+	return getAccounts(a.Svc, filters)
 }
 
 func getAccounts(svc *dynamodb.DynamoDB,filters []expression.ConditionBuilder) ([]models.AwsAccount, error) {
