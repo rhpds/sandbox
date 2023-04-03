@@ -1,6 +1,6 @@
 module github.com/rhpds/sandbox
 
-go 1.18
+go 1.19
 
 require (
 	github.com/aws/aws-sdk-go v1.38.60

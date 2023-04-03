@@ -1,5 +1,5 @@
 #+title: Todo
 
 * TODO migration inside the app
-* TODO add credential type
+* DONE add credential type
 * TODO add AccountWithCreds

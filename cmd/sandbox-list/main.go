@@ -37,19 +37,13 @@ func (a accountPrint) String() string {
 	} else {
 		separator = "\t"
 	}
-	ti, err := strconv.ParseInt(strconv.FormatFloat(a.UpdateTime, 'f', 0, 64), 10, 64)
-	if err != nil {
-		panic(err)
-	}
-
-	updatetime := time.Unix(ti, 0)
-	diff := time.Now().Sub(updatetime)
+	diff := time.Now().Sub(a.UpdatedAt)
 
 	var supdatetime string
 	if csvFlag {
-		supdatetime = updatetime.Format(time.RFC3339)
+		supdatetime = a.UpdatedAt.Format(time.RFC3339)
 	} else {
-		supdatetime = fmt.Sprintf("%s (%dd)", updatetime.Format("2006-01-02 15:04"), int(diff.Hours()/24))
+		supdatetime = fmt.Sprintf("%s (%dd)", a.UpdatedAt.Format("2006-01-02 15:04"), int(diff.Hours()/24))
 	}
 
 	var toCleanupString string
@@ -68,17 +62,17 @@ func (a accountPrint) String() string {
 	return strings.Join([]string{
 		a.Name,
 		strconv.FormatBool(a.Available),
-		a.Guid,
-		a.Envtype,
+		a.Annotations["guid"],
+		a.Annotations["env_type"],
 		a.AccountID,
-		a.Owner,
-		a.OwnerEmail,
+		a.Annotations["owner"],
+		a.Annotations["owner_email"],
 		a.Zone,
 		a.HostedZoneID,
 		supdatetime,
-		a.ServiceUUID,
+		a.ServiceUuid,
 		toCleanupString,
-		a.Comment,
+		a.Annotations["comment"],
 	}, separator)
 }
 
@@ -147,7 +141,7 @@ func parseFlags() {
 
 func printMostRecentlyUsed(accounts []models.AwsAccount) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, padding, ' ', 0)
-	m := models.SortAccounts("UpdateTime", models.Used(accounts))
+	m := models.Sort(models.Used(accounts), "UpdateTime")
 
 	fmt.Println()
 	fmt.Println("# Most recently used sandboxes")
@@ -160,7 +154,7 @@ func printMostRecentlyUsed(accounts []models.AwsAccount) {
 }
 
 func printOldest(accounts []models.AwsAccount) {
-	m := models.SortAccounts("UpdateTime", models.Used(accounts))
+	m := models.Sort(models.Used(accounts), "UpdateTime")
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, padding, ' ', 0)
 
 	fmt.Println()
@@ -176,20 +170,11 @@ func printOldest(accounts []models.AwsAccount) {
 func printBroken(accounts []models.AwsAccount) {
 	m := []string{}
 	for _, sandbox := range accounts {
-		if sandbox.AwsAccessKeyID == "" {
-			m = append(m, fmt.Sprintf("%v %v\n", accountPrint(sandbox), "Access key missing"))
-		}
-		if sandbox.AwsSecretAccessKey == "" {
-			m = append(m, fmt.Sprintf("%v %v\n", accountPrint(sandbox), "Access secret key missing"))
-		}
 		if sandbox.Zone == "" {
 			m = append(m, fmt.Sprintf("%v %v\n", accountPrint(sandbox), "Zone missing"))
 		}
 		if sandbox.HostedZoneID == "" {
 			m = append(m, fmt.Sprintf("%v %v\n", accountPrint(sandbox), "HostedZoneId missing"))
-		}
-		if !sandbox.Available && sandbox.Owner == "" && sandbox.OwnerEmail == "" {
-			m = append(m, fmt.Sprintf("%v %v\n", accountPrint(sandbox), "Owner missing"))
 		}
 	}
 	if len(m) > 0 {
@@ -218,24 +203,28 @@ func main() {
 		os.Setenv("dynamodb_table", "accounts")
 	}
 
-	accountRepo := sandboxdb.NewAwsAccountDynamoDBRepository()
+	accountProvider := sandboxdb.NewAwsAccountDynamoDBProvider()
 
 	var accounts []models.AwsAccount
 	var err error
 
 	if toCleanupFlag {
-		accounts, err = accountRepo.GetAccountsToCleanup()
+		accounts, err = accountProvider.FetchAllToCleanup()
 		if err != nil {
 			log.Err.Fatal(err)
 		}
 	} else {
-		accounts, err = accountRepo.GetAccounts()
+		accounts, err = accountProvider.FetchAll()
 		if err != nil {
 			log.Err.Fatal(err)
 		}
 	}
 
-	accounts = models.SortAccounts(sortFlag, accounts)
+	accounts = models.Sort(accounts, sortFlag)
+
+	if err != nil {
+		log.Err.Fatal(err)
+	}
 
 	if allFlag || toCleanupFlag {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, padding, ' ', 0)

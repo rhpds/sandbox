@@ -19,7 +19,6 @@ func checkEnv() error {
 	return nil
 }
 
-
 func main() {
 	log.InitLoggers(false)
 
@@ -36,8 +35,7 @@ func main() {
 		port = "8080"
 	}
 
-
-	connStr := os.Getenv("DB_CONNECTION")
+	connStr := os.Getenv("DATABASE_URL")
 
 	// Postgresql
 	dbPool, err := pgxpool.Connect(context.Background(), connStr)
@@ -49,16 +47,16 @@ func main() {
 
 	// DynamoDB
 	sandboxdb.CheckEnv()
-	accountRepo := sandboxdb.NewAwsAccountDynamoDBRepository()
+	accountProvider := sandboxdb.NewAwsAccountDynamoDBProvider()
 
-	// Pass dynamodDB "repository" which implements the AwsAccountRepository interface
+	// Pass dynamodDB "Provider" which implements the AwsAccountProvider interface
 	// to the handler maker.
-	// When we need to migrate to Postgresql, we can pass a different "repository" which will
+	// When we need to migrate to Postgresql, we can pass a different "Provider" which will
 	// implement the same interface.
-	accountHandler := NewAccountHandler(accountRepo)
+	accountHandler := NewAccountHandler(accountProvider)
 
 	// Factory for handlers which need connections to both databases
-	baseHandler := NewBaseHandler(accountRepo.Svc, dbPool)
+	baseHandler := NewBaseHandler(accountProvider.Svc, dbPool)
 
 	// HTTP router
 	router := httprouter.New()

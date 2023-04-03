@@ -64,7 +64,7 @@ func (h *BaseHandler) HealthHandler(w http.ResponseWriter, r *http.Request, _ ht
 	log.Logger.Info("Health check", "status", "OK")
 	w.WriteHeader(http.StatusOK)
 	enc.Encode(v1.HealthCheckResult{
-		Code: 200,
+		Code:    200,
 		Message: "OK",
 	})
 }

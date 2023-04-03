@@ -1,18 +1,21 @@
 package log
 
 import (
+	"golang.org/x/exp/slog"
+	"io/ioutil"
 	"log"
 	"os"
-	"io/ioutil"
-	"golang.org/x/exp/slog"
 )
 
 // Err stderr logger
 var Err *log.Logger
+
 // Out stdout logger
 var Out *log.Logger
+
 // Debug stdout verbose logger
 var Debug *log.Logger
+
 // Report stdout logger
 var Report *log.Logger
 

@@ -394,15 +394,18 @@ components:
       items:
         $ref: '#/components/schemas/Resource'
 
-    Credentials:
-      type: array
-      items:
-        anyOf:
-          - $ref: '#/components/schemas/AwsCredential'
+    Credential:
+      oneOf:
+        - $ref: '#/components/schemas/AwsIamKey'
       discriminator:
         propertyName: credential_type
         mapping:
-          aws: '#/components/schemas/AwsCredential'
+          aws_iam_key: '#/components/schemas/AwsIamKey'
+
+    Credentials:
+      type: array
+      items:
+        $ref: '#/components/schemas/Credential'
 
     AzureAccount:
       type: object
@@ -449,14 +452,6 @@ components:
           type: string
           example: conan2.domain.com
 
-    AwsCredential:
-      anyOf:
-        - $ref: '#/components/schemas/AwsIamKey'
-      discriminator:
-        propertyName: credential_type
-        mapping:
-          aws_iam_key: '#/components/schemas/AwsIamKey'
-
     AwsIamKey:
       type: object
       required:
@@ -484,7 +479,7 @@ components:
             credentials:
               type: array
               items:
-                $ref: '#/components/schemas/AwsCredential'
+                $ref: '#/components/schemas/Credentials'
 
     Accounts:
       type: array

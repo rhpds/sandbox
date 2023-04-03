@@ -1,115 +1,89 @@
 package models
+
 import (
+	"github.com/rhpds/sandbox/internal/log"
+	"os"
 	"sort"
-	"time"
 	"strconv"
+	"strings"
+	"time"
 )
 
 type AwsAccount struct {
-	Name               string  `json:"name"`
-	AccountID          string  `json:"account_id"`
-	Zone               string  `json:"zone"`
-	HostedZoneID       string  `json:"hosted_zone_id"`
+	Account // AccountType == "aws"
+
+	Name         string `json:"name"`
+	AccountID    string `json:"account_id"`
+	Zone         string `json:"zone"`
+	HostedZoneID string `json:"hosted_zone_id"`
+
+	ConanStatus    string    `json:"conan_status"`
+	ConanTimestamp time.Time `json:"conan_timestamp"`
+	ConanHostname  string    `json:"conan_hostname"`
 }
 
 type AwsAccountWithCreds struct {
-	AwsAccount
+	AwsAccount // AccountType == "aws"
 
-	Credentials []AwsCredential `json:"credentials"`
-}
-
-type AwsCredential struct {
-	CredentialType string `json:"credential_type"`
-
-	AwsIamKey // CredentialType == "aws_iam_key"
+	Credentials []Credential `json:"credentials"`
 }
 
 type AwsIamKey struct {
-	Name		string `json:"name"`
-	AwsAccessKeyID     string  `json:"aws_access_key_id"`
-	AwsSecretAccessKey string  `json:"aws_secret_access_key"`
+	Credential // CredentialType == "aws_iam_key"
+
+	Name               string `json:"name"`
+	AwsAccessKeyID     string `json:"aws_access_key_id"`
+	AwsSecretAccessKey string `json:"aws_secret_access_key"`
 }
 
-
-// AwsAccountRepository interface to interact with different databases:
+// AwsAccountProvider interface to interact with different databases:
 // dynamodb and postgresql
-type AwsAccountRepository interface {
-	GetAccount(name string) (AwsAccount, error)
-	GetAccounts() ([]AwsAccount, error)
-	GetAccountsToCleanup() ([]AwsAccount, error)
+type AwsAccountProvider interface {
+	FetchByName(name string) (AwsAccount, error)
+	FetchAll() ([]AwsAccount, error)
+	FetchAllToCleanup() ([]AwsAccount, error)
+	FetchAllSorted(by string) ([]AwsAccount, error)
+	//Annotations(account AwsAccount) (map[string]string, error)
 }
 
-// Used return the account in use
-func Used(accounts []AwsAccount) []AwsAccount {
-	r := []AwsAccount{}
-	for _, i := range accounts {
-		if !i.Available {
-			r = append(r, i)
+type Sortable interface {
+	NameInt() int
+	GetUpdatedAt() time.Time
+}
+
+func convertNameToInt(s string) int {
+	var result strings.Builder
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		if '0' <= b && b <= '9' {
+			result.WriteByte(b)
 		}
 	}
-	return r
-}
-
-// CountAvailable return the number of accounts not in use
-func CountAvailable(accounts []AwsAccount) int {
-	total := 0
-
-	for _, sandbox := range accounts {
-		if sandbox.Available {
-			total = total + 1
-		}
+	resultI, err := strconv.Atoi(result.String())
+	if err != nil {
+		log.Logger.Error("Convert name to int", "error", err)
+		os.Exit(1)
 	}
-
-	return total
+	return resultI
 }
 
-// CountUsed return the number of accounts in use
-func CountUsed(accounts []AwsAccount) int {
-	return len(accounts) - CountAvailable(accounts)
+func (a AwsAccount) NameInt() int {
+	return convertNameToInt(a.Name)
 }
 
-// CountToCleanup return the number of accounts to cleanup
-func CountToCleanup(accounts []AwsAccount) int {
-	total := 0
+func (a AwsAccount) GetUpdatedAt() time.Time {
+	return a.UpdatedAt
+}
 
-	for _, sandbox := range accounts {
-		if sandbox.ToCleanup {
-			total = total + 1
+func Sort[T Sortable](accounts []T, by string) []T {
+	sort.SliceStable(accounts, func(i, j int) bool {
+		switch by {
+		case "name":
+			return accounts[i].NameInt() < accounts[j].NameInt()
+		default:
+			return accounts[i].GetUpdatedAt().After(accounts[j].GetUpdatedAt())
 		}
-	}
-
-	return total
-}
-
-// SortAccounts
-func SortAccounts(by string, accounts []AwsAccount) []AwsAccount {
-	_accounts := append([]AwsAccount{}, accounts...)
-
-	sort.SliceStable(_accounts, func(i, j int) bool {
-		if by == "name" {
-			return _accounts[i].NameInt < _accounts[j].NameInt
-		}
-
-		return _accounts[i].UpdateTime > _accounts[j].UpdateTime
-
 	})
-	return _accounts
-}
 
-
-// CountOlder returns the number of accounts in use for more than N day
-func CountOlder(duration time.Duration, accounts []AwsAccount) (int, error) {
-	total := 0
-
-	for _, sandbox := range accounts {
-		ti, err := strconv.ParseInt(strconv.FormatFloat(sandbox.UpdateTime, 'f', 0, 64), 10, 64)
-		return 0, err
-
-		updatetime := time.Unix(ti, 0)
-		if time.Now().Sub(updatetime) < duration {
-			total = total + 1
-		}
-	}
-
-	return total, nil
+	return accounts
 }

@@ -12,12 +12,12 @@ import (
 )
 
 type AccountHandler struct {
-	accountRepo models.AwsAccountRepository
+	accountProvider models.AwsAccountProvider
 }
 
-func NewAccountHandler(accountRepo models.AwsAccountRepository) *AccountHandler {
+func NewAccountHandler(accountProvider models.AwsAccountProvider) *AccountHandler {
 	return &AccountHandler{
-		accountRepo: accountRepo,
+		accountProvider: accountProvider,
 	}
 }
 
@@ -28,7 +28,7 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", " ")
 
-	accounts, err := h.accountRepo.GetAccounts()
+	accounts, err := h.accountProvider.FetchAll()
 
 	if err != nil {
 		log.Logger.Error("GET accounts", "error", err)
@@ -52,7 +52,6 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-
 // GetAccountHandler returns an account
 // GET /accounts/:account
 func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -64,7 +63,7 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 	accountName := p.ByName("account")
 
 	// Get the account from DynamoDB
-	sandbox, err := h.accountRepo.GetAccount(accountName)
+	sandbox, err := h.accountProvider.FetchByName(accountName)
 	if err != nil {
 		if err == sandboxdb.ErrAccountNotFound {
 			log.Logger.Warn("GET account", "error", err)

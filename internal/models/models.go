@@ -1,44 +1,113 @@
 package models
 
+import (
+	"time"
+)
+
 type Model struct {
-	ID         int `json:"id"`
-	CreatedAt  int `json:"created_at"`
-	UpdatedAt int `json:"updated_at"`
+	ID        int       `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type Resource struct {
+	Model
+
 	ResourceType string `json:"resource_type"`
 
 	ServiceUuid string `json:"service_uuid"`
 	Available   bool   `json:"available"`
-	ToCleanup 	bool   `json:"to_cleanup"`
+	ToCleanup   bool   `json:"to_cleanup"`
 
-	Model
-	Account // Resourcetype == "aws"
+	Annotations map[string]string `json:"annotations"`
 }
 
 type ResourceWithCreds struct {
+	Resource
 	ResourceType string `json:"resource_type"`
 
-	Model
-	AccountWithCreds // ResourceType == "aws"
+	Credentials []Credential `json:"credentials"`
 }
 
-
 type Account struct {
-	AccountType string `json:"account_type"`
+	Resource
 
-	AwsAccount // AccountType == "aws"
+	AccountType string `json:"account_type"`
 }
 
 type AccountWithCreds struct {
-	AccountType string `json:"account_type"`
-
-	AwsAccountWithCreds // AccountType == "aws"
+	Account
+	AccountType string       `json:"account_type"`
+	Credentials []Credential `json:"credentials"`
 }
 
 type Credential struct {
 	CredentialType string `json:"credential_type"`
+}
 
-	AwsCredential // CredentialType == "aws"
+type AvailabilityMarker interface {
+	isAvailable() bool
+	markedForCleanup() bool
+}
+
+func (r Resource) isAvailable() bool {
+	return r.Available
+}
+func (r Resource) markedForCleanup() bool {
+	return r.ToCleanup
+}
+
+// Used return the resources in use
+func Used[T AvailabilityMarker](resources []T) []T {
+	r := []T{}
+	for _, i := range resources {
+		if !i.isAvailable() {
+			r = append(r, i)
+		}
+	}
+	return r
+}
+
+// CountAvailable return the number of resources not in use
+func CountAvailable[T AvailabilityMarker](resources []T) int {
+	total := 0
+
+	for _, r := range resources {
+		if r.isAvailable() {
+			total = total + 1
+		}
+	}
+
+	return total
+}
+
+// CountUsed return the number of resources in use
+func CountUsed[T AvailabilityMarker](resources []T) int {
+	return len(resources) - CountAvailable(resources)
+}
+
+// CountToCleanup return the number of accounts to cleanup
+func CountToCleanup[T AvailabilityMarker](resources []T) int {
+	total := 0
+
+	for _, r := range resources {
+		if r.markedForCleanup() {
+			total = total + 1
+		}
+	}
+
+	return total
+}
+
+// CountOlder returns the number of accounts in use for more than N day
+func CountOlder(duration time.Duration, accounts []Resource) (int, error) {
+	total := 0
+
+	for _, r := range accounts {
+		if time.Now().Sub(r.UpdatedAt) < duration {
+			total = total + 1
+		}
+	}
+
+	return total, nil
 }

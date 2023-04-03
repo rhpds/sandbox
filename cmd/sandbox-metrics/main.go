@@ -5,11 +5,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rhpds/sandbox/internal/models"
+	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"github.com/rhpds/sandbox/internal/log"
+	"github.com/rhpds/sandbox/internal/models"
 	"net/http"
 	"os"
-	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"time"
 )
 
@@ -25,7 +25,6 @@ func parseFlags() {
 		debugFlag = true
 	}
 }
-
 
 func serve() {
 	log.Out.Println("promhttp Listening on port 2112")
@@ -58,13 +57,13 @@ func createMetrics() {
 		Help: "Total accounts",
 	})
 
-	accountRepo := sandboxdb.NewAwsAccountDynamoDBRepository()
+	accountProvider := sandboxdb.NewAwsAccountDynamoDBProvider()
 
 	// Update metrics every 30 seconds
 	go func() {
 		for {
 			// no filter, we grab all accounts at once, then we filter because the DB is not that big.
-			accounts, err := accountRepo.GetAccounts()
+			accounts, err := accountProvider.FetchAll()
 			if err != nil {
 				log.Err.Fatal(err)
 			}

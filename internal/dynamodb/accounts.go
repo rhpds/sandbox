@@ -1,19 +1,21 @@
 package dynamodb
 
 import (
+	"errors"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
-	"github.com/rhpds/sandbox/internal/models"
 	"github.com/rhpds/sandbox/internal/log"
+	"github.com/rhpds/sandbox/internal/models"
 	"golang.org/x/exp/slog"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
-	"errors"
+	"time"
 )
 
 var ErrAccountNotFound = errors.New("account not found")
@@ -35,9 +37,9 @@ func parseNameInt(s string) int {
 
 // Internal Type to represent the dynamodb table
 type AwsAccountDynamoDB struct {
-	Name               string  `json:"name"`
+	Name string `json:"name"`
 	// NameInt: Internal plumbing to easily sort Sandboxes
-	NameInt			   int
+	NameInt            int
 	Available          bool    `json:"available"`
 	Guid               string  `json:"guid"`
 	ServiceUUID        string  `json:"service_uuid"`
@@ -52,18 +54,18 @@ type AwsAccountDynamoDB struct {
 	AwsAccessKeyID     string  `json:"aws_access_key_id"`
 	AwsSecretAccessKey string  `json:"aws_secret_access_key"`
 	// Conan
-	ToCleanup          bool    `json:"to_cleanup"`
-	ConanStatus        string  `json:"conan_status"`
-	ConanTimestamp     string  `json:"conan_timestamp"`
-	ConanHostname      string  `json:"conan_hostname"`
+	ToCleanup      bool   `json:"to_cleanup"`
+	ConanStatus    string `json:"conan_status"`
+	ConanTimestamp string `json:"conan_timestamp"`
+	ConanHostname  string `json:"conan_hostname"`
 }
 
-// BuildAccounts returns the list of accounts from dynamodb scan output
-func BuildAccounts(r *dynamodb.ScanOutput) []models.AwsAccount {
-	accounts := []models.AwsAccount{}
+// buildAccounts returns the list of accounts from dynamodb scan output
+func buildAccounts(r *dynamodb.ScanOutput) []AwsAccountDynamoDB {
+	accounts := []AwsAccountDynamoDB{}
 
 	for _, sandbox := range r.Items {
-		item := models.AwsAccount{}
+		item := AwsAccountDynamoDB{}
 		err := dynamodbattribute.UnmarshalMap(sandbox, &item)
 		if err != nil {
 			log.Logger.Error("Got error unmarshalling:", err)
@@ -78,20 +80,78 @@ func BuildAccounts(r *dynamodb.ScanOutput) []models.AwsAccount {
 	return accounts
 }
 
-
-
-type AwsAccountDynamoDBRepository struct {
+type AwsAccountDynamoDBProvider struct {
 	Svc *dynamodb.DynamoDB
 }
 
-func NewAwsAccountDynamoDBRepository() *AwsAccountDynamoDBRepository {
-	return &AwsAccountDynamoDBRepository{
+func NewAwsAccountDynamoDBProvider() *AwsAccountDynamoDBProvider {
+	return &AwsAccountDynamoDBProvider{
 		Svc: dynamodb.New(session.Must(session.NewSession())),
 	}
 }
 
-func (a *AwsAccountDynamoDBRepository) GetAccount(name string) (models.AwsAccount, error) {
-	sandbox := models.AwsAccount{Name: name}
+// makeAccount creates new models.AwsAccount from AwsAccountDynamoDB
+func makeAccount(account AwsAccountDynamoDB) models.AwsAccount {
+	a := models.AwsAccount{
+		Name:          account.Name,
+		AccountID:     account.AccountID,
+		Zone:          account.Zone,
+		HostedZoneID:  account.HostedZoneID,
+		ConanStatus:   account.ConanStatus,
+		ConanHostname: account.ConanHostname,
+	}
+	if conanTime, err := time.Parse(time.RFC3339, account.ConanTimestamp); err != nil {
+		a.ConanTimestamp = conanTime
+	}
+
+	a.ServiceUuid = account.ServiceUUID
+	a.ToCleanup = account.ToCleanup
+	a.Available = account.Available
+	a.ServiceUuid = account.ServiceUUID
+
+	ti, err := strconv.ParseInt(strconv.FormatFloat(account.UpdateTime, 'f', 0, 64), 10, 64)
+	if err != nil {
+		log.Logger.Error("Got error parsing update time:", err)
+	}
+
+	a.UpdatedAt = time.Unix(ti, 0)
+
+	// Rest of the fields are annotations
+	annotations := map[string]string{}
+
+	if account.Guid != "" {
+		annotations["guid"] = account.Guid
+	}
+	if account.Owner != "" {
+		annotations["owner"] = account.Owner
+	}
+	if account.OwnerEmail != "" {
+		annotations["owner_email"] = account.OwnerEmail
+	}
+	if account.Comment != "" {
+		annotations["comment"] = account.Comment
+	}
+	if account.Envtype != "" {
+		annotations["env_type"] = account.Envtype
+	}
+
+	a.Resource.Annotations = annotations
+
+	return a
+}
+
+// makeAccounts creates new []models.AwsAccount from []AwsAccountDynamoDB
+func makeAccounts(accounts []AwsAccountDynamoDB) []models.AwsAccount {
+	r := []models.AwsAccount{}
+	for _, account := range accounts {
+		r = append(r, makeAccount(account))
+	}
+
+	return r
+}
+
+func GetAccount(svc *dynamodb.DynamoDB, name string) (AwsAccountDynamoDB, error) {
+	sandbox := AwsAccountDynamoDB{Name: name}
 
 	// Build the Get query input parameters
 	input := &dynamodb.GetItemInput{
@@ -104,7 +164,7 @@ func (a *AwsAccountDynamoDBRepository) GetAccount(name string) (models.AwsAccoun
 	}
 
 	// Get the item from the table
-	output, errget := a.Svc.GetItem(input)
+	output, errget := svc.GetItem(input)
 
 	if errget != nil {
 		if aerr, ok := errget.(awserr.Error); ok {
@@ -127,37 +187,24 @@ func (a *AwsAccountDynamoDBRepository) GetAccount(name string) (models.AwsAccoun
 		}
 
 		log.Logger.Error("errget", errget)
-		return models.AwsAccount{}, errget
+		return AwsAccountDynamoDB{}, errget
 	}
 
 	if len(output.Item) == 0 {
-		return models.AwsAccount{}, ErrAccountNotFound
+		return AwsAccountDynamoDB{}, ErrAccountNotFound
 	}
 
 	if err := dynamodbattribute.UnmarshalMap(output.Item, &sandbox); err != nil {
 		log.Logger.Error("Unmarshalling", err)
-		return models.AwsAccount{}, err
+		return AwsAccountDynamoDB{}, err
 	}
 	log.Logger.Info("GetItem succeeded", slog.String("sandbox", sandbox.Name))
+
 	return sandbox, nil
 }
 
-// GetAccounts returns the list of accounts from dynamodb
-func (a *AwsAccountDynamoDBRepository) GetAccounts() ([]models.AwsAccount, error) {
-	filters := []expression.ConditionBuilder{}
-	return getAccounts(a.Svc, filters)
-}
-
-// GetAccountsToCleanup returns the list of accounts from dynamodb
-func (a *AwsAccountDynamoDBRepository) GetAccountsToCleanup() ([]models.AwsAccount, error) {
-	filters := []expression.ConditionBuilder{}
-	filter := expression.Name("to_cleanup").Equal(expression.Value(true))
-	filters = append(filters, filter)
-	return getAccounts(a.Svc, filters)
-}
-
-func getAccounts(svc *dynamodb.DynamoDB,filters []expression.ConditionBuilder) ([]models.AwsAccount, error) {
-	accounts := []models.AwsAccount{}
+func GetAccounts(svc *dynamodb.DynamoDB, filters []expression.ConditionBuilder) ([]AwsAccountDynamoDB, error) {
+	accounts := []AwsAccountDynamoDB{}
 
 	// Build dynamod query
 	proj := expression.NamesList(
@@ -205,7 +252,7 @@ func getAccounts(svc *dynamodb.DynamoDB,filters []expression.ConditionBuilder) (
 
 	errscan := svc.ScanPages(input,
 		func(page *dynamodb.ScanOutput, lastPage bool) bool {
-			accounts = append(accounts, BuildAccounts(page)...)
+			accounts = append(accounts, buildAccounts(page)...)
 			return true
 		})
 
@@ -229,8 +276,58 @@ func getAccounts(svc *dynamodb.DynamoDB,filters []expression.ConditionBuilder) (
 			// Message from an error.
 			log.Err.Println(errscan.Error())
 		}
-		return []models.AwsAccount{}, errscan
+		return []AwsAccountDynamoDB{}, errscan
 	}
 
 	return accounts, nil
+}
+
+func (a *AwsAccountDynamoDBProvider) FetchByName(name string) (models.AwsAccount, error) {
+	account, err := GetAccount(a.Svc, name)
+	if err != nil {
+		return models.AwsAccount{}, err
+	}
+	return makeAccount(account), nil
+}
+
+// GetAccounts returns the list of accounts from dynamodb
+func (a *AwsAccountDynamoDBProvider) FetchAll() ([]models.AwsAccount, error) {
+	filters := []expression.ConditionBuilder{}
+	accounts, err := GetAccounts(a.Svc, filters)
+	if err != nil {
+		return []models.AwsAccount{}, err
+	}
+	return makeAccounts(accounts), nil
+}
+
+// GetAccountsToCleanup returns the list of accounts from dynamodb
+func (a *AwsAccountDynamoDBProvider) FetchAllToCleanup() ([]models.AwsAccount, error) {
+	filters := []expression.ConditionBuilder{
+		expression.Name("to_cleanup").Equal(expression.Value(true)),
+	}
+	accounts, err := GetAccounts(a.Svc, filters)
+	if err != nil {
+		return []models.AwsAccount{}, err
+	}
+	return makeAccounts(accounts), nil
+}
+
+// FetchAllSorted
+func (a *AwsAccountDynamoDBProvider) FetchAllSorted(by string) ([]models.AwsAccount, error) {
+	filters := []expression.ConditionBuilder{}
+	accounts, err := GetAccounts(a.Svc, filters)
+	if err != nil {
+		return []models.AwsAccount{}, err
+	}
+
+	sort.SliceStable(accounts, func(i, j int) bool {
+		switch by {
+		case "name":
+			return accounts[i].NameInt < accounts[j].NameInt
+		default:
+			return accounts[i].UpdateTime > accounts[j].UpdateTime
+		}
+	})
+
+	return makeAccounts(accounts), nil
 }
