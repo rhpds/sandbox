@@ -3,4 +3,6 @@
 build/sandbox-list
 build/sandbox-metrics
 build/sandbox-server
+build/sandbox-replicate
+deploy/lambda/*.zip
 .env.dev

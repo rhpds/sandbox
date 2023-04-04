@@ -46,11 +46,21 @@ sandbox-server:
 sandbox-metrics:
 	CGO_ENABLED=0 go build -o build/sandbox-metrics ./cmd/sandbox-metrics
 
-.PHONY: sandbox-server sandbox-list sandbox-metrics run-server migrate fixtures test run-local-pg
+sandbox-replicate:
+	CGO_ENABLED=0 go build -o build/sandbox-replicate ./cmd/sandbox-replicate
 
-# Not phony targets
+push-lambda: deploy/lambda/sandbox-replicate.zip
+	python ./deploy/lambda/sandbox-replicate.py
+
+.PHONY: sandbox-server sandbox-list sandbox-metrics run-server sandbox-replicate migrate fixtures test run-local-pg push-lambda
+
+# Regular file targets
 
 .local_pg_password:
 	@uuidgen > .local_pg_password
+
+deploy/lambda/sandbox-replicate.zip: sandbox-replicate
+	zip deploy/lambda/sandbox-replicate.zip build/sandbox-replicate
+
 
 # end
