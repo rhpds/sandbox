@@ -1,14 +1,47 @@
-== Tools ==
+= Sandbox =
 
+This repository is a consolidated codebase for everything related to sandboxes for the Red Hat Demo Platform. It contains:
+
+* sandbox-api: The Backend API for all things sandbox.
 * sandbox-list:  Interact with the AWS Sandbox DB in a read-only way.
 * sandbox-metrics: Prometheus Endpoint exposing metrics.
+* sandbox-replicate: AWS Lambda function to replicate changes from DynamoDB to a Postgres database.
 
-=== Build ===
+== Build ==
+
+.Build all binaries
+----
+make
+----
+
+.Build separately
+----
+make sandbox-api
+make sandbox-list
+make sandbox-metrics
+make sandbox-replicate
+----
+
+== sandbox-replicate ==
+
+The role of the lambda function is to replicate any changes made to the dynamoDB table into a postgresql database.
+
+
+=== Push lambda ===
 
 ----
-go build ./cmd/sandbox-list
-go build ./cmd/sandbox-metrics
+export AWS_PROFILE=infra-dev
+make push-lambda
 ----
+
+That will:
+
+. Create a role, a policy and a lambda function
+. Attach the policy to the role and the role to the lambda function
+. Push the updated 'build/sandbox-replicate' binary to the lambda function
+
+
+== sandbox-metrics ==
 
 === Deploy Metrics Prometheus ===
 

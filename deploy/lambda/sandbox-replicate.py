@@ -24,7 +24,7 @@ def set_default_table():
     # Get env variable AWS_PROFILE
     profile = os.environ.get('AWS_PROFILE')
 
-    if '-dev' in profile:
+    if 'dev' in profile:
         return 'accounts-dev'
     return 'accounts'
 
