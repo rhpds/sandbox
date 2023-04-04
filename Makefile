@@ -9,7 +9,7 @@ VERSION ?= $(shell git describe --tags 2>/dev/null | cut -c 2-)
 COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null)
 DATE ?= $(shell date -u)
 
-build: sandbox-list sandbox-metrics sandbox-server
+build: sandbox-list sandbox-metrics sandbox-api
 
 test:
 	@echo "Running tests..."
@@ -17,7 +17,7 @@ test:
 	@go test -v ./...
 
 run-server:
-	. ./.env && cd cmd/sandbox-server && CGO_ENABLED=0 go run .
+	. ./.env && cd cmd/sandbox-api && CGO_ENABLED=0 go run .
 
 run-local-pg: .local_pg_password
 	@podman kill localpg || true
@@ -40,8 +40,8 @@ fixtures: migrate
 sandbox-list:
 	CGO_ENABLED=0 go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" -o build/sandbox-list ./cmd/sandbox-list
 
-sandbox-server:
-	CGO_ENABLED=0 go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" -o build/sandbox-server ./cmd/sandbox-server
+sandbox-api:
+	CGO_ENABLED=0 go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" -o build/sandbox-api ./cmd/sandbox-api
 
 sandbox-metrics:
 	CGO_ENABLED=0 go build -o build/sandbox-metrics ./cmd/sandbox-metrics
@@ -52,7 +52,7 @@ sandbox-replicate:
 push-lambda: deploy/lambda/sandbox-replicate.zip
 	python ./deploy/lambda/sandbox-replicate.py
 
-.PHONY: sandbox-server sandbox-list sandbox-metrics run-server sandbox-replicate migrate fixtures test run-local-pg push-lambda
+.PHONY: sandbox-api sandbox-list sandbox-metrics run-server sandbox-replicate migrate fixtures test run-local-pg push-lambda
 
 # Regular file targets
 

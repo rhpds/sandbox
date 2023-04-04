@@ -5,3 +5,5 @@
 * TODO add AccountWithCreds
 * TODO test postgresql down
 * TODO create OCI image
+* DONE script to push/create/update AWS lambda function
+* INPROGRESS aws lambda function to replicate changes from dynamoDB to postgresql
