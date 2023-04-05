@@ -81,11 +81,11 @@ func main() {
 	// HTTP router
 	router := httprouter.New()
 
-	router.GET("/health", baseHandler.HealthHandler)
-	router.GET("/accounts", accountHandler.GetAccountsHandler)
-	router.GET("/accounts/:account", accountHandler.GetAccountHandler)
-	router.GET("/placements", GetPlacementsHandler)
-	router.POST("/placements", baseHandler.CreatePlacementHandler)
+	router.GET("/api/v1/health", baseHandler.HealthHandler)
+	router.GET("/api/v1/accounts", accountHandler.GetAccountsHandler)
+	router.GET("/api/v1/accounts/:account", accountHandler.GetAccountHandler)
+	router.GET("/api/v1/placements", GetPlacementsHandler)
+	router.POST("/api/v1/placements", baseHandler.CreatePlacementHandler)
 
 	log.Logger.Info("Listening on port " + port)
 
