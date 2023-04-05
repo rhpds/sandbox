@@ -1,9 +1,12 @@
 #+title: Todo
 
-* TODO migration inside the app
+* TODO all endpoints
+* TODO validate requests using the openAPI schema
+* TODO embed the schema in binary
+* TODO DB migration inside the app at startup
 * DONE add credential type
 * TODO add AccountWithCreds
-* TODO test postgresql down
+* DONE test postgresql down, and up again
 * TODO create OCI image
 * DONE script to push/create/update AWS lambda function
-* INPROGRESS aws lambda function to replicate changes from dynamoDB to postgresql
+* TODO aws lambda function to replicate changes from dynamoDB to postgresql

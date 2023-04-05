@@ -6,7 +6,7 @@ info:
   license:
     name: MIT
 servers:
-  - url: http://localhost:8080/api/v1
+  - url: /api/v1
 tags:
   - name: placement
     description: Anything related to Placements. Ex, booking or releasing sandboxes
@@ -64,7 +64,7 @@ paths:
                 $ref: "#/components/schemas/Error"
     post:
       summary: Create a new placement; book a sandbox.
-      operationId: book
+      operationId: createPlacements
       tags:
         - placement
       requestBody:

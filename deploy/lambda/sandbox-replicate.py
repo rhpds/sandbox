@@ -14,13 +14,18 @@ import boto3
 import botocore
 import argparse
 import os
+import subprocess
 from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 iam = boto3.resource('iam')
 
-def set_default_table():
+# Get the current Git version
+def get_git_version():
+    return subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip().decode('utf-8')
+
+def get_default_table():
     # Get env variable AWS_PROFILE
     profile = os.environ.get('AWS_PROFILE')
 
@@ -149,7 +154,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--region', help='The AWS region that contains the DynamoDB table.', default='us-east-1')
     parser.add_argument('--account', help='The AWS account that contains the DynamoDB table.', default=get_account_id())
-    parser.add_argument('--table', help='The DynamoDB table to replicate.', default=set_default_table())
+    parser.add_argument('--table', help='The DynamoDB table to replicate.', default=get_default_table())
     parser.add_argument('--zip-file', help='The App zip file.', default='./deploy/lambda/sandbox-replicate.zip')
     return parser.parse_args()
 
@@ -190,6 +195,7 @@ def create_lambda_function(function_name, region, role, zip_file):
     except ClientError:
         logger.exception("Couldn't create Lambda function %s.", function_name)
         raise
+
 
 parser = parse_args()
 

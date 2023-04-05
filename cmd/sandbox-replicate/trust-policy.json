@@ -1,0 +1,22 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    },
+    {
+        "Effect": "Allow",
+        "Action": [
+            "dynamodb:DescribeStream",
+            "dynamodb:GetRecords",
+            "dynamodb:GetShardIterator",
+            "dynamodb:ListStreams"
+        ],
+        "Resource": "arn:aws:dynamodb:us-east-1:124572886817:table/accounts-dev/stream/2019-02-27T07:41:49.893"
+    }
+  ]
+}

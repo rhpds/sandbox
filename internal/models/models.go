@@ -50,6 +50,13 @@ type AvailabilityMarker interface {
 	markedForCleanup() bool
 }
 
+type Placement struct {
+	Model
+
+	ServiceUuid string            `json:"service_uuid"`
+	Annotations map[string]string `json:"annotations"`
+}
+
 func (r Resource) isAvailable() bool {
 	return r.Available
 }

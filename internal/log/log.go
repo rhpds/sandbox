@@ -19,7 +19,7 @@ var Debug *log.Logger
 // Report stdout logger
 var Report *log.Logger
 
-// Zap logger
+// Structured logger
 var Logger *slog.Logger
 
 // InitLoggers sets logger
