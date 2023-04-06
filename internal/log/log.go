@@ -39,5 +39,5 @@ func InitLoggers(debugFlag bool) {
 	}
 	Report = log.New(os.Stdout, "+++ ", log.LstdFlags)
 
-	Logger = slog.New(opts.NewJSONHandler(os.Stdout))
+	Logger = slog.New(opts.NewTextHandler(os.Stdout))
 }

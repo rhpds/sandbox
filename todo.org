@@ -10,3 +10,8 @@
 * TODO create OCI image
 * DONE script to push/create/update AWS lambda function
 * TODO aws lambda function to replicate changes from dynamoDB to postgresql
+* TODO move handlers per version?
+* DONE use go-chi instead of httprouter:
+** 100% compatible with standard library
+** nice interface for middleware
+* TODO  make clean

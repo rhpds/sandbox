@@ -5,17 +5,19 @@ import (
 	"encoding/json"
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"net/http"
+	"strings"
 
-	"github.com/julienschmidt/httprouter"
 	"github.com/rhpds/sandbox/internal/log"
 
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/jackc/pgx/v4/pgxpool"
 
-	"github.com/getkin/kin-openapi/openapi3filter"
 	oarouters "github.com/getkin/kin-openapi/routers"
 	gorillamux "github.com/getkin/kin-openapi/routers/gorillamux"
+
+	"github.com/go-chi/render"
 )
 
 type BaseHandler struct {
@@ -32,32 +34,18 @@ func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.
 	}
 }
 
-func GetPlacementsHandler(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	w.Header().Set("Content-Type", "application/json")
+func GetPlacementsHandler(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", " ")
 }
 
-func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	w.Header().Set("Content-Type", "application/json")
+func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", " ")
+	r.Header.Set("Content-Type", "application/json")
 
-	// Decode the request body
-	var req v1.PlacementRequest
-
-	dec := json.NewDecoder(r.Body)
-	if err := dec.Decode(&req); err != nil {
-		log.Logger.Error("Error decoding request body", "error", err)
-		w.WriteHeader(http.StatusBadRequest)
-		enc.Encode(v1.Error{
-			Code:    400,
-			Message: "Error decoding request body",
-		})
-		return
-	}
-
-	// Validate the request
+	// Load and Validate the request
+	// 	// Validate the request
 
 	// oaRouter is the OpenAPI router used to validate requests and responses.
 	// It's not the router of the sandbox-api application.
@@ -68,22 +56,22 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 		log.Logger.Error("Error creating OpenAPI router", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		enc.Encode(v1.Error{
-			Code:    500,
-			Message: "Error creating OpenAPI router",
+			HTTPStatusCode: 500,
+			Message:        "Error creating OpenAPI router",
 		})
 		return
 	}
 
 	// Print debug request
-	log.Logger.Info("Request", "method", r.Method, "path", r.URL.Path, "body", req)
+	log.Logger.Info("Request", "method", r.Method, "path", r.URL.Path, "body", r)
 	route, pathParams, err := oaRouter.FindRoute(r)
 
 	if err != nil {
 		log.Logger.Error("Error finding route", "error", err)
 		w.WriteHeader(http.StatusBadRequest)
 		enc.Encode(v1.Error{
-			Code:    400,
-			Message: "Error finding route",
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Error finding route",
 		})
 		return
 	}
@@ -101,19 +89,35 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 
 	if err != nil {
 		log.Logger.Error("Error validating request", "error", err)
+		errs := strings.Split(err.Error(), "\n")
 		w.WriteHeader(http.StatusBadRequest)
 		enc.Encode(v1.Error{
-			Code:    400,
-			Message: "Error validating request using OpenAPI spec",
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Bad request: payload doesn't pass OpenAPI spec",
+			ErrorMultiline: errs,
 		})
 		return
 	}
 
+	placementRequest := &v1.PlacementRequest{}
+	if err := render.Bind(r, placementRequest); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Error decoding request body",
+		})
+		log.Logger.Error("CreatePlacementHandler", "error", err)
+
+		return
+	}
+
+	log.Logger.Info("CreatePlacementHandler", "request", placementRequest)
+
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *BaseHandler) HealthHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	w.Header().Set("Content-Type", "application/json")
+func (h *BaseHandler) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", " ")
 
@@ -127,8 +131,8 @@ func (h *BaseHandler) HealthHandler(w http.ResponseWriter, r *http.Request, _ ht
 		log.Logger.Error("Health check", "error", dbpoolErr)
 		w.WriteHeader(http.StatusInternalServerError)
 		enc.Encode(v1.HealthCheckResult{
-			Code:    500,
-			Message: "Error connecting to Postgresql",
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error connecting to Postgresql",
 		})
 		return
 	}
@@ -137,8 +141,8 @@ func (h *BaseHandler) HealthHandler(w http.ResponseWriter, r *http.Request, _ ht
 		log.Logger.Error("Health check", "error", dynamodbErr)
 		w.WriteHeader(http.StatusInternalServerError)
 		enc.Encode(v1.HealthCheckResult{
-			Code:    500,
-			Message: "Error connecting to DynamoDB",
+			HTTPStatusCode: 500,
+			Message:        "Error connecting to DynamoDB",
 		})
 		return
 	}
@@ -146,7 +150,7 @@ func (h *BaseHandler) HealthHandler(w http.ResponseWriter, r *http.Request, _ ht
 	log.Logger.Info("Health check", "status", "OK")
 	w.WriteHeader(http.StatusOK)
 	enc.Encode(v1.HealthCheckResult{
-		Code:    200,
-		Message: "OK",
+		HTTPStatusCode: 200,
+		Message:        "OK",
 	})
 }

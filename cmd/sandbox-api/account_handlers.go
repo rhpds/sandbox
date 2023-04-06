@@ -7,7 +7,7 @@ import (
 	"github.com/rhpds/sandbox/internal/models"
 	"net/http"
 
-	"github.com/julienschmidt/httprouter"
+	"github.com/go-chi/chi/v5"
 	"github.com/rhpds/sandbox/internal/log"
 )
 
@@ -23,8 +23,7 @@ func NewAccountHandler(accountProvider models.AwsAccountProvider) *AccountHandle
 
 // GetAccountsHandler returns all accounts
 // GET /accounts
-func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	w.Header().Set("Content-Type", "application/json")
+func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", " ")
 
@@ -35,8 +34,8 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 
 		w.WriteHeader(http.StatusInternalServerError)
 		enc.Encode(v1.Error{
-			Code:    500,
-			Message: "Error reading accounts",
+			HTTPStatusCode: 500,
+			Message:        "Error reading accounts",
 		})
 		return
 	}
@@ -46,21 +45,20 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 		log.Logger.Error("GET accounts", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		enc.Encode(v1.Error{
-			Code:    500,
-			Message: "Error reading account",
+			HTTPStatusCode: 500,
+			Message:        "Error reading account",
 		})
 	}
 }
 
 // GetAccountHandler returns an account
 // GET /accounts/:account
-func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	w.Header().Set("Content-Type", "application/json")
+func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", " ")
 
 	// Grab the parameters from Params
-	accountName := p.ByName("account")
+	accountName := chi.URLParam(r, "account")
 
 	// Get the account from DynamoDB
 	sandbox, err := h.accountProvider.FetchByName(accountName)
@@ -69,8 +67,8 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 			log.Logger.Warn("GET account", "error", err)
 			w.WriteHeader(http.StatusNotFound)
 			enc.Encode(v1.Error{
-				Code:    http.StatusNotFound,
-				Message: "Account not found",
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Account not found",
 			})
 			return
 		}
@@ -78,8 +76,8 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 
 		w.WriteHeader(http.StatusInternalServerError)
 		enc.Encode(v1.Error{
-			Code:    500,
-			Message: "Error reading account",
+			HTTPStatusCode: 500,
+			Message:        "Error reading account",
 		})
 		return
 	}
@@ -88,8 +86,8 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 		log.Logger.Error("GET account", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		enc.Encode(v1.Error{
-			Code:    500,
-			Message: "Error reading account",
+			HTTPStatusCode: 500,
+			Message:        "Error reading account",
 		})
 	}
 }

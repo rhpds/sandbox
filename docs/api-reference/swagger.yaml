@@ -274,9 +274,9 @@ components:
     PlacementRequest:
       type: object
       required:
-        - uuid
+        - service_uuid
       properties:
-        uuid:
+        service_uuid:
           $ref: "#/components/schemas/UUID"
         request:
           description: Request resources
@@ -316,7 +316,7 @@ components:
         - resources
         - annotations
       properties:
-        uuid:
+        service_uuid:
           $ref: "#/components/schemas/UUID"
         resources:
           $ref: "#/components/schemas/Resources"

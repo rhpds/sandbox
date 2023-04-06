@@ -3,7 +3,6 @@ package main
 import (
 	"net/http"
 
-	"github.com/julienschmidt/httprouter"
 	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"github.com/rhpds/sandbox/internal/log"
 
@@ -13,6 +12,11 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/jackc/pgx/v4/pgxpool"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/httplog"
+	"github.com/go-chi/render"
 )
 
 // checkEnv checks that the environment variables are set correctly
@@ -79,13 +83,29 @@ func main() {
 	baseHandler := NewBaseHandler(accountProvider.Svc, dbPool, doc)
 
 	// HTTP router
-	router := httprouter.New()
+	router := chi.NewRouter()
 
-	router.GET("/api/v1/health", baseHandler.HealthHandler)
-	router.GET("/api/v1/accounts", accountHandler.GetAccountsHandler)
-	router.GET("/api/v1/accounts/:account", accountHandler.GetAccountHandler)
-	router.GET("/api/v1/placements", GetPlacementsHandler)
-	router.POST("/api/v1/placements", baseHandler.CreatePlacementHandler)
+	// Structured Logger (JSON)
+	// Logger middleware is currently using zerolog but will switch to slog
+	// see https://github.com/go-chi/httplog/issues/16
+	// and https://github.com/go-chi/httplog/pull/17
+	// For the rest of the API we use slog already.
+	logger := httplog.NewLogger("httplog-example", httplog.Options{
+		JSON: true,
+	})
+
+	// Middleware
+
+	router.Use(httplog.RequestLogger(logger))
+	router.Use(middleware.Heartbeat("/ping"))
+	router.Use(render.SetContentType(render.ContentTypeJSON))
+	// Routes
+
+	router.Get("/api/v1/health", baseHandler.HealthHandler)
+	router.Get("/api/v1/accounts", accountHandler.GetAccountsHandler)
+	router.Get("/api/v1/accounts/{account}", accountHandler.GetAccountHandler)
+	router.Get("/api/v1/placements", GetPlacementsHandler)
+	router.Post("/api/v1/placements", baseHandler.CreatePlacementHandler)
 
 	log.Logger.Info("Listening on port " + port)
 
