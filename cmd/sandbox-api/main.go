@@ -11,6 +11,7 @@ import (
 	"os"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	gorillamux "github.com/getkin/kin-openapi/routers/gorillamux"
 	"github.com/jackc/pgx/v4/pgxpool"
 
 	"github.com/go-chi/chi/v5"
@@ -43,6 +44,15 @@ func main() {
 	// Ensure document is valid
 	if err := doc.Validate(ctx); err != nil {
 		log.Logger.Error("Error validating OpenAPI document", "error", err)
+		os.Exit(1)
+	}
+
+	// oaRouter is the OpenAPI router used to validate requests and responses using
+	// OpenAPI and kin-openapi lib. It's an implementation detail there.
+	// It's not the router of the sandbox-api application.
+	oaRouter, err := gorillamux.NewRouter(doc)
+	if err != nil {
+		log.Logger.Error("Error creating OpenAPI router", "error", err)
 		os.Exit(1)
 	}
 
@@ -80,7 +90,7 @@ func main() {
 	accountHandler := NewAccountHandler(accountProvider)
 
 	// Factory for handlers which need connections to both databases
-	baseHandler := NewBaseHandler(accountProvider.Svc, dbPool, doc)
+	baseHandler := NewBaseHandler(accountProvider.Svc, dbPool, doc, oaRouter)
 
 	// HTTP router
 	router := chi.NewRouter()
@@ -96,9 +106,11 @@ func main() {
 
 	// Middleware
 
+	router.Use(render.SetContentType(render.ContentTypeJSON))
+	router.Use(middleware.CleanPath)
 	router.Use(httplog.RequestLogger(logger))
 	router.Use(middleware.Heartbeat("/ping"))
-	router.Use(render.SetContentType(render.ContentTypeJSON))
+	router.Use(baseHandler.OpenAPIValidation)
 	// Routes
 
 	router.Get("/api/v1/health", baseHandler.HealthHandler)

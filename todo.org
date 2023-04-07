@@ -2,7 +2,7 @@
 
 * TODO all endpoints
 * TODO validate requests using the openAPI schema
-* TODO embed the schema in binary
+* DONE embed the schema in binary
 * TODO DB migration inside the app at startup
 * DONE add credential type
 * TODO add AccountWithCreds
@@ -11,6 +11,8 @@
 * DONE script to push/create/update AWS lambda function
 * TODO aws lambda function to replicate changes from dynamoDB to postgresql
 * TODO move handlers per version?
+* DONE create OpenAPIValidation middleware for schema validation
+* DONE create openapi internal router from doc at startup, not on every request
 * DONE use go-chi instead of httprouter:
 ** 100% compatible with standard library
 ** nice interface for middleware
