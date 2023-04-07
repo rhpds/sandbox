@@ -16,4 +16,4 @@
 * DONE use go-chi instead of httprouter:
 ** 100% compatible with standard library
 ** nice interface for middleware
-* TODO  make clean
+* DONE make clean

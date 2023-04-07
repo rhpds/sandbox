@@ -16,24 +16,24 @@ test:
 	@echo "VERSION: $(VERSION)"
 	@go test -v ./...
 
-run-api: cmd/sandbox-api/assets/swagger.yaml
+run-api: cmd/sandbox-api/assets/swagger.yaml .env
 	. ./.env && cd cmd/sandbox-api && CGO_ENABLED=0 go run .
 
-run-local-pg: .local_pg_password
+rm-local-pg:
 	@podman kill localpg || true
 	@podman rm localpg || true
 
+run-local-pg: .local_pg_password rm-local-pg
 	@echo "Running local postgres..."
 	@podman run  -p 5432:5432 --name localpg -e POSTGRES_PASSWORD=$(shell cat .local_pg_password) -d postgres
     # See full list of parameters here:
     # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
-	@echo "export DATABASE_URL=\"postgres://postgres:$(shell cat .local_pg_password)@127.0.0.1:5432/postgres?sslmode=disable\"" > .env
 
-migrate:
+migrate: .env
 	@echo "Running migrations..."
 	@. ./.env && migrate -database "$${DATABASE_URL}" -path db/migrations up
 
-fixtures: migrate
+fixtures: migrate .env
 	@echo "Loading fixtures..."
 	@. ./.env && psql "$${DATABASE_URL}" < ./db/fixtures/0001.sql
 
@@ -52,7 +52,14 @@ sandbox-replicate:
 push-lambda: deploy/lambda/sandbox-replicate.zip
 	python ./deploy/lambda/sandbox-replicate.py
 
-.PHONY: sandbox-api sandbox-list sandbox-metrics run-api sandbox-replicate migrate fixtures test run-local-pg push-lambda
+.PHONY: sandbox-api sandbox-list sandbox-metrics run-api sandbox-replicate migrate fixtures test run-local-pg push-lambda clean
+
+clean: rm-local-pg
+	rm -f build/sandbox-*
+	rm -f deploy/lambda/sandbox-replicate.zip
+	rm -f cmd/sandbox-api/assets/swagger.yaml
+	rm -f .local_pg_password
+	rm -f .env
 
 # Regular file targets
 
@@ -65,5 +72,8 @@ deploy/lambda/sandbox-replicate.zip: sandbox-replicate
 cmd/sandbox-api/assets/swagger.yaml: docs/api-reference/swagger.yaml
 	@mkdir -p cmd/sandbox-api/assets
 	cp docs/api-reference/swagger.yaml cmd/sandbox-api/assets/swagger.yaml
+
+.env: .local_pg_password
+	@echo "export DATABASE_URL=\"postgres://postgres:$(shell cat .local_pg_password)@127.0.0.1:5432/postgres?sslmode=disable\"" > .env
 
 # end
