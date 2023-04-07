@@ -1,4 +1,5 @@
 .env
+.pgenv
 .local_pg_password
 build/sandbox-list
 build/sandbox-metrics
