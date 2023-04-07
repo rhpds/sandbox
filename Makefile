@@ -16,8 +16,8 @@ test:
 	@echo "VERSION: $(VERSION)"
 	@go test -v ./...
 
-run-api: cmd/sandbox-api/assets/swagger.yaml .env
-	. ./.env && cd cmd/sandbox-api && CGO_ENABLED=0 go run .
+run-api: cmd/sandbox-api/assets/swagger.yaml .pgenv
+	. ./.pgenv && cd cmd/sandbox-api && CGO_ENABLED=0 go run .
 
 rm-local-pg:
 	@podman kill localpg || true
@@ -26,16 +26,16 @@ rm-local-pg:
 run-local-pg: .local_pg_password rm-local-pg
 	@echo "Running local postgres..."
 	@podman run  -p 5432:5432 --name localpg -e POSTGRES_PASSWORD=$(shell cat .local_pg_password) -d postgres
-    # See full list of parameters here:
-    # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
+	# See full list of parameters here:
+	# https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
 
-migrate: .env
+migrate: .pgenv
 	@echo "Running migrations..."
-	@. ./.env && migrate -database "$${DATABASE_URL}" -path db/migrations up
+	@. ./.pgenv && migrate -database "$${DATABASE_URL}" -path db/migrations up
 
-fixtures: migrate .env
+fixtures: migrate .pgenv
 	@echo "Loading fixtures..."
-	@. ./.env && psql "$${DATABASE_URL}" < ./db/fixtures/0001.sql
+	@. ./.pgenv && psql "$${DATABASE_URL}" < ./db/fixtures/0001.sql
 
 sandbox-list:
 	CGO_ENABLED=0 go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" -o build/sandbox-list ./cmd/sandbox-list
@@ -59,7 +59,7 @@ clean: rm-local-pg
 	rm -f deploy/lambda/sandbox-replicate.zip
 	rm -f cmd/sandbox-api/assets/swagger.yaml
 	rm -f .local_pg_password
-	rm -f .env
+	rm -f .pgenv
 
 # Regular file targets
 
@@ -73,7 +73,7 @@ cmd/sandbox-api/assets/swagger.yaml: docs/api-reference/swagger.yaml
 	@mkdir -p cmd/sandbox-api/assets
 	cp docs/api-reference/swagger.yaml cmd/sandbox-api/assets/swagger.yaml
 
-.env: .local_pg_password
-	@echo "export DATABASE_URL=\"postgres://postgres:$(shell cat .local_pg_password)@127.0.0.1:5432/postgres?sslmode=disable\"" > .env
+.pgenv: .local_pg_password
+	@echo "export DATABASE_URL=\"postgres://postgres:$(shell cat .local_pg_password)@127.0.0.1:5432/postgres?sslmode=disable\"" > .pgenv
 
 # end
