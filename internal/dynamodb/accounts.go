@@ -104,6 +104,8 @@ func makeAccount(account AwsAccountDynamoDB) models.AwsAccount {
 		a.ConanTimestamp = conanTime
 	}
 
+	a.AccountType = "aws"
+	a.ResourceType = "account"
 	a.ServiceUuid = account.ServiceUUID
 	a.ToCleanup = account.ToCleanup
 	a.Available = account.Available
