@@ -17,7 +17,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httplog"
-	"github.com/go-chi/render"
 )
 
 // checkEnv checks that the environment variables are set correctly
@@ -104,23 +103,30 @@ func main() {
 		JSON: true,
 	})
 
-	// Middleware
-
-	router.Use(render.SetContentType(render.ContentTypeJSON))
+	// ---------------------------------------------------------------------
+	// Middlewares
+	// ---------------------------------------------------------------------
 	router.Use(middleware.CleanPath)
 	router.Use(httplog.RequestLogger(logger))
+	// Set Content-Type header to application/json for all responses
+	router.Use(middleware.SetHeader("Content-Type", "application/json"))
+	// This API speaks JSON only. Check request content-type header.
+	router.Use(AllowContentType("application/json"))
 	router.Use(middleware.Heartbeat("/ping"))
 	router.Use(baseHandler.OpenAPIValidation)
-	// Routes
 
+	// ---------------------------------------------------------------------
+	// Routes
+	// ---------------------------------------------------------------------
 	router.Get("/api/v1/health", baseHandler.HealthHandler)
 	router.Get("/api/v1/accounts", accountHandler.GetAccountsHandler)
 	router.Get("/api/v1/accounts/{account}", accountHandler.GetAccountHandler)
 	router.Get("/api/v1/placements", GetPlacementsHandler)
 	router.Post("/api/v1/placements", baseHandler.CreatePlacementHandler)
 
-	log.Logger.Info("Listening on port " + port)
-
+	// ---------------------------------------------------------------------
 	// Main server loop
+	// ---------------------------------------------------------------------
+	log.Logger.Info("Listening on port " + port)
 	log.Err.Fatal(http.ListenAndServe(":"+port, router))
 }

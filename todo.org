@@ -1,7 +1,9 @@
 #+title: Todo
 
 * TODO all endpoints
-* TODO validate requests using the openAPI schema
+** Placements
+** Accounts
+* DONE validate requests using the openAPI schema
 * DONE embed the schema in binary
 * TODO DB migration inside the app at startup
 * DONE add credential type
@@ -17,3 +19,5 @@
 ** 100% compatible with standard library
 ** nice interface for middleware
 * DONE make clean
+* TODO add JWT for auth
+* TODO unit tests and fixture/functional tests
