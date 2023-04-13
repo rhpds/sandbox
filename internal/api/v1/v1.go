@@ -21,6 +21,10 @@ type SimpleMessage struct {
 	MessageMultiline []string `json:"message_multiline,omitempty"`
 }
 
+func (p *SimpleMessage) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
 type HealthCheckResult struct {
 	HTTPStatusCode int    `json:"http_code,omitempty"` // http response status code
 	Message        string `json:"message"`

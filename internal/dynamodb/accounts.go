@@ -484,3 +484,25 @@ func (a *AwsAccountDynamoDBProvider) Book(service_uuid string, count int, annota
 
 	return bookedAccounts, nil
 }
+
+func (a *AwsAccountDynamoDBProvider) MarkForCleanup(name string) (error) {
+	_, err := a.Svc.UpdateItem(&dynamodb.UpdateItemInput{
+		TableName: aws.String(os.Getenv("dynamodb_table")),
+		Key: map[string]*dynamodb.AttributeValue{
+			"name": {
+				S: aws.String(name),
+			},
+		},
+		UpdateExpression: aws.String("SET to_cleanup = :tc"),
+		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+			":tc": {
+				BOOL: aws.Bool(true),
+			},
+		},
+	})
+	if err != nil {
+		log.Logger.Error("error marking the sandbox for cleanup", "sandbox", name, "error", err)
+		return err
+	}
+	return nil
+}

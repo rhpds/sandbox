@@ -158,8 +158,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /accounts:
+  /accounts/{kind}:
     parameters:
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
       - name: available
         in: query
         description: Boolean to filter if available or taken.
@@ -191,8 +199,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /accounts/{name}:
+  /accounts/{kind}/{name}:
     parameters:
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
       - name: name
         in: path
         required: true
@@ -224,8 +240,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /accounts/{name}/cleanup:
+  /accounts/{kind}/{name}/cleanup:
     parameters:
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
       - name: name
         in: path
         required: true
@@ -467,6 +491,9 @@ components:
       additionalProperties:
         type: string
       properties:
+        kind:
+          type: string
+          example: aws_iam_key
         name:
           type: string
           example: IAM key

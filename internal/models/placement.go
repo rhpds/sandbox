@@ -84,7 +84,7 @@ func (p *Placement) Save(dbpool *pgxpool.Pool) error {
 	return nil
 }
 
-func (p *Placement) Delete(dbpool *pgxpool.Pool) error {
+func (p *Placement) Delete(dbpool *pgxpool.Pool, accountProvider AwsAccountProvider) error {
 	if p.ID == 0 {
 		return errors.New("Placement ID is required")
 	}
@@ -92,6 +92,12 @@ func (p *Placement) Delete(dbpool *pgxpool.Pool) error {
 		context.Background(),
 		"DELETE FROM placements WHERE id = $1", p.ID,
 	)
+
+	// Mark all resources associated with this placement for cleanup
+	// NOTE: This will done automatically by the SQL constraints when we move to Postgresql instead of
+	// dynamodb for the accounts.
+
+	p.LoadResources(accountProvider)
 
 	return err
 }
@@ -142,12 +148,12 @@ func GetAllPlacements(dbpool *pgxpool.Pool) (Placements, error) {
 
 
 // GetPlacementByServiceUuid returns a placement by service_uuid
-func GetPlacementByServiceUuid(dbpool *pgxpool.Pool, service_uuid string) (*Placement, error) {
+func GetPlacementByServiceUuid(dbpool *pgxpool.Pool, serviceUuid string) (*Placement, error) {
 	var p Placement
 
 	err := dbpool.QueryRow(
 		context.Background(),
-		"SELECT id, service_uuid, annotations FROM placements WHERE service_uuid = $1", service_uuid,
+		"SELECT id, service_uuid, annotations FROM placements WHERE service_uuid = $1", serviceUuid,
 	).Scan(&p.ID, &p.ServiceUuid, &p.Annotations)
 
 	if err != nil {
@@ -155,4 +161,14 @@ func GetPlacementByServiceUuid(dbpool *pgxpool.Pool, service_uuid string) (*Plac
 	}
 
 	return &p, nil
+}
+
+
+// DeletePlacementByServiceUuid deletes a placement by ServiceUuid
+func DeletePlacementByServiceUuid(dbpool *pgxpool.Pool, accountProvider  AwsAccountProvider, serviceUuid string) error {
+	placement, err := GetPlacementByServiceUuid(dbpool, serviceUuid)
+	if err != nil {
+		return err
+	}
+	return placement.Delete(dbpool, accountProvider)
 }

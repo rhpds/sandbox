@@ -232,3 +232,34 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusOK)
 	render.Render(w, r, placement)
 }
+
+// Delete placement by service uuid
+func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Request) {
+	serviceUuid := chi.URLParam(r, "uuid")
+
+	err := models.DeletePlacementByServiceUuid(h.dbpool, h.accountProvider, serviceUuid)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Placement not found",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error deleting placement",
+		})
+		log.Logger.Error("DeletePlacementHandler", "error", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &v1.SimpleMessage{
+		Message:        "Placement deleted",
+	})
+}
