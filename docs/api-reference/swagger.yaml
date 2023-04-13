@@ -48,7 +48,7 @@ paths:
       tags:
         - placement
       operationId: getPlacements
-      summary: Get all placements
+      summary: Get all placements (Slow)
       responses:
         '200':
           description: The list of placements

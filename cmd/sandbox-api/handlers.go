@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/render"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/go-chi/chi/v5"
 
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/log"
@@ -34,15 +35,7 @@ func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.
 	}
 }
 
-func GetPlacementsHandler(w http.ResponseWriter, r *http.Request) {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", " ")
-}
-
 func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Request) {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", " ")
-
 	placementRequest := &v1.PlacementRequest{}
 	if err := render.Bind(r, placementRequest); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -184,4 +177,58 @@ func (h *BaseHandler) HealthHandler(w http.ResponseWriter, r *http.Request) {
 		HTTPStatusCode: 200,
 		Message:        "OK",
 	})
+}
+
+
+// Get All placements
+func (h *BaseHandler) GetPlacementsHandler(w http.ResponseWriter, r *http.Request) {
+
+	placements, err := models.GetAllPlacements(h.dbpool)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting placements",
+		})
+		log.Logger.Error("GetPlacementsHandler", "error", err)
+		return
+	}
+
+	for i, _ := range placements {
+		placements[i].LoadResources(h.accountProvider)
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, placements)
+}
+
+// Get placement by service uuid
+func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request) {
+	serviceUuid := chi.URLParam(r, "uuid")
+
+	placement, err := models.GetPlacementByServiceUuid(h.dbpool, serviceUuid)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Placement not found",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting placement",
+		})
+		log.Logger.Error("GetPlacementHandler", "error", err)
+		return
+	}
+	placement.LoadResources(h.accountProvider)
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, placement)
 }

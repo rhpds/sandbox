@@ -35,20 +35,6 @@ type AvailabilityMarker interface {
 	markedForCleanup() bool
 }
 
-type Placement struct {
-	Model
-
-	ServiceUuid string            `json:"service_uuid"`
-	Resources   []any        `json:"resources"`
-	Annotations map[string]string `json:"annotations"`
-}
-
-type PlacementWithCreds struct {
-	Placement
-
-	Resources []any `json:"resources"`
-}
-
 func (r Resource) isAvailable() bool {
 	return r.Available
 }

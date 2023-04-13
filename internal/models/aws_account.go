@@ -46,6 +46,7 @@ type AwsAccountProvider interface {
 	FetchAll() ([]AwsAccount, error)
 	FetchAllToCleanup() ([]AwsAccount, error)
 	FetchAllSorted(by string) ([]AwsAccount, error)
+	FetchAllByServiceUuid(serviceUuid string) ([]AwsAccount, error)
 	Book(service_uuid string, count int, annotations map[string]string) ([]AwsAccountWithCreds, error)
 	//Annotations(account AwsAccount) (map[string]string, error)
 }

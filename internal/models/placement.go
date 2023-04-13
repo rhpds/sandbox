@@ -8,7 +8,49 @@ import (
 
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
+	"net/http"
 )
+
+type Placement struct {
+	Model
+
+	ServiceUuid string            `json:"service_uuid"`
+	Resources   []any        `json:"resources"`
+	Annotations map[string]string `json:"annotations"`
+}
+
+type PlacementWithCreds struct {
+	Placement
+
+	Resources []any `json:"resources"`
+}
+
+type Placements []Placement
+
+func (p Placements) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
+func (p *Placement) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
+func (p *Placement) LoadResources(accountProvider AwsAccountProvider) error {
+
+	accounts, err := accountProvider.FetchAllByServiceUuid(p.ServiceUuid)
+
+	if err != nil {
+		return err
+	}
+
+	p.Resources = []any{}
+
+	for _, account := range accounts {
+		p.Resources = append(p.Resources, account)
+	}
+
+	return nil
+}
 
 func (p *Placement) Save(dbpool *pgxpool.Pool) error {
 	var id int
@@ -70,9 +112,9 @@ func GetPlacement(dbpool *pgxpool.Pool, id int) (*Placement, error) {
 	return &p, nil
 }
 
-// GetPlacements returns all placements
+// GetAllPlacements returns all placements
 
-func GetPlacements(dbpool *pgxpool.Pool) ([]*Placement, error) {
+func GetAllPlacements(dbpool *pgxpool.Pool) (Placements, error) {
 	rows, err := dbpool.Query(
 		context.Background(),
 		"SELECT id, service_uuid, annotations FROM placements",
@@ -84,7 +126,7 @@ func GetPlacements(dbpool *pgxpool.Pool) ([]*Placement, error) {
 
 	defer rows.Close()
 
-	var placements []*Placement
+	var placements Placements
 
 	for rows.Next() {
 		var p Placement
@@ -92,7 +134,7 @@ func GetPlacements(dbpool *pgxpool.Pool) ([]*Placement, error) {
 		if err != nil {
 			return nil, err
 		}
-		placements = append(placements, &p)
+		placements = append(placements, p)
 	}
 
 	return placements, nil

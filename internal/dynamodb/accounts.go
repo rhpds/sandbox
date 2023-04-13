@@ -314,7 +314,7 @@ func (a *AwsAccountDynamoDBProvider) FetchByName(name string) (models.AwsAccount
 	return makeAccount(account), nil
 }
 
-// GetAccounts returns the list of accounts from dynamodb
+// FetchAll returns the list of all accounts from dynamodb
 func (a *AwsAccountDynamoDBProvider) FetchAll() ([]models.AwsAccount, error) {
 	filter := expression.ConditionBuilder{}
 	accounts, err := GetAccounts(a.Svc, filter, -1)
@@ -324,7 +324,17 @@ func (a *AwsAccountDynamoDBProvider) FetchAll() ([]models.AwsAccount, error) {
 	return makeAccounts(accounts), nil
 }
 
-// GetAccountsToCleanup returns the list of accounts from dynamodb
+// FetchAllByServiceUuid returns the list of accounts from dynamodb for a specific service uuid
+func (a *AwsAccountDynamoDBProvider) FetchAllByServiceUuid(serviceUuid string) ([]models.AwsAccount, error) {
+	filter := expression.Name("service_uuid").Equal(expression.Value(serviceUuid))
+	accounts, err := GetAccounts(a.Svc, filter, -1)
+	if err != nil {
+		return []models.AwsAccount{}, err
+	}
+	return makeAccounts(accounts), nil
+}
+
+// FetchAllToCleanup returns the list of accounts from dynamodb
 func (a *AwsAccountDynamoDBProvider) FetchAllToCleanup() ([]models.AwsAccount, error) {
 	filter := expression.Name("to_cleanup").Equal(expression.Value(true))
 	accounts, err := GetAccounts(a.Svc, filter, -1)
