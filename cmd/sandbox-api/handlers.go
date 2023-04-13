@@ -81,7 +81,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 	// Create the placement
 	resources := []any{}
 	for _, request := range placementRequest.Request {
-		switch request.Type {
+		switch request.Kind {
 		case "AwsSandbox":
 			// Create the placement in AWS
 			accounts, err := h.accountProvider.Book(placementRequest.ServiceUuid, request.Count, placementRequest.Annotations)
@@ -115,7 +115,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				HTTPStatusCode: http.StatusBadRequest,
 				Message:        "Invalid resource type",
 			})
-			log.Logger.Error("Invalid resource type", "type", request.Type)
+			log.Logger.Error("Invalid resource type", "type", request.Kind)
 			return
 		}
 	}

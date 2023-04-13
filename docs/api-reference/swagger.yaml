@@ -284,7 +284,7 @@ components:
           items:
             type: object
             properties:
-              type:
+              kind:
                 type: string
                 default: AwsSandbox
                 example: AwsSandbox
@@ -297,6 +297,11 @@ components:
                 example: 1
         annotations:
           $ref: "#/components/schemas/Annotations"
+      example:
+        service_uuid: 13a8b15c-e752-4727-ac78-600e8833e575
+        request:
+          - kind: AwsSandbox
+            count: 2
 
     Annotations:
       description: Key / Value map to provide optional information.
@@ -338,7 +343,7 @@ components:
         - $ref: '#/components/schemas/Placement'
         - type: object
           properties:
-            accounts:
+            resources:
               $ref: "#/components/schemas/ResourcesWithCreds"
 
     Account:
@@ -346,17 +351,17 @@ components:
         - $ref: '#/components/schemas/AwsAccount'
         - $ref: '#/components/schemas/AzureAccount'
       discriminator:
-        propertyName: account_type
+        propertyName: kind
         mapping:
-          aws: '#/components/schemas/AwsAccount'
+          aws_account: '#/components/schemas/AwsAccount'
 
     AccountWithCreds:
       oneOf:
         - $ref: '#/components/schemas/AwsAccountWithCreds'
       discriminator:
-        propertyName: account_type
+        propertyName: kind
         mapping:
-          aws: '#/components/schemas/AwsAccountWithCreds'
+          aws_account: '#/components/schemas/AwsAccountWithCreds'
 
     Resource:
       type: object
@@ -378,18 +383,17 @@ components:
         - $ref: '#/components/schemas/Account'
         - $ref: '#/components/schemas/AwsAccount'
       discriminator:
-        propertyName: resource_type
+        propertyName: kind
         mapping:
-          account: '#/components/schemas/Account'
           aws_account: '#/components/schemas/AwsAccount'
 
     ResourceWithCreds:
       oneOf:
         - $ref: '#/components/schemas/AccountWithCreds'
       discriminator:
-        propertyName: resource_type
+        propertyName: kind
         mapping:
-          account: '#/components/schemas/AccountWithCreds'
+          aws_account: '#/components/schemas/AwsAccountWithCreds'
 
     Resources:
       type: array
@@ -400,7 +404,7 @@ components:
       oneOf:
         - $ref: '#/components/schemas/AwsIamKey'
       discriminator:
-        propertyName: credential_type
+        propertyName: kind
         mapping:
           aws_iam_key: '#/components/schemas/AwsIamKey'
 
@@ -487,11 +491,6 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/Account'
-
-    AccountsWithCreds:
-      type: array
-      items:
-        $ref: '#/components/schemas/AccountWithCreds'
 
     ResourcesWithCreds:
       type: array

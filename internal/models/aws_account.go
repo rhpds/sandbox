@@ -13,7 +13,8 @@ var ErrNoEnoughAccountsAvailable = errors.New("no enough accounts available")
 
 
 type AwsAccount struct {
-	Account // AccountType == "aws"
+	Account
+	Kind string `json:"kind"` // "aws_account"
 
 	Name         string `json:"name"`
 	AccountID    string `json:"account_id"`
@@ -26,12 +27,13 @@ type AwsAccount struct {
 }
 
 type AwsAccountWithCreds struct {
-	AwsAccount // AccountType == "aws"
+	AwsAccount
 
-	Credentials []Credential `json:"credentials"`
+	Credentials []any `json:"credentials"`
 }
 
 type AwsIamKey struct {
+	Kind 	 string `json:"kind"` // "aws_iam_key"
 	Name               string `json:"name"`
 	AwsAccessKeyID     string `json:"aws_access_key_id"`
 	AwsSecretAccessKey string `json:"aws_secret_access_key"`

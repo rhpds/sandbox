@@ -104,8 +104,7 @@ func makeAccount(account AwsAccountDynamoDB) models.AwsAccount {
 		a.ConanTimestamp = conanTime
 	}
 
-	a.AccountType = "aws"
-	a.ResourceType = "account"
+	a.Kind = "aws_account"
 	a.ServiceUuid = account.ServiceUUID
 	a.ToCleanup = account.ToCleanup
 	a.Available = account.Available
@@ -152,18 +151,14 @@ func makeAccountWithCreds(account AwsAccountDynamoDB) models.AwsAccountWithCreds
 	}
 
 	iamKey := models.AwsIamKey{
+		Kind: "aws_iam_key",
 		Name: "admin-key",
 		AwsAccessKeyID:     account.AwsAccessKeyID,
 		AwsSecretAccessKey: account.AwsSecretAccessKey,
 	}
 
 	// For now, an account only has one credential: an IAM key
-	result.Credentials = []models.Credential{
-		{
-			CredentialType: "aws_iam_key",
-			Value: iamKey,
-		},
-	}
+	result.Credentials = []any{iamKey}
 
 	return result
 }

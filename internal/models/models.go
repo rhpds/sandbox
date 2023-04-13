@@ -13,8 +13,6 @@ type Model struct {
 type Resource struct {
 	Model
 
-	ResourceType string `json:"resource_type"`
-
 	ServiceUuid string `json:"service_uuid"`
 	Available   bool   `json:"available"`
 	ToCleanup   bool   `json:"to_cleanup"`
@@ -24,28 +22,12 @@ type Resource struct {
 
 type ResourceWithCreds struct {
 	Resource
-	ResourceType string `json:"resource_type"`
 
-	Credentials []Credential `json:"credentials"`
+	Credentials []any `json:"credentials"`
 }
 
 type Account struct {
 	Resource
-
-	AccountType string `json:"account_type"`
-}
-
-type AccountWithCreds struct {
-	Account
-	AccountType string       `json:"account_type"`
-	Credentials []Credential `json:"credentials"`
-}
-
-// TODO  deal with type or "kind" better.
-type Credential struct {
-	CredentialType string `json:"credential_type"`
-
-	Value any 	  `json:"value"`
 }
 
 type AvailabilityMarker interface {

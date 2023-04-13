@@ -43,7 +43,7 @@ func (p *PlacementResponse) Render(w http.ResponseWriter, r *http.Request) error
 }
 
 type ResourceRequest struct {
-	Type  string `json:"type"`
+	Kind  string `json:"kind"`
 	Count int    `json:"count"`
 }
 
