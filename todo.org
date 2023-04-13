@@ -21,3 +21,4 @@
 * DONE make clean
 * TODO add JWT for auth
 * TODO unit tests and fixture/functional tests
+* TODO documentation coverage

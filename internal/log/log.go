@@ -2,9 +2,9 @@ package log
 
 import (
 	"golang.org/x/exp/slog"
-	"io/ioutil"
 	"log"
 	"os"
+	"io"
 )
 
 // Err stderr logger
@@ -35,9 +35,9 @@ func InitLoggers(debugFlag bool) {
 			Level: slog.LevelDebug,
 		}
 	} else {
-		Debug = log.New(ioutil.Discard, "(d) ", log.LstdFlags)
+		Debug = log.New(io.Discard, "(d) ", log.LstdFlags)
 	}
 	Report = log.New(os.Stdout, "+++ ", log.LstdFlags)
 
-	Logger = slog.New(opts.NewTextHandler(os.Stdout))
+	Logger = slog.New(opts.NewJSONHandler(os.Stdout))
 }

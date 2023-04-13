@@ -2,6 +2,8 @@ package v1
 
 import (
 	"net/http"
+
+	"github.com/rhpds/sandbox/internal/models"
 )
 
 type Error struct {
@@ -14,6 +16,11 @@ type Error struct {
 	ErrorMultiline []string `json:"error_multiline,omitempty"` // application-level error message, for debugging
 }
 
+type SimpleMessage struct {
+	Message string `json:"message"`
+	MessageMultiline []string `json:"message_multiline,omitempty"`
+}
+
 type HealthCheckResult struct {
 	HTTPStatusCode int    `json:"http_code,omitempty"` // http response status code
 	Message        string `json:"message"`
@@ -23,6 +30,16 @@ type PlacementRequest struct {
 	ServiceUuid string            `json:"service_uuid"`
 	Request     []ResourceRequest `json:"request"`
 	Annotations map[string]string `json:"annotations"`
+}
+
+type PlacementResponse struct {
+	HTTPStatusCode int    `json:"http_code,omitempty"` // http response status code
+	Message        string `json:"message"`
+	Placement      models.PlacementWithCreds
+}
+
+func (p *PlacementResponse) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
 }
 
 type ResourceRequest struct {

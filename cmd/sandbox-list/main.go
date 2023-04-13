@@ -37,7 +37,7 @@ func (a accountPrint) String() string {
 	} else {
 		separator = "\t"
 	}
-	diff := time.Now().Sub(a.UpdatedAt)
+	diff := time.Since(a.UpdatedAt)
 
 	var supdatetime string
 	if csvFlag {

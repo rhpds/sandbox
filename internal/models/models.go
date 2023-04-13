@@ -41,8 +41,11 @@ type AccountWithCreds struct {
 	Credentials []Credential `json:"credentials"`
 }
 
+// TODO  deal with type or "kind" better.
 type Credential struct {
 	CredentialType string `json:"credential_type"`
+
+	Value any 	  `json:"value"`
 }
 
 type AvailabilityMarker interface {
@@ -54,7 +57,14 @@ type Placement struct {
 	Model
 
 	ServiceUuid string            `json:"service_uuid"`
+	Resources   []any        `json:"resources"`
 	Annotations map[string]string `json:"annotations"`
+}
+
+type PlacementWithCreds struct {
+	Placement
+
+	Resources []any `json:"resources"`
 }
 
 func (r Resource) isAvailable() bool {
@@ -111,7 +121,7 @@ func CountOlder(duration time.Duration, accounts []Resource) (int, error) {
 	total := 0
 
 	for _, r := range accounts {
-		if time.Now().Sub(r.UpdatedAt) < duration {
+		if time.Since(r.UpdatedAt) < duration {
 			total = total + 1
 		}
 	}

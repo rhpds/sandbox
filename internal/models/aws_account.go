@@ -7,7 +7,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"errors"
 )
+var ErrNoEnoughAccountsAvailable = errors.New("no enough accounts available")
+
 
 type AwsAccount struct {
 	Account // AccountType == "aws"
@@ -29,8 +32,6 @@ type AwsAccountWithCreds struct {
 }
 
 type AwsIamKey struct {
-	Credential // CredentialType == "aws_iam_key"
-
 	Name               string `json:"name"`
 	AwsAccessKeyID     string `json:"aws_access_key_id"`
 	AwsSecretAccessKey string `json:"aws_secret_access_key"`
@@ -43,6 +44,7 @@ type AwsAccountProvider interface {
 	FetchAll() ([]AwsAccount, error)
 	FetchAllToCleanup() ([]AwsAccount, error)
 	FetchAllSorted(by string) ([]AwsAccount, error)
+	Book(service_uuid string, count int, annotations map[string]string) ([]AwsAccountWithCreds, error)
 	//Annotations(account AwsAccount) (map[string]string, error)
 }
 

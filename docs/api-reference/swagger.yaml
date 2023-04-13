@@ -376,10 +376,12 @@ components:
           example: false
       oneOf:
         - $ref: '#/components/schemas/Account'
+        - $ref: '#/components/schemas/AwsAccount'
       discriminator:
         propertyName: resource_type
         mapping:
           account: '#/components/schemas/Account'
+          aws_account: '#/components/schemas/AwsAccount'
 
     ResourceWithCreds:
       oneOf:

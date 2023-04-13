@@ -19,12 +19,6 @@ import (
 	"github.com/go-chi/httplog"
 )
 
-// checkEnv checks that the environment variables are set correctly
-// and returns an error if not.
-func checkEnv() error {
-	return nil
-}
-
 //go:embed assets/swagger.yaml
 var openapiSpec []byte
 
@@ -89,7 +83,7 @@ func main() {
 	accountHandler := NewAccountHandler(accountProvider)
 
 	// Factory for handlers which need connections to both databases
-	baseHandler := NewBaseHandler(accountProvider.Svc, dbPool, doc, oaRouter)
+	baseHandler := NewBaseHandler(accountProvider.Svc, dbPool, doc, oaRouter, accountProvider)
 
 	// HTTP router
 	router := chi.NewRouter()
