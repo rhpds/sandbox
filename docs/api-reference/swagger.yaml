@@ -173,13 +173,11 @@ paths:
         description: Boolean to filter if available or taken.
         schema:
           type: boolean
-      - name: cloud
+      - name: service_uuid
         in: query
-        description: Filter accounts by cloud
+        description: Filter accounts by Service UUID
         schema:
-          type: string
-          example: aws
-          default: aws
+          $ref: '#/components/schemas/UUID'
     get:
       tags:
         - account

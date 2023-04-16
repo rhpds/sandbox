@@ -18,8 +18,6 @@ import (
 	"time"
 )
 
-var ErrAccountNotFound = errors.New("account not found")
-
 func parseNameInt(s string) int {
 	var result strings.Builder
 	for i := 0; i < len(s); i++ {
@@ -214,7 +212,7 @@ func GetAccount(svc *dynamodb.DynamoDB, name string) (AwsAccountDynamoDB, error)
 	}
 
 	if len(output.Item) == 0 {
-		return AwsAccountDynamoDB{}, ErrAccountNotFound
+		return AwsAccountDynamoDB{}, models.ErrAccountNotFound
 	}
 
 	if err := dynamodbattribute.UnmarshalMap(output.Item, &sandbox); err != nil {

@@ -11,6 +11,7 @@ import (
 )
 var ErrNoEnoughAccountsAvailable = errors.New("no enough accounts available")
 
+var ErrAccountNotFound = errors.New("account not found")
 
 type AwsAccount struct {
 	Account

@@ -9,6 +9,10 @@
 ** Accounts
 *** DONE GET one
 *** TODO PUT (mark for cleanup)
+** Lifecycle
+*** STOP
+*** START
+*** STATUS
 * DONE validate requests using the openAPI schema
 * DONE embed the schema in binary
 * TODO DB migration inside the app at startup

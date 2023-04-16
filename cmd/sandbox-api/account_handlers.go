@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"github.com/rhpds/sandbox/internal/api/v1"
-	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"github.com/rhpds/sandbox/internal/models"
 	"net/http"
 
@@ -27,7 +26,19 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", " ")
 
-	accounts, err := h.accountProvider.FetchAll()
+	serviceUuuid := r.URL.Query().Get("service_uuid")
+
+	var(
+		accounts []models.AwsAccount
+		err error
+	)
+	if serviceUuuid != "" {
+		// Get the account from DynamoDB
+		accounts, err = h.accountProvider.FetchAllByServiceUuid(serviceUuuid)
+
+	} else {
+		accounts, err = h.accountProvider.FetchAll()
+	}
 
 	if err != nil {
 		log.Logger.Error("GET accounts", "error", err)
@@ -38,6 +49,12 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 			Message:        "Error reading accounts",
 		})
 		return
+	}
+
+	if len(accounts) == 0 {
+		w.WriteHeader(http.StatusNotFound)
+	} else {
+		w.WriteHeader(http.StatusOK)
 	}
 
 	// Print accounts using JSON
@@ -63,7 +80,7 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 	// Get the account from DynamoDB
 	sandbox, err := h.accountProvider.FetchByName(accountName)
 	if err != nil {
-		if err == sandboxdb.ErrAccountNotFound {
+		if err == models.ErrAccountNotFound {
 			log.Logger.Warn("GET account", "error", err)
 			w.WriteHeader(http.StatusNotFound)
 			enc.Encode(v1.Error{
