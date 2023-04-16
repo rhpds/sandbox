@@ -88,6 +88,11 @@ func (p *Placement) Delete(dbpool *pgxpool.Pool, accountProvider AwsAccountProvi
 	if p.ID == 0 {
 		return errors.New("Placement ID is required")
 	}
+
+	if err := accountProvider.MarkForCleanupByServiceUuid(p.ServiceUuid); err != nil {
+		return err
+	}
+
 	_, err := dbpool.Exec(
 		context.Background(),
 		"DELETE FROM placements WHERE id = $1", p.ID,

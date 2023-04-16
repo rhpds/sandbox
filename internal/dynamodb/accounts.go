@@ -499,8 +499,41 @@ func (a *AwsAccountDynamoDBProvider) MarkForCleanup(name string) (error) {
 		},
 	})
 	if err != nil {
-		log.Logger.Error("error marking the sandbox for cleanup", "sandbox", name, "error", err)
+		log.Logger.Error("error marking the sandbox for cleanup", "name", name, "error", err)
 		return err
+	}
+	return nil
+}
+
+func (a *AwsAccountDynamoDBProvider) MarkForCleanupByServiceUuid(serviceUuid string) (error) {
+
+	accounts, err := a.FetchAllByServiceUuid(serviceUuid)
+
+	if err != nil {
+		return err
+	}
+
+	for _, account := range accounts {
+
+		_, err := a.Svc.UpdateItem(&dynamodb.UpdateItemInput{
+			TableName: aws.String(os.Getenv("dynamodb_table")),
+			Key: map[string]*dynamodb.AttributeValue{
+				"name": {
+					S: aws.String(account.Name),
+				},
+			},
+			UpdateExpression: aws.String("SET to_cleanup = :tc"),
+			ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+				":tc": {
+					BOOL: aws.Bool(true),
+				},
+			},
+		})
+		if err != nil {
+			log.Logger.Error("error marking the sandbox for cleanup", "ServiceUuid", serviceUuid, "error", err)
+			return err
+		}
+
 	}
 	return nil
 }
