@@ -65,6 +65,7 @@ paths:
                   created_at: "2023-04-17T13:19:11.835373+02:00"
                   updated_at: "2023-04-17T13:19:11.835373+02:00"
                   service_uuid: "6548dc97-5799-4bfe-8843-8d1793996593"
+                  resources: []
                   annotations:
                     guid: testguid
                   request:

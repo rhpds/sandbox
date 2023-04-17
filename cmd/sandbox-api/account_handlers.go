@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/models"
+	"github.com/go-chi/render"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -69,13 +70,16 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 }
 
 // GetAccountHandler returns an account
-// GET /accounts/:account
+// GET /accounts/{kind}/{account}
 func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", " ")
 
 	// Grab the parameters from Params
 	accountName := chi.URLParam(r, "account")
+
+	// We don't need 'kind' param for now as it is checked and validated
+	// by the swagger openAPI spec.
 
 	// Get the account from DynamoDB
 	sandbox, err := h.accountProvider.FetchByName(accountName)
@@ -107,4 +111,49 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 			Message:        "Error reading account",
 		})
 	}
+}
+
+func (h *AccountHandler) CleanupAccountHandler(w http.ResponseWriter, r *http.Request) {
+	// Grab the parameters from Params
+	accountName := chi.URLParam(r, "account")
+
+	// We don't need 'kind' param for now as it is checked and validated
+	// by the swagger openAPI spec.
+
+	// Get the account from DynamoDB
+	sandbox, err := h.accountProvider.FetchByName(accountName)
+	if err != nil {
+		if err == models.ErrAccountNotFound {
+			log.Logger.Warn("GET account", "error", err)
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Account not found",
+			})
+			return
+		}
+		log.Logger.Error("GET account", "error", err)
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: 500,
+			Message:        "Error reading account",
+		})
+		return
+	}
+	// Mark account for cleanup
+	if err := h.accountProvider.MarkForCleanup(sandbox.Name); err != nil {
+		log.Logger.Error("PUT account cleanup", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: 500,
+			Message:        "Error marking account for cleanup",
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &v1.SimpleMessage{
+		Message: "Account marked for cleanup",
+	})
 }

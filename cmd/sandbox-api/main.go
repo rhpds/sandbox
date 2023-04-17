@@ -115,6 +115,7 @@ func main() {
 	router.Get("/api/v1/health", baseHandler.HealthHandler)
 	router.Get("/api/v1/accounts/{kind}", accountHandler.GetAccountsHandler)
 	router.Get("/api/v1/accounts/{kind}/{account}", accountHandler.GetAccountHandler)
+	router.Put("/api/v1/accounts/{kind}/{account}/cleanup", accountHandler.CleanupAccountHandler)
 	router.Post("/api/v1/placements", baseHandler.CreatePlacementHandler)
 	router.Get("/api/v1/placements", baseHandler.GetPlacementsHandler)
 	router.Get("/api/v1/placements/{uuid}", baseHandler.GetPlacementHandler)
