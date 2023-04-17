@@ -4,8 +4,9 @@
 ** Placements
 *** DONE GET all
 *** DONE POST
+**** DONE save request as part of the placement
 *** DONE GET one
-*** TODO DELETE one
+*** DONE DELETE one
 ** Accounts
 *** DONE GET one
 *** TODO PUT (mark for cleanup)
@@ -15,7 +16,6 @@
 *** STATUS
 * DONE validate requests using the openAPI schema
 * DONE embed the schema in binary
-* TODO DB migration inside the app at startup
 * DONE add credential type
 * TODO add AccountWithCreds
 * DONE test postgresql down, and up again
@@ -33,3 +33,4 @@
 * TODO unit tests and fixture/functional tests
 * TODO documentation coverage
 * DONE /api/v1/accounts/{name}  won't work when we have other cloud providers.  do /api/v1/accounts/{kind}/{name} instead
+* TODO rename Book() to Request() ?

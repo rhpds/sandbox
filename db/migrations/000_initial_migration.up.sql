@@ -16,6 +16,7 @@ CREATE TABLE placements (
   service_uuid uuid NOT NULL UNIQUE,
   created_at timestamp with time zone NOT NULL DEFAULT (now() at time zone 'utc'),
   updated_at timestamp with time zone NOT NULL DEFAULT (now() at time zone 'utc'),
+  request jsonb DEFAULT '{}',
   annotations jsonb DEFAULT '{}'
 );
 

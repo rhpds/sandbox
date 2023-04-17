@@ -15,8 +15,9 @@ type Placement struct {
 	Model
 
 	ServiceUuid string            `json:"service_uuid"`
-	Resources   []any        `json:"resources"`
+	Resources   []any             `json:"resources,omitempty"`
 	Annotations map[string]string `json:"annotations"`
+	Request     any               `json:"request"`
 }
 
 type PlacementWithCreds struct {
@@ -73,8 +74,8 @@ func (p *Placement) Save(dbpool *pgxpool.Pool) error {
 		// Insert placement
 		err = dbpool.QueryRow(
 			context.Background(),
-			"INSERT INTO placements (service_uuid, annotations) VALUES ($1, $2) RETURNING id",
-			p.ServiceUuid, p.Annotations,
+			"INSERT INTO placements (service_uuid, request, annotations) VALUES ($1, $2, $3) RETURNING id",
+			p.ServiceUuid, p.Request, p.Annotations,
 		).Scan(&id)
 
 		p.ID = id
@@ -113,8 +114,8 @@ func GetPlacement(dbpool *pgxpool.Pool, id int) (*Placement, error) {
 
 	err := dbpool.QueryRow(
 		context.Background(),
-		"SELECT id, service_uuid, annotations FROM placements WHERE id = $1", id,
-	).Scan(&p.ID, &p.ServiceUuid, &p.Annotations)
+		"SELECT id, service_uuid, request, annotations, created_at, updated_at FROM placements WHERE id = $1", id,
+	).Scan(&p.ID, &p.ServiceUuid, &p.Request, &p.Annotations, &p.CreatedAt, &p.UpdatedAt)
 
 	if err != nil {
 		return nil, err
@@ -128,7 +129,7 @@ func GetPlacement(dbpool *pgxpool.Pool, id int) (*Placement, error) {
 func GetAllPlacements(dbpool *pgxpool.Pool) (Placements, error) {
 	rows, err := dbpool.Query(
 		context.Background(),
-		"SELECT id, service_uuid, annotations FROM placements",
+		"SELECT id, service_uuid, request, annotations, created_at, updated_at FROM placements",
 	)
 
 	if err != nil {
@@ -141,7 +142,7 @@ func GetAllPlacements(dbpool *pgxpool.Pool) (Placements, error) {
 
 	for rows.Next() {
 		var p Placement
-		err := rows.Scan(&p.ID, &p.ServiceUuid, &p.Annotations)
+		err := rows.Scan(&p.ID, &p.ServiceUuid, &p.Request, &p.Annotations, &p.CreatedAt, &p.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -151,15 +152,14 @@ func GetAllPlacements(dbpool *pgxpool.Pool) (Placements, error) {
 	return placements, nil
 }
 
-
 // GetPlacementByServiceUuid returns a placement by service_uuid
 func GetPlacementByServiceUuid(dbpool *pgxpool.Pool, serviceUuid string) (*Placement, error) {
 	var p Placement
 
 	err := dbpool.QueryRow(
 		context.Background(),
-		"SELECT id, service_uuid, annotations FROM placements WHERE service_uuid = $1", serviceUuid,
-	).Scan(&p.ID, &p.ServiceUuid, &p.Annotations)
+		"SELECT id, service_uuid, request, annotations, created_at, updated_at FROM placements WHERE service_uuid = $1", serviceUuid,
+	).Scan(&p.ID, &p.ServiceUuid, &p.Request, &p.Annotations, &p.CreatedAt, &p.UpdatedAt)
 
 	if err != nil {
 		return nil, err
@@ -168,9 +168,8 @@ func GetPlacementByServiceUuid(dbpool *pgxpool.Pool, serviceUuid string) (*Place
 	return &p, nil
 }
 
-
 // DeletePlacementByServiceUuid deletes a placement by ServiceUuid
-func DeletePlacementByServiceUuid(dbpool *pgxpool.Pool, accountProvider  AwsAccountProvider, serviceUuid string) error {
+func DeletePlacementByServiceUuid(dbpool *pgxpool.Pool, accountProvider AwsAccountProvider, serviceUuid string) error {
 	placement, err := GetPlacementByServiceUuid(dbpool, serviceUuid)
 	if err != nil {
 		return err

@@ -71,9 +71,19 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	if len(placementRequest.Resources) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "No resources requested",
+		})
+		log.Logger.Info("CreatePlacementHandler", "error", "No resources requested")
+		return
+	}
+
 	// Create the placement
 	resources := []any{}
-	for _, request := range placementRequest.Request {
+	for _, request := range placementRequest.Resources {
 		switch request.Kind {
 		case "AwsSandbox":
 			// Create the placement in AWS
@@ -118,6 +128,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 		Placement: models.Placement{
 			ServiceUuid: placementRequest.ServiceUuid,
 			Annotations: placementRequest.Annotations,
+			Request:     v1.PlacementRequest{Resources: placementRequest.Resources},
 		},
 	}
 	placement.Resources = resources
@@ -193,10 +204,6 @@ func (h *BaseHandler) GetPlacementsHandler(w http.ResponseWriter, r *http.Reques
 		})
 		log.Logger.Error("GetPlacementsHandler", "error", err)
 		return
-	}
-
-	for i, _ := range placements {
-		placements[i].LoadResources(h.accountProvider)
 	}
 
 	w.WriteHeader(http.StatusOK)
