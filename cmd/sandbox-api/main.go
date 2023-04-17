@@ -101,6 +101,7 @@ func main() {
 	// Middlewares
 	// ---------------------------------------------------------------------
 	router.Use(middleware.CleanPath)
+	router.Use(middleware.RequestID)
 	router.Use(httplog.RequestLogger(logger))
 	// Set Content-Type header to application/json for all responses
 	router.Use(middleware.SetHeader("Content-Type", "application/json"))
