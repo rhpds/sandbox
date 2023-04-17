@@ -82,7 +82,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
     post:
-      summary: Create a new placement; book a sandbox.
+      summary: Create a new placement; Request a sandbox.
       operationId: createPlacements
       tags:
         - placement
@@ -298,6 +298,164 @@ paths:
                 $ref: "#/components/schemas/Error"
         default:
           description: markForCleanup unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /accounts/{kind}/{name}/stop:
+    parameters:
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
+      - name: name
+        in: path
+        required: true
+        description: The name of the sandbox to stop
+        schema:
+          type: string
+    put:
+      tags:
+        - account
+      operationId: stopAccount
+      summary: Stop all instances and (supported) services in an account
+      description: |-
+        Given a specific account, stop all instances on all regions.
+
+        Also stop all supported services.
+      responses:
+        '200':
+          description: The stop request was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: stopAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /accounts/{kind}/{name}/start:
+    parameters:
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
+      - name: name
+        in: path
+        required: true
+        description: The name of the sandbox to start
+        schema:
+          type: string
+    put:
+      tags:
+        - account
+      operationId: startAccount
+      summary: Start all instances and (supported) services in an account
+      description: |-
+        Given a specific account, start all instances on all regions.
+
+        Also start all supported services.
+      responses:
+        '200':
+          description: The start request was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: startAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /accounts/{kind}/{name}/status:
+    parameters:
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
+      - name: name
+        in: path
+        required: true
+        description: The name of the sandbox
+        schema:
+          type: string
+    put:
+      tags:
+        - account
+      operationId: statusAccount
+      summary: Request new status update of all instances and (supported) services in an account
+      description: |-
+        Given a specific account, query an async status
+      responses:
+        '200':
+          description: The status request was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: statusAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      tags:
+        - account
+      operationId: getStatusAccount
+      summary: Get current status of all instances and (supported) services in an account
+      description: |-
+        Given a specific account, return the current status.
+
+        To trigger a new asynchronous status update, use the PUT method.
+      responses:
+        '200':
+          description: Account status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountStatus"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getStatusAccount unexpected error
           content:
             application/json:
               schema:
@@ -570,3 +728,31 @@ components:
         message:
           type: string
           example: Account successfully marked for cleanup
+
+    LifecycleResponse:
+      type: object
+      required:
+        - request_id
+      properties:
+        request_id:
+          type: string
+          example: hostname/icXUKzyr5U-000002
+        message:
+          type: string
+          example: "Request created"
+    AccountStatus:
+      type: object
+      properties:
+        updated_at:
+          type: string
+          format: date-time
+          example: 2023-03-13T09:42:33+01:00
+
+        instances:
+          type: array
+          items:
+            type: object
+        services:
+          type: array
+          items:
+            type: object

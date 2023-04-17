@@ -9,28 +9,28 @@
 *** DONE DELETE one
 ** Accounts
 *** DONE GET one
-*** TODO PUT (mark for cleanup)
+*** DONE PUT (mark for cleanup)
 ** Lifecycle
-*** STOP
-*** START
-*** STATUS
+*** TODO STOP
+*** TODO START
+*** TODO STATUS
 * DONE validate requests using the openAPI schema
 * DONE embed the schema in binary
 * DONE add credential type
-* TODO add AccountWithCreds
+* DONE add AccountWithCreds
 * DONE test postgresql down, and up again
-* TODO create OCI image
 * DONE script to push/create/update AWS lambda function
-* TODO aws lambda function to replicate changes from dynamoDB to postgresql
-* TODO move handlers per version?
 * DONE create OpenAPIValidation middleware for schema validation
 * DONE create openapi internal router from doc at startup, not on every request
 * DONE use go-chi instead of httprouter:
 ** 100% compatible with standard library
 ** nice interface for middleware
 * DONE make clean
+* DONE /api/v1/accounts/{name}  won't work when we have other cloud providers.  do /api/v1/accounts/{kind}/{name} instead
 * TODO add JWT for auth
 * TODO unit tests and fixture/functional tests
 * TODO documentation coverage
-* DONE /api/v1/accounts/{name}  won't work when we have other cloud providers.  do /api/v1/accounts/{kind}/{name} instead
 * TODO rename Book() to Request() ?
+* TODO create OCI image
+* TODO aws lambda function to replicate changes from dynamoDB to postgresql #POSTMVP
+* TODO move handlers per version?
