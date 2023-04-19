@@ -12,6 +12,8 @@ tags:
     description: Anything related to Placements. Ex, booking or releasing sandboxes
   - name: account
     description: Anything related to Accounts.
+  - name: admin
+    description: HTTP routes protected and accessible only by admins.
 paths:
   /placements:
     get:
@@ -456,6 +458,47 @@ paths:
                 $ref: "#/components/schemas/Error"
         default:
           description: getStatusAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /admin/jwt:
+    post:
+      summary: Issue a new JWT token
+      operationId: issueJWT
+      tags:
+        - admin
+      requestBody:
+        description: JSON object to specify claims.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+                  enum:
+                    - admin
+                    - app
+                  example: app
+            example:
+              role: admin
+      responses:
+        '200':
+          description: The token
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          description: NotFound
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: book unexpected error
           content:
             application/json:
               schema:

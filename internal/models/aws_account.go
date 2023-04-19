@@ -1,14 +1,15 @@
 package models
 
 import (
+	"errors"
 	"github.com/rhpds/sandbox/internal/log"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-	"errors"
 )
+
 var ErrNoEnoughAccountsAvailable = errors.New("no enough accounts available")
 
 var ErrAccountNotFound = errors.New("account not found")
@@ -34,7 +35,7 @@ type AwsAccountWithCreds struct {
 }
 
 type AwsIamKey struct {
-	Kind 	 string `json:"kind"` // "aws_iam_key"
+	Kind               string `json:"kind"` // "aws_iam_key"
 	Name               string `json:"name"`
 	AwsAccessKeyID     string `json:"aws_access_key_id"`
 	AwsSecretAccessKey string `json:"aws_secret_access_key"`
@@ -51,6 +52,7 @@ type AwsAccountProvider interface {
 	Book(service_uuid string, count int, annotations map[string]string) ([]AwsAccountWithCreds, error)
 	MarkForCleanup(name string) error
 	MarkForCleanupByServiceUuid(serviceUuid string) error
+	DecryptSecret(encrypted string) (string, error)
 	//Annotations(account AwsAccount) (map[string]string, error)
 }
 

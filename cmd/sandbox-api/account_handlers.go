@@ -2,9 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/go-chi/render"
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/models"
-	"github.com/go-chi/render"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -29,9 +29,9 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 
 	serviceUuuid := r.URL.Query().Get("service_uuid")
 
-	var(
+	var (
 		accounts []models.AwsAccount
-		err error
+		err      error
 	)
 	if serviceUuuid != "" {
 		// Get the account from DynamoDB

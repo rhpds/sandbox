@@ -1,22 +1,22 @@
 package main
 
 import (
+	"context"
+	_ "embed"
 	"net/http"
+	"os"
+	"strings"
 
 	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"github.com/rhpds/sandbox/internal/log"
 
-	"context"
-	_ "embed"
-	"os"
-
 	"github.com/getkin/kin-openapi/openapi3"
 	gorillamux "github.com/getkin/kin-openapi/routers/gorillamux"
-	"github.com/jackc/pgx/v4/pgxpool"
-
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httplog"
+	"github.com/go-chi/jwtauth/v5"
+	"github.com/jackc/pgx/v4/pgxpool"
 )
 
 //go:embed assets/swagger.yaml
@@ -26,7 +26,9 @@ func main() {
 	log.InitLoggers(false)
 	ctx := context.Background()
 
+	// ---------------------------------------------------------------------
 	// Load OpenAPI document
+	// ---------------------------------------------------------------------
 
 	loader := &openapi3.Loader{Context: ctx, IsExternalRefsAllowed: false}
 	doc, err := loader.LoadFromData(openapiSpec)
@@ -49,7 +51,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// ---------------------------------------------------------------------
 	// Open connection to postgresql
+	// ---------------------------------------------------------------------
 
 	// Get connection info from environment variables
 
@@ -64,7 +68,6 @@ func main() {
 		port = "8080"
 	}
 
-	// Postgresql
 	dbPool, err := pgxpool.Connect(context.Background(), connStr)
 	if err != nil {
 		log.Logger.Error("Error opening database connection", "error", err)
@@ -72,9 +75,23 @@ func main() {
 	}
 	defer dbPool.Close()
 
+	// ---------------------------------------------------------------------
+	// Vault secret
+	// ---------------------------------------------------------------------
+	// ansible-vault key used to encrypt/decrypt secrets stored in the database
+	// Post MVP: this key will be moved to a secret manager like AWS KMS
+
+	vaultSecret := strings.Trim(os.Getenv("VAULT_SECRET"), "\r\n\t ")
+	if vaultSecret == "" {
+		log.Logger.Error("VAULT_SECRET environment variable not set")
+		os.Exit(1)
+	}
+
+	// ---------------------------------------------------------------------
 	// DynamoDB
+	// ---------------------------------------------------------------------
 	sandboxdb.CheckEnv()
-	accountProvider := sandboxdb.NewAwsAccountDynamoDBProvider()
+	accountProvider := sandboxdb.NewAwsAccountDynamoDBProvider(vaultSecret)
 
 	// Pass dynamodDB "Provider" which implements the AwsAccountProvider interface
 	// to the handler maker.
@@ -97,30 +114,78 @@ func main() {
 		JSON: true,
 	})
 
+	// Setup JWT
+
+	if os.Getenv("JWT_AUTH_SECRET") == "" {
+		log.Logger.Error("JWT_AUTH_SECRET environment variable not set")
+		os.Exit(1)
+	}
+
+	authSecret := strings.Trim(os.Getenv("JWT_AUTH_SECRET"), "\r\n\t ")
+	tokenAuth := jwtauth.New("HS256", []byte(authSecret), nil)
+
+	// For debugging/example purposes, we generate and print
+	// a sample jwt token with claims `user_id:123` here:
+	_, tokenString, _ := tokenAuth.Encode(map[string]interface{}{"user_id": 123})
+	log.Logger.Debug("DEBUG: a sample jwt is %s\n\n", tokenString)
+
 	// ---------------------------------------------------------------------
 	// Middlewares
 	// ---------------------------------------------------------------------
 	router.Use(middleware.CleanPath)
 	router.Use(middleware.RequestID)
 	router.Use(httplog.RequestLogger(logger))
-	// Set Content-Type header to application/json for all responses
-	router.Use(middleware.SetHeader("Content-Type", "application/json"))
-	// This API speaks JSON only. Check request content-type header.
-	router.Use(AllowContentType("application/json"))
 	router.Use(middleware.Heartbeat("/ping"))
-	router.Use(baseHandler.OpenAPIValidation)
 
 	// ---------------------------------------------------------------------
-	// Routes
+	// Protected Routes
 	// ---------------------------------------------------------------------
-	router.Get("/api/v1/health", baseHandler.HealthHandler)
-	router.Get("/api/v1/accounts/{kind}", accountHandler.GetAccountsHandler)
-	router.Get("/api/v1/accounts/{kind}/{account}", accountHandler.GetAccountHandler)
-	router.Put("/api/v1/accounts/{kind}/{account}/cleanup", accountHandler.CleanupAccountHandler)
-	router.Post("/api/v1/placements", baseHandler.CreatePlacementHandler)
-	router.Get("/api/v1/placements", baseHandler.GetPlacementsHandler)
-	router.Get("/api/v1/placements/{uuid}", baseHandler.GetPlacementHandler)
-	router.Delete("/api/v1/placements/{uuid}", baseHandler.DeletePlacementHandler)
+	router.Group(func(r chi.Router) {
+		// ---------------------------------
+		// Middlewares
+		// ---------------------------------
+		r.Use(jwtauth.Verifier(tokenAuth))
+		r.Use(jwtauth.Authenticator)
+		// Set Content-Type header to application/json for all responses
+		r.Use(middleware.SetHeader("Content-Type", "application/json"))
+		// This API speaks JSON only. Check request content-type header.
+		r.Use(AllowContentType("application/json"))
+		r.Use(baseHandler.OpenAPIValidation)
+
+		// ---------------------------------
+		// Routes
+		// ---------------------------------
+		r.Get("/api/v1/health", baseHandler.HealthHandler)
+		r.Get("/api/v1/accounts/{kind}", accountHandler.GetAccountsHandler)
+		r.Get("/api/v1/accounts/{kind}/{account}", accountHandler.GetAccountHandler)
+		r.Put("/api/v1/accounts/{kind}/{account}/cleanup", accountHandler.CleanupAccountHandler)
+		r.Post("/api/v1/placements", baseHandler.CreatePlacementHandler)
+		r.Get("/api/v1/placements", baseHandler.GetPlacementsHandler)
+		r.Get("/api/v1/placements/{uuid}", baseHandler.GetPlacementHandler)
+		r.Delete("/api/v1/placements/{uuid}", baseHandler.DeletePlacementHandler)
+	})
+
+	// ---------------------------------------------------------------------
+	// Admin-only Routes
+	// ---------------------------------------------------------------------
+	router.Group(func(r chi.Router) {
+		// ---------------------------------
+		// Middlewares
+		// ---------------------------------
+		r.Use(jwtauth.Verifier(tokenAuth))
+		r.Use(AuthenticatorAdmin)
+		r.Use(middleware.SetHeader("Content-Type", "application/json"))
+		r.Use(AllowContentType("application/json"))
+		r.Use(baseHandler.OpenAPIValidation)
+		// ---------------------------------
+		// Routes
+		// ---------------------------------
+		r.Post("/api/v1/admin/jwt", baseHandler.IssueJWTHandler)
+	})
+
+	// ---------------------------------------------------------------------
+	// Public Routes
+	// ---------------------------------------------------------------------
 
 	// ---------------------------------------------------------------------
 	// Main server loop

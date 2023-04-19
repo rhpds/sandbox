@@ -27,10 +27,16 @@
 ** nice interface for middleware
 * DONE make clean
 * DONE /api/v1/accounts/{name}  won't work when we have other cloud providers.  do /api/v1/accounts/{kind}/{name} instead
+* DONE Decrypt using ansible-vault (MVP only)
 * TODO add JWT for auth
+** DONE protect routes with middleware and JWT
+** TODO add POST /admin/jwt
 * TODO unit tests and fixture/functional tests
 * TODO documentation coverage
 * TODO rename Book() to Request() ?
 * TODO create OCI image
-* TODO aws lambda function to replicate changes from dynamoDB to postgresql #POSTMVP
 * TODO move handlers per version?
+* Post MVP
+** TODO Encrypt IAM secret key using AWS KMS instead of ansible-vault.  Use and support both while transitioning
+** TODO aws lambda function to replicate changes from dynamoDB to postgresql
+** TODO auth token errors output should be JSON too, not text.

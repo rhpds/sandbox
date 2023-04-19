@@ -10,6 +10,8 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/go-chi/render"
 
+	"github.com/go-chi/jwtauth/v5"
+	"github.com/lestrrat-go/jwx/v2/jwt"
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/log"
 )
@@ -90,6 +92,34 @@ func (h *BaseHandler) OpenAPIValidation(next http.Handler) http.Handler {
 			return
 		}
 
+		next.ServeHTTP(w, r)
+	})
+}
+
+// AuthenticatorAdmin is a admin authentication middleware to enforce access from the
+// Verifier middleware request context values. The Authenticator sends a 401 Unauthorized
+// response for any unverified tokens and passes the good ones through.
+// It looks at the role and make sure it is admin.
+func AuthenticatorAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token, claims, err := jwtauth.FromContext(r.Context())
+
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
+
+		if token == nil || jwt.Validate(token) != nil {
+			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			return
+		}
+
+		if claims["role"] != "admin" {
+			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			return
+		}
+
+		// Token is authenticated, pass it through
 		next.ServeHTTP(w, r)
 	})
 }

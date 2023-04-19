@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
+	"github.com/sosedoff/ansible-vault-go"
 	"golang.org/x/exp/slog"
 	"os"
 	"sort"
@@ -79,12 +80,14 @@ func buildAccounts(r *dynamodb.ScanOutput) []AwsAccountDynamoDB {
 }
 
 type AwsAccountDynamoDBProvider struct {
-	Svc *dynamodb.DynamoDB
+	Svc         *dynamodb.DynamoDB
+	VaultSecret string
 }
 
-func NewAwsAccountDynamoDBProvider() *AwsAccountDynamoDBProvider {
+func NewAwsAccountDynamoDBProvider(vaultSecret string) *AwsAccountDynamoDBProvider {
 	return &AwsAccountDynamoDBProvider{
-		Svc: dynamodb.New(session.Must(session.NewSession())),
+		Svc:         dynamodb.New(session.Must(session.NewSession())),
+		VaultSecret: vaultSecret,
 	}
 }
 
@@ -149,8 +152,8 @@ func makeAccountWithCreds(account AwsAccountDynamoDB) models.AwsAccountWithCreds
 	}
 
 	iamKey := models.AwsIamKey{
-		Kind: "aws_iam_key",
-		Name: "admin-key",
+		Kind:               "aws_iam_key",
+		Name:               "admin-key",
 		AwsAccessKeyID:     account.AwsAccessKeyID,
 		AwsSecretAccessKey: account.AwsSecretAccessKey,
 	}
@@ -373,11 +376,11 @@ func (a *AwsAccountDynamoDBProvider) Book(service_uuid string, count int, annota
 	yesterday := time.Now().Add(-24 * time.Hour).Unix()
 
 	filter := expression.Name("available").Equal(expression.Value(true)).
-			And(expression.Name("aws:rep:updatetime").LessThan(expression.Value(yesterday))).
-			And(expression.Name("aws_access_key_id").AttributeExists()).
-			And(expression.Name("aws_secret_access_key").AttributeExists()).
-			And(expression.Name("hosted_zone_id").AttributeExists()).
-			And(expression.Name("account_id").AttributeExists())
+		And(expression.Name("aws:rep:updatetime").LessThan(expression.Value(yesterday))).
+		And(expression.Name("aws_access_key_id").AttributeExists()).
+		And(expression.Name("aws_secret_access_key").AttributeExists()).
+		And(expression.Name("hosted_zone_id").AttributeExists()).
+		And(expression.Name("account_id").AttributeExists())
 
 	accounts, err := GetAccounts(a.Svc, filter, 10)
 
@@ -468,6 +471,12 @@ func (a *AwsAccountDynamoDBProvider) Book(service_uuid string, count int, annota
 			log.Logger.Error("error unmarshaling", "error", err)
 			return []models.AwsAccountWithCreds{}, err
 		}
+		booked.AwsSecretAccessKey, err = a.DecryptSecret(booked.AwsSecretAccessKey)
+		if err != nil {
+			log.Logger.Error("error decrypting secret", "error", err)
+			return []models.AwsAccountWithCreds{}, err
+		}
+		booked.AwsSecretAccessKey = strings.Trim(booked.AwsSecretAccessKey, "\n\r\t ")
 		bookedAccounts = append(bookedAccounts, makeAccountWithCreds(booked))
 		count = count - 1
 		if count == 0 {
@@ -483,7 +492,7 @@ func (a *AwsAccountDynamoDBProvider) Book(service_uuid string, count int, annota
 	return bookedAccounts, nil
 }
 
-func (a *AwsAccountDynamoDBProvider) MarkForCleanup(name string) (error) {
+func (a *AwsAccountDynamoDBProvider) MarkForCleanup(name string) error {
 	_, err := a.Svc.UpdateItem(&dynamodb.UpdateItemInput{
 		TableName: aws.String(os.Getenv("dynamodb_table")),
 		Key: map[string]*dynamodb.AttributeValue{
@@ -505,7 +514,7 @@ func (a *AwsAccountDynamoDBProvider) MarkForCleanup(name string) (error) {
 	return nil
 }
 
-func (a *AwsAccountDynamoDBProvider) MarkForCleanupByServiceUuid(serviceUuid string) (error) {
+func (a *AwsAccountDynamoDBProvider) MarkForCleanupByServiceUuid(serviceUuid string) error {
 
 	accounts, err := a.FetchAllByServiceUuid(serviceUuid)
 
@@ -536,4 +545,12 @@ func (a *AwsAccountDynamoDBProvider) MarkForCleanupByServiceUuid(serviceUuid str
 
 	}
 	return nil
+}
+
+func (a *AwsAccountDynamoDBProvider) DecryptSecret(encrypted string) (string, error) {
+	str, err := vault.Decrypt(encrypted, a.VaultSecret)
+	if err != nil {
+		return "", err
+	}
+	return str, nil
 }

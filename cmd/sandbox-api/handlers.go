@@ -7,10 +7,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/getkin/kin-openapi/openapi3"
 	oarouters "github.com/getkin/kin-openapi/routers"
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
-	"github.com/go-chi/chi/v5"
 
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/log"
@@ -18,19 +18,19 @@ import (
 )
 
 type BaseHandler struct {
-	dbpool   *pgxpool.Pool
-	svc      *dynamodb.DynamoDB
-	doc      *openapi3.T
-	oaRouter oarouters.Router
+	dbpool          *pgxpool.Pool
+	svc             *dynamodb.DynamoDB
+	doc             *openapi3.T
+	oaRouter        oarouters.Router
 	accountProvider models.AwsAccountProvider
 }
 
 func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, accountProvider models.AwsAccountProvider) *BaseHandler {
 	return &BaseHandler{
-		svc:      svc,
-		dbpool:   dbpool,
-		doc:      doc,
-		oaRouter: oaRouter,
+		svc:             svc,
+		dbpool:          dbpool,
+		doc:             doc,
+		oaRouter:        oaRouter,
 		accountProvider: accountProvider,
 	}
 }
@@ -145,8 +145,8 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	render.Render(w, r, &v1.PlacementResponse{
-		Placement: placement,
-		Message:   "Placement Created",
+		Placement:      placement,
+		Message:        "Placement Created",
 		HTTPStatusCode: http.StatusOK,
 	})
 }
@@ -189,7 +189,6 @@ func (h *BaseHandler) HealthHandler(w http.ResponseWriter, r *http.Request) {
 		Message:        "OK",
 	})
 }
-
 
 // Get All placements
 func (h *BaseHandler) GetPlacementsHandler(w http.ResponseWriter, r *http.Request) {
@@ -267,6 +266,9 @@ func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Requ
 
 	w.WriteHeader(http.StatusOK)
 	render.Render(w, r, &v1.SimpleMessage{
-		Message:        "Placement deleted",
+		Message: "Placement deleted",
 	})
+}
+
+func (h *BaseHandler) IssueJWTHandler(w http.ResponseWriter, r *http.Request) {
 }

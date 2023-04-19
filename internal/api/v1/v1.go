@@ -17,7 +17,7 @@ type Error struct {
 }
 
 type SimpleMessage struct {
-	Message string `json:"message"`
+	Message          string   `json:"message"`
 	MessageMultiline []string `json:"message_multiline,omitempty"`
 }
 
@@ -32,7 +32,7 @@ type HealthCheckResult struct {
 
 type PlacementRequest struct {
 	ServiceUuid string            `json:"service_uuid"`
-	Resources     []ResourceRequest `json:"resources"`
+	Resources   []ResourceRequest `json:"resources"`
 	Annotations map[string]string `json:"annotations"`
 }
 

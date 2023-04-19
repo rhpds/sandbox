@@ -2,9 +2,9 @@ package log
 
 import (
 	"golang.org/x/exp/slog"
+	"io"
 	"log"
 	"os"
-	"io"
 )
 
 // Err stderr logger
