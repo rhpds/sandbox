@@ -1,9 +1,6 @@
-.env
-.pgenv
-.local_pg_password
 build/sandbox-list
 build/sandbox-metrics
 build/sandbox-api
 build/sandbox-replicate
 deploy/lambda/*.zip
-.env.dev
+.dev.*
