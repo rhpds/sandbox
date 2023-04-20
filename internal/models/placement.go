@@ -99,6 +99,10 @@ func (p *Placement) Delete(dbpool *pgxpool.Pool, accountProvider AwsAccountProvi
 		"DELETE FROM placements WHERE id = $1", p.ID,
 	)
 
+	if err != nil {
+		return err
+	}
+
 	// Mark all resources associated with this placement for cleanup
 	// NOTE: This will done automatically by the SQL constraints when we move to Postgresql instead of
 	// dynamodb for the accounts.

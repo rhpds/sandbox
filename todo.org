@@ -29,14 +29,14 @@
 * DONE /api/v1/accounts/{name}  won't work when we have other cloud providers.  do /api/v1/accounts/{kind}/{name} instead
 * DONE Decrypt using ansible-vault (MVP only)
 * DONE auth token errors output should be JSON too, not text.
-* TODO add JWT for auth
+* DONE rename Book() to Request() ?
+* DONE add JWT for auth
 ** DONE protect routes with middleware and JWT
-** TODO add POST /admin/new-login-token
-*** TODO save token name+iat into DB
-*** TODO check db in Authenticator middleware
+** DONE add POST /admin/jwt
+*** DONE save token name+iat into DB
+*** DONE check db in Authenticator middleware
 * TODO unit tests and fixture/functional tests
 * TODO documentation coverage
-* TODO rename Book() to Request() ?
 * TODO create OCI image
 * TODO move handlers per version?
 * Post MVP

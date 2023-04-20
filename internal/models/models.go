@@ -2,6 +2,10 @@ package models
 
 import (
 	"time"
+	"fmt"
+	"context"
+
+	"github.com/jackc/pgx/v4/pgxpool"
 )
 
 type Model struct {
@@ -33,6 +37,17 @@ type Account struct {
 type AvailabilityMarker interface {
 	isAvailable() bool
 	markedForCleanup() bool
+}
+
+type Token struct {
+	Model
+
+	Kind 	string `json:"kind"`
+	Name 	string `json:"name"`
+	Role 	string `json:"role"`
+	Iat 	int64 	`json:"iat"`
+	Exp 	int64 	`json:"exp"`
+	Expiration time.Time `json:"expiration"`
 }
 
 func (r Resource) isAvailable() bool {
@@ -95,4 +110,53 @@ func CountOlder(duration time.Duration, accounts []Resource) (int, error) {
 	}
 
 	return total, nil
+}
+
+
+func CreateToken(claims map[string]any) (Token, error) {
+	kind, ok := claims["kind"].(string)
+	if !ok {
+		return Token{}, fmt.Errorf("invalid kind in claims")
+	}
+
+	name, ok := claims["name"].(string)
+	if !ok {
+		return Token{}, fmt.Errorf("invalid name in claims")
+	}
+	iat, ok := claims["iat"].(int64)
+	if !ok {
+		return Token{}, fmt.Errorf("invalid iat in claims")
+	}
+
+	exp, ok := claims["exp"].(int64)
+	if !ok {
+		return Token{}, fmt.Errorf("invalid exp in claims")
+	}
+
+	role, ok := claims["role"].(string)
+	if !ok {
+		return Token{}, fmt.Errorf("invalid role in claims")
+	}
+
+
+	return Token{
+		Kind: kind,
+		Name: name,
+		Role: role,
+		Iat: iat,
+		Exp: exp,
+		Expiration: time.Unix(exp, 0),
+	}, nil
+}
+
+func (t Token) Save(dbpool *pgxpool.Pool) (id int, err error) {
+	err = dbpool.QueryRow(context.Background(), `
+		INSERT INTO tokens (kind, name, role, iat, exp, expiration)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		t.Kind, t.Name, t.Role, t.Iat, t.Exp, t.Expiration).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+
+	return id, nil
 }

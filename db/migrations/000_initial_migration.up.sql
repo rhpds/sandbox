@@ -2,6 +2,8 @@
 BEGIN;
 
 -- Function to update the updated_at column
+-- NOTE: there is moddatetime builtin function in postgresql but not sure it is timezone aware
+--       here the timezone is set to UTC
 CREATE FUNCTION updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -104,11 +106,6 @@ CREATE TRIGGER resources_events_updated_at
   BEFORE UPDATE ON resources_events
   FOR EACH ROW
   EXECUTE FUNCTION updated_at_column();
-
-CREATE TABLE tokens (
--- TODO
-);
-
 CREATE INDEX ON resources (resource_type, resource_name);
 CREATE INDEX ON resources_events (resource_name);
 CREATE INDEX ON resources_events (resource_type, resource_name);

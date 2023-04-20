@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 	"fmt"
 
@@ -320,11 +321,43 @@ func (h *AdminHandler) IssueLoginJWTHandler(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
+	// set 'iat'
 	jwtauth.SetIssuedNow(request.Claims)
+
+	// set 'exp' to 10y by default
+	if _, ok := request.Claims["exp"]; !ok {
+		jwtauth.SetExpiryIn(request.Claims, time.Hour*24*365*10)
+	}
 
 	// Generate a login token
 	request.Claims["kind"] = "login"
 
+	// Store token in DB
+	tokenModel, err := models.CreateToken(request.Claims)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error creating token",
+		})
+		log.Logger.Error("Error creating token", "error", err)
+		return
+	}
+
+	id, err := tokenModel.Save(h.dbpool)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error saving token",
+		})
+		log.Logger.Error("Error saving token", "error", err)
+		return
+	}
+
+	request.Claims["jti"] = strconv.Itoa(id)
+
+	// Generate the token
 	token, tokenString, err := h.tokenAuth.Encode(request.Claims)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -336,7 +369,6 @@ func (h *AdminHandler) IssueLoginJWTHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// TODO: Store token in DB
 
 	log.Logger.Info("login token created", "token", token)
 	w.WriteHeader(http.StatusOK)
@@ -348,6 +380,7 @@ func (h *AdminHandler) IssueLoginJWTHandler(w http.ResponseWriter, r *http.Reque
 func (h *AdminHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	// Grab role from login token
 	_, loginClaims, err := jwtauth.FromContext(r.Context())
+	log.Logger.Info("login token", "token", loginClaims)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		render.Render(w, r, &v1.Error{

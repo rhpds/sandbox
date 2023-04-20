@@ -9,9 +9,10 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/go-chi/render"
-
+	"github.com/jackc/pgx/v4"
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/lestrrat-go/jwx/v2/jwt"
+
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/log"
 )
@@ -149,7 +150,7 @@ func AuthenticatorAdmin(next http.Handler) http.Handler {
 // Verifier middleware request context values. The Authenticator sends a 401 Unauthorized
 // response for any unverified tokens and passes the good ones through.
 // It looks at the kind and make sure it is a login token.
-func AuthenticatorLogin(next http.Handler) http.Handler {
+func (h *BaseHandler) AuthenticatorLogin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token, claims, err := jwtauth.FromContext(r.Context())
 
@@ -180,7 +181,31 @@ func AuthenticatorLogin(next http.Handler) http.Handler {
 			return
 		}
 
-		// TODO: check if token is allowed from DB
+		jti := token.JwtID()
+		var id int
+
+		err = h.dbpool.QueryRow(context.Background(),
+			"SELECT id FROM tokens WHERE id = $1 AND valid = true AND kind = 'login'",
+			jti).Scan(&id)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				log.Logger.Error("Error checking token", "error", err)
+				w.WriteHeader(http.StatusUnauthorized)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusUnauthorized,
+					Message:        "Token not found or invalid",
+				})
+				return
+			}
+
+			log.Logger.Error("Error checking token", "error", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Error checking token",
+			})
+			return
+		}
 
 		// Token is authenticated, pass it through
 		next.ServeHTTP(w, r)

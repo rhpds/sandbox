@@ -182,7 +182,7 @@ func main() {
 		// ---------------------------------
 		// Routes
 		// ---------------------------------
-		r.Post("/api/v1/admin/new-login-token", adminHandler.IssueLoginJWTHandler)
+		r.Post("/api/v1/admin/jwt", adminHandler.IssueLoginJWTHandler)
 	})
 
 	// ---------------------------------------------------------------------
@@ -193,7 +193,7 @@ func main() {
 		// Middlewares
 		// ---------------------------------
 		r.Use(jwtauth.Verifier(tokenAuth))
-		r.Use(AuthenticatorLogin)
+		r.Use(baseHandler.AuthenticatorLogin)
 
 		r.Get("/api/v1/login", adminHandler.LoginHandler)
 	})
