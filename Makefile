@@ -46,13 +46,16 @@ sandbox-api: cmd/sandbox-api/assets/swagger.yaml
 sandbox-metrics:
 	CGO_ENABLED=0 go build -o build/sandbox-metrics ./cmd/sandbox-metrics
 
+sandbox-issue-jwt:
+	CGO_ENABLED=0 go build -o build/sandbox-issue-jwt ./cmd/sandbox-issue-jwt
+
 sandbox-replicate:
 	CGO_ENABLED=0 go build -o build/sandbox-replicate ./cmd/sandbox-replicate
 
 push-lambda: deploy/lambda/sandbox-replicate.zip
 	python ./deploy/lambda/sandbox-replicate.py
 
-.PHONY: sandbox-api sandbox-list sandbox-metrics run-api sandbox-replicate migrate fixtures test run-local-pg push-lambda clean
+.PHONY: sandbox-api sandbox-issue-jwt sandbox-list sandbox-metrics run-api sandbox-replicate migrate fixtures test run-local-pg push-lambda clean
 
 clean: rm-local-pg
 	rm -f build/sandbox-*

@@ -365,8 +365,8 @@ func (a *AwsAccountDynamoDBProvider) FetchAllSorted(by string) ([]models.AwsAcco
 	return makeAccounts(accounts), nil
 }
 
-// Book reserve accounts for a service
-func (a *AwsAccountDynamoDBProvider) Book(service_uuid string, count int, annotations map[string]string) ([]models.AwsAccountWithCreds, error) {
+// Request reserve accounts for a service
+func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, count int, annotations map[string]string) ([]models.AwsAccountWithCreds, error) {
 	if count <= 0 {
 		return []models.AwsAccountWithCreds{}, errors.New("count must be > 0")
 	}

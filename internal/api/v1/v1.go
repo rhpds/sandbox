@@ -2,6 +2,7 @@ package v1
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/rhpds/sandbox/internal/models"
 )
@@ -36,6 +37,19 @@ type PlacementRequest struct {
 	Annotations map[string]string `json:"annotations"`
 }
 
+type TokenRequest struct {
+	Claims map[string]any `json:"claims"`
+}
+
+type TokenResponse struct {
+	Token           string    `json:"token,omitempty"`
+	AccessToken     string    `json:"access_token,omitempty"`
+	RefreshToken    string    `json:"refresh_token,omitempty"`
+	Exp             *time.Time `json:"exp,omitempty"`
+	AccessTokenExp  *time.Time `json:"access_token_exp,omitempty"`
+	RefreshTokenExp *time.Time `json:"refresh_token_exp,omitempty"`
+}
+
 type PlacementResponse struct {
 	HTTPStatusCode int    `json:"http_code,omitempty"` // http response status code
 	Message        string `json:"message"`
@@ -60,5 +74,13 @@ func (p *ResourceRequest) Bind(r *http.Request) error {
 }
 
 func (p *Error) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
+func (t *TokenRequest) Bind(r *http.Request) error {
+	return nil
+}
+
+func (t *TokenResponse) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }

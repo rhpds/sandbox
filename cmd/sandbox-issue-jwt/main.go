@@ -20,7 +20,7 @@ func main() {
 
 	pw := strings.Trim(string(bytepw), "\r\n\t ")
 	fmt.Println("Enter Claims in the JSON format:")
-	fmt.Println(`for example: {"user_name": "gucore", "role": "admin"}`)
+	fmt.Println(`for example: {"kind": "login", "name": "gucore", "role": "admin"}`)
 	claims, err := io.ReadAll(os.Stdin)
 
 	// json unmarshal claims

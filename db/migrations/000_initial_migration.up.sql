@@ -105,6 +105,10 @@ CREATE TRIGGER resources_events_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION updated_at_column();
 
+CREATE TABLE tokens (
+-- TODO
+);
+
 CREATE INDEX ON resources (resource_type, resource_name);
 CREATE INDEX ON resources_events (resource_name);
 CREATE INDEX ON resources_events (resource_type, resource_name);

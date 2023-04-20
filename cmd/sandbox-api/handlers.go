@@ -3,11 +3,14 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"time"
+	"fmt"
 
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/getkin/kin-openapi/openapi3"
 	oarouters "github.com/getkin/kin-openapi/routers"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/jwtauth/v5"
 	"github.com/go-chi/render"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -25,6 +28,11 @@ type BaseHandler struct {
 	accountProvider models.AwsAccountProvider
 }
 
+type AdminHandler struct {
+	BaseHandler
+	tokenAuth *jwtauth.JWTAuth
+}
+
 func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, accountProvider models.AwsAccountProvider) *BaseHandler {
 	return &BaseHandler{
 		svc:             svc,
@@ -32,6 +40,19 @@ func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.
 		doc:             doc,
 		oaRouter:        oaRouter,
 		accountProvider: accountProvider,
+	}
+}
+
+func NewAdminHandler(b *BaseHandler, tokenAuth *jwtauth.JWTAuth) *AdminHandler {
+	return &AdminHandler{
+		BaseHandler: BaseHandler{
+			svc:             b.svc,
+			dbpool:          b.dbpool,
+			doc:             b.doc,
+			oaRouter:        b.oaRouter,
+			accountProvider: b.accountProvider,
+		},
+		tokenAuth: tokenAuth,
 	}
 }
 
@@ -87,7 +108,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 		switch request.Kind {
 		case "AwsSandbox":
 			// Create the placement in AWS
-			accounts, err := h.accountProvider.Book(placementRequest.ServiceUuid, request.Count, placementRequest.Annotations)
+			accounts, err := h.accountProvider.Request(placementRequest.ServiceUuid, request.Count, placementRequest.Annotations)
 			if err != nil {
 				if err == models.ErrNoEnoughAccountsAvailable {
 					w.WriteHeader(http.StatusInsufficientStorage)
@@ -270,5 +291,112 @@ func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-func (h *BaseHandler) IssueJWTHandler(w http.ResponseWriter, r *http.Request) {
+func (h *AdminHandler) IssueLoginJWTHandler(w http.ResponseWriter, r *http.Request) {
+	request := v1.TokenRequest{}
+
+	// Get the claims from the request
+	if err := render.Bind(r, &request); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid request",
+		})
+		log.Logger.Error("Invalid request", "error", err)
+		return
+	}
+
+	// Validate the claims
+	required := []string{"role", "name"}
+
+	for _, key := range required {
+		if _, ok := request.Claims[key]; !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusBadRequest,
+				Message:        fmt.Sprintf("Invalid claims, '%s' is missing", key),
+			})
+			log.Logger.Error("Invalid token request", "key missing", key)
+			return
+		}
+	}
+
+	jwtauth.SetIssuedNow(request.Claims)
+
+	// Generate a login token
+	request.Claims["kind"] = "login"
+
+	token, tokenString, err := h.tokenAuth.Encode(request.Claims)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error generating token",
+		})
+		log.Logger.Error("Error generating token", "error", err)
+		return
+	}
+
+	// TODO: Store token in DB
+
+	log.Logger.Info("login token created", "token", token)
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &v1.TokenResponse{
+		Token: tokenString,
+	})
+}
+
+func (h *AdminHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
+	// Grab role from login token
+	_, loginClaims, err := jwtauth.FromContext(r.Context())
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid login token",
+		})
+		log.Logger.Error("Invalid login token", "error", err)
+		return
+	}
+
+	// Generate access token
+
+	accessToken, accessTokenString, err := h.tokenAuth.Encode(map[string]interface{}{
+		"name": loginClaims["name"],
+		"kind": "access",
+		"role": loginClaims["role"],
+		"exp":  jwtauth.ExpireIn(time.Hour),
+		"iat":  jwtauth.EpochNow(),
+	})
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error generating token",
+		})
+		log.Logger.Error("Error generating token", "error", err)
+		return
+	}
+	// refreshToken, refreshTokenString, err := h.tokenAuth.Encode(map[string]interface{}{
+	// 	"name": loginClaims["name"],
+	// 	"kind": "refresh",
+	// 	"role": loginClaims["role"],
+	// 	"exp":  jwtauth.ExpireIn(time.Hour * 24 * 7),
+	// 	"iat":  jwtauth.EpochNow(),
+	// })
+	// if err != nil {
+	// 	w.WriteHeader(http.StatusInternalServerError)
+	// 	render.Render(w, r, &v1.Error{
+	// 		HTTPStatusCode: http.StatusInternalServerError,
+	// 		Message:        "Error generating token",
+	// 	})
+	// 	log.Logger.Error("Error generating token", "error", err)
+	// 	return
+	// }
+	log.Logger.Info("login", "name", loginClaims["name"], "role", loginClaims["role"])
+	w.WriteHeader(http.StatusOK)
+	ta := accessToken.Expiration()
+	render.Render(w, r, &v1.TokenResponse{
+		AccessToken:     accessTokenString,
+		AccessTokenExp:  &ta,
+	})
 }

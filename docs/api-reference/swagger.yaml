@@ -463,9 +463,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /admin/jwt:
+  /admin/new-login-token:
     post:
-      summary: Issue a new JWT token
+      summary: Issue a new JWT token for login
       operationId: issueJWT
       tags:
         - admin
@@ -475,15 +475,28 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - claims
               properties:
-                role:
-                  type: string
-                  enum:
-                    - admin
-                    - app
-                  example: app
+                claims:
+                  type: object
+                  required:
+                    - name
+                    - role
+                  properties:
+                    name:
+                      type: string
+                      example: operatorXYZ
+                    role:
+                      type: string
+                      enum:
+                        - admin
+                        - app
+                      example: app
             example:
-              role: admin
+              claims:
+                role: app
+                name: anarchy
       responses:
         '200':
           description: The token

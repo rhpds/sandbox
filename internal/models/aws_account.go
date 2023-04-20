@@ -23,9 +23,9 @@ type AwsAccount struct {
 	Zone         string `json:"zone"`
 	HostedZoneID string `json:"hosted_zone_id"`
 
-	ConanStatus    string    `json:"conan_status"`
-	ConanTimestamp time.Time `json:"conan_timestamp"`
-	ConanHostname  string    `json:"conan_hostname"`
+	ConanStatus    string    `json:"conan_status,omitempty"`
+	ConanTimestamp time.Time `json:"conan_timestamp,omitempty"`
+	ConanHostname  string    `json:"conan_hostname,omitempty"`
 }
 
 type AwsAccountWithCreds struct {
@@ -49,7 +49,7 @@ type AwsAccountProvider interface {
 	FetchAllToCleanup() ([]AwsAccount, error)
 	FetchAllSorted(by string) ([]AwsAccount, error)
 	FetchAllByServiceUuid(serviceUuid string) ([]AwsAccount, error)
-	Book(service_uuid string, count int, annotations map[string]string) ([]AwsAccountWithCreds, error)
+	Request(service_uuid string, count int, annotations map[string]string) ([]AwsAccountWithCreds, error)
 	MarkForCleanup(name string) error
 	MarkForCleanupByServiceUuid(serviceUuid string) error
 	DecryptSecret(encrypted string) (string, error)

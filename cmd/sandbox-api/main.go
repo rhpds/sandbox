@@ -93,6 +93,22 @@ func main() {
 	sandboxdb.CheckEnv()
 	accountProvider := sandboxdb.NewAwsAccountDynamoDBProvider(vaultSecret)
 
+	// ---------------------------------------------------------------------
+	// Setup JWT
+	// ---------------------------------------------------------------------
+
+	if os.Getenv("JWT_AUTH_SECRET") == "" {
+		log.Logger.Error("JWT_AUTH_SECRET environment variable not set")
+		os.Exit(1)
+	}
+
+	authSecret := strings.Trim(os.Getenv("JWT_AUTH_SECRET"), "\r\n\t ")
+	tokenAuth := jwtauth.New("HS256", []byte(authSecret), nil)
+
+	// ---------------------------------------------------------------------
+	// Handlers
+	// ---------------------------------------------------------------------
+
 	// Pass dynamodDB "Provider" which implements the AwsAccountProvider interface
 	// to the handler maker.
 	// When we need to migrate to Postgresql, we can pass a different "Provider" which will
@@ -101,6 +117,9 @@ func main() {
 
 	// Factory for handlers which need connections to both databases
 	baseHandler := NewBaseHandler(accountProvider.Svc, dbPool, doc, oaRouter, accountProvider)
+
+	// Admin handler adds tokenAuth to the baseHandler
+	adminHandler := NewAdminHandler(baseHandler, tokenAuth)
 
 	// HTTP router
 	router := chi.NewRouter()
@@ -114,21 +133,6 @@ func main() {
 		JSON: true,
 	})
 
-	// Setup JWT
-
-	if os.Getenv("JWT_AUTH_SECRET") == "" {
-		log.Logger.Error("JWT_AUTH_SECRET environment variable not set")
-		os.Exit(1)
-	}
-
-	authSecret := strings.Trim(os.Getenv("JWT_AUTH_SECRET"), "\r\n\t ")
-	tokenAuth := jwtauth.New("HS256", []byte(authSecret), nil)
-
-	// For debugging/example purposes, we generate and print
-	// a sample jwt token with claims `user_id:123` here:
-	_, tokenString, _ := tokenAuth.Encode(map[string]interface{}{"user_id": 123})
-	log.Logger.Debug("DEBUG: a sample jwt is %s\n\n", tokenString)
-
 	// ---------------------------------------------------------------------
 	// Middlewares
 	// ---------------------------------------------------------------------
@@ -136,6 +140,10 @@ func main() {
 	router.Use(middleware.RequestID)
 	router.Use(httplog.RequestLogger(logger))
 	router.Use(middleware.Heartbeat("/ping"))
+	// Set Content-Type header to application/json for all responses
+	router.Use(middleware.SetHeader("Content-Type", "application/json"))
+	// This API speaks JSON only. Check request content-type header.
+	router.Use(AllowContentType("application/json"))
 
 	// ---------------------------------------------------------------------
 	// Protected Routes
@@ -145,11 +153,7 @@ func main() {
 		// Middlewares
 		// ---------------------------------
 		r.Use(jwtauth.Verifier(tokenAuth))
-		r.Use(jwtauth.Authenticator)
-		// Set Content-Type header to application/json for all responses
-		r.Use(middleware.SetHeader("Content-Type", "application/json"))
-		// This API speaks JSON only. Check request content-type header.
-		r.Use(AllowContentType("application/json"))
+		r.Use(AuthenticatorAccess)
 		r.Use(baseHandler.OpenAPIValidation)
 
 		// ---------------------------------
@@ -174,14 +178,26 @@ func main() {
 		// ---------------------------------
 		r.Use(jwtauth.Verifier(tokenAuth))
 		r.Use(AuthenticatorAdmin)
-		r.Use(middleware.SetHeader("Content-Type", "application/json"))
-		r.Use(AllowContentType("application/json"))
 		r.Use(baseHandler.OpenAPIValidation)
 		// ---------------------------------
 		// Routes
 		// ---------------------------------
-		r.Post("/api/v1/admin/jwt", baseHandler.IssueJWTHandler)
+		r.Post("/api/v1/admin/new-login-token", adminHandler.IssueLoginJWTHandler)
 	})
+
+	// ---------------------------------------------------------------------
+	// Login Routes
+	// ---------------------------------------------------------------------
+	router.Group(func(r chi.Router) {
+		// ---------------------------------
+		// Middlewares
+		// ---------------------------------
+		r.Use(jwtauth.Verifier(tokenAuth))
+		r.Use(AuthenticatorLogin)
+
+		r.Get("/api/v1/login", adminHandler.LoginHandler)
+	})
+
 
 	// ---------------------------------------------------------------------
 	// Public Routes

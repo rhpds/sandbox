@@ -105,17 +105,119 @@ func AuthenticatorAdmin(next http.Handler) http.Handler {
 		token, claims, err := jwtauth.FromContext(r.Context())
 
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        err.Error(),
+			})
 			return
 		}
 
 		if token == nil || jwt.Validate(token) != nil {
-			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        http.StatusText(http.StatusUnauthorized),
+			})
+			return
+		}
+
+		if claims["kind"] != "access" {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        "Wrong token kind, access token required",
+			})
 			return
 		}
 
 		if claims["role"] != "admin" {
-			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        http.StatusText(http.StatusUnauthorized),
+			})
+			return
+		}
+
+		// Token is authenticated, pass it through
+		next.ServeHTTP(w, r)
+	})
+}
+
+// AuthenticatorLogin is a authentication middleware to enforce access from the
+// Verifier middleware request context values. The Authenticator sends a 401 Unauthorized
+// response for any unverified tokens and passes the good ones through.
+// It looks at the kind and make sure it is a login token.
+func AuthenticatorLogin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token, claims, err := jwtauth.FromContext(r.Context())
+
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        err.Error(),
+			})
+			return
+		}
+
+		if token == nil || jwt.Validate(token) != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        http.StatusText(http.StatusUnauthorized),
+			})
+			return
+		}
+
+		if claims["kind"] != "login" {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        "Wrong token kind, login token required",
+			})
+			return
+		}
+
+		// TODO: check if token is allowed from DB
+
+		// Token is authenticated, pass it through
+		next.ServeHTTP(w, r)
+	})
+}
+
+// AuthenticatorAccess is a default authentication middleware to enforce access from the
+// Verifier middleware request context values. The Authenticator sends a 401 Unauthorized
+// response for any unverified tokens and passes the good ones through. It's just fine
+func AuthenticatorAccess(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token, claims, err := jwtauth.FromContext(r.Context())
+
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        err.Error(),
+			})
+			return
+		}
+
+		if token == nil || jwt.Validate(token) != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        http.StatusText(http.StatusUnauthorized),
+			})
+			return
+		}
+
+		if claims["kind"] != "access" {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        "Wrong token kind, access token required",
+			})
 			return
 		}
 
