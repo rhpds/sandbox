@@ -464,6 +464,13 @@ paths:
                 $ref: "#/components/schemas/Error"
 
   /admin/jwt:
+    parameters:
+      - in: header
+        name: Bearer
+        description: Admin Access JTW Token
+        required: true
+        schema:
+          type: string
     post:
       summary: Issue a new JWT token for login
       operationId: issueJWT
@@ -504,8 +511,8 @@ paths:
             application/json:
               schema:
                 type: object
-        '404':
-          description: NotFound
+        '401':
+          description: unauthorized
           content:
             application/json:
               schema:
@@ -516,7 +523,84 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+    get:
+      summary: Get the list of JWT tokens
+      operationId: GetJWT
+      tags:
+        - admin
+      responses:
+        '200':
+          description: The tokens
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+              example:
+                - id: 20
+                  created_at: 2023-04-20T23:03:32.267238+02:00
+                  updated_at: 2023-04-20T23:13:27.464333+02:00
+                  kind: login
+                  name: gucore
+                  role: admin
+                  iat: 1682024612
+                  exp: 1997384612
+                  expiration: 2033-04-17T23:03:32+02:00
+                - id: 21
+                  created_at: 2023-04-20T23:16:00.615025+02:00
+                  updated_at: 2023-04-20T23:16:00.615025+02:00
+                  kind: login
+                  name: anarchy
+                  role: app
+                  iat: 1682025360
+                  exp: 1997385360
+                  expiration: 2033-04-17T23:16:00+02:00
 
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: book unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /login:
+    parameters:
+      - in: header
+        name: Bearer
+        description: Login JTW Token
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get an access token using a login token.
+      operationId: login
+      responses:
+        '200':
+          description: The access token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  access_token_exp:
+                    type: string
+              example:
+                access_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2ODIwMzE2MDAsImlhdCI6MTY4MjAyODAwMCwia2luZCI6ImFjY2VzcyIsIm5hbWUiOiJndWNvcmUiLCJyb2xlIjoiYWRtaW4ifQ.NMh762LGufxeqDr-5Wj0jJyvuIrSS425GGtDSjkRX4c"
+                access_token_exp: "2023-04-20T23:00:00Z"
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
 components:
   schemas:

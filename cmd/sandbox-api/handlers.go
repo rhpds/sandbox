@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
-	"fmt"
 
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/getkin/kin-openapi/openapi3"
@@ -292,6 +292,23 @@ func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+func (h *BaseHandler) GetJWTHandler(w http.ResponseWriter, r *http.Request) {
+
+	tokens, err := models.FetchAllTokens(h.dbpool)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting tokens",
+		})
+		log.Logger.Error("GetJWTHandler", "error", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &tokens)
+}
 func (h *AdminHandler) IssueLoginJWTHandler(w http.ResponseWriter, r *http.Request) {
 	request := v1.TokenRequest{}
 
@@ -369,7 +386,6 @@ func (h *AdminHandler) IssueLoginJWTHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-
 	log.Logger.Info("login token created", "token", token)
 	w.WriteHeader(http.StatusOK)
 	render.Render(w, r, &v1.TokenResponse{
@@ -429,7 +445,7 @@ func (h *AdminHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	ta := accessToken.Expiration()
 	render.Render(w, r, &v1.TokenResponse{
-		AccessToken:     accessTokenString,
-		AccessTokenExp:  &ta,
+		AccessToken:    accessTokenString,
+		AccessTokenExp: &ta,
 	})
 }

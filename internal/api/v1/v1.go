@@ -42,9 +42,9 @@ type TokenRequest struct {
 }
 
 type TokenResponse struct {
-	Token           string    `json:"token,omitempty"`
-	AccessToken     string    `json:"access_token,omitempty"`
-	RefreshToken    string    `json:"refresh_token,omitempty"`
+	Token           string     `json:"token,omitempty"`
+	AccessToken     string     `json:"access_token,omitempty"`
+	RefreshToken    string     `json:"refresh_token,omitempty"`
 	Exp             *time.Time `json:"exp,omitempty"`
 	AccessTokenExp  *time.Time `json:"access_token_exp,omitempty"`
 	RefreshTokenExp *time.Time `json:"refresh_token_exp,omitempty"`

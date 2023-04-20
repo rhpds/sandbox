@@ -1,9 +1,10 @@
 package models
 
 import (
-	"time"
-	"fmt"
 	"context"
+	"fmt"
+	"time"
+	"net/http"
 
 	"github.com/jackc/pgx/v4/pgxpool"
 )
@@ -42,11 +43,11 @@ type AvailabilityMarker interface {
 type Token struct {
 	Model
 
-	Kind 	string `json:"kind"`
-	Name 	string `json:"name"`
-	Role 	string `json:"role"`
-	Iat 	int64 	`json:"iat"`
-	Exp 	int64 	`json:"exp"`
+	Kind       string    `json:"kind"`
+	Name       string    `json:"name"`
+	Role       string    `json:"role"`
+	Iat        int64     `json:"iat"`
+	Exp        int64     `json:"exp"`
 	Expiration time.Time `json:"expiration"`
 }
 
@@ -112,7 +113,6 @@ func CountOlder(duration time.Duration, accounts []Resource) (int, error) {
 	return total, nil
 }
 
-
 func CreateToken(claims map[string]any) (Token, error) {
 	kind, ok := claims["kind"].(string)
 	if !ok {
@@ -138,13 +138,12 @@ func CreateToken(claims map[string]any) (Token, error) {
 		return Token{}, fmt.Errorf("invalid role in claims")
 	}
 
-
 	return Token{
-		Kind: kind,
-		Name: name,
-		Role: role,
-		Iat: iat,
-		Exp: exp,
+		Kind:       kind,
+		Name:       name,
+		Role:       role,
+		Iat:        iat,
+		Exp:        exp,
 		Expiration: time.Unix(exp, 0),
 	}, nil
 }
@@ -159,4 +158,35 @@ func (t Token) Save(dbpool *pgxpool.Pool) (id int, err error) {
 	}
 
 	return id, nil
+}
+
+type Tokens []Token
+
+func (t *Tokens) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
+func FetchAllTokens(dbpool *pgxpool.Pool) (Tokens, error) {
+	rows, err := dbpool.Query(context.Background(), `
+		SELECT id, kind, name, role, iat, exp, expiration, created_at, updated_at
+		FROM tokens
+	`)
+	if err != nil {
+		return []Token{}, err
+	}
+	defer rows.Close()
+
+	tokens := []Token{}
+
+	for rows.Next() {
+		var t Token
+		err = rows.Scan(&t.ID, &t.Kind, &t.Name, &t.Role, &t.Iat, &t.Exp, &t.Expiration, &t.CreatedAt, &t.UpdatedAt)
+		if err != nil {
+			return []Token{}, err
+		}
+
+		tokens = append(tokens, t)
+	}
+
+	return tokens, nil
 }

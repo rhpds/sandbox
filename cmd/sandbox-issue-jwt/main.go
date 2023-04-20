@@ -1,18 +1,18 @@
 package main
 
 import (
-	"encoding/json"
-	"time"
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/go-chi/jwtauth/v5"
+	"github.com/jackc/pgx/v4/pgxpool"
 	"golang.org/x/term"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 	"syscall"
-	"github.com/jackc/pgx/v4/pgxpool"
+	"time"
 
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"

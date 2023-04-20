@@ -183,6 +183,7 @@ func main() {
 		// Routes
 		// ---------------------------------
 		r.Post("/api/v1/admin/jwt", adminHandler.IssueLoginJWTHandler)
+		r.Get("/api/v1/admin/jwt", baseHandler.GetJWTHandler)
 	})
 
 	// ---------------------------------------------------------------------
@@ -197,7 +198,6 @@ func main() {
 
 		r.Get("/api/v1/login", adminHandler.LoginHandler)
 	})
-
 
 	// ---------------------------------------------------------------------
 	// Public Routes
