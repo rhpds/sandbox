@@ -35,6 +35,8 @@
 ** DONE add POST /admin/jwt
 *** DONE save token name+iat into DB
 *** DONE check db in Authenticator middleware
+*** TODO PUT /admin/jwt/{id}/invalidate to invalidate one token
+** DONE GET /admin/jwt   to list login tokens
 * TODO unit tests and fixture/functional tests
 * TODO documentation coverage
 * TODO create OCI image
