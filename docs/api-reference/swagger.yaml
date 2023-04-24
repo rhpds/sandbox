@@ -16,6 +16,14 @@ tags:
     description: HTTP routes protected and accessible only by admins.
 paths:
   /placements:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer ACCESS_TOKEN
     get:
       parameters:
         - in: query
@@ -115,6 +123,13 @@ paths:
                 $ref: "#/components/schemas/Error"
   /placements/{uuid}:
     parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer ACCESS_TOKEN
       - name: uuid
         in: path
         required: true
@@ -180,6 +195,13 @@ paths:
 
   /accounts/{kind}:
     parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer ACCESS_TOKEN
       - name: kind
         in: path
         required: true
@@ -219,6 +241,13 @@ paths:
 
   /accounts/{kind}/{name}:
     parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer ACCESS_TOKEN
       - name: kind
         in: path
         required: true
@@ -260,6 +289,13 @@ paths:
 
   /accounts/{kind}/{name}/cleanup:
     parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer ACCESS_TOKEN
       - name: kind
         in: path
         required: true
@@ -306,6 +342,13 @@ paths:
                 $ref: "#/components/schemas/Error"
   /accounts/{kind}/{name}/stop:
     parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer ACCESS_TOKEN
       - name: kind
         in: path
         required: true
@@ -350,6 +393,13 @@ paths:
                 $ref: "#/components/schemas/Error"
   /accounts/{kind}/{name}/start:
     parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer ACCESS_TOKEN
       - name: kind
         in: path
         required: true
@@ -394,6 +444,13 @@ paths:
                 $ref: "#/components/schemas/Error"
   /accounts/{kind}/{name}/status:
     parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer ACCESS_TOKEN
       - name: kind
         in: path
         required: true
@@ -507,12 +564,13 @@ paths:
                 name: anarchy
       responses:
         '200':
-          description: The token
+          description: The JWT Login token
           content:
             application/json:
               schema:
                 type: object
               example:
+                token: eyJhbGc.oq[...].GWQdpMPSNf[...]-Gi7uB[...]
 
         '401':
           description: unauthorized
@@ -524,7 +582,7 @@ paths:
                 message: unauthorized
                 http_code: 401
         default:
-          description: book unexpected error
+          description: unexpected error
           content:
             application/json:
               schema:
@@ -581,6 +639,13 @@ paths:
                 $ref: "#/components/schemas/Error"
   /admin/jwt/{id}/invalidate:
     parameters:
+      - in: header
+        name: Authorization
+        description: Admin Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer TOKEN
       - name: id
         in: path
         required: true
@@ -625,11 +690,12 @@ paths:
   /login:
     parameters:
       - in: header
-        name: Bearer
+        name: Authorization
         description: Login JTW Token
         required: true
         schema:
           type: string
+          example: Bearer TOKEN
     get:
       summary: Get an access token using a login token.
       operationId: login
