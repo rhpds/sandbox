@@ -91,7 +91,7 @@ func main() {
 	// DynamoDB
 	// ---------------------------------------------------------------------
 	sandboxdb.CheckEnv()
-	accountProvider := sandboxdb.NewAwsAccountDynamoDBProvider(vaultSecret)
+	accountProvider := sandboxdb.NewAwsAccountDynamoDBProviderWithSecret(vaultSecret)
 
 	// ---------------------------------------------------------------------
 	// Setup JWT

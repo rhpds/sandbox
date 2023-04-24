@@ -84,7 +84,13 @@ type AwsAccountDynamoDBProvider struct {
 	VaultSecret string
 }
 
-func NewAwsAccountDynamoDBProvider(vaultSecret string) *AwsAccountDynamoDBProvider {
+func NewAwsAccountDynamoDBProvider() *AwsAccountDynamoDBProvider {
+	return &AwsAccountDynamoDBProvider{
+		Svc:         dynamodb.New(session.Must(session.NewSession())),
+	}
+}
+
+func NewAwsAccountDynamoDBProviderWithSecret(vaultSecret string) *AwsAccountDynamoDBProvider {
 	return &AwsAccountDynamoDBProvider{
 		Svc:         dynamodb.New(session.Must(session.NewSession())),
 		VaultSecret: vaultSecret,
