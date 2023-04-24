@@ -15,6 +15,39 @@ tags:
   - name: admin
     description: HTTP routes protected and accessible only by admins.
 paths:
+  /login:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Login JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer <LOGIN_TOKEN>
+    get:
+      summary: Get an access token using a login token.
+      operationId: login
+      responses:
+        '200':
+          description: The access token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  access_token_exp:
+                    type: string
+              example:
+                access_token: "eyJhbGc.oq[...].GWQdpMPSNf[...]-Gi7uB[...]"
+                access_token_exp: "2023-04-20T23:00:00Z"
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /placements:
     parameters:
       - in: header
@@ -687,41 +720,6 @@ paths:
               example:
                 message: Error invalidating token
                 http_code: 500
-
-
-  /login:
-    parameters:
-      - in: header
-        name: Authorization
-        description: Login JTW Token
-        required: true
-        schema:
-          type: string
-          example: Bearer <LOGIN_TOKEN>
-    get:
-      summary: Get an access token using a login token.
-      operationId: login
-      responses:
-        '200':
-          description: The access token
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  access_token:
-                    type: string
-                  access_token_exp:
-                    type: string
-              example:
-                access_token: "eyJhbGc.oq[...].GWQdpMPSNf[...]-Gi7uB[...]"
-                access_token_exp: "2023-04-20T23:00:00Z"
-        '401':
-          description: unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
 
 components:
   schemas:
