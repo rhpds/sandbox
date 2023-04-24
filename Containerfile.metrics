@@ -10,7 +10,7 @@ USER ${USER_UID}
 
 COPY ./ ./
 RUN ls -ltra
-RUN go mod download && make
+RUN make
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest AS deploy
 RUN microdnf install -y rsync tar
