@@ -18,5 +18,5 @@ WORKDIR /sandbox/
 USER ${USER_UID}
 COPY build/github_known_hosts /ssh/known_hosts
 env SSH_KNOWN_HOSTS /ssh/known_hosts
-COPY --from=builder /sandbox/sandbox-metrics ./
-CMD ["./build/sandbox-metrics"]
+COPY --from=builder /sandbox/build/sandbox-metrics ./
+CMD ["./sandbox-metrics"]
