@@ -1,4 +1,4 @@
-ARG GO_VERSION=1.16
+ARG GO_VERSION=1.20
 FROM registry.access.redhat.com/ubi8/go-toolset:latest AS builder
 WORKDIR /sandbox/
 
@@ -7,10 +7,7 @@ RUN chown -R ${USER_UID}:0 /sandbox
 USER ${USER_UID}
 
 COPY ./ ./
-ENV GOOS=linux
-ENV CGO_ENABLED=0
-RUN go build ./cmd/sandbox-metrics
-RUN go build ./cmd/sandbox-list
+RUN make
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest AS deploy
 RUN microdnf install -y rsync tar
@@ -19,4 +16,4 @@ USER ${USER_UID}
 COPY build/github_known_hosts /ssh/known_hosts
 env SSH_KNOWN_HOSTS /ssh/known_hosts
 COPY --from=builder /sandbox/sandbox-metrics ./
-CMD ["./sandbox-metrics"]
+CMD ["./build/sandbox-metrics"]
