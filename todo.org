@@ -3,6 +3,9 @@
 * TODO all endpoints
 ** Placements
 *** DONE GET all
+**** TODO min-age param
+**** TODO max-age param
+**** TODO unit param
 *** DONE POST
 **** DONE save request as part of the placement
 *** DONE GET one

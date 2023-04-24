@@ -714,7 +714,7 @@ paths:
                   access_token_exp:
                     type: string
               example:
-                access_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2ODIwMzE2MDAsImlhdCI6MTY4MjAyODAwMCwia2luZCI6ImFjY2VzcyIsIm5hbWUiOiJndWNvcmUiLCJyb2xlIjoiYWRtaW4ifQ.NMh762LGufxeqDr-5Wj0jJyvuIrSS425GGtDSjkRX4c"
+                access_token: "eyJhbGc.oq[...].GWQdpMPSNf[...]-Gi7uB[...]"
                 access_token_exp: "2023-04-20T23:00:00Z"
         '401':
           description: unauthorized
