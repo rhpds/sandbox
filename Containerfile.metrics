@@ -1,13 +1,16 @@
 ARG GO_VERSION=1.20
-FROM registry.access.redhat.com/ubi8/go-toolset:latest AS builder
+#FROM registry.access.redhat.com/ubi8/go-toolset:latest AS builder
+FROM docker.io/golang:${GO_VERSION} as builder
 WORKDIR /sandbox/
+
 
 USER root
 RUN chown -R ${USER_UID}:0 /sandbox
 USER ${USER_UID}
 
 COPY ./ ./
-RUN make
+RUN ls -ltra
+RUN go mod download && make
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest AS deploy
 RUN microdnf install -y rsync tar
