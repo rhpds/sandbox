@@ -393,6 +393,10 @@ func (h *AdminHandler) IssueLoginJWTHandler(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// LoginHandler handles the login request
+// User must provide a valid login token
+// The login token is used to generate an access token
+// The AdminHandler is required here because it contains the tokenAuth
 func (h *AdminHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	// Grab role from login token
 	_, loginClaims, err := jwtauth.FromContext(r.Context())
@@ -447,5 +451,69 @@ func (h *AdminHandler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	render.Render(w, r, &v1.TokenResponse{
 		AccessToken:    accessTokenString,
 		AccessTokenExp: &ta,
+	})
+}
+
+func (h *BaseHandler) InvalidateTokenHandler(w http.ResponseWriter, r *http.Request) {
+	tokenStr := chi.URLParam(r, "id")
+
+	tokenId, err := strconv.Atoi(tokenStr)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid token, must be integer",
+		})
+		log.Logger.Error("Invalid token")
+		return
+	}
+
+	if tokenId == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Missing token",
+		})
+		log.Logger.Error("Missing token")
+		return
+	}
+
+	// Get the token from the DB
+	tokenModel, err := models.FetchTokenById(h.dbpool, tokenId)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Token not found",
+			})
+			log.Logger.Error("Token not found")
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting token",
+		})
+		log.Logger.Error("Error getting token", "error", err)
+		return
+	}
+
+	// Invalidate the token
+	err = tokenModel.Invalidate(h.dbpool)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error invalidating token",
+		})
+		log.Logger.Error("Error invalidating token", "error", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &v1.SimpleMessage{
+		Message: "Token successfully invalidated",
 	})
 }

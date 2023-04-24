@@ -466,11 +466,12 @@ paths:
   /admin/jwt:
     parameters:
       - in: header
-        name: Bearer
+        name: Authorization
         description: Admin Access JTW Token
         required: true
         schema:
           type: string
+          example: Bearer TOKEN
     post:
       summary: Issue a new JWT token for login
       operationId: issueJWT
@@ -511,12 +512,17 @@ paths:
             application/json:
               schema:
                 type: object
+              example:
+
         '401':
           description: unauthorized
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
         default:
           description: book unexpected error
           content:
@@ -563,12 +569,59 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+                code: 401
         default:
           description: book unexpected error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /admin/jwt/{id}/invalidate:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The id of the token to invalidate
+        schema:
+          type: integer
+    put:
+      summary: Invalidate a login token
+      operationId: invalidateToken
+      responses:
+        '200':
+          description: Invalidation Successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    example: Token successfully invalidated
+              example:
+                message: Token successfully invalidated
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        '500':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Error invalidating token
+                http_code: 500
+
+
   /login:
     parameters:
       - in: header
@@ -849,10 +902,10 @@ components:
     Error:
       type: object
       required:
-        - code
+        - http_code
         - message
       properties:
-        code:
+        http_code:
           type: integer
           format: integer
           example: 502

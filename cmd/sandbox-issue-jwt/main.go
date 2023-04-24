@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
 )
 
@@ -26,7 +25,7 @@ func main() {
 	// Get connection info from environment variables
 
 	if os.Getenv("DATABASE_URL") == "" {
-		log.Logger.Error("DATABASE_URL environment variable not set")
+		fmt.Println("DATABASE_URL environment variable not set")
 		os.Exit(1)
 	}
 	connStr := os.Getenv("DATABASE_URL")
@@ -42,10 +41,14 @@ func main() {
 	}
 	defer dbPool.Close()
 	// ---------------------------------------------------------------------
-	fmt.Print("JWT Auth secret: ")
-	bytepw, err := term.ReadPassword(int(syscall.Stdin))
-	if err != nil {
-		os.Exit(1)
+	bytepw := []byte(os.Getenv("JWT_AUTH_SECRET"))
+	if len(bytepw) == 0 {
+		fmt.Print("JWT Auth secret: ")
+		var err error
+		bytepw, err = term.ReadPassword(int(syscall.Stdin))
+		if err != nil {
+			os.Exit(1)
+		}
 	}
 
 	pw := strings.Trim(string(bytepw), "\r\n\t ")

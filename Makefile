@@ -29,6 +29,9 @@ run-local-pg: .dev.pg_password rm-local-pg
 	# See full list of parameters here:
 	# https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
 
+issue-jwt: .dev.jwtauth_env
+	@. ./.dev.jwtauth_env && go run ./cmd/sandbox-issue-jwt
+
 migrate: .dev.pgenv
 	@echo "Running migrations..."
 	@. ./.dev.pgenv && migrate -database "$${DATABASE_URL}" -path db/migrations up

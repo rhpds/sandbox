@@ -184,6 +184,7 @@ func main() {
 		// ---------------------------------
 		r.Post("/api/v1/admin/jwt", adminHandler.IssueLoginJWTHandler)
 		r.Get("/api/v1/admin/jwt", baseHandler.GetJWTHandler)
+		r.Put("/api/v1/admin/jwt/{id}/invalidate", baseHandler.InvalidateTokenHandler)
 	})
 
 	// ---------------------------------------------------------------------

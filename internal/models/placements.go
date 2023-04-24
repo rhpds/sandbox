@@ -3,12 +3,12 @@ package models
 import (
 	"context"
 	"errors"
+	"net/http"
 
 	"github.com/rhpds/sandbox/internal/log"
 
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
-	"net/http"
 )
 
 type Placement struct {

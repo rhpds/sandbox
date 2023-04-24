@@ -106,6 +106,7 @@ func AuthenticatorAdmin(next http.Handler) http.Handler {
 		token, claims, err := jwtauth.FromContext(r.Context())
 
 		if err != nil {
+			log.Logger.Info("Error authenticating request", "error", err, "token", token, "claims", claims)
 			w.WriteHeader(http.StatusUnauthorized)
 			render.Render(w, r, &v1.Error{
 				HTTPStatusCode: http.StatusUnauthorized,
@@ -155,6 +156,7 @@ func (h *BaseHandler) AuthenticatorLogin(next http.Handler) http.Handler {
 		token, claims, err := jwtauth.FromContext(r.Context())
 
 		if err != nil {
+			log.Logger.Info("Error authenticating request", "error", err, "token", token, "claims", claims)
 			w.WriteHeader(http.StatusUnauthorized)
 			render.Render(w, r, &v1.Error{
 				HTTPStatusCode: http.StatusUnauthorized,
