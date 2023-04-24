@@ -23,7 +23,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer ACCESS_TOKEN
+          example: Bearer <ACCESS_TOKEN>
     get:
       parameters:
         - in: query
@@ -129,7 +129,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer ACCESS_TOKEN
+          example: Bearer <ACCESS_TOKEN>
       - name: uuid
         in: path
         required: true
@@ -201,7 +201,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer ACCESS_TOKEN
+          example: Bearer <ACCESS_TOKEN>
       - name: kind
         in: path
         required: true
@@ -247,7 +247,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer ACCESS_TOKEN
+          example: Bearer <ACCESS_TOKEN>
       - name: kind
         in: path
         required: true
@@ -295,7 +295,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer ACCESS_TOKEN
+          example: Bearer <ACCESS_TOKEN>
       - name: kind
         in: path
         required: true
@@ -348,7 +348,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer ACCESS_TOKEN
+          example: Bearer <ACCESS_TOKEN>
       - name: kind
         in: path
         required: true
@@ -399,7 +399,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer ACCESS_TOKEN
+          example: Bearer <ACCESS_TOKEN>
       - name: kind
         in: path
         required: true
@@ -450,7 +450,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer ACCESS_TOKEN
+          example: Bearer <ACCESS_TOKEN>
       - name: kind
         in: path
         required: true
@@ -528,7 +528,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer TOKEN
+          example: Bearer <ADMIN_ACCESS_TOKEN>
     post:
       summary: Issue a new JWT token for login
       operationId: issueJWT
@@ -645,7 +645,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer TOKEN
+          example: Bearer <ADMIN_ACCESS_TOKEN>
       - name: id
         in: path
         required: true
@@ -655,6 +655,8 @@ paths:
     put:
       summary: Invalidate a login token
       operationId: invalidateToken
+      tags:
+        - admin
       responses:
         '200':
           description: Invalidation Successful
@@ -695,7 +697,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer TOKEN
+          example: Bearer <LOGIN_TOKEN>
     get:
       summary: Get an access token using a login token.
       operationId: login
