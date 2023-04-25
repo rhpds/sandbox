@@ -1,0 +1,31 @@
+---
+name: manual-build-push
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Image
+        type: string
+        default: api
+      tag:
+        description: 'image tag'
+        required: true
+        type: string
+      labels:
+        description: 'Quay labels (ex: quay.expires-after=2d human=tony)'
+        default: ''
+        required: false
+        type: string
+
+jobs:
+  build-and-push:
+    if: contains('["fridim", "marcosmamorim", "jkupfere", "rut31337", "aleixhub"]', github.actor)
+
+    uses: ./.github/workflows/build-push.yml
+    secrets:
+      registry_username: ${{ secrets.QUAY_RHPDS_SANDBOX_API_USER }}
+      registry_password: ${{ secrets.QUAY_RHPDS_SANDBOX_API_PASSWORD }}
+    with:
+      image: ${{ inputs.image }}
+      tag: ${{ inputs.tag }}
+      labels: ${{ inputs.labels }}

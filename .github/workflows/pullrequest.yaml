@@ -60,7 +60,7 @@ jobs:
           org.opencontainers.image.created=${{ steps.prep.outputs.created }}
           org.opencontainers.image.revision=${{ github.sha }}
 
-  build-and-push:
+  build-and-push-api:
     concurrency:
       group: pr-${{ github.event.number }}
       cancel-in-progress: true
