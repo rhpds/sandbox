@@ -19,8 +19,8 @@ spec:
     spec:
       containers:
       - name: sandbox-api
-        image: {{ .Values.deployment.image }}
-        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        image: {{ .Values.deployment.image }}:{{ .Values.image_tag | default .Values.deployment.tag }}
+        imagePullPolicy: {{ .Values.deployment.pullPolicy }}
         livenessProbe:
           initialDelaySeconds: 10
           tcpSocket:

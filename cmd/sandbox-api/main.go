@@ -26,6 +26,8 @@ func main() {
 	log.InitLoggers(false)
 	ctx := context.Background()
 
+	log.Logger.Info("Starting sandbox-api")
+
 	// ---------------------------------------------------------------------
 	// Load OpenAPI document
 	// ---------------------------------------------------------------------
