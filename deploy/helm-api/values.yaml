@@ -1,0 +1,14 @@
+appName: sandbox-api
+namespace: sandbox-api
+labels:
+  app: sandbox-api
+
+deployment:
+  image: quay.io/rhpds/sandbox-api
+  tag: latest
+  strategy: RollingUpdate
+  pullPolicy: Always
+
+
+dynamodb_table: accounts-dev
+dynamodb_region: us-east-1

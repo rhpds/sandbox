@@ -40,11 +40,13 @@
 *** DONE check db in Authenticator middleware
 *** DONE PUT /admin/jwt/{id}/invalidate to invalidate one token
 ** DONE GET /admin/jwt   to list login tokens
+* DONE create OCI image
+* TODO create helm chart
 * TODO unit tests and fixture/functional tests
 * TODO documentation coverage
-* TODO create OCI image
 * TODO move handlers per version?
 * Post MVP
 ** TODO Encrypt IAM secret key using AWS KMS instead of ansible-vault.  Use and support both while transitioning
 ** TODO aws lambda function to replicate changes from dynamoDB to postgresql
 ** TODO add POST /refresh   to get new access token
+** TODO rename env variable:  prefix with DYNAMODB_ for anything related to dynamodb access
