@@ -264,9 +264,8 @@ func GetAccounts(svc *dynamodb.DynamoDB, filter expression.ConditionBuilder, min
 	expr, err := builder.WithProjection(proj).Build()
 
 	if err != nil {
-		log.Err.Println("Got error building expression:")
-		log.Err.Println(err.Error())
-		os.Exit(1)
+		log.Logger.Error("error building expression", "error", err)
+		return accounts, err
 	}
 
 	input := &dynamodb.ScanInput{
@@ -323,7 +322,7 @@ func (a *AwsAccountDynamoDBProvider) FetchByName(name string) (models.AwsAccount
 
 // FetchAll returns the list of all accounts from dynamodb
 func (a *AwsAccountDynamoDBProvider) FetchAll() ([]models.AwsAccount, error) {
-	filter := expression.ConditionBuilder{}
+	filter := expression.Name("name").AttributeExists()
 	accounts, err := GetAccounts(a.Svc, filter, -1)
 	if err != nil {
 		return []models.AwsAccount{}, err
@@ -353,7 +352,7 @@ func (a *AwsAccountDynamoDBProvider) FetchAllToCleanup() ([]models.AwsAccount, e
 
 // FetchAllSorted
 func (a *AwsAccountDynamoDBProvider) FetchAllSorted(by string) ([]models.AwsAccount, error) {
-	filter := expression.ConditionBuilder{}
+	filter := expression.Name("name").AttributeExists()
 	accounts, err := GetAccounts(a.Svc, filter, -1)
 	if err != nil {
 		return []models.AwsAccount{}, err
