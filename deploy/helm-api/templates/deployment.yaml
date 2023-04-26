@@ -38,6 +38,14 @@ spec:
               name: sandbox-api-db
               key: database_url
         ##########################################
+        # Vault (AES256) secret
+        ##########################################
+        - name: VAULT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: sandbox-api-vault
+              key: vault_secret
+        ##########################################
         # TOKENS
         ##########################################
         - name: JWT_AUTH_SECRET

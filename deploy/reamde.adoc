@@ -1,0 +1,20 @@
+== sandbox-api ==
+
+
+.secrets.yaml
+----
+sandbox_api_secrets:
+  database:
+    url: postgres://...
+    dynamodb_aws_access_key_id: ...
+    dynamodb_aws_secret_access_key: ...
+  auth:
+    jwt_auth_secret: ...
+  vault:
+    vault_secret: ...
+----
+
+.Install chart
+----
+helm install  -f secrets.yaml sandbox-api deploy/helm-api/
+----
