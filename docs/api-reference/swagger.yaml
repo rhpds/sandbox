@@ -740,6 +740,7 @@ components:
           type: array
           items:
             type: object
+            additionalProperties: false
             properties:
               kind:
                 type: string
