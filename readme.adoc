@@ -83,6 +83,21 @@ token:
 [TOKEN HERE]
 ----
 
+.Create an access token
+----
+oc run admin --image=quay.io/rhpds/sandbox-admin:latest -i -t --restart=Never --rm -- /bin/bash
+
+logintoken=[TOKEN]
+
+curl -H "Authorization: Bearer ${logintoken}" sandbox-api:8080/api/v1/login
+
+[ACCESS TOKEN]
+
+token=[ACCESS TOKEN]
+# check access
+curl -H "Authorization: Bearer ${token}" sandbox-api:8080/api/v1/health
+----
+
 == sandbox-replicate ==
 
 The role of the lambda function is to replicate any changes made to the dynamoDB table into a postgresql database.
