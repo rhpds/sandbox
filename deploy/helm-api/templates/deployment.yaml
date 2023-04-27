@@ -4,18 +4,21 @@ metadata:
   name: {{ .Values.appName }}
   namespace: {{ .Values.namespace }}
   labels:
-    {{- toYaml .Values.labels | nindent 4 }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/name: {{ .Values.appName }}
 spec:
   replicas: 2
   selector:
     matchLabels:
-      {{- toYaml .Values.labels | nindent 6 }}
+      app.kubernetes.io/name: {{ .Values.appName }}
+      app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
   strategy:
     type: {{ .Values.deployment.strategy }}
   template:
     metadata:
       labels:
-        {{- toYaml .Values.labels | nindent 8 }}
+        app.kubernetes.io/name: {{ .Values.appName }}
+        app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
     spec:
       containers:
       - name: sandbox-api
