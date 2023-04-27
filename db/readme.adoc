@@ -1,0 +1,5 @@
+Please read first link:https://github.com/golang-migrate/migrate/blob/master/GETTING_STARTED.md[migrate GETTING STARTED]
+
+We're using migration to maintain the sandbox DB. See link:migrations/[migrations].
+
+== Principles ==

@@ -49,7 +49,7 @@ jobs:
     - name: Build and publish image to Quay
       uses: docker/build-push-action@v2
       with:
-        file: build/Dockerfile
+        file: Containerfile.metrics
         push: true
         # Use the PR name
         tags: ${{ steps.prep.outputs.tags }}
@@ -59,3 +59,37 @@ jobs:
           org.opencontainers.image.source=${{ github.event.repository.html_url }}
           org.opencontainers.image.created=${{ steps.prep.outputs.created }}
           org.opencontainers.image.revision=${{ github.sha }}
+
+  build-and-push-api:
+    concurrency:
+      group: pr-${{ github.event.number }}
+      cancel-in-progress: true
+
+    uses: ./.github/workflows/build-push.yml
+    secrets:
+      registry_username: ${{ secrets.QUAY_RHPDS_SANDBOX_API_USER }}
+      registry_password: ${{ secrets.QUAY_RHPDS_SANDBOX_API_PASSWORD }}
+    with:
+      tag: pr-${{ github.event.number }}
+      image: api
+      labels: |-
+        quay.expires-after=1d
+        org.opencontainers.image.source=${{ github.event.repository.html_url }}
+        org.opencontainers.image.revision=${{ github.sha }}
+
+  build-and-push-admin:
+    concurrency:
+      group: pr-${{ github.event.number }}-admin
+      cancel-in-progress: true
+
+    uses: ./.github/workflows/build-push.yml
+    secrets:
+      registry_username: ${{ secrets.QUAY_RHPDS_SANDBOX_API_USER }}
+      registry_password: ${{ secrets.QUAY_RHPDS_SANDBOX_API_PASSWORD }}
+    with:
+      tag: pr-${{ github.event.number }}
+      image: admin
+      labels: |-
+        quay.expires-after=1d
+        org.opencontainers.image.source=${{ github.event.repository.html_url }}
+        org.opencontainers.image.revision=${{ github.sha }}

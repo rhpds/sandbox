@@ -2,15 +2,14 @@ package main
 
 import (
 	"flag"
-	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rhpds/sandbox/internal/account"
+	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"github.com/rhpds/sandbox/internal/log"
+	"github.com/rhpds/sandbox/internal/models"
 	"net/http"
 	"os"
-	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"time"
 )
 
@@ -26,7 +25,6 @@ func parseFlags() {
 		debugFlag = true
 	}
 }
-
 
 func serve() {
 	log.Out.Println("promhttp Listening on port 2112")
@@ -59,19 +57,18 @@ func createMetrics() {
 		Help: "Total accounts",
 	})
 
-	sandboxdb.SetSession()
+	accountProvider := sandboxdb.NewAwsAccountDynamoDBProvider()
 
 	// Update metrics every 30 seconds
 	go func() {
 		for {
 			// no filter, we grab all accounts at once, then we filter because the DB is not that big.
-			filters := []expression.ConditionBuilder{}
-			accounts, err := sandboxdb.GetAccounts(filters)
+			accounts, err := accountProvider.FetchAll()
 			if err != nil {
 				log.Err.Fatal(err)
 			}
-			used.Set(float64(account.CountUsed(accounts)))
-			toCleanup.Set(float64(account.CountToCleanup(accounts)))
+			used.Set(float64(models.CountUsed(accounts)))
+			toCleanup.Set(float64(models.CountToCleanup(accounts)))
 			total.Set(float64(len(accounts)))
 			gaugeVec.Reset()
 			for _, sandbox := range accounts {
@@ -98,24 +95,12 @@ func createMetrics() {
 		}
 	}()
 }
-func checkEnv() {
-	if os.Getenv("AWS_PROFILE") == "" &&  os.Getenv("AWS_ACCESS_KEY_ID") == "" {
-		log.Err.Fatal("You must define env var AWS_PROFILE or AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY")
-	}
-	if os.Getenv("AWS_PROFILE") != "" &&  os.Getenv("AWS_ACCESS_KEY_ID") != "" {
-		log.Err.Fatal("You must chose between AWS_PROFILE and AWS_ACCESS_KEY_ID")
-	}
-
-	if os.Getenv("AWS_REGION") == "" {
-		os.Setenv("AWS_REGION", "us-east-1")
-	}
-}
 
 func main() {
 	parseFlags()
 	log.InitLoggers(debugFlag)
 
-	checkEnv()
+	sandboxdb.CheckEnv()
 
 	createMetrics()
 

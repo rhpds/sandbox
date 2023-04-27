@@ -1,0 +1,52 @@
+#+title: Todo
+
+* TODO all endpoints
+** Placements
+*** DONE GET all
+**** TODO min-age param
+**** TODO max-age param
+**** TODO unit param
+*** DONE POST
+**** DONE save request as part of the placement
+*** DONE GET one
+*** DONE DELETE one
+** Accounts
+*** DONE GET one
+*** DONE PUT (mark for cleanup)
+** Lifecycle
+*** TODO STOP
+*** TODO START
+*** TODO STATUS
+* DONE validate requests using the openAPI schema
+* DONE embed the schema in binary
+* DONE add credential type
+* DONE add AccountWithCreds
+* DONE test postgresql down, and up again
+* DONE script to push/create/update AWS lambda function
+* DONE create OpenAPIValidation middleware for schema validation
+* DONE create openapi internal router from doc at startup, not on every request
+* DONE use go-chi instead of httprouter:
+** 100% compatible with standard library
+** nice interface for middleware
+* DONE make clean
+* DONE /api/v1/accounts/{name}  won't work when we have other cloud providers.  do /api/v1/accounts/{kind}/{name} instead
+* DONE Decrypt using ansible-vault (MVP only)
+* DONE auth token errors output should be JSON too, not text.
+* DONE rename Book() to Request() ?
+* DONE add JWT for auth
+** DONE protect routes with middleware and JWT
+** DONE add POST /admin/jwt
+*** DONE save token name+iat into DB
+*** DONE check db in Authenticator middleware
+*** DONE PUT /admin/jwt/{id}/invalidate to invalidate one token
+** DONE GET /admin/jwt   to list login tokens
+* DONE create OCI image
+* TODO create helm chart
+* TODO unit tests and fixture/functional tests
+* TODO documentation coverage
+* TODO move handlers per version?
+* Post MVP
+** TODO Encrypt IAM secret key using AWS KMS instead of ansible-vault.  Use and support both while transitioning
+** TODO aws lambda function to replicate changes from dynamoDB to postgresql
+** TODO add POST /refresh   to get new access token
+** TODO rename env variable:  prefix with DYNAMODB_ for anything related to dynamodb access

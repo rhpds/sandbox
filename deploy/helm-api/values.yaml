@@ -1,0 +1,17 @@
+---
+appName: sandbox-api
+namespace: sandbox-api
+
+deployment:
+  image: quay.io/rhpds/sandbox-api
+  tag: latest
+  strategy: RollingUpdate
+  pullPolicy: Always
+
+service:
+  type: ClusterIP
+  port:
+    api: 8080
+
+dynamodb_table: accounts-dev
+dynamodb_region: us-east-1

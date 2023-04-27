@@ -1,0 +1,50 @@
+ARG GO_VERSION=1.20
+# Switch back to Red Hat go-toolset when it supports go 1.20
+#FROM registry.access.redhat.com/ubi8/go-toolset:latest AS builder
+FROM docker.io/golang:${GO_VERSION} as builder
+WORKDIR /sandbox/
+
+
+USER root
+RUN chown -R ${USER_UID}:0 /sandbox
+USER ${USER_UID}
+
+COPY ./ ./
+RUN make
+
+FROM registry.access.redhat.com/ubi8/ubi:latest AS deploy
+RUN dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x86_64/pgdg-redhat-repo-latest.noarch.rpm \
+    && dnf install -y \
+    bash \
+    bind-utils \
+    curl \
+    findutils \
+    gcc \
+    git \
+    jq \
+    nc \
+    net-tools \
+    openssl \
+    postgresql \
+    python39 \
+    python39-pip \
+    rsync \
+    tar \
+    unzip \
+    vim \
+    wget \
+    && dnf clean all
+COPY --from=docker.io/migrate/migrate /usr/local/bin/migrate /usr/local/bin/migrate
+WORKDIR /sandbox/
+USER ${USER_UID}
+COPY build/github_known_hosts /ssh/known_hosts
+env SSH_KNOWN_HOSTS /ssh/known_hosts
+COPY --from=builder /sandbox/build/sandbox-* ./
+CMD ["/bin/bash"]
+
+
+ENV DESCRIPTION="Image for Admins to interact with the Sandbox API"
+LABEL name="rhpds/sandbox-admin" \
+      maintainer="Red Hat Demo Platform" \
+      description="${DESCRIPTION}" \
+      summary="${DESCRIPTION}"

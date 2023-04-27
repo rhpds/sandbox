@@ -1,0 +1,1055 @@
+openapi: "3.0.3"
+info:
+  description: Sandbox API
+  version: 1.0.0
+  title: Sandbox API
+  license:
+    name: MIT
+servers:
+  - url: /api/v1
+tags:
+  - name: placement
+    description: Anything related to Placements. Ex, booking or releasing sandboxes
+  - name: account
+    description: Anything related to Accounts.
+  - name: admin
+    description: HTTP routes protected and accessible only by admins.
+paths:
+  /login:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Login JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer <LOGIN_TOKEN>
+    get:
+      summary: Get an access token using a login token.
+      operationId: login
+      responses:
+        '200':
+          description: The access token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  access_token_exp:
+                    type: string
+              example:
+                access_token: "eyJhbGc.oq[...].GWQdpMPSNf[...]-Gi7uB[...]"
+                access_token_exp: "2023-04-20T23:00:00Z"
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /placements:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer <ACCESS_TOKEN>
+    get:
+      parameters:
+        - in: query
+          name: min-age
+          description: The minimum age of the placements to return
+          required: false
+          example: 15
+          schema:
+            type: integer
+            minimum: 0
+        - in: query
+          name: max-age
+          description: The maximum age of the placements to return
+          required: false
+          example: 1
+          schema:
+            type: integer
+            minimum: 0
+        - in: query
+          name: unit
+          description: The unit for min-age and max-age.
+          required: false
+          example: day
+          schema:
+            type: string
+            default: day
+            enum:
+              - day
+              - hour
+              - minute
+              - second
+      tags:
+        - placement
+      operationId: getPlacements
+      summary: Get all placements
+      description: |
+        The placements are returned.
+
+        NOTE: the resources are not returned because that would generate too much data and take too much time. To get the information about accounts for a particular placement, query the `/placements/{uuid}` endpoint.
+      responses:
+        '200':
+          description: The list of placements
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Placements"
+              example:
+                - id: 1
+                  created_at: "2023-04-17T13:19:11.835373+02:00"
+                  updated_at: "2023-04-17T13:19:11.835373+02:00"
+                  service_uuid: "6548dc97-5799-4bfe-8843-8d1793996593"
+                  resources: []
+                  annotations:
+                    guid: testguid
+                  request:
+                    service_uuid: "6548dc97-5799-4bfe-8843-8d1793996593"
+                    annotations:
+                      guid: testguid
+                    resources:
+                      - kind: AwsSandbox
+                        count: 2
+        default:
+          description: getPlacements unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Create a new placement; Request a sandbox.
+      operationId: createPlacements
+      tags:
+        - placement
+      requestBody:
+        description: JSON object to specify UUID and other annotations when requesting a resource.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlacementRequest"
+      responses:
+        '200':
+          description: The Placement, containing the allocated resource(s), with credentials.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlacementWithCreds"
+        '404':
+          description: NotFound
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: book unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /placements/{uuid}:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer <ACCESS_TOKEN>
+      - name: uuid
+        in: path
+        required: true
+        description: The UUID of the service.
+        schema:
+          $ref: "#/components/schemas/UUID"
+    get:
+      tags:
+        - placement
+      operationId: getPlacement
+      summary: Get information about a placement and its resources
+      responses:
+        '200':
+          description: The placement assigned to this uuid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Placement"
+        '404':
+          description: getPlacement Placement not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getPlacement unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    delete:
+      tags:
+        - placement
+      operationId: deletePlacement
+      summary: Delete the placement assigned to a specific uuid.
+      description: |-
+        You usually call this endpoint once your service is destroyed.
+
+        This action will cascade cleanup for all the accounts associated with the placement.
+      responses:
+        '200':
+          description: The placement assigned to this uuid is deleted. The resources associated with this placement are marked for cleanup.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: Placement successfuly deleted
+
+        '404':
+          description: deletePlacement Placement not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: deletePlacement unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /accounts/{kind}:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer <ACCESS_TOKEN>
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
+      - name: available
+        in: query
+        description: Boolean to filter if available or taken.
+        schema:
+          type: boolean
+      - name: service_uuid
+        in: query
+        description: Filter accounts by Service UUID
+        schema:
+          $ref: '#/components/schemas/UUID'
+    get:
+      tags:
+        - account
+      operationId: getAccounts
+      summary: Get all accounts
+      responses:
+        '200':
+          description: The list of accounts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Accounts"
+        default:
+          description: getAccounts unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /accounts/{kind}/{name}:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer <ACCESS_TOKEN>
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
+      - name: name
+        in: path
+        required: true
+        description: The name of the sandbox
+        schema:
+          type: string
+    get:
+      tags:
+        - account
+      operationId: getAccount
+      summary: Get information about an account
+      responses:
+        '200':
+          description: The account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        '404':
+          description: getAccount account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /accounts/{kind}/{name}/cleanup:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer <ACCESS_TOKEN>
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
+      - name: name
+        in: path
+        required: true
+        description: The name of the sandbox to mark for cleanup.
+        schema:
+          type: string
+    put:
+      tags:
+        - account
+      operationId: markForCleanup
+      summary: Manually mark a sandbox (account) for cleanup.
+      description: |-
+        This is an ad-hoc operation, deleting placement should be preferred for regular cleanup of sandboxes.
+        If the sandbox is part of a placement, the corresponding placement will be updated:
+          - The sandbox is removed from the placement.
+
+        The placement is automatically deleted if there is no more resources.
+      responses:
+        '200':
+          description: The account is marked for cleanup.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: markForCleanup unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /accounts/{kind}/{name}/stop:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer <ACCESS_TOKEN>
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
+      - name: name
+        in: path
+        required: true
+        description: The name of the sandbox to stop
+        schema:
+          type: string
+    put:
+      tags:
+        - account
+      operationId: stopAccount
+      summary: Stop all instances and (supported) services in an account
+      description: |-
+        Given a specific account, stop all instances on all regions.
+
+        Also stop all supported services.
+      responses:
+        '200':
+          description: The stop request was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: stopAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /accounts/{kind}/{name}/start:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer <ACCESS_TOKEN>
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
+      - name: name
+        in: path
+        required: true
+        description: The name of the sandbox to start
+        schema:
+          type: string
+    put:
+      tags:
+        - account
+      operationId: startAccount
+      summary: Start all instances and (supported) services in an account
+      description: |-
+        Given a specific account, start all instances on all regions.
+
+        Also start all supported services.
+      responses:
+        '200':
+          description: The start request was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: startAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /accounts/{kind}/{name}/status:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer <ACCESS_TOKEN>
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
+      - name: name
+        in: path
+        required: true
+        description: The name of the sandbox
+        schema:
+          type: string
+    put:
+      tags:
+        - account
+      operationId: statusAccount
+      summary: Request new status update of all instances and (supported) services in an account
+      description: |-
+        Given a specific account, query an async status
+      responses:
+        '200':
+          description: The status request was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: statusAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      tags:
+        - account
+      operationId: getStatusAccount
+      summary: Get current status of all instances and (supported) services in an account
+      description: |-
+        Given a specific account, return the current status.
+
+        To trigger a new asynchronous status update, use the PUT method.
+      responses:
+        '200':
+          description: Account status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountStatus"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getStatusAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /admin/jwt:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Admin Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer <ADMIN_ACCESS_TOKEN>
+    post:
+      summary: Issue a new JWT token for login
+      operationId: issueJWT
+      tags:
+        - admin
+      requestBody:
+        description: JSON object to specify claims.
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - claims
+              properties:
+                claims:
+                  type: object
+                  required:
+                    - name
+                    - role
+                  properties:
+                    name:
+                      type: string
+                      example: operatorXYZ
+                    role:
+                      type: string
+                      enum:
+                        - admin
+                        - app
+                      example: app
+            example:
+              claims:
+                role: app
+                name: anarchy
+      responses:
+        '200':
+          description: The JWT Login token
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                token: eyJhbGc.oq[...].GWQdpMPSNf[...]-Gi7uB[...]
+
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      summary: Get the list of JWT tokens
+      operationId: GetJWT
+      tags:
+        - admin
+      responses:
+        '200':
+          description: The tokens
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+              example:
+                - id: 20
+                  created_at: 2023-04-20T23:03:32.267238+02:00
+                  updated_at: 2023-04-20T23:13:27.464333+02:00
+                  kind: login
+                  name: gucore
+                  role: admin
+                  iat: 1682024612
+                  exp: 1997384612
+                  expiration: 2033-04-17T23:03:32+02:00
+                - id: 21
+                  created_at: 2023-04-20T23:16:00.615025+02:00
+                  updated_at: 2023-04-20T23:16:00.615025+02:00
+                  kind: login
+                  name: anarchy
+                  role: app
+                  iat: 1682025360
+                  exp: 1997385360
+                  expiration: 2033-04-17T23:16:00+02:00
+
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+                code: 401
+        default:
+          description: book unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /admin/jwt/{id}/invalidate:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Admin Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer <ADMIN_ACCESS_TOKEN>
+      - name: id
+        in: path
+        required: true
+        description: The id of the token to invalidate
+        schema:
+          type: integer
+    put:
+      summary: Invalidate a login token
+      operationId: invalidateToken
+      tags:
+        - admin
+      responses:
+        '200':
+          description: Invalidation Successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    example: Token successfully invalidated
+              example:
+                message: Token successfully invalidated
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        '500':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Error invalidating token
+                http_code: 500
+  /health:
+    get:
+      summary: Health endpoint
+      operationId: health
+      responses:
+        '200':
+          description: Invalidation Successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    example: OK
+                  http_code:
+                    example: 200
+              example:
+                message: OK
+                http_code: 200
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Internal server error
+                http_code: 500
+
+components:
+  schemas:
+    UUID:
+      type: string
+      description: The UUID of the service. Sandboxes are assigned uuid when booked.
+      format: uuid
+
+    PlacementRequest:
+      type: object
+      required:
+        - service_uuid
+      properties:
+        service_uuid:
+          $ref: "#/components/schemas/UUID"
+        resources:
+          description: Request resources
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              kind:
+                type: string
+                default: AwsSandbox
+                example: AwsSandbox
+                enum:
+                  - AwsSandbox
+              count:
+                type: integer
+                minimum: 1
+                default: 1
+                example: 1
+        annotations:
+          $ref: "#/components/schemas/Annotations"
+      example:
+        service_uuid: 13a8b15c-e752-4727-ac78-600e8833e575
+        resources:
+          - kind: AwsSandbox
+            count: 2
+
+    Annotations:
+      description: Key / Value map to provide optional information.
+      type: object
+      additionalProperties:
+        type: string
+        minLength: 1
+      example:
+        guid: abcde
+        env_type: ocp4-cluster
+
+    Placement:
+      type: object
+      description: A placement is a record of service(uuid) / resource(name) / when(date)
+      required:
+        - service_uuid
+        - resources
+        - annotations
+      properties:
+        request:
+          $ref: "#/components/schemas/PlacementRequest"
+        service_uuid:
+          $ref: "#/components/schemas/UUID"
+        resources:
+          $ref: "#/components/schemas/Resources"
+        created_at:
+          description: The date (UTC and RFC3339 format) the placement was made.
+          type: string
+          format: date-time
+          example: 2023-03-13T09:42:33+01:00
+        updated_at:
+          description: The date (UTC and RFC3339 format) the placement was last updated.
+          type: string
+          format: date-time
+          example: 2023-03-13T09:42:33+01:00
+        annotations:
+          $ref: "#/components/schemas/Annotations"
+
+    PlacementWithCreds:
+      allOf:
+        - $ref: '#/components/schemas/Placement'
+        - type: object
+          properties:
+            resources:
+              $ref: "#/components/schemas/ResourcesWithCreds"
+
+    Account:
+      oneOf:
+        - $ref: '#/components/schemas/AwsAccount'
+        - $ref: '#/components/schemas/AzureAccount'
+      discriminator:
+        propertyName: kind
+        mapping:
+          aws_account: '#/components/schemas/AwsAccount'
+
+    AccountWithCreds:
+      oneOf:
+        - $ref: '#/components/schemas/AwsAccountWithCreds'
+      discriminator:
+        propertyName: kind
+        mapping:
+          aws_account: '#/components/schemas/AwsAccountWithCreds'
+
+    Resource:
+      type: object
+      required:
+        - available
+        - to_cleanup
+      properties:
+        to_cleanup:
+          description: True if the resource is marked for cleanup
+          type: boolean
+          default: false
+          example: false
+        available:
+          description: True if the resource has no placement associated.
+          type: boolean
+          default: true
+          example: false
+      oneOf:
+        - $ref: '#/components/schemas/Account'
+        - $ref: '#/components/schemas/AwsAccount'
+      discriminator:
+        propertyName: kind
+        mapping:
+          aws_account: '#/components/schemas/AwsAccount'
+
+    ResourceWithCreds:
+      oneOf:
+        - $ref: '#/components/schemas/AccountWithCreds'
+      discriminator:
+        propertyName: kind
+        mapping:
+          aws_account: '#/components/schemas/AwsAccountWithCreds'
+
+    Resources:
+      type: array
+      nullable: true
+      items:
+        $ref: '#/components/schemas/Resource'
+
+    Credential:
+      oneOf:
+        - $ref: '#/components/schemas/AwsIamKey'
+      discriminator:
+        propertyName: kind
+        mapping:
+          aws_iam_key: '#/components/schemas/AwsIamKey'
+
+    Credentials:
+      type: array
+      items:
+        $ref: '#/components/schemas/Credential'
+
+    AzureAccount:
+      type: object
+      properties:
+        name:
+          type: string
+          example: sandbox123
+    AwsAccount:
+      type: object
+      required:
+        - name
+        - account_id
+        - zone
+        - hosted_zone_id
+      properties:
+        name:
+          type: string
+          example: sandbox123
+        service_uuid:
+          $ref: '#/components/schemas/UUID'
+        annotations:
+          $ref: '#/components/schemas/Annotations'
+        account_id:
+          type: string
+          example: '0123456'
+        zone:
+          type: string
+          example: sandbox123.domain.com
+        hosted_zone_id:
+          type: string
+          example: Z019612345AH4C7KTTZJ0
+        to_cleanup:
+          type: boolean
+          default: false
+          example: true
+        conan_status:
+          type: string
+          example: cleanup in progress
+        conan_timestamp:
+          type: string
+          format: date-time
+          example: 2023-03-09T07:22:42+00:00
+        conan_hostname:
+          type: string
+          example: conan2.domain.com
+
+    AwsIamKey:
+      type: object
+      required:
+        - name
+        - aws_access_key_id
+        - aws_secret_access_key
+      additionalProperties:
+        type: string
+      properties:
+        kind:
+          type: string
+          example: aws_iam_key
+        name:
+          type: string
+          example: IAM key
+        aws_access_key_id:
+          type: string
+          example: AKIAR2AI7M4QU6KCVIWJ
+        aws_secret_access_key:
+          type: string
+          example: 1234567890abcdefghij
+
+    AwsAccountWithCreds:
+      allOf:
+        - $ref: '#/components/schemas/AwsAccount'
+        - type: object
+          properties:
+            credentials:
+              type: array
+              items:
+                $ref: '#/components/schemas/Credentials'
+
+    Accounts:
+      type: array
+      items:
+        $ref: '#/components/schemas/Account'
+
+    ResourcesWithCreds:
+      type: array
+      items:
+        $ref: '#/components/schemas/ResourceWithCreds'
+
+    Placements:
+      type: array
+      items:
+        $ref: '#/components/schemas/Placement'
+
+    Error:
+      type: object
+      required:
+        - http_code
+        - message
+      properties:
+        http_code:
+          type: integer
+          format: integer
+          example: 502
+        message:
+          type: string
+          example: Unexpected Error
+
+    Message:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          example: Account successfully marked for cleanup
+
+    LifecycleResponse:
+      type: object
+      required:
+        - request_id
+      properties:
+        request_id:
+          type: string
+          example: hostname/icXUKzyr5U-000002
+        message:
+          type: string
+          example: "Request created"
+    AccountStatus:
+      type: object
+      properties:
+        updated_at:
+          type: string
+          format: date-time
+          example: 2023-03-13T09:42:33+01:00
+
+        instances:
+          type: array
+          items:
+            type: object
+        services:
+          type: array
+          items:
+            type: object

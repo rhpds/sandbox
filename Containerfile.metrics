@@ -1,0 +1,27 @@
+ARG GO_VERSION=1.20
+# Switch back to Red Hat go-toolset when it supports go 1.20
+#FROM registry.access.redhat.com/ubi8/go-toolset:latest AS builder
+FROM docker.io/golang:${GO_VERSION} as builder
+WORKDIR /sandbox/
+
+USER root
+RUN chown -R ${USER_UID}:0 /sandbox
+USER ${USER_UID}
+
+COPY ./ ./
+RUN make sandbox-metrics
+
+FROM registry.access.redhat.com/ubi8/ubi-minimal:latest AS deploy
+RUN microdnf install -y rsync tar
+WORKDIR /sandbox/
+USER ${USER_UID}
+COPY build/github_known_hosts /ssh/known_hosts
+env SSH_KNOWN_HOSTS /ssh/known_hosts
+COPY --from=builder /sandbox/build/sandbox-metrics ./
+CMD ["./sandbox-metrics"]
+
+ENV DESCRIPTION="Metrics for Sandboxes for the Red Hat Demo Platform"
+LABEL name="rhpds/sandbox-metrics" \
+      maintainer="Red Hat Demo Platform" \
+      description="${DESCRIPTION}" \
+      summary="${DESCRIPTION}"
