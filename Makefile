@@ -9,7 +9,7 @@ VERSION ?= $(shell git describe --tags 2>/dev/null | cut -c 2-)
 COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null)
 DATE ?= $(shell date -u)
 
-build: sandbox-list sandbox-metrics sandbox-api
+build: sandbox-list sandbox-metrics sandbox-api sandbox-issue-jwt
 
 test:
 	@echo "Running tests..."
