@@ -3,6 +3,7 @@
 This repository is a consolidated codebase for everything related to sandboxes for the Red Hat Demo Platform. It contains:
 
 * sandbox-api: The Backend API for all things sandbox.
+* sandbox-issue-jwt: CLI to generate a new signed JWT login token
 * sandbox-list:  Interact with the AWS Sandbox DB in a read-only way.
 * sandbox-metrics: Prometheus Endpoint exposing metrics.
 * sandbox-replicate: AWS Lambda function to replicate changes from DynamoDB to a Postgres database.
@@ -20,6 +21,7 @@ make sandbox-api
 make sandbox-list
 make sandbox-metrics
 make sandbox-replicate
+make sandbox-issue-jwt
 ----
 
 == sandbox-api ==
