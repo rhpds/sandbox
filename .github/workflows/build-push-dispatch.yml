@@ -27,5 +27,5 @@ jobs:
       registry_password: ${{ secrets.QUAY_RHPDS_SANDBOX_API_PASSWORD }}
     with:
       image: ${{ inputs.image }}
-      tag: ${{ inputs.image == admin && 'admin-' || '' }}${{ inputs.tag }}
+      tag: ${{ inputs.tag }}
       labels: ${{ inputs.labels }}
