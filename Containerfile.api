@@ -13,7 +13,7 @@ COPY ./ ./
 RUN make sandbox-api
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest AS deploy
-RUN microdnf install -y rsync tar nc
+RUN microdnf install -y rsync tar
 WORKDIR /sandbox/
 USER ${USER_UID}
 COPY build/github_known_hosts /ssh/known_hosts

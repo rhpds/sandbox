@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       image:
-        description: Image
+        description: Image (api, admin)
         type: string
         default: api
       tag:
-        description: 'image tag'
+        description: Image tag
         required: true
         type: string
       labels:
@@ -27,5 +27,5 @@ jobs:
       registry_password: ${{ secrets.QUAY_RHPDS_SANDBOX_API_PASSWORD }}
     with:
       image: ${{ inputs.image }}
-      tag: ${{ inputs.tag }}
+      tag: ${{ inputs.image == admin && 'admin-' || '' }}${{ inputs.tag }}
       labels: ${{ inputs.labels }}

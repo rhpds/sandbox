@@ -4,5 +4,7 @@ build/sandbox-api
 build/sandbox-replicate
 build/sandbox-issue-jwt
 deploy/lambda/*.zip
+Containerfile*
+.containerignore
 .dev.*
 .git
