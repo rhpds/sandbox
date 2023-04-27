@@ -720,6 +720,43 @@ paths:
               example:
                 message: Error invalidating token
                 http_code: 500
+  /health:
+    get:
+      summary: Health endpoint
+      operationId: health
+      responses:
+        '200':
+          description: Invalidation Successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    example: OK
+                  http_code:
+                    example: 200
+              example:
+                message: OK
+                http_code: 200
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Internal server error
+                http_code: 500
 
 components:
   schemas:

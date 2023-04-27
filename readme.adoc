@@ -22,6 +22,67 @@ make sandbox-metrics
 make sandbox-replicate
 ----
 
+== sandbox-api ==
+
+=== Installation ===
+
+Create a secret file and run helm.
+
+.secrets.yaml
+----
+sandbox_api_secrets:
+  database:
+    url: postgres://...
+    dynamodb_aws_access_key_id: ...
+    dynamodb_aws_secret_access_key: ...
+  auth:
+    jwt_auth_secret: ...
+  vault:
+    vault_secret: ...
+----
+
+.Install chart
+----
+helm install  -f secrets.yaml sandbox-api deploy/helm-api/
+----
+
+To initialize or update the postgresql schema, use the following:
+
+.Run the DB migration
+----
+oc run admin  \
+--image=quay.io/rhpds/sandbox-admin:latest -i -t \
+--restart=Never --rm -- /bin/bash <1>
+
+DATABASE_URL=postgres://postgres:PASSWORD@RDS_ADDRESS.us-west-2.rds.amazonaws.com:5432/sandbox_api_dev?sslmode=require
+
+# git clone https://github.com/rhpds/sandbox.git
+# cd sandbox
+# migrate github://rhpds/sandbox/db/migrations#VERSION -database $DATABASE_URL up
+
+# For example
+migrate \
+  -source github://rhpds/sandbox/db/migrations#main \
+  -database $DATABASE_URL up
+----
+<1> Use the rhpds/sandbox-admin image which contains all the necessary binaries and tools.
+
+
+.Bootstrap an admin login token
+----
+oc run admin --image=quay.io/rhpds/sandbox-admin:latest -i -t --restart=Never --rm -- /bin/bash
+
+export DATABASE_URL=postgres://postgres:PASSWORD@RDS_ADDRESS.us-west-2.rds.amazonaws.com:5432/sandbox_api_dev?sslmode=require
+
+./sandbox-issue-jwt
+[root@admin sandbox]# ./sandbox-issue-jwt
+JWT Auth secret: Enter Claims in the JSON format:
+for example: {"kind": "login", "name": "gucore", "role": "admin"}
+{"kind": "login", "name": "gucore", "role": "admin"}
+token:
+[TOKEN HERE]
+----
+
 == sandbox-replicate ==
 
 The role of the lambda function is to replicate any changes made to the dynamoDB table into a postgresql database.
