@@ -79,7 +79,7 @@ jobs:
 
   build-and-push-admin:
     concurrency:
-      group: pr-${{ github.event.number }}
+      group: pr-${{ github.event.number }}-admin
       cancel-in-progress: true
 
     uses: ./.github/workflows/build-push.yml
