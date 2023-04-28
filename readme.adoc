@@ -7,6 +7,7 @@ This repository is a consolidated codebase for everything related to sandboxes f
 * sandbox-list:  Interact with the AWS Sandbox DB in a read-only way.
 * sandbox-metrics: Prometheus Endpoint exposing metrics.
 * sandbox-replicate: AWS Lambda function to replicate changes from DynamoDB to a Postgres database.
+* sandbox-dynamodb-rotate-vault: Program to reencrypt the IAM keys using a new secret key (ansible-vault, AES256)
 
 == Build ==
 
@@ -22,6 +23,7 @@ make sandbox-list
 make sandbox-metrics
 make sandbox-replicate
 make sandbox-issue-jwt
+make sandbox-dynamodb-rotate-vault
 ----
 
 == sandbox-api ==
@@ -37,8 +39,10 @@ sandbox_api_secrets:
     url: postgres://...
     dynamodb_aws_access_key_id: ...
     dynamodb_aws_secret_access_key: ...
+  # Secret to generate and validate JWT tokens
   auth:
     jwt_auth_secret: ...
+  # ansible-vault (AES256) key to encrypt the secret in the DB
   vault:
     vault_secret: ...
 ----
@@ -134,7 +138,7 @@ git clone --depth 1 https://github.com/rhpds/sandbox sandbox
 [source,yaml]
 .`aws_sandbox_readonly.yaml`
 ----
-aws_sandbox_metrics_ecrets:
+aws_sandbox_metrics_secrets:
   readonly:
     aws_access_key_id: ...
     aws_secret_access_key: ...

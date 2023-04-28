@@ -1,7 +1,3 @@
-build/sandbox-list
-build/sandbox-metrics
-build/sandbox-api
-build/sandbox-replicate
-build/sandbox-issue-jwt
+build/sandbox-*
 deploy/lambda/*.zip
 .dev.*
