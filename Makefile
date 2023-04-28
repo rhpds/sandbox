@@ -9,7 +9,7 @@ VERSION ?= $(shell git describe --tags 2>/dev/null | cut -c 2-)
 COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null)
 DATE ?= $(shell date -u)
 
-build: sandbox-list sandbox-metrics sandbox-api sandbox-issue-jwt
+build: sandbox-list sandbox-metrics sandbox-api sandbox-issue-jwt sandbox-dynamodb-rotate-vault
 
 test:
 	@echo "Running tests..."
@@ -55,10 +55,14 @@ sandbox-issue-jwt:
 sandbox-replicate:
 	CGO_ENABLED=0 go build -o build/sandbox-replicate ./cmd/sandbox-replicate
 
+sandbox-dynamodb-rotate-vault:
+	CGO_ENABLED=0 go build -o build/sandbox-dynamodb-rotate-vault ./cmd/sandbox-dynamodb-rotate-vault
+
+
 push-lambda: deploy/lambda/sandbox-replicate.zip
 	python ./deploy/lambda/sandbox-replicate.py
 
-.PHONY: sandbox-api sandbox-issue-jwt sandbox-list sandbox-metrics run-api sandbox-replicate migrate fixtures test run-local-pg push-lambda clean
+.PHONY: sandbox-api sandbox-issue-jwt sandbox-list sandbox-metrics sandbox-dynamodb-rotate-vault run-api sandbox-replicate migrate fixtures test run-local-pg push-lambda clean
 
 clean: rm-local-pg
 	rm -f build/sandbox-*
