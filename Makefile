@@ -30,7 +30,7 @@ run-local-pg: .dev.pg_password rm-local-pg
 	# https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
 
 issue-jwt: .dev.jwtauth_env
-	@. ./.dev.jwtauth_env && go run ./cmd/sandbox-issue-jwt
+	@. ./.dev.pgenv && . ./.dev.jwtauth_env && go run ./cmd/sandbox-issue-jwt
 
 migrate: .dev.pgenv
 	@echo "Running migrations..."
