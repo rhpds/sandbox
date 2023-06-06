@@ -86,7 +86,7 @@ type AwsAccountDynamoDBProvider struct {
 
 func NewAwsAccountDynamoDBProvider() *AwsAccountDynamoDBProvider {
 	return &AwsAccountDynamoDBProvider{
-		Svc:         dynamodb.New(session.Must(session.NewSession())),
+		Svc: dynamodb.New(session.Must(session.NewSession())),
 	}
 }
 

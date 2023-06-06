@@ -1,17 +1,17 @@
 package main
 
 import (
-	"golang.org/x/term"
-	"fmt"
-	"strings"
-	"os"
-	"syscall"
 	"flag"
+	"fmt"
+	"golang.org/x/term"
+	"os"
+	"strings"
+	"syscall"
 
-	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/sosedoff/ansible-vault-go"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
+	"github.com/sosedoff/ansible-vault-go"
 
 	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"github.com/rhpds/sandbox/internal/log"

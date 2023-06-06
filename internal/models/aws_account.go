@@ -109,7 +109,6 @@ func Sort[T Sortable](accounts []T, by string) []T {
 	return accounts
 }
 
-
 // Start method starts all the stopped instances in the account
 func (a AwsAccount) Start(creds *ststypes.Credentials) error {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
@@ -125,7 +124,6 @@ func (a AwsAccount) Start(creds *ststypes.Credentials) error {
 			SessionToken:    *creds.SessionToken,
 		},
 	}
-
 
 	// Create new EC2 client
 	ec2Client := ec2.NewFromConfig(
@@ -208,7 +206,7 @@ func (a AwsAccount) Stop(creds *ststypes.Credentials) error {
 	}
 
 	// Create new EC2 client
-	ec2Client := ec2.NewFromConfig(cfg, func(o *ec2.Options) {o.Credentials = sandboxCreds})
+	ec2Client := ec2.NewFromConfig(cfg, func(o *ec2.Options) { o.Credentials = sandboxCreds })
 	// Describe all EC2 regions
 	regions, err := ec2Client.DescribeRegions(context.TODO(), &ec2.DescribeRegionsInput{})
 
@@ -268,11 +266,11 @@ func (a AwsAccount) Stop(creds *ststypes.Credentials) error {
 }
 
 type Instance struct {
-	InstanceId string `json:"instance_id,omitempty"`
+	InstanceId   string `json:"instance_id,omitempty"`
 	InstanceName string `json:"instance_name,omitempty"`
 	InstanceType string `json:"instance_type,omitempty"`
-	Region string `json:"region,omitempty"`
-	State string	`json:"state,omitempty"`
+	Region       string `json:"region,omitempty"`
+	State        string `json:"state,omitempty"`
 }
 
 // Status type
@@ -297,7 +295,7 @@ func (a AwsAccount) Status(creds *ststypes.Credentials, job *LifecycleResourceJo
 	}
 
 	// Create new EC2 client
-	ec2Client := ec2.NewFromConfig(cfg, func(o *ec2.Options) {o.Credentials = sandboxCreds})
+	ec2Client := ec2.NewFromConfig(cfg, func(o *ec2.Options) { o.Credentials = sandboxCreds })
 	// Describe all EC2 regions
 	regions, err := ec2Client.DescribeRegions(context.TODO(), &ec2.DescribeRegionsInput{})
 
@@ -334,10 +332,10 @@ func (a AwsAccount) Status(creds *ststypes.Credentials, job *LifecycleResourceJo
 		for _, reservation := range ec2Instances.Reservations {
 			for _, instance := range reservation.Instances {
 				instances = append(instances, Instance{
-					InstanceId: *instance.InstanceId,
+					InstanceId:   *instance.InstanceId,
 					InstanceType: string(instance.InstanceType),
-					Region: *region.RegionName,
-					State: string(instance.State.Name),
+					Region:       *region.RegionName,
+					State:        string(instance.State.Name),
 				})
 			}
 		}
