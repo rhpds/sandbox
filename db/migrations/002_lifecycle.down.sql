@@ -1,0 +1,10 @@
+DROP TRIGGER IF EXISTS lifecycle_placement_jobs_status ON lifecycle_placement_jobs;
+DROP TRIGGER IF EXISTS lifecycle_resource_jobs_status_notify ON lifecycle_resource_jobs;
+DROP TRIGGER IF EXISTS lifecycle_placement_jobs_updated_at ON lifecycle_placement_jobs;
+DROP TRIGGER IF EXISTS lifecycle_resource_jobs_updated_at ON lifecycle_resource_jobs;
+DROP TABLE IF EXISTS lifecycle_resource_jobs;
+DROP TABLE IF EXISTS lifecycle_placement_jobs;
+DROP FUNCTION IF EXISTS lifecycle_placement_jobs_status_notify();
+DROP FUNCTION IF EXISTS lifecycle_resource_jobs_status_notify();
+DROP TYPE IF EXISTS job_status;
+DROP TYPE IF EXISTS lifecycle_action;

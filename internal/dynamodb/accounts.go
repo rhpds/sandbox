@@ -536,6 +536,7 @@ func (a *AwsAccountDynamoDBProvider) MarkForCleanupByServiceUuid(serviceUuid str
 					S: aws.String(account.Name),
 				},
 			},
+			// TODO: add condition expression to check if the account match service uuid and available=false
 			UpdateExpression: aws.String("SET to_cleanup = :tc"),
 			ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
 				":tc": {

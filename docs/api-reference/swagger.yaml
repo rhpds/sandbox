@@ -528,9 +528,9 @@ paths:
       tags:
         - account
       operationId: getStatusAccount
-      summary: Get current status of all instances and (supported) services in an account
+      summary: Get latest status of all instances and (supported) services in an account
       description: |-
-        Given a specific account, return the current status.
+        Given a specific account, return the latest status.
 
         To trigger a new asynchronous status update, use the PUT method.
       responses:
