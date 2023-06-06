@@ -23,7 +23,7 @@ import (
 var openapiSpec []byte
 
 func main() {
-	log.InitLoggers(true)
+	log.InitLoggers(false)
 	ctx := context.Background()
 
 	log.Logger.Info("Starting sandbox-api")
