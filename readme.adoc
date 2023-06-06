@@ -45,6 +45,10 @@ sandbox_api_secrets:
   # ansible-vault (AES256) key to encrypt the secret in the DB
   vault:
     vault_secret: ...
+  # AWS usser that can assume role into the accounts
+  aws:
+    assume_aws_access_key_id: ...
+    assume_aws_secret_access_key: ...
 ----
 
 .Install chart
