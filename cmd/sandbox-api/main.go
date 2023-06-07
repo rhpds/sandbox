@@ -23,7 +23,11 @@ import (
 var openapiSpec []byte
 
 func main() {
-	log.InitLoggers(false)
+	if os.Getenv("DEBUG") == "true" {
+		log.InitLoggers(true)
+	} else {
+		log.InitLoggers(false)
+	}
 	ctx := context.Background()
 
 	log.Logger.Info("Starting sandbox-api")
