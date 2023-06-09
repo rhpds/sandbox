@@ -82,11 +82,6 @@ func main() {
 	}
 	connStr := os.Getenv("DATABASE_URL")
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
 	dbPool, err := pgxpool.Connect(context.Background(), connStr)
 	if err != nil {
 		log.Logger.Error("Error opening database connection", "error", err)
@@ -238,6 +233,11 @@ func main() {
 	// ---------------------------------------------------------------------
 	// Main server loop
 	// ---------------------------------------------------------------------
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
 	log.Logger.Info("Listening on port " + port)
 	log.Err.Fatal(http.ListenAndServe(":"+port, router))
 }
