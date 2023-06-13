@@ -56,6 +56,11 @@ sandbox_api_secrets:
 helm install  -f secrets.yaml sandbox-api deploy/helm-api/
 ----
 
+.Upgrade chart
+----
+helm upgrade  -f secrets.yaml sandbox-api deploy/helm-api/
+----
+
 To initialize or update the postgresql schema, use the following:
 
 .Run the DB migration

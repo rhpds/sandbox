@@ -11,7 +11,6 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ .Values.appName }}
-      app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
   strategy:
     type: {{ .Values.deployment.strategy }}
   template:
@@ -24,6 +23,8 @@ spec:
       - name: sandbox-api
         image: {{ .Values.deployment.image }}:{{ .Values.image_tag | default .Values.deployment.tag }}
         imagePullPolicy: {{ .Values.deployment.pullPolicy }}
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
         livenessProbe:
           initialDelaySeconds: 10
           tcpSocket:

@@ -15,3 +15,11 @@ service:
 
 dynamodb_table: accounts-dev
 dynamodb_region: us-east-1
+
+resources:
+  limits:
+    cpu: 1
+    memory: 1Gi
+  requests:
+    cpu: 50m
+    memory: 128Mi
