@@ -51,7 +51,7 @@
 ** DONE create golang channel for stop/start
 ** DONE parameterize the number of concurrent workers
 ** TODO create lifecycle handler for placements
-
+* TODO OpenShift limit and req for pods
 * TODO unit tests and fixture/functional tests
 * TODO documentation coverage
 * TODO move handlers per version?
