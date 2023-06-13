@@ -1,8 +1,19 @@
 package models
 
 import (
+	"context"
 	"errors"
+
+	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/rhpds/sandbox/internal/log"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	ststypes "github.com/aws/aws-sdk-go-v2/service/sts/types"
+
 	"os"
 	"sort"
 	"strconv"
@@ -96,4 +107,277 @@ func Sort[T Sortable](accounts []T, by string) []T {
 	})
 
 	return accounts
+}
+
+// Start method starts all the stopped instances in the account
+func (a AwsAccount) Start(creds *ststypes.Credentials) error {
+	cfg, err := config.LoadDefaultConfig(context.TODO())
+	if err != nil {
+		log.Logger.Error("Error loading config", "error", err)
+		return err
+	}
+
+	sandboxCreds := credentials.StaticCredentialsProvider{
+		Value: aws.Credentials{
+			AccessKeyID:     *creds.AccessKeyId,
+			SecretAccessKey: *creds.SecretAccessKey,
+			SessionToken:    *creds.SessionToken,
+		},
+	}
+
+	// Create new EC2 client
+	ec2Client := ec2.NewFromConfig(
+		cfg,
+		func(o *ec2.Options) {
+			o.Credentials = sandboxCreds
+		},
+	)
+	// Describe all EC2 regions
+	regions, err := ec2Client.DescribeRegions(context.TODO(), &ec2.DescribeRegionsInput{})
+
+	if err != nil {
+		log.Logger.Error("Error describing regions", "account", a.Name, "error", err)
+		return err
+	}
+
+	var errR error
+	// For each region, get all running instances
+	for _, region := range regions.Regions {
+		log.Logger.Debug("Looping to start instances", "account", a.Name, "region", *region.RegionName)
+		// Create new EC2 client
+		ec2ClientRegional := ec2.NewFromConfig(
+			cfg,
+			func(o *ec2.Options) {
+				o.Credentials = sandboxCreds
+				o.Region = *region.RegionName
+			},
+		)
+
+		// Describe all EC2 instances
+		instances, err := ec2ClientRegional.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{
+			Filters: []ec2types.Filter{
+				{
+					Name:   aws.String("instance-state-name"),
+					Values: []string{"stopped", "stopping"},
+				},
+			},
+		})
+
+		if err != nil {
+			log.Logger.Error("Error describing instances", "account", a.Name, "error", err)
+			errR = err
+			continue
+		}
+
+		// Start all instances
+		for _, reservation := range instances.Reservations {
+			for _, instance := range reservation.Instances {
+				_, err := ec2ClientRegional.StartInstances(context.TODO(), &ec2.StartInstancesInput{
+					InstanceIds: []string{*instance.InstanceId},
+				})
+
+				if err != nil {
+					log.Logger.Error("Error starting instance", "account", a.Name, "error", err)
+					errR = err
+					continue
+				}
+				log.Logger.Info("Start instance", "account", a.Name, "instance_id", *instance.InstanceId)
+			}
+		}
+	}
+
+	return errR
+}
+
+// Stop method stops all the running instances in the account
+func (a AwsAccount) Stop(creds *ststypes.Credentials) error {
+	cfg, err := config.LoadDefaultConfig(context.TODO())
+	if err != nil {
+		log.Logger.Error("Error loading config", "error", err)
+		return err
+	}
+
+	sandboxCreds := credentials.StaticCredentialsProvider{
+		Value: aws.Credentials{
+			AccessKeyID:     *creds.AccessKeyId,
+			SecretAccessKey: *creds.SecretAccessKey,
+			SessionToken:    *creds.SessionToken,
+		},
+	}
+
+	// Create new EC2 client
+	ec2Client := ec2.NewFromConfig(cfg, func(o *ec2.Options) { o.Credentials = sandboxCreds })
+	// Describe all EC2 regions
+	regions, err := ec2Client.DescribeRegions(context.TODO(), &ec2.DescribeRegionsInput{})
+
+	if err != nil {
+		log.Logger.Error("Error describing regions", "account", a.Name, "error", err)
+		return err
+	}
+
+	var errR error
+	// For each region, get all running instances
+	for _, region := range regions.Regions {
+		log.Logger.Debug("Looping to stop instances", "account", a.Name, "region", *region.RegionName)
+		// Create new EC2 client
+		ec2ClientRegional := ec2.NewFromConfig(
+			cfg,
+			func(o *ec2.Options) {
+				o.Credentials = sandboxCreds
+				o.Region = *region.RegionName
+			},
+		)
+
+		// Describe all EC2 instances
+		instances, err := ec2ClientRegional.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{
+			Filters: []ec2types.Filter{
+				{
+					Name:   aws.String("instance-state-name"),
+					Values: []string{"running", "pending"},
+				},
+			},
+		})
+
+		if err != nil {
+			log.Logger.Error("Error describing instances", "account", a.Name, "error", err)
+			errR = err
+			continue
+		}
+
+		// Start all instances
+		for _, reservation := range instances.Reservations {
+			for _, instance := range reservation.Instances {
+				_, err := ec2ClientRegional.StopInstances(context.TODO(), &ec2.StopInstancesInput{
+					InstanceIds: []string{*instance.InstanceId},
+				})
+
+				if err != nil {
+					log.Logger.Error("Error stopping instance", "account", a.Name, "error", err)
+					errR = err
+					continue
+				}
+				log.Logger.Info("Stop instance", "account", a.Name, "instance_id", *instance.InstanceId)
+			}
+		}
+	}
+
+	return errR
+
+}
+
+type Instance struct {
+	InstanceId   string `json:"instance_id,omitempty"`
+	InstanceName string `json:"instance_name,omitempty"`
+	InstanceType string `json:"instance_type,omitempty"`
+	Region       string `json:"region,omitempty"`
+	State        string `json:"state,omitempty"`
+}
+
+// Status type
+type Status struct {
+	Instances []Instance `json:"instances"`
+}
+
+// Status method returns the status of all the instances in the account
+func (a AwsAccount) Status(creds *ststypes.Credentials, job *LifecycleResourceJob) (Status, error) {
+	cfg, err := config.LoadDefaultConfig(context.TODO())
+	if err != nil {
+		log.Logger.Error("Error loading config", "error", err)
+		return Status{}, err
+	}
+
+	sandboxCreds := credentials.StaticCredentialsProvider{
+		Value: aws.Credentials{
+			AccessKeyID:     *creds.AccessKeyId,
+			SecretAccessKey: *creds.SecretAccessKey,
+			SessionToken:    *creds.SessionToken,
+		},
+	}
+
+	// Create new EC2 client
+	ec2Client := ec2.NewFromConfig(cfg, func(o *ec2.Options) { o.Credentials = sandboxCreds })
+	// Describe all EC2 regions
+	regions, err := ec2Client.DescribeRegions(context.TODO(), &ec2.DescribeRegionsInput{})
+
+	if err != nil {
+		log.Logger.Error("Error describing regions", "account", a.Name, "error", err)
+		return Status{}, err
+	}
+
+	var errR error
+	var status Status
+	instances := make([]Instance, 0)
+	// For each region, get all running instances
+	for _, region := range regions.Regions {
+		log.Logger.Debug("Looping to get instances status", "account", a.Name, "region", *region.RegionName)
+		// Create new EC2 client
+		ec2ClientRegional := ec2.NewFromConfig(
+			cfg,
+			func(o *ec2.Options) {
+				o.Credentials = sandboxCreds
+				o.Region = *region.RegionName
+			},
+		)
+
+		// Describe all EC2 instances
+		ec2Instances, err := ec2ClientRegional.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{})
+
+		if err != nil {
+			log.Logger.Error("Error describing instances", "account", a.Name, "error", err)
+			errR = err
+			continue
+		}
+
+		// Build instances
+		for _, reservation := range ec2Instances.Reservations {
+			for _, instance := range reservation.Instances {
+				instances = append(instances, Instance{
+					InstanceId:   *instance.InstanceId,
+					InstanceType: string(instance.InstanceType),
+					Region:       *region.RegionName,
+					State:        string(instance.State.Name),
+				})
+			}
+		}
+	}
+
+	status.Instances = instances
+
+	// save status as json
+	_, err = job.DbPool.Exec(
+		context.TODO(),
+		`UPDATE lifecycle_resource_jobs SET lifecycle_result = $1 WHERE id = $2`,
+		status, job.ID,
+	)
+	if err != nil {
+		log.Logger.Error("Error saving result", "error", err, "job", job)
+		return status, err
+	}
+
+	return status, errR
+}
+
+func (a AwsAccount) GetLastStatus(dbpool *pgxpool.Pool) (*LifecycleResourceJob, error) {
+	var id int
+	err := dbpool.QueryRow(
+		context.TODO(),
+		`SELECT id FROM lifecycle_resource_jobs
+         WHERE lifecycle_action = 'status' AND lifecycle_result IS NOT NULL
+         AND lifecycle_result != '{}'
+         AND resource_name = $1 AND resource_type = $2
+         ORDER BY updated_at DESC LIMIT 1`,
+		a.Name, a.Kind,
+	).Scan(&id)
+
+	if err != nil {
+		return nil, err
+	}
+
+	job, err := GetLifecycleResourceJob(dbpool, id)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return job, nil
 }

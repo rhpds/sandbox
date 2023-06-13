@@ -23,10 +23,27 @@ import (
 var openapiSpec []byte
 
 func main() {
-	log.InitLoggers(false)
+	if os.Getenv("DEBUG") == "true" {
+		log.InitLoggers(true)
+	} else {
+		log.InitLoggers(false)
+	}
 	ctx := context.Background()
 
 	log.Logger.Info("Starting sandbox-api")
+
+	// ---------------------------------------------------------------------
+	// Workers
+	// ---------------------------------------------------------------------
+	// Check environment variables for ASSUMEROLE, IAM user able to impersonate the AWS accounts
+	if os.Getenv("ASSUMEROLE_AWS_ACCESS_KEY_ID") == "" || os.Getenv("ASSUMEROLE_AWS_SECRET_ACCESS_KEY") == "" {
+		log.Logger.Error("ASSUMEROLE_AWS_ACCESS_KEY_ID and ASSUMEROLE_AWS_SECRET_ACCESS_KEY environment variables not set")
+		os.Exit(1)
+	}
+
+	if os.Getenv("WORKERS") == "" {
+		os.Setenv("WORKERS", "5")
+	}
 
 	// ---------------------------------------------------------------------
 	// Load OpenAPI document
@@ -64,11 +81,6 @@ func main() {
 		os.Exit(1)
 	}
 	connStr := os.Getenv("DATABASE_URL")
-
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
 
 	dbPool, err := pgxpool.Connect(context.Background(), connStr)
 	if err != nil {
@@ -136,6 +148,14 @@ func main() {
 	})
 
 	// ---------------------------------------------------------------------
+	// Workers
+	// ---------------------------------------------------------------------
+	// Create AWS STS client
+	worker := NewWorker(*baseHandler)
+
+	go worker.WatchLifecycleDBChannels()
+
+	// ---------------------------------------------------------------------
 	// Middlewares
 	// ---------------------------------------------------------------------
 	router.Use(middleware.CleanPath)
@@ -165,6 +185,10 @@ func main() {
 		r.Get("/api/v1/accounts/{kind}", accountHandler.GetAccountsHandler)
 		r.Get("/api/v1/accounts/{kind}/{account}", accountHandler.GetAccountHandler)
 		r.Put("/api/v1/accounts/{kind}/{account}/cleanup", accountHandler.CleanupAccountHandler)
+		r.Put("/api/v1/accounts/{kind}/{account}/stop", baseHandler.LifeCycleAccountHandler("stop"))
+		r.Put("/api/v1/accounts/{kind}/{account}/start", baseHandler.LifeCycleAccountHandler("start"))
+		r.Put("/api/v1/accounts/{kind}/{account}/status", baseHandler.LifeCycleAccountHandler("status"))
+		r.Get("/api/v1/accounts/{kind}/{account}/status", baseHandler.GetStatusAccountHandler)
 		r.Post("/api/v1/placements", baseHandler.CreatePlacementHandler)
 		r.Get("/api/v1/placements", baseHandler.GetPlacementsHandler)
 		r.Get("/api/v1/placements/{uuid}", baseHandler.GetPlacementHandler)
@@ -209,6 +233,11 @@ func main() {
 	// ---------------------------------------------------------------------
 	// Main server loop
 	// ---------------------------------------------------------------------
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
 	log.Logger.Info("Listening on port " + port)
 	log.Err.Fatal(http.ListenAndServe(":"+port, router))
 }

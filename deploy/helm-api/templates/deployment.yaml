@@ -74,3 +74,16 @@ spec:
           value: {{ .Values.dynamodb_region }}
         - name: dynamodb_table
           value: {{ .Values.dynamodb_table }}
+        ##########################################
+        # ASSUME ROLE
+        ##########################################
+        - name: ASSUMEROLE_AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: sandbox-api-aws-assumerole
+              key: assumerole_aws_access_key_id
+        - name: ASSUMEROLE_AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: sandbox-api-aws-assumerole
+              key: assumerole_aws_secret_access_key
