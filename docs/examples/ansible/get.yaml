@@ -59,6 +59,12 @@
             body_format: json
             body:
               service_uuid: "{{ uuid }}"
+              annotations:
+                guid: "abcde"
+                env_type: "ocp4-cluster"
+                owner: "user"
+                owner_email: "user@example.com"
+                comment: "Created by Ansible"
               resources:
                 - kind: AwsSandbox
                   count: 1
