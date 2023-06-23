@@ -40,39 +40,49 @@
         url: "{{ sandbox_api_url }}/api/v1/placements/{{ uuid }}"
         method: GET
         status_code: [200, 404]
-      register: r_placement
+      register: r_get_placement
 
-    - debug:
-        var: r_placement
+    - name: Set placement
+      set_fact:
+        placement: "{{ r_get_placement.json }}"
+      when: r_get_placement.status == 200
 
-    - name: Get a placement, book 1 aws sandbox
-      uri:
-        headers:
-          Authorization: Bearer {{ access_token }}
-        url: "{{ sandbox_api_url }}/api/v1/placements"
-        method: POST
-        body_format: json
-        body:
-          service_uuid: "{{ uuid }}"
-          resources:
-            - kind: AwsSandbox
-              count: 1
-      register: r_placement
+    - when: r_get_placement.status == 404
+      block:
+        - name: Get a placement, book 1 aws sandbox
+          when: r_get_placement.status == 404
+          uri:
+            headers:
+              Authorization: Bearer {{ access_token }}
+            url: "{{ sandbox_api_url }}/api/v1/placements"
+            method: POST
+            body_format: json
+            body:
+              service_uuid: "{{ uuid }}"
+              resources:
+                - kind: AwsSandbox
+                  count: 1
+          register: r_new_placement
+
+        - name: Save placement
+          set_fact:
+            placement: "{{ r_new_placement.json.Placement }}"
+
 
     - set_fact:
-        sandbox_name: "{{ r_placement.json.Placement.resources[0].name }}"
-        sandbox_zone: "{{ r_placement.json.Placement.resources[0].zone }}"
-        sandbox_hosted_zone_id: "{{ r_placement.json.Placement.resources[0].hosted_zone_id }}"
-        sandbox_account: "{{ r_placement.json.Placement.resources[0].account_id }}"
-        sandbox_account_id: "{{ r_placement.json.Placement.resources[0].account_id }}"
+        sandbox_name: "{{ placement.resources[0].name }}"
+        sandbox_zone: "{{ placement.resources[0].zone }}"
+        sandbox_hosted_zone_id: "{{ placement.resources[0].hosted_zone_id }}"
+        sandbox_account: "{{ placement.resources[0].account_id }}"
+        sandbox_account_id: "{{ placement.resources[0].account_id }}"
         sandbox_aws_access_key_id: >-
-          {{ (r_placement.json.Placement.resources[0].credentials
+          {{ (placement.resources[0].credentials
           | selectattr('kind', 'equalto', 'aws_iam_key')
           | selectattr('name', 'equalto', 'admin-key')
           | first
           ).get('aws_access_key_id') }}
         sandbox_aws_secret_access_key: >-
-          {{ (r_placement.json.Placement.resources[0].credentials
+          {{ (placement.resources[0].credentials
           | selectattr('kind', 'equalto', 'aws_iam_key')
           | selectattr('name', 'equalto', 'admin-key')
           | first).get('aws_secret_access_key') }}
