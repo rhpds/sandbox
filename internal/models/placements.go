@@ -38,7 +38,7 @@ func (p *Placement) Render(w http.ResponseWriter, r *http.Request) error {
 
 func (p *Placement) LoadResources(accountProvider AwsAccountProvider) error {
 
-	accounts, err := accountProvider.FetchAllByServiceUuid(p.ServiceUuid)
+	accounts, err := accountProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
 
 	if err != nil {
 		return err
