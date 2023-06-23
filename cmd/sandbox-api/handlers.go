@@ -255,7 +255,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 		log.Logger.Error("GetPlacementHandler", "error", err)
 		return
 	}
-	placement.LoadResources(h.accountProvider)
+	placement.LoadResourcesWithCreds(h.accountProvider)
 
 	w.WriteHeader(http.StatusOK)
 	render.Render(w, r, placement)
