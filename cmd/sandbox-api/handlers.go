@@ -150,7 +150,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 		Placement: models.Placement{
 			ServiceUuid: placementRequest.ServiceUuid,
 			Annotations: placementRequest.Annotations,
-			Request:     v1.PlacementRequest{Resources: placementRequest.Resources},
+			Request:     placementRequest,
 		},
 	}
 	placement.Resources = resources
