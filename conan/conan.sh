@@ -35,6 +35,9 @@ conan_instance=${conan_instance:-$(hostname)}
 # Workdir
 workdir=${workdir:-~/pool_management}
 
+# Vault file
+vault_file=${vault_file:-~/secrets/infra-sandbox-vault}
+
 # Lock timeout:  the number of hours after which a lock on a sandbox expires.
 # For ex: '2': a conan process will have 2h to cleanup the sandbox before another
 # process can claim the sandbox for cleanup.
@@ -56,6 +59,7 @@ export VENV
 export lock_timeout
 export conan_instance
 export workdir
+export vault_file
 
 ORIG="$(cd "$(dirname "$0")" || exit; pwd)"
 

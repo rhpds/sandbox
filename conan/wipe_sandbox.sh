@@ -145,6 +145,7 @@ sandbox_reset() {
                      -e dynamodb_region="${dynamodb_region}" \
                      -e aws_nuke_binary_path="${aws_nuke_binary_path}" \
                      -e output_dir="${workdir}/output_dir_sandbox" \
+                     -e vault_file="${vault_file}" \
                      reset_single.yml > "${logfile}"
 
     if [ $? = 0 ]; then

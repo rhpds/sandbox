@@ -12,6 +12,7 @@ Environment=dynamodb_table=accounts-dev
 Environment=dynamodb_region=us-east-1
 Environment=workdir=/home/opentlc-mgr/pool_management_dev
 Environment=VENV=/home/opentlc-mgr/pool_management_dev/python_virtualenv
+Environment=vault_file=/home/opentlc-mgr/secrets/infra-sandbox-vault-dev
 # Uncomment the following to enable noop mode
 #Environment=aws_nuke_binary_path=/bin/true
 #Environment=noop=true
