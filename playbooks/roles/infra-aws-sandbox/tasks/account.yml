@@ -5,7 +5,7 @@
       name:
         S: "{{ account_name }}"
   command: >-
-    aws --profile {{ aws_master_profile }}
+    aws --profile {{ dynamodb_profile }}
     --region {{ dynamodb_region }}
     dynamodb get-item
     --table-name {{ dynamodb_table }}

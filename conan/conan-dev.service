@@ -5,11 +5,14 @@ Documentation=https://github.com/rhpds/sandbox/tree/main/conan
 
 [Service]
 Environment=threads=2
-Environment=aws_profile=pool-manager-dev
+Environment=conan_instance=conan-dev1
+Environment=aws_profile=pool-manager
+Environment=dynamodb_profile=pool-manager-dev
 Environment=dynamodb_table=accounts-dev
 Environment=dynamodb_region=us-east-1
-Environment=aws_nuke_binary_path=/bin/true
-Environment=noop=true
+# Uncomment the following to enable noop mode
+#Environment=aws_nuke_binary_path=/bin/true
+#Environment=noop=true
 
 User=opentlc-mgr
 Group=opentlc-mgr

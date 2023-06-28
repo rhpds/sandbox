@@ -5,7 +5,7 @@
       name:
         S: "{{ account_name }}"
   command: >-
-    aws --profile {{ aws_master_profile }} --region {{ dynamodb_region }}
+    aws --profile {{ dynamodb_profile }} --region {{ dynamodb_region }}
     dynamodb get-item
     --table-name {{ dynamodb_table }}
     --key '{{ _data | to_json }}'
@@ -32,7 +32,7 @@
       zone:
         S: "{{ account_name }}{{subdomain_base}}"
   command: >-
-    aws --profile {{ aws_master_profile }} --region {{ dynamodb_region }}
+    aws --profile {{ dynamodb_profile }} --region {{ dynamodb_region }}
     dynamodb put-item
     --table-name {{ dynamodb_table }}
     --item '{{ _data | to_json }}'
@@ -62,7 +62,7 @@
           zone:
             S: "{{ account_name }}{{subdomain_base}}"
       command: >-
-        aws --profile {{ aws_master_profile }}
+        aws --profile {{ dynamodb_profile }}
         --region {{ dynamodb_region }}
         dynamodb put-item
         --table-name {{ dynamodb_table }}
@@ -89,7 +89,7 @@
           zone:
             S: "{{ account_name }}{{subdomain_base}}"
       command: >-
-        aws --profile {{ aws_master_profile }}
+        aws --profile {{ dynamodb_profile }}
         --region {{ dynamodb_region }}
         dynamodb put-item
         --table-name {{ dynamodb_table }}

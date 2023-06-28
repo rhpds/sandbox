@@ -13,6 +13,7 @@ threads="${threads:-12}"
 aws_profile="${aws_profile:-pool-manager}"
 
 # DynamoDB
+dynamodb_profile="${dynamodb_profile:-pool-manager}"
 dynamodb_table="${dynamodb_table:-accounts}"
 dynamodb_region="${dynamodb_region:-us-east-1}"
 
@@ -28,6 +29,8 @@ noop=${noop:-false}
 # python virtualenv
 VENV=${VENV:-~/pool_management/python_virtualenv}
 
+# Conan instance: the name of the host running the cleanup
+conan_instance=${conan_instance:-$(hostname)}
 
 # Lock timeout:  the number of hours after which a lock on a sandbox expires.
 # For ex: '2': a conan process will have 2h to cleanup the sandbox before another
@@ -40,6 +43,7 @@ lock_timeout=${lock_timeout:-2}
 
 export threads
 export aws_profile
+export dynamodb_profile
 export dynamodb_table
 export dynamodb_region
 export poll_interval
@@ -47,6 +51,7 @@ export aws_nuke_binary_path
 export noop
 export VENV
 export lock_timeout
+export conan_instance
 
 ORIG="$(cd "$(dirname "$0")" || exit; pwd)"
 
@@ -77,7 +82,7 @@ pre_checks() {
             exit 5
         fi
     done
-    if ! AWS_PROFILE=${aws_profile} \
+    if ! AWS_PROFILE=${dynamodb_profile} \
         AWS_REGION=${dynamodb_region} \
         dynamodb_table=${dynamodb_table} \
         sandbox-list --to-cleanup --no-headers &> /dev/null
@@ -89,6 +94,7 @@ pre_checks() {
 }
 
 echo "AWS profile: ${aws_profile}"
+echo "DynamoDB profile: ${dynamodb_profile}"
 echo "DynamoDB table: ${dynamodb_table}"
 
 pre_checks
@@ -99,7 +105,7 @@ cd "${ORIG}"
 while true; do
 
     (
-        export AWS_PROFILE=${aws_profile}
+        export AWS_PROFILE=${dynamodb_profile}
         export AWS_REGION=${dynamodb_region}
         export dynamodb_table=${dynamodb_table}
         sandbox-list --to-cleanup --no-headers

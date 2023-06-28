@@ -9,6 +9,7 @@ TTL_EVENTLOG=$((3600*24))
 
 
 # Mandatory ENV variables
+: "${dynamodb_profile:?"dynamodb_profile is unset or null"}"
 : "${dynamodb_table:?"dynamodb_table is unset or null"}"
 : "${dynamodb_region:?"dynamodb_region is unset or null"}"
 : "${noop:?"noop is unset or empty"}"
@@ -38,7 +39,7 @@ sandbox_unlock() {
   }
 EOM
 
-    "$VENV/bin/aws" --profile "${aws_profile}" \
+    "$VENV/bin/aws" --profile "${dynamodb_profile}" \
         --region "${dynamodb_region}" \
         dynamodb update-item \
         --table-name "${dynamodb_table}" \
@@ -55,19 +56,20 @@ _on_exit() {
 
 sandbox_lock() {
     local sandbox=$1
+    conan_instance=${conan_instance:-$(hostname)}
     read -r -d '' data << EOM
   {
         ":av": {"BOOL": false},
         ":st": {"S": "cleanup in progress"},
         ":timestamp": {"S": "$(date -uIs)"},
         ":old": {"S": "$(date -uIs -d "now - ${lock_timeout} hour")"},
-        ":host": {"S": "$(hostname)"}
+        ":host": {"S": "${conan_instance}"}
   }
 EOM
 
     errlog=$(mktemp)
 
-    if ! "$VENV/bin/aws" --profile "${aws_profile}" \
+    if ! "$VENV/bin/aws" --profile "${dynamodb_profile}" \
         --region "${dynamodb_region}" \
         dynamodb update-item \
         --table-name "${dynamodb_table}" \
@@ -138,6 +140,7 @@ sandbox_reset() {
     "${VENV}/bin/ansible-playbook" -i localhost, \
                      -e _account_num="${s}" \
                      -e aws_master_profile="${aws_profile}" \
+                     -e dynamodb_profile="${dynamodb_profile}" \
                      -e dynamodb_table="${dynamodb_table}" \
                      -e dynamodb_region="${dynamodb_region}" \
                      -e aws_nuke_binary_path="${aws_nuke_binary_path}" \

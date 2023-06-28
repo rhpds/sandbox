@@ -138,6 +138,7 @@ aws_nuke_filters_default:
 # POOL management
 ##############################
 
+dynamodb_profile: "{{ aws_master_profile }}"
 dynamodb_table: accounts
 dynamodb_region: us-east-1
 
