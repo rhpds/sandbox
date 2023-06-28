@@ -10,6 +10,8 @@ Environment=aws_profile=pool-manager
 Environment=dynamodb_profile=pool-manager-dev
 Environment=dynamodb_table=accounts-dev
 Environment=dynamodb_region=us-east-1
+Environment=workdir=/home/opentlc-mgr/pool_management_dev
+Environment=VENV=/home/opentlc-mgr/pool_management_dev/python_virtualenv
 # Uncomment the following to enable noop mode
 #Environment=aws_nuke_binary_path=/bin/true
 #Environment=noop=true
@@ -17,7 +19,7 @@ Environment=dynamodb_region=us-east-1
 User=opentlc-mgr
 Group=opentlc-mgr
 Type=simple
-ExecStart=/bin/bash /home/opentlc-mgr/pool_management/sandbox/conan/conan.sh
+ExecStart=/bin/bash /home/opentlc-mgr/pool_management_dev/sandbox/conan/conan.sh
 Restart=on-failure
 StartLimitBurst=3
 StartLimitInterval=60s

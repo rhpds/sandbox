@@ -101,9 +101,9 @@ EOM
 
 sandbox_reset() {
     local s=${1##sandbox}
-    local prevlogfile=~/pool_management/reset_${sandbox}.log.1
-    local logfile=~/pool_management/reset_${sandbox}.log
-    local eventlog=~/pool_management/reset_${sandbox}.events.log
+    local prevlogfile=${workdir}/reset_${sandbox}.log.1
+    local logfile=${workdir}/reset_${sandbox}.log
+    local eventlog=${workdir}/reset_${sandbox}.events.log
     cd "${ORIG}/../playbooks" || exit
 
     # Keep previous log to help troubleshooting
@@ -123,7 +123,7 @@ sandbox_reset() {
     fi
 
 
-    echo "$(date -uIs) reset sandbox${s}" >> ~/pool_management/reset.log
+    echo "$(date -uIs) reset sandbox${s}" >> ${workdir}/reset.log
     echo "$(date -uIs) reset sandbox${s}" >> "${eventlog}"
 
     echo "$(date -uIs) ${sandbox} reset starting..."
@@ -144,6 +144,7 @@ sandbox_reset() {
                      -e dynamodb_table="${dynamodb_table}" \
                      -e dynamodb_region="${dynamodb_region}" \
                      -e aws_nuke_binary_path="${aws_nuke_binary_path}" \
+                     -e output_dir="${workdir}/output_dir_sandbox" \
                      reset_single.yml > "${logfile}"
 
     if [ $? = 0 ]; then

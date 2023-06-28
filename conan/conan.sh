@@ -32,6 +32,9 @@ VENV=${VENV:-~/pool_management/python_virtualenv}
 # Conan instance: the name of the host running the cleanup
 conan_instance=${conan_instance:-$(hostname)}
 
+# Workdir
+workdir=${workdir:-~/pool_management}
+
 # Lock timeout:  the number of hours after which a lock on a sandbox expires.
 # For ex: '2': a conan process will have 2h to cleanup the sandbox before another
 # process can claim the sandbox for cleanup.
@@ -52,12 +55,13 @@ export noop
 export VENV
 export lock_timeout
 export conan_instance
+export workdir
 
 ORIG="$(cd "$(dirname "$0")" || exit; pwd)"
 
 
 prepare_workdir() {
-    mkdir -p ~/pool_management
+    mkdir -p "${workdir}"
 
     if [ ! -d "${VENV}" ]; then
         set -e
