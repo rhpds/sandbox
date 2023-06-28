@@ -5,16 +5,22 @@ Documentation=https://github.com/rhpds/sandbox/tree/main/conan
 
 [Service]
 Environment=threads=2
-Environment=aws_profile=pool-manager-dev
+Environment=conan_instance=conan-dev1
+Environment=aws_profile=pool-manager
+Environment=dynamodb_profile=pool-manager-dev
 Environment=dynamodb_table=accounts-dev
 Environment=dynamodb_region=us-east-1
-Environment=aws_nuke_binary_path=/bin/true
-Environment=noop=true
+Environment=workdir=/home/opentlc-mgr/pool_management_dev
+Environment=VENV=/home/opentlc-mgr/pool_management_dev/python_virtualenv
+Environment=vault_file=/home/opentlc-mgr/secrets/infra-sandbox-vault-dev
+# Uncomment the following to enable noop mode
+#Environment=aws_nuke_binary_path=/bin/true
+#Environment=noop=true
 
 User=opentlc-mgr
 Group=opentlc-mgr
 Type=simple
-ExecStart=/bin/bash /home/opentlc-mgr/pool_management/sandbox/conan/conan.sh
+ExecStart=/bin/bash /home/opentlc-mgr/pool_management_dev/sandbox/conan/conan.sh
 Restart=on-failure
 StartLimitBurst=3
 StartLimitInterval=60s
