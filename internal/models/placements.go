@@ -53,6 +53,23 @@ func (p *Placement) LoadResources(accountProvider AwsAccountProvider) error {
 	return nil
 }
 
+func (p *Placement) LoadResourcesWithCreds(accountProvider AwsAccountProvider) error {
+
+	accounts, err := accountProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
+
+	if err != nil {
+		return err
+	}
+
+	p.Resources = []any{}
+
+	for _, account := range accounts {
+		p.Resources = append(p.Resources, account)
+	}
+
+	return nil
+}
+
 func (p *Placement) Save(dbpool *pgxpool.Pool) error {
 	var id int
 	// Check if placement already exists in the DB

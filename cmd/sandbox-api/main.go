@@ -190,7 +190,6 @@ func main() {
 		r.Put("/api/v1/accounts/{kind}/{account}/status", baseHandler.LifeCycleAccountHandler("status"))
 		r.Get("/api/v1/accounts/{kind}/{account}/status", baseHandler.GetStatusAccountHandler)
 		r.Post("/api/v1/placements", baseHandler.CreatePlacementHandler)
-		r.Get("/api/v1/placements", baseHandler.GetPlacementsHandler)
 		r.Get("/api/v1/placements/{uuid}", baseHandler.GetPlacementHandler)
 		r.Delete("/api/v1/placements/{uuid}", baseHandler.DeletePlacementHandler)
 	})
@@ -208,6 +207,7 @@ func main() {
 		// ---------------------------------
 		// Routes
 		// ---------------------------------
+		r.Get("/api/v1/placements", baseHandler.GetPlacementsHandler)
 		r.Post("/api/v1/admin/jwt", adminHandler.IssueLoginJWTHandler)
 		r.Get("/api/v1/admin/jwt", baseHandler.GetJWTHandler)
 		r.Put("/api/v1/admin/jwt/{id}/invalidate", baseHandler.InvalidateTokenHandler)

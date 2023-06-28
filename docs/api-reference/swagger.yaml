@@ -94,6 +94,7 @@ paths:
       summary: Get all placements
       description: |
         The placements are returned.
+        Only Admins are authorized to get all placements.
 
         NOTE: the resources are not returned because that would generate too much data and take too much time. To get the information about accounts for a particular placement, query the `/placements/{uuid}` endpoint.
       responses:

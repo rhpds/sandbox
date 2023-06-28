@@ -1,0 +1,113 @@
+---
+# See https://rhpds.github.io/sandbox/api-reference/
+
+- name: Get a placement using uuid
+  hosts: localhost
+  gather_facts: false
+  vars:
+    sandbox_api_url: http://localhost:8080
+  tasks:
+    - name: Ensure needed variables are set
+      assert:
+        that: "{{ check.that }}"
+        fail_msg: "{{ check.msg }}"
+      loop_control:
+        loop_var: check
+        label: "{{ check.msg }}"
+      loop:
+        - msg: sandbox_api_login_token must be provided
+          that: sandbox_api_login_token is defined
+        - msg: sandbox_api_url must be provided
+          that: sandbox_api_url is defined
+        - msg: uuid is not defined
+          that: uuid is defined
+
+    - name: Login using the JWT login token
+      uri:
+        url: "{{ sandbox_api_url }}/api/v1/login"
+        headers:
+          Authorization: Bearer {{ sandbox_api_login_token }}
+      register: r_login
+
+    - name: Save access token
+      set_fact:
+        access_token: "{{ r_login.json.access_token }}"
+
+    - name: Check if placement exists
+      uri:
+        headers:
+          Authorization: Bearer {{ access_token }}
+        url: "{{ sandbox_api_url }}/api/v1/placements/{{ uuid }}"
+        method: GET
+        status_code: [200, 404]
+      register: r_get_placement
+
+    - name: Set placement
+      set_fact:
+        placement: "{{ r_get_placement.json }}"
+      when: r_get_placement.status == 200
+
+    - when: r_get_placement.status == 404
+      block:
+        - name: Get a placement, book 1 aws sandbox
+          when: r_get_placement.status == 404
+          uri:
+            headers:
+              Authorization: Bearer {{ access_token }}
+            url: "{{ sandbox_api_url }}/api/v1/placements"
+            method: POST
+            body_format: json
+            body:
+              service_uuid: "{{ uuid }}"
+              annotations:
+                guid: "abcde"
+                env_type: "ocp4-cluster"
+                owner: "user"
+                owner_email: "user@example.com"
+                comment: "Created by Ansible"
+              resources:
+                - kind: AwsSandbox
+                  count: 1
+          register: r_new_placement
+
+        - name: Save placement
+          set_fact:
+            placement: "{{ r_new_placement.json.Placement }}"
+
+
+    - set_fact:
+        sandbox_name: "{{ placement.resources[0].name }}"
+        sandbox_zone: "{{ placement.resources[0].zone }}"
+        sandbox_hosted_zone_id: "{{ placement.resources[0].hosted_zone_id }}"
+        sandbox_account: "{{ placement.resources[0].account_id }}"
+        sandbox_account_id: "{{ placement.resources[0].account_id }}"
+        sandbox_aws_access_key_id: >-
+          {{ (placement.resources[0].credentials
+          | selectattr('kind', 'equalto', 'aws_iam_key')
+          | selectattr('name', 'equalto', 'admin-key')
+          | first
+          ).get('aws_access_key_id') }}
+        sandbox_aws_secret_access_key: >-
+          {{ (placement.resources[0].credentials
+          | selectattr('kind', 'equalto', 'aws_iam_key')
+          | selectattr('name', 'equalto', 'admin-key')
+          | first).get('aws_secret_access_key') }}
+
+    - name: Save secret of aws_sandbox_secrets dictionary
+      set_fact:
+        aws_sandbox_secrets:
+          sandbox_aws_access_key_id: "{{ sandbox_aws_access_key_id }}"
+          sandbox_aws_secret_access_key: "{{ sandbox_aws_secret_access_key }}"
+          sandbox_hosted_zone_id: "{{ sandbox_hosted_zone_id }}"
+          sandbox_name: "{{ sandbox_name }}"
+          sandbox_account: "{{ sandbox_account }}"
+          sandbox_account_id: "{{ sandbox_account_id }}"
+          sandbox_zone: "{{ sandbox_zone }}"
+          # agnosticd
+          aws_access_key_id: "{{ sandbox_aws_access_key_id }}"
+          aws_secret_access_key: "{{ sandbox_aws_secret_access_key }}"
+          HostedZoneId: "{{ sandbox_hosted_zone_id }}"
+          subdomain_base_suffix: ".{{ sandbox_zone }}"
+
+    - debug:
+        var: aws_sandbox_secrets

@@ -1,0 +1,45 @@
+# See https://rhpds.github.io/sandbox/api-reference/
+
+- name: Release a placement using uuid
+  hosts: localhost
+  gather_facts: false
+  vars:
+    sandbox_api_url: http://localhost:8080
+  tasks:
+    - name: Ensure needed variables are set
+      assert:
+        that: "{{ check.that }}"
+        fail_msg: "{{ check.msg }}"
+      loop_control:
+        loop_var: check
+        label: "{{ check.msg }}"
+      loop:
+        - msg: sandbox_api_login_token must be provided
+          that: sandbox_api_login_token is defined
+        - msg: sandbox_api_url must be provided
+          that: sandbox_api_url is defined
+        - msg: uuid is not defined
+          that: uuid is defined
+
+    - name: Login using the JWT login token
+      uri:
+        url: "{{ sandbox_api_url }}/api/v1/login"
+        headers:
+          Authorization: Bearer {{ sandbox_api_login_token }}
+      register: r_login
+
+    - name: Save access token
+      set_fact:
+        access_token: "{{ r_login.json.access_token }}"
+
+    - name: Release placement
+      uri:
+        headers:
+          Authorization: Bearer {{ access_token }}
+        url: "{{ sandbox_api_url }}/api/v1/placements/{{ uuid }}"
+        method: DELETE
+        status_code: [200, 404]
+      register: r_placement
+
+    - debug:
+        var: r_placement

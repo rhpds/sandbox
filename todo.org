@@ -51,7 +51,8 @@
 ** DONE create golang channel for stop/start
 ** DONE parameterize the number of concurrent workers
 ** TODO create lifecycle handler for placements
-* TODO OpenShift limit and req for pods
+* DONE OpenShift limit and req for pods
+* TODO patch clients (sandbox-list, mark_for_cleanup script, etc) to use the sandbox-API instead of dynamodb
 * TODO unit tests and fixture/functional tests
 * TODO documentation coverage
 * TODO move handlers per version?

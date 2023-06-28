@@ -148,8 +148,18 @@ func makeAccount(account AwsAccountDynamoDB) models.AwsAccount {
 	return a
 }
 
-// makeAccount creates new models.AwsAccountWithCreds from AwsAccountDynamoDB
-func makeAccountWithCreds(account AwsAccountDynamoDB) models.AwsAccountWithCreds {
+
+// makeAccounts creates new []models.AwsAccount from []AwsAccountDynamoDB
+func makeAccounts(accounts []AwsAccountDynamoDB) []models.AwsAccount {
+	r := []models.AwsAccount{}
+	for _, account := range accounts {
+		r = append(r, makeAccount(account))
+	}
+
+	return r
+}
+// makeAccountWithCreds creates new models.AwsAccountWithCreds from AwsAccountDynamoDB
+func (provider *AwsAccountDynamoDBProvider) makeAccountWithCreds(account AwsAccountDynamoDB) models.AwsAccountWithCreds {
 
 	a := makeAccount(account)
 
@@ -157,11 +167,16 @@ func makeAccountWithCreds(account AwsAccountDynamoDB) models.AwsAccountWithCreds
 		AwsAccount: a,
 	}
 
+	decrypted, err := provider.DecryptSecret(account.AwsSecretAccessKey)
+	if err != nil {
+		decrypted = account.AwsSecretAccessKey
+	}
+
 	iamKey := models.AwsIamKey{
 		Kind:               "aws_iam_key",
 		Name:               "admin-key",
 		AwsAccessKeyID:     account.AwsAccessKeyID,
-		AwsSecretAccessKey: account.AwsSecretAccessKey,
+		AwsSecretAccessKey: decrypted,
 	}
 
 	// For now, an account only has one credential: an IAM key
@@ -170,11 +185,11 @@ func makeAccountWithCreds(account AwsAccountDynamoDB) models.AwsAccountWithCreds
 	return result
 }
 
-// makeAccounts creates new []models.AwsAccount from []AwsAccountDynamoDB
-func makeAccounts(accounts []AwsAccountDynamoDB) []models.AwsAccount {
-	r := []models.AwsAccount{}
+// makeAccountsWithCreds creates new []models.AwsAccountWithCreds from []AwsAccountDynamoDB
+func (provider *AwsAccountDynamoDBProvider) makeAccountsWithCreds(accounts []AwsAccountDynamoDB) []models.AwsAccountWithCreds {
+	r := []models.AwsAccountWithCreds{}
 	for _, account := range accounts {
-		r = append(r, makeAccount(account))
+		r = append(r, provider.makeAccountWithCreds(account))
 	}
 
 	return r
@@ -340,6 +355,16 @@ func (a *AwsAccountDynamoDBProvider) FetchAllByServiceUuid(serviceUuid string) (
 	return makeAccounts(accounts), nil
 }
 
+// FetchAllByServiceUuid returns the list of accounts from dynamodb for a specific service uuid
+func (a *AwsAccountDynamoDBProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) ([]models.AwsAccountWithCreds, error) {
+	filter := expression.Name("service_uuid").Equal(expression.Value(serviceUuid))
+	accounts, err := GetAccounts(a.Svc, filter, -1)
+	if err != nil {
+		return []models.AwsAccountWithCreds{}, err
+	}
+	return a.makeAccountsWithCreds(accounts), nil
+}
+
 // FetchAllToCleanup returns the list of accounts from dynamodb
 func (a *AwsAccountDynamoDBProvider) FetchAllToCleanup() ([]models.AwsAccount, error) {
 	filter := expression.Name("to_cleanup").Equal(expression.Value(true))
@@ -482,7 +507,7 @@ func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, count int, ann
 			return []models.AwsAccountWithCreds{}, err
 		}
 		booked.AwsSecretAccessKey = strings.Trim(booked.AwsSecretAccessKey, "\n\r\t ")
-		bookedAccounts = append(bookedAccounts, makeAccountWithCreds(booked))
+		bookedAccounts = append(bookedAccounts, a.makeAccountWithCreds(booked))
 		count = count - 1
 		if count == 0 {
 			break
@@ -558,5 +583,6 @@ func (a *AwsAccountDynamoDBProvider) DecryptSecret(encrypted string) (string, er
 	if err != nil {
 		return "", err
 	}
+	str = strings.Trim(string(str), "\r\n\t ")
 	return str, nil
 }
