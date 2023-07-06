@@ -1,6 +1,6 @@
 ---
 appName: sandbox-api
-namespace: sandbox-api
+namespace: babylon-sandbox-api
 
 deployment:
   image: quay.io/rhpds/sandbox-api

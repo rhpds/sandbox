@@ -1,0 +1,10 @@
+
+.dev
+----
+helm install --create-namespace -n babylon-sandbox-api -f ~/secrets/sandbox-api-dev.yaml sandbox-api-dev ./deploy/helm-api --set namespace=babylon-sandbox-api
+----
+
+.prod
+----
+ helm install --create-namespace -n babylon-sandbox-api -f ~/secrets/sandbox-api-prod.yaml sandbox-api ./deploy/helm-api
+----
