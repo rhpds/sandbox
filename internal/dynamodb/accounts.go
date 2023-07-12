@@ -148,7 +148,6 @@ func makeAccount(account AwsAccountDynamoDB) models.AwsAccount {
 	return a
 }
 
-
 // makeAccounts creates new []models.AwsAccount from []AwsAccountDynamoDB
 func makeAccounts(accounts []AwsAccountDynamoDB) []models.AwsAccount {
 	r := []models.AwsAccount{}
@@ -158,6 +157,7 @@ func makeAccounts(accounts []AwsAccountDynamoDB) []models.AwsAccount {
 
 	return r
 }
+
 // makeAccountWithCreds creates new models.AwsAccountWithCreds from AwsAccountDynamoDB
 func (provider *AwsAccountDynamoDBProvider) makeAccountWithCreds(account AwsAccountDynamoDB) models.AwsAccountWithCreds {
 

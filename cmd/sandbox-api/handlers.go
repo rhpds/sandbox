@@ -11,6 +11,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	oarouters "github.com/getkin/kin-openapi/routers"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/go-chi/render"
 	"github.com/jackc/pgx/v4"
@@ -290,6 +291,215 @@ func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Requ
 	render.Render(w, r, &v1.SimpleMessage{
 		Message: "Placement deleted",
 	})
+}
+
+func (h *BaseHandler) LifeCyclePlacementHandler(action string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		serviceUuid := chi.URLParam(r, "uuid")
+		reqId := middleware.GetReqID(r.Context())
+
+		placement, err := models.GetPlacementByServiceUuid(h.dbpool, serviceUuid)
+
+		if err == nil {
+
+			lifecyclePlacementJob := models.LifecyclePlacementJob{
+				PlacementID: placement.ID,
+				RequestID:   reqId,
+				Action:      action,
+				Status:      "new",
+				DbPool:      h.dbpool,
+			}
+
+			// Create job in DB
+			if err := lifecyclePlacementJob.Create(); err != nil {
+				log.Logger.Error("Error creating lifecycle placement job", "error", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error creating lifecycle placement job",
+				})
+				return
+			}
+
+			// Reply with RequestID
+			w.WriteHeader(http.StatusAccepted)
+			render.Render(w, r, &v1.LifecycleRequestResponse{
+				HTTPStatusCode: http.StatusAccepted,
+				Message:        fmt.Sprintf("%s request created", action),
+				RequestID:      reqId,
+			})
+			return
+		}
+
+		if err == pgx.ErrNoRows {
+			// Legacy services don't have a placement, but stop them anyway
+
+			accounts, err := h.accountProvider.FetchAllByServiceUuid(serviceUuid)
+			if err != nil {
+				log.Logger.Error("GET accounts", "error", err)
+
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error reading account",
+				})
+				return
+			}
+
+			if len(accounts) == 0 {
+
+				w.WriteHeader(http.StatusNotFound)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusNotFound,
+					Message:        "No placement found",
+				})
+				return
+			}
+
+			for _, account := range accounts {
+				// Create a new LifecycleResourceJob
+				lifecycleResourceJob := models.LifecycleResourceJob{
+					ResourceType: account.Kind,
+					ResourceName: account.Name,
+					RequestID:    reqId,
+					Action:       action,
+					Status:       "new",
+					DbPool:       h.dbpool,
+				}
+
+				// Create job in DB
+				if err := lifecycleResourceJob.Create(); err != nil {
+					log.Logger.Error("Error creating lifecycle resource job", "error", err)
+					w.WriteHeader(http.StatusInternalServerError)
+					render.Render(w, r, &v1.Error{
+						HTTPStatusCode: http.StatusInternalServerError,
+						Message:        "Error creating lifecycle resource job",
+					})
+					return
+				}
+			}
+
+			// Reply with RequestID
+			w.WriteHeader(http.StatusAccepted)
+			render.Render(w, r, &v1.LifecycleRequestResponse{
+				HTTPStatusCode: http.StatusAccepted,
+				Message:        fmt.Sprintf("%s request created", action),
+				RequestID:      reqId,
+			})
+			return
+		}
+
+		if err != nil {
+			log.Logger.Error("GET placement", "error", err)
+
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Error reading placement",
+			})
+			return
+		}
+	}
+}
+
+func (h *BaseHandler) GetStatusPlacementHandler(w http.ResponseWriter, r *http.Request) {
+	serviceUuid := chi.URLParam(r, "uuid")
+
+	placement, err := models.GetPlacementByServiceUuid(h.dbpool, serviceUuid)
+
+	if err == nil {
+
+		rjobs, err := placement.GetLastStatus(h.dbpool)
+		if err != nil {
+			log.Logger.Error("Error getting last jobs", "error", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Error getting last jobs",
+			})
+			return
+		}
+
+		statuses := []models.Status{}
+		for _, job := range rjobs {
+			status := models.MakeStatus(job)
+			statuses = append(statuses, status)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		render.Render(w, r, &v1.PlacementStatusResponse{
+			HTTPStatusCode: http.StatusOK,
+			Status:         statuses,
+		})
+		return
+	}
+
+	if err == pgx.ErrNoRows {
+		// Legacy services don't have a placement, but get status using the serviceUUID
+
+		accounts, err := h.accountProvider.FetchAllByServiceUuid(serviceUuid)
+		if err != nil {
+			log.Logger.Error("GET accounts", "error", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Error reading account",
+			})
+			return
+		}
+
+		if len(accounts) == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "No placement found",
+			})
+			return
+		}
+
+		statuses := []models.Status{}
+		for _, account := range accounts {
+			job, err := account.GetLastStatus(h.dbpool)
+			if err != nil {
+				// Check no row
+				if err == pgx.ErrNoRows {
+					w.WriteHeader(http.StatusNotFound)
+					render.Render(w, r, &v1.Error{
+						HTTPStatusCode: http.StatusNotFound,
+						Message:        "Account status not found",
+					})
+					return
+				}
+
+				log.Logger.Error("Error getting last jobs", "error", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error getting last jobs",
+				})
+				return
+			}
+			status := models.MakeStatus(job)
+			statuses = append(statuses, status)
+		}
+		w.WriteHeader(http.StatusOK)
+		render.Render(w, r, &v1.PlacementStatusResponse{
+			HTTPStatusCode: http.StatusOK,
+			Status:         statuses,
+		})
+		return
+	}
+
+	if err != nil {
+		log.Logger.Error("GET placement", "error", err)
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error reading placement",
+		})
+		return
+	}
 }
 
 func (h *BaseHandler) GetJWTHandler(w http.ResponseWriter, r *http.Request) {

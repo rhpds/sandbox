@@ -276,7 +276,23 @@ type Instance struct {
 
 // Status type
 type Status struct {
-	Instances []Instance `json:"instances"`
+	AccountName string     `json:"account_name"`
+	AccountKind string     `json:"account_kind"`
+	Instances   []Instance `json:"instances"`
+	UpdatedAt   time.Time  `json:"updated_at,omitempty"`
+	Status      string     `json:"status,omitempty"`
+}
+
+func MakeStatus(job *LifecycleResourceJob) Status {
+	var status Status
+
+	status = job.Result
+	status.AccountKind = job.ResourceType
+	status.AccountName = job.ResourceName
+	status.UpdatedAt = job.UpdatedAt
+	status.Status = job.Status
+
+	return status
 }
 
 // Status method returns the status of all the instances in the account
@@ -343,6 +359,8 @@ func (a AwsAccount) Status(creds *ststypes.Credentials, job *LifecycleResourceJo
 	}
 
 	status.Instances = instances
+	status.AccountName = a.Name
+	status.AccountKind = a.Kind
 
 	// save status as json
 	_, err = job.DbPool.Exec(

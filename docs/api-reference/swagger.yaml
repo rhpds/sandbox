@@ -226,6 +226,164 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /placements/{uuid}/stop:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer <ACCESS_TOKEN>
+      - name: uuid
+        in: path
+        required: true
+        description: The UUID of the service.
+        schema:
+          $ref: "#/components/schemas/UUID"
+    put:
+      tags:
+        - placement
+      operationId: stopPlacement
+      summary: Stop all the resources of a placement assigned to a specific UUID.
+      description: |-
+        Call this endpoint to stop all the resources in all the accounts of a service identified by service UUID.
+
+        This action will cascade stop to all the accounts associated with the placement.
+      responses:
+        '200':
+          description: The stop request was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '404':
+          description: Placement not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: stopPlacement unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /placements/{uuid}/start:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer <ACCESS_TOKEN>
+      - name: uuid
+        in: path
+        required: true
+        description: The UUID of the service.
+        schema:
+          $ref: "#/components/schemas/UUID"
+    put:
+      tags:
+        - placement
+      operationId: startPlacement
+      summary: Start all the resources of a placement assigned to a specific UUID.
+      description: |-
+        Call this endpoint to start all the resources in all the accounts of a service identified by service UUID.
+
+        This action will cascade start to all the accounts associated with the placement.
+      responses:
+        '200':
+          description: The start request was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '404':
+          description: Placement not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: startPlacement unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /placements/{uuid}/status:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer <ACCESS_TOKEN>
+      - name: uuid
+        in: path
+        required: true
+        description: The UUID of the service.
+        schema:
+          $ref: "#/components/schemas/UUID"
+    put:
+      tags:
+        - placement
+      operationId: statusPlacement
+      summary: Request new status update of all accounts of a placement
+      description: |-
+        Given a placement, query an async status on all its resources
+      responses:
+        '200':
+          description: The status request was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '404':
+          description: Placement not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: statusAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      tags:
+        - placement
+      operationId: getStatusPlacement
+      summary: Get latest status of all accounts in an placement
+      description: |-
+        Given a specific placement, return the latest status.
+
+        To trigger a new asynchronous status update, use the PUT method.
+      responses:
+        '200':
+          description: Placement status
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AccountStatus"
+        '404':
+          description: Placement not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getStatusPlacement unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /accounts/{kind}:
     parameters:
@@ -374,6 +532,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+
   /accounts/{kind}/{name}/stop:
     parameters:
       - in: header

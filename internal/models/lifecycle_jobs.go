@@ -40,9 +40,9 @@ func GetLifecycleResourceJob(dbpool *pgxpool.Pool, id int) (*LifecycleResourceJo
 
 	err := dbpool.QueryRow(
 		context.Background(),
-		"SELECT id, COALESCE(parent_id, 0), resource_name, resource_type, status, request, lifecycle_result, lifecycle_action FROM lifecycle_resource_jobs WHERE id = $1",
+		"SELECT id, COALESCE(parent_id, 0), resource_name, resource_type, status, request, lifecycle_result, lifecycle_action, updated_at FROM lifecycle_resource_jobs WHERE id = $1",
 		id,
-	).Scan(&j.ID, &j.ParentID, &j.ResourceName, &j.ResourceType, &j.Status, &j.Request, &j.Result, &j.Action)
+	).Scan(&j.ID, &j.ParentID, &j.ResourceName, &j.ResourceType, &j.Status, &j.Request, &j.Result, &j.Action, &j.UpdatedAt)
 
 	if err != nil {
 		return nil, err
@@ -135,6 +135,26 @@ func (j *LifecycleResourceJob) Create() error {
 		return err
 	}
 
+	return nil
+}
+
+// Create creates a new LifecyclePlacementJob by inserting it into the database
+func (j *LifecyclePlacementJob) Create() error {
+	err := j.DbPool.QueryRow(
+		context.Background(),
+		`INSERT INTO lifecycle_placement_jobs
+		(placement_id, status, request, request_id, lifecycle_action)
+		VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		j.PlacementID,
+		j.Status,
+		j.Request,
+		j.RequestID,
+		j.Action,
+	).Scan(&j.ID)
+
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
