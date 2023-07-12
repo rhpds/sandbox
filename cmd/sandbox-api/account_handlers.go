@@ -31,15 +31,15 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", " ")
 
-	serviceUuuid := r.URL.Query().Get("service_uuid")
+	serviceUuid := r.URL.Query().Get("service_uuid")
 
 	var (
 		accounts []models.AwsAccount
 		err      error
 	)
-	if serviceUuuid != "" {
+	if serviceUuid != "" {
 		// Get the account from DynamoDB
-		accounts, err = h.accountProvider.FetchAllByServiceUuid(serviceUuuid)
+		accounts, err = h.accountProvider.FetchAllByServiceUuid(serviceUuid)
 
 	} else {
 		accounts, err = h.accountProvider.FetchAll()
@@ -277,13 +277,14 @@ func (h *BaseHandler) GetStatusAccountHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	status := models.MakeStatus(job)
+
 	// Print account using JSON
 	w.WriteHeader(http.StatusOK)
 	log.Logger.Debug("GET account status", "status", job.Result, "updated_at", job.UpdatedAt)
 	err = render.Render(w, r, &v1.AccountStatusResponse{
 		HTTPStatusCode: http.StatusOK,
-		Status:         job.Result,
-		UpdatedAt:      job.UpdatedAt,
+		Status:         status,
 	})
 
 	if err != nil {

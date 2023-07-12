@@ -42,7 +42,7 @@
 ** DONE GET /admin/jwt   to list login tokens
 * DONE create OCI image
 * DONE create helm chart
-* TODO lifecycle worker pool
+* DONE lifecycle worker pool
 ** DONE publish/subscribe channels
 ** DONE dispatcher listener worker
 ** DONE define AWS credential (root account) to manage the sandbox lifecycle -- use the same as dynamodb access
@@ -50,7 +50,9 @@
 ** DONE create lifecycle handler for accounts
 ** DONE create golang channel for stop/start
 ** DONE parameterize the number of concurrent workers
-** TODO create lifecycle handler for placements
+** DONE create lifecycle handler for placements
+*** TODO test legacy placement/stop/start/status
+*** TODO proper lifecyclePlacementResponse with examples
 * DONE OpenShift limit and req for pods
 * TODO patch clients (sandbox-list, mark_for_cleanup script, etc) to use the sandbox-API instead of dynamodb
 * TODO unit tests and fixture/functional tests
@@ -61,3 +63,4 @@
 ** TODO aws lambda function to replicate changes from dynamoDB to postgresql
 ** TODO add POST /refresh   to get new access token
 ** TODO rename env variable:  prefix with DYNAMODB_ for anything related to dynamodb access
+

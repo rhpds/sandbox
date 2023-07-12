@@ -129,6 +129,62 @@ func (p *Placement) Delete(dbpool *pgxpool.Pool, accountProvider AwsAccountProvi
 	return err
 }
 
+func (p *Placement) GetLastStatus(dbpool *pgxpool.Pool) ([]*LifecycleResourceJob, error) {
+	var id int
+	err := dbpool.QueryRow(
+		context.TODO(),
+		`SELECT id FROM lifecycle_placement_jobs
+         WHERE lifecycle_action = 'status'
+         AND status = 'successfully_dispatched'
+         AND placement_id = $1
+         ORDER BY updated_at DESC LIMIT 1`,
+		p.ID,
+	).Scan(&id)
+
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := dbpool.Query(
+		context.TODO(),
+		`SELECT id FROM lifecycle_resource_jobs
+         WHERE lifecycle_action = 'status'
+         AND parent_id = $1
+         ORDER BY updated_at`,
+		id,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	result := []*LifecycleResourceJob{}
+
+	for rows.Next() {
+		var idR int
+		err := rows.Scan(&idR)
+		if err != nil {
+			return nil, err
+		}
+
+		job, err := GetLifecycleResourceJob(dbpool, idR)
+
+		if err != nil {
+			return result, err
+		}
+
+		result = append(result, job)
+	}
+
+	if rows.Err() != nil {
+		return result, err
+	}
+
+	return result, nil
+}
+
 // GetPlacement returns a placement by ID
 func GetPlacement(dbpool *pgxpool.Pool, id int) (*Placement, error) {
 	var p Placement

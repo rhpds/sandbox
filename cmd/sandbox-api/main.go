@@ -192,6 +192,10 @@ func main() {
 		r.Post("/api/v1/placements", baseHandler.CreatePlacementHandler)
 		r.Get("/api/v1/placements/{uuid}", baseHandler.GetPlacementHandler)
 		r.Delete("/api/v1/placements/{uuid}", baseHandler.DeletePlacementHandler)
+		r.Put("/api/v1/placements/{uuid}/stop", baseHandler.LifeCyclePlacementHandler("stop"))
+		r.Put("/api/v1/placements/{uuid}/start", baseHandler.LifeCyclePlacementHandler("start"))
+		r.Put("/api/v1/placements/{uuid}/status", baseHandler.LifeCyclePlacementHandler("status"))
+		r.Get("/api/v1/placements/{uuid}/status", baseHandler.GetStatusPlacementHandler)
 	})
 
 	// ---------------------------------------------------------------------
