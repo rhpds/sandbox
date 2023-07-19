@@ -258,6 +258,7 @@ func AuthenticatorAccess(next http.Handler) http.Handler {
 // RequestID
 
 var RequestIDHeader = "X-Request-Id"
+
 // Key to use when setting the request ID.
 type ctxKeyRequestID int
 
