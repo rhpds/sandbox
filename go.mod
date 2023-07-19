@@ -17,6 +17,7 @@ require (
 	github.com/go-chi/render v1.0.2
 	github.com/jackc/pgx/v4 v4.18.1
 	github.com/lestrrat-go/jwx/v2 v2.0.9
+	github.com/matoous/go-nanoid/v2 v2.0.0
 	github.com/prometheus/client_golang v1.15.0
 	github.com/sosedoff/ansible-vault-go v0.2.0
 	golang.org/x/exp v0.0.0-20230420155640-133eef4313cb

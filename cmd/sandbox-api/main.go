@@ -159,7 +159,7 @@ func main() {
 	// Middlewares
 	// ---------------------------------------------------------------------
 	router.Use(middleware.CleanPath)
-	router.Use(middleware.RequestID)
+	router.Use(ShortRequestID)
 	router.Use(httplog.RequestLogger(logger))
 	router.Use(middleware.Heartbeat("/ping"))
 	// Set Content-Type header to application/json for all responses
@@ -196,6 +196,7 @@ func main() {
 		r.Put("/api/v1/placements/{uuid}/start", baseHandler.LifeCyclePlacementHandler("start"))
 		r.Put("/api/v1/placements/{uuid}/status", baseHandler.LifeCyclePlacementHandler("status"))
 		r.Get("/api/v1/placements/{uuid}/status", baseHandler.GetStatusPlacementHandler)
+		r.Get("/api/v1/requests/{id}/status", baseHandler.GetStatusRequestHandler)
 	})
 
 	// ---------------------------------------------------------------------

@@ -59,6 +59,7 @@ type LifecycleRequestResponse struct {
 	HTTPStatusCode int    `json:"http_code,omitempty"` // http response status code
 	Message        string `json:"message"`
 	RequestID      string `json:"request_id,omitempty"`
+	Status		   string `json:"status,omitempty"`
 }
 
 type AccountStatusResponse struct {

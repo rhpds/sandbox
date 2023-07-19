@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/render"
 	"github.com/jackc/pgx/v4"
 	"github.com/lestrrat-go/jwx/v2/jwt"
+	"github.com/matoous/go-nanoid/v2"
 
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/log"
@@ -219,7 +220,8 @@ func (h *BaseHandler) AuthenticatorLogin(next http.Handler) http.Handler {
 // response for any unverified tokens and passes the good ones through. It's just fine
 func AuthenticatorAccess(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token, claims, err := jwtauth.FromContext(r.Context())
+		ctx := r.Context()
+		token, claims, err := jwtauth.FromContext(ctx)
 
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -251,4 +253,53 @@ func AuthenticatorAccess(next http.Handler) http.Handler {
 		// Token is authenticated, pass it through
 		next.ServeHTTP(w, r)
 	})
+}
+
+// RequestID
+
+var RequestIDHeader = "X-Request-Id"
+// Key to use when setting the request ID.
+type ctxKeyRequestID int
+
+// RequestIDKey is the key that holds the unique request ID in a request context.
+const RequestIDKey ctxKeyRequestID = 0
+
+// GetReqID returns a request ID from the given context if one is present.
+// Returns the empty string if a request ID cannot be found.
+func GetReqID(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if reqID, ok := ctx.Value(RequestIDKey).(string); ok {
+		return reqID
+	}
+	return ""
+}
+
+// ShortRequestID is a middleware that injects a Short request ID into the context of each request.
+func ShortRequestID(next http.Handler) http.Handler {
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		requestID := r.Header.Get(RequestIDHeader)
+		if requestID == "" {
+
+			var err error
+			requestID, err = gonanoid.New()
+			log.Logger.Info("Generating new request ID", "requestID", requestID)
+
+			if err != nil {
+				log.Logger.Error("Error generating request ID", "error", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error generating request ID",
+				})
+				return
+			}
+
+		}
+		ctx = context.WithValue(ctx, RequestIDKey, requestID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}
+	return http.HandlerFunc(fn)
 }
