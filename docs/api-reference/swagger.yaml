@@ -743,13 +743,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/LifecycleResponse"
         '404':
-          description: Account not found
+          description: Request not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         default:
-          description: getStatusAccount unexpected error
+          description: getStatusRequest unexpected error
           content:
             application/json:
               schema:
