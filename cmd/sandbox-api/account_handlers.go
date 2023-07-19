@@ -11,7 +11,6 @@ import (
 	"github.com/rhpds/sandbox/internal/models"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 )
 
@@ -171,7 +170,7 @@ func (h *BaseHandler) LifeCycleAccountHandler(action string) http.HandlerFunc {
 		// by the swagger openAPI spec.
 		// kind := chi.URLParam(r, "kind")
 
-		reqId := middleware.GetReqID(r.Context())
+		reqId := GetReqID(r.Context())
 
 		// Get the account from DynamoDB
 		sandbox, err := h.accountProvider.FetchByName(accountName)

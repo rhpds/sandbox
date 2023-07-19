@@ -713,6 +713,47 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /requests/{id}/status:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer <ACCESS_TOKEN>
+      - name: id
+        in: path
+        required: true
+        description: The id of the request
+        schema:
+          type: string
+    get:
+      tags:
+        - requests
+      operationId: getStatusRequest
+      summary: Get status of a request
+      description: |-
+        Returns status of a request.
+      responses:
+        '200':
+          description: Request status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '404':
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getStatusRequest unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /admin/jwt:
     parameters:
       - in: header
@@ -1193,10 +1234,13 @@ components:
       properties:
         request_id:
           type: string
-          example: hostname/icXUKzyr5U-000002
+          example: F8HWO8Bo79n1I_DPQPIEw
         message:
           type: string
           example: "Request created"
+        status:
+          type: string
+          example: "running"
     AccountStatus:
       type: object
       properties:

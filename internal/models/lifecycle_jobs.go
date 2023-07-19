@@ -53,6 +53,24 @@ func GetLifecycleResourceJob(dbpool *pgxpool.Pool, id int) (*LifecycleResourceJo
 	return &j, nil
 }
 
+func GetLifecycleResourceJobByRequestID(dbpool *pgxpool.Pool, requestID string) (*LifecycleResourceJob, error) {
+	var j LifecycleResourceJob
+
+	err := dbpool.QueryRow(
+		context.Background(),
+		"SELECT id, COALESCE(parent_id, 0), resource_name, resource_type, status, request, lifecycle_result, lifecycle_action, updated_at FROM lifecycle_resource_jobs WHERE request_id = $1",
+		requestID,
+	).Scan(&j.ID, &j.ParentID, &j.ResourceName, &j.ResourceType, &j.Status, &j.Request, &j.Result, &j.Action, &j.UpdatedAt)
+
+	if err != nil {
+		return nil, err
+	}
+
+	j.DbPool = dbpool
+
+	return &j, nil
+}
+
 // GetLifecyclePlacementJob returns a LifecyclePlacementJob by ID
 func GetLifecyclePlacementJob(dbpool *pgxpool.Pool, id int) (*LifecyclePlacementJob, error) {
 	var j LifecyclePlacementJob
@@ -61,6 +79,30 @@ func GetLifecyclePlacementJob(dbpool *pgxpool.Pool, id int) (*LifecyclePlacement
 		context.Background(),
 		"SELECT id, placement_id, status, request, lifecycle_action FROM lifecycle_placement_jobs WHERE id = $1",
 		id,
+	).Scan(&j.ID, &j.PlacementID, &j.Status, &j.Request, &j.Action)
+	if err != nil {
+		return nil, err
+	}
+
+	j.DbPool = dbpool
+
+	return &j, nil
+}
+
+// GetLifecyclePlacementJob returns a LifecyclePlacementJob by ID
+func GetLifecyclePlacementJobByRequestID(dbpool *pgxpool.Pool, requestID string) (*LifecyclePlacementJob, error) {
+	var j LifecyclePlacementJob
+
+	log.Logger.Info("sql",
+		"sql",
+		"SELECT id, placement_id, status, request, lifecycle_action FROM lifecycle_placement_jobs WHERE request_id = $1",
+		"requestID",
+		requestID)
+
+	err := dbpool.QueryRow(
+		context.Background(),
+		"SELECT id, placement_id, status, request, lifecycle_action FROM lifecycle_placement_jobs WHERE request_id = $1",
+		requestID,
 	).Scan(&j.ID, &j.PlacementID, &j.Status, &j.Request, &j.Action)
 	if err != nil {
 		return nil, err
@@ -188,4 +230,62 @@ func (j *LifecyclePlacementJob) SetStatus(status string) error {
 	}
 
 	return nil
+}
+
+// GlobalStatus returns the status of a LifecyclePlacementJob considering all it's children
+func (j *LifecyclePlacementJob) GlobalStatus() (string, error) {
+	if j.Status != "successfully_dispatched" {
+		return j.Status, nil
+	}
+
+	rows, err := j.DbPool.Query(
+		context.TODO(),
+		`SELECT id FROM lifecycle_resource_jobs
+         WHERE lifecycle_action = 'status'
+         AND parent_id = $1
+         ORDER BY updated_at`,
+		j.ID,
+	)
+
+	if err != nil {
+		return "unknown", err
+	}
+
+	defer rows.Close()
+
+	status := "unknown"
+	for rows.Next() {
+		var idR int
+		err := rows.Scan(&idR)
+		if err != nil {
+			return "unknown", err
+		}
+
+		job, err := GetLifecycleResourceJob(j.DbPool, idR)
+
+		if err != nil {
+			return "unknown", err
+		}
+
+		switch job.Status {
+		case "error":
+			return "error", nil
+		case "new":
+			return "new", nil
+		case "running":
+			return "running", nil
+		case "initializing":
+			return "initializing", nil
+		case "initialized":
+			return "initialized", nil
+		case "success":
+			// Save as the last status and move to the next job
+			status = "success"
+		}
+	}
+
+	if rows.Err() != nil {
+		return "unknown", err
+	}
+	return status, nil
 }

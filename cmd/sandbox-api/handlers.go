@@ -11,7 +11,6 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	oarouters "github.com/getkin/kin-openapi/routers"
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/go-chi/render"
 	"github.com/jackc/pgx/v4"
@@ -296,7 +295,7 @@ func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Requ
 func (h *BaseHandler) LifeCyclePlacementHandler(action string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		serviceUuid := chi.URLParam(r, "uuid")
-		reqId := middleware.GetReqID(r.Context())
+		reqId := GetReqID(r.Context())
 
 		placement, err := models.GetPlacementByServiceUuid(h.dbpool, serviceUuid)
 
@@ -725,5 +724,86 @@ func (h *BaseHandler) InvalidateTokenHandler(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusOK)
 	render.Render(w, r, &v1.SimpleMessage{
 		Message: "Token successfully invalidated",
+	})
+}
+
+// GetStatusRequestHandler returns the status of a request
+func (h *BaseHandler) GetStatusRequestHandler(w http.ResponseWriter, r *http.Request) {
+	RequestID := chi.URLParam(r, "id")
+
+	if RequestID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Missing request id",
+		})
+		log.Logger.Error("Missing request id")
+		return
+	}
+
+	// Get the request from the DB
+	job, err := models.GetLifecyclePlacementJobByRequestID(h.dbpool, RequestID)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			// No placement request found, try any resource request
+			job, err := models.GetLifecycleResourceJobByRequestID(h.dbpool, RequestID)
+			if err != nil {
+				if err == pgx.ErrNoRows {
+
+					w.WriteHeader(http.StatusNotFound)
+					render.Render(w, r, &v1.Error{
+						HTTPStatusCode: http.StatusNotFound,
+						Message:        "Request not found",
+					})
+					log.Logger.Info("Request not found")
+					return
+				}
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error getting request",
+				})
+				log.Logger.Error("Error getting request", "error", err)
+				return
+			}
+
+			// If it's a resource request, just return the status
+			w.WriteHeader(http.StatusOK)
+			render.Render(w, r, &v1.LifecycleRequestResponse{
+				HTTPStatusCode: http.StatusOK,
+				RequestID:      RequestID,
+				Status:         job.Status,
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting request",
+		})
+		log.Logger.Error("Error getting request", "error", err)
+		return
+	}
+
+	// Get the status of the request
+	status, err := job.GlobalStatus()
+
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting status",
+		})
+		log.Logger.Error("Error getting status", "error", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &v1.LifecycleRequestResponse{
+		HTTPStatusCode: http.StatusOK,
+		RequestID:      RequestID,
+		Status:         status,
 	})
 }
