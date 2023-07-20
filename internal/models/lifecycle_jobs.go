@@ -93,12 +93,6 @@ func GetLifecyclePlacementJob(dbpool *pgxpool.Pool, id int) (*LifecyclePlacement
 func GetLifecyclePlacementJobByRequestID(dbpool *pgxpool.Pool, requestID string) (*LifecyclePlacementJob, error) {
 	var j LifecyclePlacementJob
 
-	log.Logger.Info("sql",
-		"sql",
-		"SELECT id, placement_id, status, request, lifecycle_action FROM lifecycle_placement_jobs WHERE request_id = $1",
-		"requestID",
-		requestID)
-
 	err := dbpool.QueryRow(
 		context.Background(),
 		"SELECT id, placement_id, status, request, lifecycle_action FROM lifecycle_placement_jobs WHERE request_id = $1",
@@ -241,8 +235,7 @@ func (j *LifecyclePlacementJob) GlobalStatus() (string, error) {
 	rows, err := j.DbPool.Query(
 		context.TODO(),
 		`SELECT id FROM lifecycle_resource_jobs
-         WHERE lifecycle_action = 'status'
-         AND parent_id = $1
+         WHERE parent_id = $1
          ORDER BY updated_at`,
 		j.ID,
 	)

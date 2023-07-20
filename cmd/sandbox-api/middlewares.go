@@ -286,7 +286,6 @@ func ShortRequestID(next http.Handler) http.Handler {
 
 			var err error
 			requestID, err = gonanoid.New()
-			log.Logger.Info("Generating new request ID", "requestID", requestID)
 
 			if err != nil {
 				log.Logger.Error("Error generating request ID", "error", err)
