@@ -38,6 +38,7 @@ func (p *Placement) Render(w http.ResponseWriter, r *http.Request) error {
 
 func (p *Placement) LoadResources(accountProvider AwsAccountProvider) error {
 
+	// TODO: use all account providers, not only AWS
 	accounts, err := accountProvider.FetchAllByServiceUuid(p.ServiceUuid)
 
 	if err != nil {
@@ -55,6 +56,7 @@ func (p *Placement) LoadResources(accountProvider AwsAccountProvider) error {
 
 func (p *Placement) LoadResourcesWithCreds(accountProvider AwsAccountProvider) error {
 
+	// TODO: use all account providers, not only AWS
 	accounts, err := accountProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
 
 	if err != nil {
@@ -107,6 +109,7 @@ func (p *Placement) Delete(dbpool *pgxpool.Pool, accountProvider AwsAccountProvi
 		return errors.New("Placement ID is required")
 	}
 
+	// TODO: use all account providers, not only AWS
 	if err := accountProvider.MarkForCleanupByServiceUuid(p.ServiceUuid); err != nil {
 		return err
 	}
@@ -124,6 +127,7 @@ func (p *Placement) Delete(dbpool *pgxpool.Pool, accountProvider AwsAccountProvi
 	// NOTE: This will done automatically by the SQL constraints when we move to Postgresql instead of
 	// dynamodb for the accounts.
 
+	// TODO: use all account providers, not only AWS
 	p.LoadResources(accountProvider)
 
 	return err
