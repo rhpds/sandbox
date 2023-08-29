@@ -203,18 +203,18 @@ func main() {
 		os.Setenv("dynamodb_table", "accounts")
 	}
 
-	accountProvider := sandboxdb.NewAwsAccountDynamoDBProvider()
+	AwsAccountProvider := sandboxdb.NewAwsAccountDynamoDBProvider()
 
 	var accounts []models.AwsAccount
 	var err error
 
 	if toCleanupFlag {
-		accounts, err = accountProvider.FetchAllToCleanup()
+		accounts, err = AwsAccountProvider.FetchAllToCleanup()
 		if err != nil {
 			log.Err.Fatal(err)
 		}
 	} else {
-		accounts, err = accountProvider.FetchAll()
+		accounts, err = AwsAccountProvider.FetchAll()
 		if err != nil {
 			log.Err.Fatal(err)
 		}

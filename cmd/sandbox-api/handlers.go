@@ -26,7 +26,7 @@ type BaseHandler struct {
 	svc             *dynamodb.DynamoDB
 	doc             *openapi3.T
 	oaRouter        oarouters.Router
-	accountProvider models.AwsAccountProvider
+	awsAccountProvider models.AwsAccountProvider
 }
 
 type AdminHandler struct {
@@ -34,13 +34,13 @@ type AdminHandler struct {
 	tokenAuth *jwtauth.JWTAuth
 }
 
-func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, accountProvider models.AwsAccountProvider) *BaseHandler {
+func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider) *BaseHandler {
 	return &BaseHandler{
 		svc:             svc,
 		dbpool:          dbpool,
 		doc:             doc,
 		oaRouter:        oaRouter,
-		accountProvider: accountProvider,
+		awsAccountProvider: awsAccountProvider,
 	}
 }
 
@@ -51,7 +51,7 @@ func NewAdminHandler(b *BaseHandler, tokenAuth *jwtauth.JWTAuth) *AdminHandler {
 			dbpool:          b.dbpool,
 			doc:             b.doc,
 			oaRouter:        b.oaRouter,
-			accountProvider: b.accountProvider,
+			awsAccountProvider: b.awsAccountProvider,
 		},
 		tokenAuth: tokenAuth,
 	}
@@ -109,7 +109,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 		switch request.Kind {
 		case "AwsSandbox":
 			// Create the placement in AWS
-			accounts, err := h.accountProvider.Request(placementRequest.ServiceUuid, request.Count, placementRequest.Annotations)
+			accounts, err := h.awsAccountProvider.Request(placementRequest.ServiceUuid, request.Count, placementRequest.Annotations)
 			if err != nil {
 				if err == models.ErrNoEnoughAccountsAvailable {
 					w.WriteHeader(http.StatusInsufficientStorage)
@@ -255,7 +255,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 		log.Logger.Error("GetPlacementHandler", "error", err)
 		return
 	}
-	placement.LoadResourcesWithCreds(h.accountProvider)
+	placement.LoadResourcesWithCreds(h.awsAccountProvider)
 
 	w.WriteHeader(http.StatusOK)
 	render.Render(w, r, placement)
@@ -265,7 +265,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Request) {
 	serviceUuid := chi.URLParam(r, "uuid")
 
-	err := models.DeletePlacementByServiceUuid(h.dbpool, h.accountProvider, serviceUuid)
+	err := models.DeletePlacementByServiceUuid(h.dbpool, h.awsAccountProvider, serviceUuid)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			w.WriteHeader(http.StatusNotFound)
@@ -333,7 +333,7 @@ func (h *BaseHandler) LifeCyclePlacementHandler(action string) http.HandlerFunc 
 		if err == pgx.ErrNoRows {
 			// Legacy services don't have a placement, but stop them anyway
 
-			accounts, err := h.accountProvider.FetchAllByServiceUuid(serviceUuid)
+			accounts, err := h.awsAccountProvider.FetchAllByServiceUuid(serviceUuid)
 			if err != nil {
 				log.Logger.Error("GET accounts", "error", err)
 
@@ -436,7 +436,7 @@ func (h *BaseHandler) GetStatusPlacementHandler(w http.ResponseWriter, r *http.R
 	if err == pgx.ErrNoRows {
 		// Legacy services don't have a placement, but get status using the serviceUUID
 
-		accounts, err := h.accountProvider.FetchAllByServiceUuid(serviceUuid)
+		accounts, err := h.awsAccountProvider.FetchAllByServiceUuid(serviceUuid)
 		if err != nil {
 			log.Logger.Error("GET accounts", "error", err)
 			w.WriteHeader(http.StatusInternalServerError)

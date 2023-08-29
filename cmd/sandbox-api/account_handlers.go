@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v4"
-	"github.com/rhpds/sandbox/internal/api/v1"
+	v1 "github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
 
@@ -15,61 +15,105 @@ import (
 )
 
 type AccountHandler struct {
-	accountProvider models.AwsAccountProvider
+	AwsAccountProvider models.AwsAccountProvider
+	OcpAccountProvider models.OcpAccountProvider
 }
 
-func NewAccountHandler(accountProvider models.AwsAccountProvider) *AccountHandler {
+func NewAccountHandler(awsAccountProvider models.AwsAccountProvider) *AccountHandler {
 	return &AccountHandler{
-		accountProvider: accountProvider,
+		AwsAccountProvider: awsAccountProvider,
 	}
+}
+
+type Account interface {
 }
 
 // GetAccountsHandler returns all accounts
-// GET /accounts
+// GET /accounts/{kind}
 func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", " ")
-
 	serviceUuid := r.URL.Query().Get("service_uuid")
+	kind := chi.URLParam(r, "kind")
+  if kind == "aws" {
+    var (
+      err  error
+      accounts []models.AwsAccount
+    )
+    if serviceUuid != "" {
+      // Get the account from DynamoDB
+      accounts, err = h.AwsAccountProvider.FetchAllByServiceUuid(serviceUuid)
 
-	var (
-		accounts []models.AwsAccount
-		err      error
-	)
-	if serviceUuid != "" {
-		// Get the account from DynamoDB
-		accounts, err = h.accountProvider.FetchAllByServiceUuid(serviceUuid)
+    } else {
+      accounts, err = h.AwsAccountProvider.FetchAll()
+    }
+    if err != nil {
+      log.Logger.Error("GET accounts", "error", err)
 
-	} else {
-		accounts, err = h.accountProvider.FetchAll()
-	}
+      w.WriteHeader(http.StatusInternalServerError)
+      enc.Encode(v1.Error{
+        HTTPStatusCode: 500,
+        Message:        "Error reading accounts",
+      })
+      return
+    }
 
-	if err != nil {
-		log.Logger.Error("GET accounts", "error", err)
+    if len(accounts) == 0 {
+      w.WriteHeader(http.StatusNotFound)
+    } else {
+      w.WriteHeader(http.StatusOK)
+    }
 
-		w.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(v1.Error{
-			HTTPStatusCode: 500,
-			Message:        "Error reading accounts",
-		})
-		return
-	}
+    // Print accounts using JSON
+    if err := enc.Encode(accounts); err != nil {
+      log.Logger.Error("GET accounts", "error", err)
+      w.WriteHeader(http.StatusInternalServerError)
+      enc.Encode(v1.Error{
+        HTTPStatusCode: 500,
+        Message:        "Error reading account",
+      })
+    }
+  } else if kind == "ocp" {
+		log.Logger.Warn("OCP accounts")
+    var (
+      err  error
+      accounts []models.OcpAccount
+    )
+    if serviceUuid != "" {
+      // Get the account from DynamoDB
+      accounts, err = h.OcpAccountProvider.FetchAllByServiceUuid(serviceUuid)
 
-	if len(accounts) == 0 {
-		w.WriteHeader(http.StatusNotFound)
-	} else {
-		w.WriteHeader(http.StatusOK)
-	}
+    } else {
+      accounts, err = h.OcpAccountProvider.FetchAll()
+    }
+    if err != nil {
+      log.Logger.Error("GET accounts", "error", err)
 
-	// Print accounts using JSON
-	if err := enc.Encode(accounts); err != nil {
-		log.Logger.Error("GET accounts", "error", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(v1.Error{
-			HTTPStatusCode: 500,
-			Message:        "Error reading account",
-		})
-	}
+      w.WriteHeader(http.StatusInternalServerError)
+      enc.Encode(v1.Error{
+        HTTPStatusCode: 500,
+        Message:        "Error reading accounts",
+      })
+      return
+    }
+
+    if len(accounts) == 0 {
+      w.WriteHeader(http.StatusNotFound)
+    } else {
+      w.WriteHeader(http.StatusOK)
+    }
+
+    // Print accounts using JSON
+    if err := enc.Encode(accounts); err != nil {
+      log.Logger.Error("GET accounts", "error", err)
+      w.WriteHeader(http.StatusInternalServerError)
+      enc.Encode(v1.Error{
+        HTTPStatusCode: 500,
+        Message:        "Error reading account",
+      })
+    }
+  }
+
 }
 
 // GetAccountHandler returns an account
@@ -80,40 +124,44 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 
 	// Grab the parameters from Params
 	accountName := chi.URLParam(r, "account")
+	kind := chi.URLParam(r, "kind")
 
 	// We don't need 'kind' param for now as it is checked and validated
 	// by the swagger openAPI spec.
+  if kind == "aws" {
+    // Get the account from DynamoDB
+    sandbox, err := h.AwsAccountProvider.FetchByName(accountName)
+    if err != nil {
+      if err == models.ErrAccountNotFound {
+        log.Logger.Warn("GET account", "error", err)
+        w.WriteHeader(http.StatusNotFound)
+        enc.Encode(v1.Error{
+          HTTPStatusCode: http.StatusNotFound,
+          Message:        "Account not found",
+        })
+        return
+      }
+      log.Logger.Error("GET account", "error", err)
 
-	// Get the account from DynamoDB
-	sandbox, err := h.accountProvider.FetchByName(accountName)
-	if err != nil {
-		if err == models.ErrAccountNotFound {
-			log.Logger.Warn("GET account", "error", err)
-			w.WriteHeader(http.StatusNotFound)
-			enc.Encode(v1.Error{
-				HTTPStatusCode: http.StatusNotFound,
-				Message:        "Account not found",
-			})
-			return
-		}
-		log.Logger.Error("GET account", "error", err)
-
-		w.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(v1.Error{
-			HTTPStatusCode: 500,
-			Message:        "Error reading account",
-		})
-		return
-	}
-	// Print account using JSON
-	if err := enc.Encode(sandbox); err != nil {
-		log.Logger.Error("GET account", "error", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(v1.Error{
-			HTTPStatusCode: 500,
-			Message:        "Error reading account",
-		})
-	}
+      w.WriteHeader(http.StatusInternalServerError)
+      enc.Encode(v1.Error{
+        HTTPStatusCode: 500,
+        Message:        "Error reading account",
+      })
+      return
+    }
+    // Print account using JSON
+    if err := enc.Encode(sandbox); err != nil {
+      log.Logger.Error("GET account", "error", err)
+      w.WriteHeader(http.StatusInternalServerError)
+      enc.Encode(v1.Error{
+        HTTPStatusCode: 500,
+        Message:        "Error reading account",
+      })
+    }
+  } else {
+      log.Logger.Warn("Implementing")
+  }
 }
 
 func (h *AccountHandler) CleanupAccountHandler(w http.ResponseWriter, r *http.Request) {
@@ -124,7 +172,7 @@ func (h *AccountHandler) CleanupAccountHandler(w http.ResponseWriter, r *http.Re
 	// by the swagger openAPI spec.
 
 	// Get the account from DynamoDB
-	sandbox, err := h.accountProvider.FetchByName(accountName)
+	sandbox, err := h.AwsAccountProvider.FetchByName(accountName)
 	if err != nil {
 		if err == models.ErrAccountNotFound {
 			log.Logger.Warn("GET account", "error", err)
@@ -145,7 +193,7 @@ func (h *AccountHandler) CleanupAccountHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	// Mark account for cleanup
-	if err := h.accountProvider.MarkForCleanup(sandbox.Name); err != nil {
+	if err := h.AwsAccountProvider.MarkForCleanup(sandbox.Name); err != nil {
 		log.Logger.Error("PUT account cleanup", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
@@ -173,7 +221,7 @@ func (h *BaseHandler) LifeCycleAccountHandler(action string) http.HandlerFunc {
 		reqId := GetReqID(r.Context())
 
 		// Get the account from DynamoDB
-		sandbox, err := h.accountProvider.FetchByName(accountName)
+		sandbox, err := h.awsAccountProvider.FetchByName(accountName)
 		if err != nil {
 			if err == models.ErrAccountNotFound {
 				log.Logger.Warn("GET account", "error", err)
@@ -233,7 +281,7 @@ func (h *BaseHandler) GetStatusAccountHandler(w http.ResponseWriter, r *http.Req
 	// by the swagger openAPI spec.
 
 	// Get the account from DynamoDB
-	sandbox, err := h.accountProvider.FetchByName(accountName)
+	sandbox, err := h.awsAccountProvider.FetchByName(accountName)
 	if err != nil {
 		if err == models.ErrAccountNotFound {
 			log.Logger.Warn("GET account", "error", err)
