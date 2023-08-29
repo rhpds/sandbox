@@ -27,9 +27,7 @@ var ErrAccountNotFound = errors.New("account not found")
 
 type AwsAccount struct {
 	Account
-	Kind string `json:"kind"` // "aws_account"
 
-	Name         string `json:"name"`
 	AccountID    string `json:"account_id"`
 	Zone         string `json:"zone"`
 	HostedZoneID string `json:"hosted_zone_id"`

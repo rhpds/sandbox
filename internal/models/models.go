@@ -28,6 +28,9 @@ type ResourceWithCreds struct {
 
 type Account struct {
 	Resource
+	Kind string `json:"kind"` // "aws_account"
+
+	Name         string `json:"name"`
 }
 
 type AvailabilityMarker interface {

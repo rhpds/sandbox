@@ -286,7 +286,7 @@ func NewWorker(baseHandler BaseHandler) Worker {
 
 	return Worker{
 		Dbpool:          baseHandler.dbpool,
-		AccountProvider: baseHandler.accountProvider,
+		AccountProvider: baseHandler.awsAccountProvider,
 		StsClient:       stsClient,
 	}
 }

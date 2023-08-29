@@ -100,7 +100,10 @@ func NewAwsAccountDynamoDBProviderWithSecret(vaultSecret string) *AwsAccountDyna
 // makeAccount creates new models.AwsAccount from AwsAccountDynamoDB
 func makeAccount(account AwsAccountDynamoDB) models.AwsAccount {
 	a := models.AwsAccount{
-		Name:          account.Name,
+		Account: models.Account{
+			Name: account.Name,
+			Kind: "aws_account",
+		},
 		AccountID:     account.AccountID,
 		Zone:          account.Zone,
 		HostedZoneID:  account.HostedZoneID,
