@@ -90,10 +90,12 @@ func (w Worker) Execute(j *models.LifecycleResourceJob) error {
 }
 
 // consumeChannels is a goroutine that listens to the golang channels and processes the events
-func (w Worker) consumeChannels(LifecycleResourceJobsStatusChannel chan string, LifecyclePlacementJobsStatusChannel chan string) {
+func (w Worker) consumeChannels(ctx context.Context, LifecycleResourceJobsStatusChannel chan string, LifecyclePlacementJobsStatusChannel chan string) {
 WorkerLoop:
 	for {
 		select {
+		case <- ctx.Done():
+			return
 		case msg := <-LifecycleResourceJobsStatusChannel:
 			id, err := strconv.Atoi(msg)
 			if err != nil {
@@ -200,7 +202,7 @@ WorkerLoop:
 	}
 }
 
-func (w Worker) WatchLifecycleDBChannels() error {
+func (w Worker) WatchLifecycleDBChannels(ctx context.Context) error {
 
 	// Create channels for resource lifecycle events
 	LifecycleResourceJobsStatusChannel := make(chan string)
@@ -213,9 +215,21 @@ func (w Worker) WatchLifecycleDBChannels() error {
 		return err
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+	// In case this goroutine stop, stop all workers and restart it
+	defer func() {
+		// Log that we are restarting
+		log.Logger.Warn("Restarting worker WatchLifecycleDBChannels and its workers")
+		cancel()
+		// sleep for 5 seconds before restarting
+		time.Sleep(5 * time.Second)
+
+		go w.WatchLifecycleDBChannels(context.Background())
+	}()
+
 	// Create go routines to listen to the Golang channels
 	for i := 0; i < workers; i++ {
-		go w.consumeChannels(LifecycleResourceJobsStatusChannel, LifecyclePlacementJobsStatusChannel)
+		go w.consumeChannels(ctx, LifecycleResourceJobsStatusChannel, LifecyclePlacementJobsStatusChannel)
 	}
 
 	// Listen to the DB channels and publish to the Golang channels
