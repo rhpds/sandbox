@@ -94,7 +94,8 @@ func (w Worker) consumeChannels(ctx context.Context, LifecycleResourceJobsStatus
 WorkerLoop:
 	for {
 		select {
-		case <- ctx.Done():
+		case <-ctx.Done():
+			log.Logger.Warn("Context cancelled, exiting consumeChannels worker")
 			return
 		case msg := <-LifecycleResourceJobsStatusChannel:
 			id, err := strconv.Atoi(msg)
@@ -232,50 +233,43 @@ func (w Worker) WatchLifecycleDBChannels(ctx context.Context) error {
 		go w.consumeChannels(ctx, LifecycleResourceJobsStatusChannel, LifecyclePlacementJobsStatusChannel)
 	}
 
-	// Listen to the DB channels and publish to the Golang channels
-MainLoop:
-	for {
-		time.Sleep(1 * time.Second)
-		conn, err := w.Dbpool.Acquire(context.Background())
-		defer conn.Release()
+	conn, err := w.Dbpool.Acquire(context.Background())
+	if err != nil {
+		log.Logger.Error("Error acquiring connection", "error", err)
+		return err
+	}
+	defer conn.Release()
 
+	channels := []string{
+		"lifecycle_placement_jobs_status_channel",
+		"lifecycle_resource_jobs_status_channel",
+	}
+	for _, pgChan := range channels {
+		_, err = conn.Exec(context.Background(), fmt.Sprintf("LISTEN %s", pgChan))
 		if err != nil {
-			log.Logger.Error("Error acquiring connection", "error", err)
-			continue
+			log.Logger.Error("Error listening to the channel", "channel", pgChan, "error", err)
+			return err
+		}
+		log.Logger.Info("Listening to channel", "channel", pgChan)
+	}
+
+	for {
+		notification, err := conn.Conn().WaitForNotification(context.Background())
+		if err != nil {
+			log.Logger.Error("Error while listening to the channel", "error", err)
+			return err
 		}
 
-		channels := []string{
-			"lifecycle_placement_jobs_status_channel",
-			"lifecycle_resource_jobs_status_channel",
-		}
-		for _, pgChan := range channels {
-			_, err = conn.Exec(context.Background(), fmt.Sprintf("LISTEN %s", pgChan))
-			if err != nil {
-				log.Logger.Error("Error listening to the channel", "channel", pgChan, "error", err)
-				continue MainLoop
-			}
-			log.Logger.Info("Listening to channel", "channel", pgChan)
-		}
+		log.Logger.Debug("Notification received", "PID", notification.PID, "Channel", notification.Channel, "Payload", notification.Payload)
 
-		for {
-			notification, err := conn.Conn().WaitForNotification(context.Background())
-			if err != nil {
-				log.Logger.Error("Error while listening to the channel", "error", err)
-				break MainLoop // Restart pool acquisition
-			}
+		switch notification.Channel {
+		case "lifecycle_placement_jobs_status_channel":
+			LifecyclePlacementJobsStatusChannel <- notification.Payload
 
-			log.Logger.Debug("Notification received", "PID", notification.PID, "Channel", notification.Channel, "Payload", notification.Payload)
-
-			switch notification.Channel {
-			case "lifecycle_placement_jobs_status_channel":
-				LifecyclePlacementJobsStatusChannel <- notification.Payload
-
-			case "lifecycle_resource_jobs_status_channel":
-				LifecycleResourceJobsStatusChannel <- notification.Payload
-			}
+		case "lifecycle_resource_jobs_status_channel":
+			LifecycleResourceJobsStatusChannel <- notification.Payload
 		}
 	}
-	return nil
 }
 
 // NewWorker creates a new worker
