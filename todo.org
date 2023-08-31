@@ -14,9 +14,9 @@
 *** DONE GET one
 *** DONE PUT (mark for cleanup)
 ** Lifecycle
-*** TODO STOP
-*** TODO START
-*** TODO STATUS
+*** DONE STOP
+*** DONE START
+*** DONE STATUS
 * DONE validate requests using the openAPI schema
 * DONE embed the schema in binary
 * DONE add credential type
@@ -55,10 +55,11 @@
 *** DONE proper lifecyclePlacementResponse with examples
 * DONE OpenShift limit and req for pods
 * TODO patch clients (sandbox-list, mark_for_cleanup script, etc) to use the sandbox-API instead of dynamodb
-* TODO unit tests and fixture/functional tests
 * TODO documentation coverage
 * TODO move handlers per version?
 * Post MVP
+** TODO unit tests and fixture/functional tests
+** TODO prometheus endpoint and metrics
 ** TODO Encrypt IAM secret key using AWS KMS instead of ansible-vault.  Use and support both while transitioning
 ** TODO aws lambda function to replicate changes from dynamoDB to postgresql
 ** TODO add POST /refresh   to get new access token

@@ -90,10 +90,13 @@ func (w Worker) Execute(j *models.LifecycleResourceJob) error {
 }
 
 // consumeChannels is a goroutine that listens to the golang channels and processes the events
-func (w Worker) consumeChannels(LifecycleResourceJobsStatusChannel chan string, LifecyclePlacementJobsStatusChannel chan string) {
+func (w Worker) consumeChannels(ctx context.Context, LifecycleResourceJobsStatusChannel chan string, LifecyclePlacementJobsStatusChannel chan string) {
 WorkerLoop:
 	for {
 		select {
+		case <-ctx.Done():
+			log.Logger.Warn("Context cancelled, exiting consumeChannels worker")
+			return
 		case msg := <-LifecycleResourceJobsStatusChannel:
 			id, err := strconv.Atoi(msg)
 			if err != nil {
@@ -200,7 +203,7 @@ WorkerLoop:
 	}
 }
 
-func (w Worker) WatchLifecycleDBChannels() error {
+func (w Worker) WatchLifecycleDBChannels(ctx context.Context) error {
 
 	// Create channels for resource lifecycle events
 	LifecycleResourceJobsStatusChannel := make(chan string)
@@ -213,55 +216,60 @@ func (w Worker) WatchLifecycleDBChannels() error {
 		return err
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+	// In case this goroutine stop, stop all workers and restart it
+	defer func() {
+		// Log that we are restarting
+		log.Logger.Warn("Restarting worker WatchLifecycleDBChannels and its workers")
+		cancel()
+		// sleep for 5 seconds before restarting
+		time.Sleep(5 * time.Second)
+
+		go w.WatchLifecycleDBChannels(context.Background())
+	}()
+
+	conn, err := w.Dbpool.Acquire(context.Background())
+	if err != nil {
+		log.Logger.Error("Error acquiring connection", "error", err)
+		return err
+	}
+	defer conn.Release()
+
+	channels := []string{
+		"lifecycle_placement_jobs_status_channel",
+		"lifecycle_resource_jobs_status_channel",
+	}
+	for _, pgChan := range channels {
+		_, err = conn.Exec(context.Background(), fmt.Sprintf("LISTEN %s", pgChan))
+		if err != nil {
+			log.Logger.Error("Error listening to the channel", "channel", pgChan, "error", err)
+			return err
+		}
+		log.Logger.Info("Listening to channel", "channel", pgChan)
+	}
+
 	// Create go routines to listen to the Golang channels
 	for i := 0; i < workers; i++ {
-		go w.consumeChannels(LifecycleResourceJobsStatusChannel, LifecyclePlacementJobsStatusChannel)
+		go w.consumeChannels(ctx, LifecycleResourceJobsStatusChannel, LifecyclePlacementJobsStatusChannel)
 	}
 
-	// Listen to the DB channels and publish to the Golang channels
-MainLoop:
 	for {
-		time.Sleep(1 * time.Second)
-		conn, err := w.Dbpool.Acquire(context.Background())
-		defer conn.Release()
-
+		notification, err := conn.Conn().WaitForNotification(context.Background())
 		if err != nil {
-			log.Logger.Error("Error acquiring connection", "error", err)
-			continue
+			log.Logger.Error("Error while listening to the channel", "error", err)
+			return err
 		}
 
-		channels := []string{
-			"lifecycle_placement_jobs_status_channel",
-			"lifecycle_resource_jobs_status_channel",
-		}
-		for _, pgChan := range channels {
-			_, err = conn.Exec(context.Background(), fmt.Sprintf("LISTEN %s", pgChan))
-			if err != nil {
-				log.Logger.Error("Error listening to the channel", "channel", pgChan, "error", err)
-				continue MainLoop
-			}
-			log.Logger.Info("Listening to channel", "channel", pgChan)
-		}
+		log.Logger.Debug("Notification received", "PID", notification.PID, "Channel", notification.Channel, "Payload", notification.Payload)
 
-		for {
-			notification, err := conn.Conn().WaitForNotification(context.Background())
-			if err != nil {
-				log.Logger.Error("Error while listening to the channel", "error", err)
-				break MainLoop // Restart pool acquisition
-			}
+		switch notification.Channel {
+		case "lifecycle_placement_jobs_status_channel":
+			LifecyclePlacementJobsStatusChannel <- notification.Payload
 
-			log.Logger.Debug("Notification received", "PID", notification.PID, "Channel", notification.Channel, "Payload", notification.Payload)
-
-			switch notification.Channel {
-			case "lifecycle_placement_jobs_status_channel":
-				LifecyclePlacementJobsStatusChannel <- notification.Payload
-
-			case "lifecycle_resource_jobs_status_channel":
-				LifecycleResourceJobsStatusChannel <- notification.Payload
-			}
+		case "lifecycle_resource_jobs_status_channel":
+			LifecycleResourceJobsStatusChannel <- notification.Payload
 		}
 	}
-	return nil
 }
 
 // NewWorker creates a new worker
