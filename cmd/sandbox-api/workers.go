@@ -228,11 +228,6 @@ func (w Worker) WatchLifecycleDBChannels(ctx context.Context) error {
 		go w.WatchLifecycleDBChannels(context.Background())
 	}()
 
-	// Create go routines to listen to the Golang channels
-	for i := 0; i < workers; i++ {
-		go w.consumeChannels(ctx, LifecycleResourceJobsStatusChannel, LifecyclePlacementJobsStatusChannel)
-	}
-
 	conn, err := w.Dbpool.Acquire(context.Background())
 	if err != nil {
 		log.Logger.Error("Error acquiring connection", "error", err)
@@ -251,6 +246,11 @@ func (w Worker) WatchLifecycleDBChannels(ctx context.Context) error {
 			return err
 		}
 		log.Logger.Info("Listening to channel", "channel", pgChan)
+	}
+
+	// Create go routines to listen to the Golang channels
+	for i := 0; i < workers; i++ {
+		go w.consumeChannels(ctx, LifecycleResourceJobsStatusChannel, LifecyclePlacementJobsStatusChannel)
 	}
 
 	for {
