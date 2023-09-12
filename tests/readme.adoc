@@ -1,0 +1,34 @@
+== Functional tests ==
+
+See link:https://hurl.dev/[hurl.dev] for upstream documentation.
+
+
+.Run local tests
+----
+make run-api
+
+uuid=$(uuidgen)
+
+hurl --test \
+  --variable login_token=... \
+  --variable host=localhost:8080 \
+  --variable uuid=$uuid \
+  *.hurl
+----
+
+.Example output
+----
+000.hurl: Running [1/2]
+000.hurl: Success (36 request(s) in 35304 ms)
+999.hurl: Running [2/2]
+999.hurl: Success (2 request(s) in 371 ms)
+--------------------------------------------------------------------------------
+Executed files:  2
+Succeeded files: 2 (100.0%)
+Failed files:    0 (0.0%)
+Duration:        35680 ms
+----
+
+=== Troubleshoot ===
+
+Add the `--verbose` argument to the `hurl` command to see the full requests.
