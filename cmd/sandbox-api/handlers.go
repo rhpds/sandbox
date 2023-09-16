@@ -255,7 +255,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 		log.Logger.Error("GetPlacementHandler", "error", err)
 		return
 	}
-	placement.LoadResourcesWithCreds(h.accountProvider)
+	placement.LoadActiveResourcesWithCreds(h.accountProvider)
 
 	w.WriteHeader(http.StatusOK)
 	render.Render(w, r, placement)
@@ -333,7 +333,7 @@ func (h *BaseHandler) LifeCyclePlacementHandler(action string) http.HandlerFunc 
 		if err == pgx.ErrNoRows {
 			// Legacy services don't have a placement, but stop them anyway
 
-			accounts, err := h.accountProvider.FetchAllByServiceUuid(serviceUuid)
+			accounts, err := h.accountProvider.FetchAllActiveByServiceUuid(serviceUuid)
 			if err != nil {
 				log.Logger.Error("GET accounts", "error", err)
 
@@ -436,7 +436,7 @@ func (h *BaseHandler) GetStatusPlacementHandler(w http.ResponseWriter, r *http.R
 	if err == pgx.ErrNoRows {
 		// Legacy services don't have a placement, but get status using the serviceUUID
 
-		accounts, err := h.accountProvider.FetchAllByServiceUuid(serviceUuid)
+		accounts, err := h.accountProvider.FetchAllActiveByServiceUuid(serviceUuid)
 		if err != nil {
 			log.Logger.Error("GET accounts", "error", err)
 			w.WriteHeader(http.StatusInternalServerError)

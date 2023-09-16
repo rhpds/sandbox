@@ -70,6 +70,40 @@ func (p *Placement) LoadResourcesWithCreds(accountProvider AwsAccountProvider) e
 	return nil
 }
 
+func (p *Placement) LoadActiveResources(accountProvider AwsAccountProvider) error {
+	accounts, err := accountProvider.FetchAllActiveByServiceUuid(p.ServiceUuid)
+
+	if err != nil {
+		return err
+	}
+
+	p.Resources = []any{}
+
+	for _, account := range accounts {
+		p.Resources = append(p.Resources, account)
+	}
+
+	return nil
+}
+
+func (p *Placement) LoadActiveResourcesWithCreds(accountProvider AwsAccountProvider) error {
+
+	accounts, err := accountProvider.FetchAllActiveByServiceUuidWithCreds(p.ServiceUuid)
+
+	if err != nil {
+		return err
+	}
+
+	p.Resources = []any{}
+
+	for _, account := range accounts {
+		p.Resources = append(p.Resources, account)
+	}
+
+	return nil
+}
+
+
 func (p *Placement) Save(dbpool *pgxpool.Pool) error {
 	var id int
 	// Check if placement already exists in the DB

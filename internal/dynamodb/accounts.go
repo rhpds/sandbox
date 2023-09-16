@@ -355,9 +355,31 @@ func (a *AwsAccountDynamoDBProvider) FetchAllByServiceUuid(serviceUuid string) (
 	return makeAccounts(accounts), nil
 }
 
-// FetchAllByServiceUuid returns the list of accounts from dynamodb for a specific service uuid
+// FetchAllActiveByServiceUuid returns the list of accounts from dynamodb for a specific service uuid that are not to cleanup
+func (a *AwsAccountDynamoDBProvider) FetchAllActiveByServiceUuid(serviceUuid string) ([]models.AwsAccount, error) {
+	filter := expression.Name("service_uuid").Equal(expression.Value(serviceUuid)).
+		And(expression.Name("to_cleanup").Equal(expression.Value(false)))
+	accounts, err := GetAccounts(a.Svc, filter, -1)
+	if err != nil {
+		return []models.AwsAccount{}, err
+	}
+	return makeAccounts(accounts), nil
+}
+
+// FetchAllByServiceUuidWithCreds returns the list of accounts from dynamodb for a specific service uuid
 func (a *AwsAccountDynamoDBProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) ([]models.AwsAccountWithCreds, error) {
 	filter := expression.Name("service_uuid").Equal(expression.Value(serviceUuid))
+	accounts, err := GetAccounts(a.Svc, filter, -1)
+	if err != nil {
+		return []models.AwsAccountWithCreds{}, err
+	}
+	return a.makeAccountsWithCreds(accounts), nil
+}
+
+// FetchAllActiveByServiceUuidWithCreds returns the list of accounts from dynamodb for a specific service uuid
+func (a *AwsAccountDynamoDBProvider) FetchAllActiveByServiceUuidWithCreds(serviceUuid string) ([]models.AwsAccountWithCreds, error) {
+	filter := expression.Name("service_uuid").Equal(expression.Value(serviceUuid)).
+		And(expression.Name("to_cleanup").Equal(expression.Value(false)))
 	accounts, err := GetAccounts(a.Svc, filter, -1)
 	if err != nil {
 		return []models.AwsAccountWithCreds{}, err

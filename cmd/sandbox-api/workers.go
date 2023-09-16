@@ -165,7 +165,7 @@ WorkerLoop:
 				}
 
 				// Get all accounts in the placement
-				if err := placement.LoadResources(w.AccountProvider); err != nil {
+				if err := placement.LoadActiveResources(w.AccountProvider); err != nil {
 					log.Logger.Error("Error loading resources", "error", err, "placement", placement)
 					job.SetStatus("error")
 					continue WorkerLoop
