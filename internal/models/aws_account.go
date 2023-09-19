@@ -60,7 +60,9 @@ type AwsAccountProvider interface {
 	FetchAllToCleanup() ([]AwsAccount, error)
 	FetchAllSorted(by string) ([]AwsAccount, error)
 	FetchAllByServiceUuid(serviceUuid string) ([]AwsAccount, error)
+	FetchAllActiveByServiceUuid(serviceUuid string) ([]AwsAccount, error)
 	FetchAllByServiceUuidWithCreds(serviceUuid string) ([]AwsAccountWithCreds, error)
+	FetchAllActiveByServiceUuidWithCreds(serviceUuid string) ([]AwsAccountWithCreds, error)
 	Request(service_uuid string, count int, annotations map[string]string) ([]AwsAccountWithCreds, error)
 	MarkForCleanup(name string) error
 	MarkForCleanupByServiceUuid(serviceUuid string) error

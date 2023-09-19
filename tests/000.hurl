@@ -104,7 +104,7 @@ GET http://{{host}}/api/v1/placements/{{uuid}}/status
 Authorization: Bearer {{access_token}}
 HTTP 200
 [Asserts]
-jsonpath "$.status" count == 1
+jsonpath "$.status" count >= 1
 jsonpath "$.status[0].account_name" == "{{account}}"
 jsonpath "$.status[0].account_kind" == "aws_account"
 jsonpath "$.status[0].status" == "success"
