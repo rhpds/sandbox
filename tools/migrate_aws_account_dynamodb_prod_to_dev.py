@@ -104,6 +104,29 @@ try:
         }
     )
 
+    # Mark new item for cleanup (dev)
+    response = dynamodb_dev.update_item(
+        TableName='accounts-dev',
+        Key={
+            'name': {
+                'S': sandbox
+            }
+        },
+        UpdateExpression="set to_cleanup = :a, #c = :c",
+        ExpressionAttributeNames={
+            '#c': 'comment'
+        },
+        ExpressionAttributeValues={
+            ':a': {
+                'BOOL': True
+            },
+            ':c': {
+                'S': 'Migrating from prod to dev'
+            }
+        },
+        ConditionExpression=" #c = :c",
+    )
+
 except Exception as e:
     print(e)
     sys.exit(1)
