@@ -10,10 +10,14 @@ servers:
 tags:
   - name: placement
     description: Anything related to Placements. Ex, booking or releasing sandboxes
+  - name: requests
+    description: Anything related to Requests. Ex, stop instances of an account
   - name: account
     description: Anything related to Accounts.
   - name: admin
     description: HTTP routes protected and accessible only by admins.
+  - name: insight
+    description: Metrics and health of the API
 paths:
   /login:
     parameters:
@@ -23,7 +27,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer <LOGIN_TOKEN>
+        example: Bearer <LOGIN_TOKEN>
     get:
       summary: Get an access token using a login token.
       operationId: login
@@ -56,7 +60,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer <ACCESS_TOKEN>
+        example: Bearer <ACCESS_TOKEN>
     get:
       parameters:
         - in: query
@@ -163,7 +167,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer <ACCESS_TOKEN>
+        example: Bearer <ACCESS_TOKEN>
       - name: uuid
         in: path
         required: true
@@ -220,6 +224,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+              example:
+                message: placement not found
+                http_code: 404
         default:
           description: deletePlacement unexpected error
           content:
@@ -234,7 +241,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer <ACCESS_TOKEN>
+        example: Bearer <ACCESS_TOKEN>
       - name: uuid
         in: path
         required: true
@@ -278,7 +285,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer <ACCESS_TOKEN>
+        example: Bearer <ACCESS_TOKEN>
       - name: uuid
         in: path
         required: true
@@ -321,7 +328,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer <ACCESS_TOKEN>
+        example: Bearer <ACCESS_TOKEN>
       - name: uuid
         in: path
         required: true
@@ -369,9 +376,21 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   $ref: "#/components/schemas/AccountStatus"
+              example:
+                http_code: 200
+                status:
+                - account_name: sandbox3199
+                  account_kind: aws_account
+                  instances:
+                  - instance_id: i-0850efbed08529f66
+                    instance_type: t3a.large
+                    region: us-east-2
+                    state: stopped
+                  updated_at: '2023-09-17T08:21:52.256677+02:00'
+                  status: success
         '404':
           description: Placement not found
           content:
@@ -393,7 +412,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer <ACCESS_TOKEN>
+        example: Bearer <ACCESS_TOKEN>
       - name: kind
         in: path
         required: true
@@ -487,7 +506,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer <ACCESS_TOKEN>
+        example: Bearer <ACCESS_TOKEN>
       - name: kind
         in: path
         required: true
@@ -541,7 +560,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer <ACCESS_TOKEN>
+        example: Bearer <ACCESS_TOKEN>
       - name: kind
         in: path
         required: true
@@ -592,7 +611,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer <ACCESS_TOKEN>
+        example: Bearer <ACCESS_TOKEN>
       - name: kind
         in: path
         required: true
@@ -643,7 +662,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer <ACCESS_TOKEN>
+        example: Bearer <ACCESS_TOKEN>
       - name: kind
         in: path
         required: true
@@ -721,7 +740,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer <ACCESS_TOKEN>
+        example: Bearer <ACCESS_TOKEN>
       - name: id
         in: path
         required: true
@@ -754,6 +773,255 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+
+  /reservations:
+    post:
+      parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ACCESS_TOKEN>
+      summary: Reserve resources
+      description: |-
+        Create new reservation, for example for an event.
+
+        The reserved resources won't be allocated to a request, unless the name of the reservation is specifically passed, as part of the request.
+        Resources are randomly put inside the new reservation group. Fragmentation is expected.
+      operationId: createReservation
+      tags:
+        - admin
+      requestBody:
+        description: JSON object to specify the reservation.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Reservation"
+            example:
+              name: summit
+              resources:
+                - kind: AwsSandbox
+                  count: 200
+                  expiration: 2023-04-20T23:13:27.464333+02:00
+      responses:
+        '202':
+          description: Reservation request created
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                message: reservation request created
+
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: reservation already exists
+                http_code: 400
+
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /reservations/{name}:
+    get:
+      operationId: getReservation
+      summary: Get information about a reservation
+      description: Returns the definition of the reservation and its status.
+      tags:
+        - placement
+      parameters:
+        - in: header
+          name: Authorization
+          description: Access JTW Token
+          required: true
+          schema:
+            type: string
+          example: Bearer <ACCESS_TOKEN>
+        - name: name
+          in: path
+          required: true
+          description: The name of the reservation
+          schema:
+            type: string
+            pattern: '^[\w\d_-]+$'
+          example: summit
+      responses:
+        '200':
+          description: Return the reservation definition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReservationResponse"
+              example:
+                name: summit
+                expiration: 2023-04-20T23:13:27.464333+02:00
+                status: success
+                resources:
+                  - kind: AwsSandbox
+                    count: 2
+
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: deleteReservation
+      summary: Delete a reservation
+      description: |-
+        Delete a reservation by its name.
+
+        All accounts marked as part of the reservation are unmarked. The accounts will **not** be marked for cleanup, they are retained intacted. Only the 'reservation' field of those accounts is cleared.
+      tags:
+        - admin
+      parameters:
+        - in: header
+          name: Authorization
+          description: Access JTW Token
+          required: true
+          schema:
+            type: string
+          example: Bearer <ACCESS_TOKEN>
+        - name: name
+          in: path
+          required: true
+          description: The name of the reservation
+          schema:
+            type: string
+            pattern: '^[\w\d_-]+$'
+          example: summit
+      responses:
+        '202':
+          description: Request is successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: reservation delete request created
+
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /reservations/{name}/resources:
+    get:
+      operationId: getReservationResources
+      summary: Get all resources of a reservation.
+      description: >-
+        Actually fetch the resource information and list all the resources of
+        a reservation.
+      tags:
+        - placement
+      parameters:
+        - in: header
+          name: Authorization
+          description: Access JTW Token
+          required: true
+          schema:
+            type: string
+          example: Bearer <ACCESS_TOKEN>
+        - name: name
+          in: path
+          required: true
+          description: The name of the reservation
+          schema:
+            type: string
+            pattern: '^[\w\d_-]+$'
+          example: summit
+
+      responses:
+        '200':
+          description: Return the resources
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReservationResourcesResponse"
+
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /admin/jwt:
     parameters:
       - in: header
@@ -762,7 +1030,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer <ADMIN_ACCESS_TOKEN>
+        example: Bearer <ADMIN_ACCESS_TOKEN>
     post:
       summary: Issue a new JWT token for login
       operationId: issueJWT
@@ -879,7 +1147,7 @@ paths:
         required: true
         schema:
           type: string
-          example: Bearer <ADMIN_ACCESS_TOKEN>
+        example: Bearer <ADMIN_ACCESS_TOKEN>
       - name: id
         in: path
         required: true
@@ -924,6 +1192,8 @@ paths:
   /health:
     get:
       summary: Health endpoint
+      tags:
+        - insight
       operationId: health
       responses:
         '200':
@@ -973,6 +1243,9 @@ components:
       properties:
         service_uuid:
           $ref: "#/components/schemas/UUID"
+        reservation:
+          type: string
+          example: summit
         resources:
           description: Request resources
           type: array
@@ -981,11 +1254,7 @@ components:
             additionalProperties: false
             properties:
               kind:
-                type: string
-                default: AwsSandbox
-                example: AwsSandbox
-                enum:
-                  - AwsSandbox
+                $ref: '#/components/schemas/ResourceKind'
               count:
                 type: integer
                 minimum: 1
@@ -1244,6 +1513,13 @@ components:
     AccountStatus:
       type: object
       properties:
+        account_name:
+          type: string
+          example: sandbox123
+        account_kind:
+          type: string
+          description: internal representation of the account type
+          example: aws_sandbox
         updated_at:
           type: string
           format: date-time
@@ -1253,7 +1529,113 @@ components:
           type: array
           items:
             type: object
-        services:
+          example:
+            - instance_id: i-0850efbed08529f66
+              instance_type: t3a.large
+              region: us-east-2
+              state: stopped
+        status:
+          type: string
+          enum:
+            - new
+            - initializing
+            - initialized
+            - running
+            - successfully_dispatched
+            - success
+            - error
+          example: success
+    ResourceKind:
+      type: string
+      example: AwsSandbox
+      default: AwsSandbox
+      enum:
+        - AwsSandbox
+
+    Reservation:
+      type: object
+      #additionalProperties: false
+      properties:
+        name:
+          type: string
+          example: summit
+          description: unique name of the reservation
+          pattern: '^[\w\d_-]+$'
+        expiration:
+          type: string
+          example: 2033-04-17T23:16:00+02:00
+          format: date-time
+          description: >-
+            date when the reservation expires.
+            RFC 3339 format. When it expires, a reservation is deleted.
+        status:
+          type: string
+          enum:
+            - new
+            - initializing
+            - updating
+            - success
+            - deleting
+        resources:
           type: array
           items:
             type: object
+            properties:
+              kind:
+                $ref: "#/components/schemas/ResourceKind"
+              count:
+                type: integer
+          example:
+            - kind: AwsSandbox
+              count: 2
+
+
+    ReservationResponse:
+      type: object
+      properties:
+        http_code:
+          type: integer
+          format: integer
+          example: 202
+        message:
+          type: string
+          example: "Reservation request created"
+        reservation:
+          $ref: "#/components/schemas/Reservation"
+
+    ReservationResourcesResponse:
+      type: array
+      items:
+        type: object
+        properties:
+          kind:
+            $ref: "#/components/schemas/ResourceKind"
+          count:
+            type: integer
+          resources:
+            type: array
+            nullable: true
+            items:
+              $ref: '#/components/schemas/Resource'
+      example:
+        - kind: AwsSandbox
+          count: 2
+          resources:
+            - name: sandbox123
+              kind: aws_sandbox
+              available: true
+              account_id: '0123456'
+              zone: sandbox123.domain.com
+              hosted_zone_id: Z019612345AH4C7KTTZJ0
+              to_cleanup: false
+            - name: sandbox124
+              kind: aws_sandbox
+              available: false
+              service_uuid: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+              annotations:
+                guid: abcde
+                env_type: ocp4-cluster
+              account_id: '0123456'
+              zone: sandbox123.domain.com
+              hosted_zone_id: Z019612345AH4C7KTTZJ0
+              to_cleanup: false
