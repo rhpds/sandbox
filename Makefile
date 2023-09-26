@@ -25,7 +25,7 @@ rm-local-pg:
 
 run-local-pg: .dev.pg_password rm-local-pg
 	@echo "Running local postgres..."
-	@podman run  -p 5432:5432 --name localpg -e POSTGRES_PASSWORD=$(shell cat .dev.pg_password) -d postgres
+	@podman run  -p 5432:5432 --name localpg -e POSTGRES_PASSWORD=$(shell cat .dev.pg_password) -d postgres:16-bullseye
 	# See full list of parameters here:
 	# https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
 
