@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/rhpds/sandbox/internal/config"
 	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"github.com/rhpds/sandbox/internal/log"
 
@@ -245,6 +246,7 @@ func main() {
 		port = "8080"
 	}
 
+	log.Logger.Info("Instance", "LocalityID", config.LocalityID)
 	log.Logger.Info("Listening on port " + port)
 	log.Err.Fatal(http.ListenAndServe(":"+port, router))
 }

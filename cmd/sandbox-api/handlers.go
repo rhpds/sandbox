@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 
 	"github.com/rhpds/sandbox/internal/api/v1"
+	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
 )
@@ -304,6 +305,7 @@ func (h *BaseHandler) LifeCyclePlacementHandler(action string) http.HandlerFunc 
 
 			lifecyclePlacementJob := models.LifecyclePlacementJob{
 				PlacementID: placement.ID,
+				Locality:    config.LocalityID,
 				RequestID:   reqId,
 				Action:      action,
 				Status:      "new",
@@ -361,6 +363,7 @@ func (h *BaseHandler) LifeCyclePlacementHandler(action string) http.HandlerFunc 
 				lifecycleResourceJob := models.LifecycleResourceJob{
 					ResourceType: account.Kind,
 					ResourceName: account.Name,
+					Locality:     config.LocalityID,
 					RequestID:    reqId,
 					Action:       action,
 					Status:       "new",

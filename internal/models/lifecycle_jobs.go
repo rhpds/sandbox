@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
 
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -21,6 +22,7 @@ type LifecycleResourceJob struct {
 	RequestID    string        `json:"request_id,omitempty"`
 	DbPool       *pgxpool.Pool `json:"dbpool,omitempty"`
 	Result       Status        `json:"lifecycle_result,omitempty"`
+	Locality     string        `json:"locality,omitempty"`
 }
 
 type LifecyclePlacementJob struct {
@@ -32,6 +34,7 @@ type LifecyclePlacementJob struct {
 	Request     any           `json:"request,omitempty"`
 	RequestID   string        `json:"request_id,omitempty"`
 	DbPool      *pgxpool.Pool `json:"dbpool"`
+	Locality    string        `json:"locality,omitempty"`
 }
 
 // GetLifecycleResourceJob returns a LifecycleResourceJob by ID
@@ -40,9 +43,9 @@ func GetLifecycleResourceJob(dbpool *pgxpool.Pool, id int) (*LifecycleResourceJo
 
 	err := dbpool.QueryRow(
 		context.Background(),
-		"SELECT id, COALESCE(parent_id, 0), resource_name, resource_type, status, request, lifecycle_result, lifecycle_action, updated_at FROM lifecycle_resource_jobs WHERE id = $1",
+		"SELECT id, COALESCE(parent_id, 0), resource_name, resource_type, status, request, lifecycle_result, lifecycle_action, updated_at, locality FROM lifecycle_resource_jobs WHERE id = $1",
 		id,
-	).Scan(&j.ID, &j.ParentID, &j.ResourceName, &j.ResourceType, &j.Status, &j.Request, &j.Result, &j.Action, &j.UpdatedAt)
+	).Scan(&j.ID, &j.ParentID, &j.ResourceName, &j.ResourceType, &j.Status, &j.Request, &j.Result, &j.Action, &j.UpdatedAt, &j.Locality)
 
 	if err != nil {
 		return nil, err
@@ -58,9 +61,9 @@ func GetLifecycleResourceJobByRequestID(dbpool *pgxpool.Pool, requestID string) 
 
 	err := dbpool.QueryRow(
 		context.Background(),
-		"SELECT id, COALESCE(parent_id, 0), resource_name, resource_type, status, request, lifecycle_result, lifecycle_action, updated_at FROM lifecycle_resource_jobs WHERE request_id = $1",
+		"SELECT id, COALESCE(parent_id, 0), resource_name, resource_type, status, request, lifecycle_result, lifecycle_action, updated_at, locality FROM lifecycle_resource_jobs WHERE request_id = $1",
 		requestID,
-	).Scan(&j.ID, &j.ParentID, &j.ResourceName, &j.ResourceType, &j.Status, &j.Request, &j.Result, &j.Action, &j.UpdatedAt)
+	).Scan(&j.ID, &j.ParentID, &j.ResourceName, &j.ResourceType, &j.Status, &j.Request, &j.Result, &j.Action, &j.UpdatedAt, &j.Locality)
 
 	if err != nil {
 		return nil, err
@@ -77,9 +80,9 @@ func GetLifecyclePlacementJob(dbpool *pgxpool.Pool, id int) (*LifecyclePlacement
 
 	err := dbpool.QueryRow(
 		context.Background(),
-		"SELECT id, placement_id, status, request, lifecycle_action FROM lifecycle_placement_jobs WHERE id = $1",
+		"SELECT id, placement_id, status, request, lifecycle_action, locality FROM lifecycle_placement_jobs WHERE id = $1",
 		id,
-	).Scan(&j.ID, &j.PlacementID, &j.Status, &j.Request, &j.Action)
+	).Scan(&j.ID, &j.PlacementID, &j.Status, &j.Request, &j.Action, &j.Locality)
 	if err != nil {
 		return nil, err
 	}
@@ -95,9 +98,9 @@ func GetLifecyclePlacementJobByRequestID(dbpool *pgxpool.Pool, requestID string)
 
 	err := dbpool.QueryRow(
 		context.Background(),
-		"SELECT id, placement_id, status, request, lifecycle_action FROM lifecycle_placement_jobs WHERE request_id = $1",
+		"SELECT id, placement_id, status, request, lifecycle_action, locality FROM lifecycle_placement_jobs WHERE request_id = $1",
 		requestID,
-	).Scan(&j.ID, &j.PlacementID, &j.Status, &j.Request, &j.Action)
+	).Scan(&j.ID, &j.PlacementID, &j.Status, &j.Request, &j.Action, &j.Locality)
 	if err != nil {
 		return nil, err
 	}
@@ -113,10 +116,11 @@ var ErrNoClaim = errors.New("no claim")
 func (j *LifecycleResourceJob) Claim() error {
 	ct, err := j.DbPool.Exec(
 		context.Background(),
-		`UPDATE lifecycle_resource_jobs SET status = 'initializing'
+		`UPDATE lifecycle_resource_jobs SET status = 'initializing', locality = $2
      	 WHERE id = (SELECT id FROM lifecycle_resource_jobs
          WHERE status = 'new' AND id=$1 FOR UPDATE SKIP LOCKED)`,
 		j.ID,
+		config.LocalityID,
 	)
 
 	if ct.RowsAffected() == 0 {
@@ -134,21 +138,18 @@ func (j *LifecycleResourceJob) Claim() error {
 func (j *LifecyclePlacementJob) Claim() error {
 	ct, err := j.DbPool.Exec(
 		context.Background(),
-		`UPDATE lifecycle_placement_jobs SET status = 'initializing'
+		`UPDATE lifecycle_placement_jobs SET status = 'initializing', locality = $2
      	 WHERE id = (SELECT id FROM lifecycle_placement_jobs
          WHERE status = 'new' AND id=$1 FOR UPDATE SKIP LOCKED)`,
 		j.ID,
+		config.LocalityID,
 	)
 	log.Logger.Info("Claiming placement job", "rows", ct.RowsAffected(), "err", err)
 	if ct.RowsAffected() == 0 {
 		return ErrNoClaim
 	}
 
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // Create creates a new LifecycleResourceJob by inserting it into the database
@@ -156,8 +157,8 @@ func (j *LifecycleResourceJob) Create() error {
 	err := j.DbPool.QueryRow(
 		context.Background(),
 		`INSERT INTO lifecycle_resource_jobs
-        (parent_id, resource_name, resource_type, status, request, request_id, lifecycle_action)
-        VALUES (NULLIF($1, 0), $2, $3, $4, $5, $6, $7) RETURNING id`,
+        (parent_id, resource_name, resource_type, status, request, request_id, lifecycle_action, locality)
+        VALUES (NULLIF($1, 0), $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
 		j.ParentID,
 		j.ResourceName,
 		j.ResourceType,
@@ -165,13 +166,10 @@ func (j *LifecycleResourceJob) Create() error {
 		j.Request,
 		j.RequestID,
 		j.Action,
+		j.Locality,
 	).Scan(&j.ID)
 
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // Create creates a new LifecyclePlacementJob by inserting it into the database
@@ -179,19 +177,17 @@ func (j *LifecyclePlacementJob) Create() error {
 	err := j.DbPool.QueryRow(
 		context.Background(),
 		`INSERT INTO lifecycle_placement_jobs
-		(placement_id, status, request, request_id, lifecycle_action)
-		VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		(placement_id, status, request, request_id, lifecycle_action, locality)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
 		j.PlacementID,
 		j.Status,
 		j.Request,
 		j.RequestID,
 		j.Action,
+		j.Locality,
 	).Scan(&j.ID)
 
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 // SetLifecycleResourceJobStatus sets the status of a LifecycleResourceJob
@@ -203,11 +199,7 @@ func (j *LifecycleResourceJob) SetStatus(status string) error {
 		j.ID,
 	)
 
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // SetLifecycleResourceJobStatus sets the status of a LifecycleResourceJob
@@ -219,11 +211,7 @@ func (j *LifecyclePlacementJob) SetStatus(status string) error {
 		j.ID,
 	)
 
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // GlobalStatus returns the status of a LifecyclePlacementJob considering all it's children

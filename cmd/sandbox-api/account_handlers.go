@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v4"
 	"github.com/rhpds/sandbox/internal/api/v1"
+	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
 
@@ -205,6 +206,7 @@ func (h *BaseHandler) LifeCycleAccountHandler(action string) http.HandlerFunc {
 		lifecycleResourceJob := models.LifecycleResourceJob{
 			ResourceType: sandbox.Kind,
 			ResourceName: sandbox.Name,
+			Locality:     config.LocalityID,
 			RequestID:    reqId,
 			Action:       action,
 			Status:       "new",

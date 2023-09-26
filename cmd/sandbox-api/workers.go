@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	cc "github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
 
@@ -109,6 +110,21 @@ WorkerLoop:
 				continue WorkerLoop
 			}
 			log.Logger.Debug("Got lifecycle resource job", "job", job)
+			if job.Locality != cc.LocalityID && job.Locality != "any" {
+				// log
+				log.Logger.Debug("Job not for this locality", "job", job)
+
+				// Sleep 2 seconds to give time to original worker to claim the job
+				time.Sleep(2 * time.Second)
+
+				// Check if it's still new
+
+				job, err = models.GetLifecycleResourceJob(w.Dbpool, id)
+				if err != nil {
+					log.Logger.Error("Error getting lifecycle placement job", "error", err)
+					continue WorkerLoop
+				}
+			}
 
 			switch job.Status {
 			case "new":
@@ -143,6 +159,24 @@ WorkerLoop:
 				log.Logger.Error("Error getting lifecycle placement job", "error", err)
 				continue WorkerLoop
 			}
+
+			log.Logger.Debug("notification placement job received", "job", job)
+			if job.Locality != cc.LocalityID && job.Locality != "any" {
+				// log
+				log.Logger.Debug("Job not for this locality", "job", job)
+
+				// Sleep 2 seconds to give time to original worker to claim the job
+				time.Sleep(2 * time.Second)
+
+				// Check if it's still new
+
+				job, err = models.GetLifecyclePlacementJob(w.Dbpool, id)
+				if err != nil {
+					log.Logger.Error("Error getting lifecycle placement job", "error", err)
+					continue WorkerLoop
+				}
+			}
+
 			switch job.Status {
 			case "new":
 				if err := job.Claim(); err != nil {
@@ -179,9 +213,11 @@ WorkerLoop:
 					switch account.(type) {
 					case models.AwsAccount:
 						awsAccount := account.(models.AwsAccount)
+						log.Logger.Debug("Creating resource job for account", "account", awsAccount)
 
 						lifecycleResourceJob := models.LifecycleResourceJob{
 							ParentID:     job.ID,
+							Locality:     cc.LocalityID,
 							RequestID:    job.RequestID,
 							ResourceType: awsAccount.Kind,
 							ResourceName: awsAccount.Name,
@@ -195,6 +231,7 @@ WorkerLoop:
 							job.SetStatus("error")
 							continue ResourceLoop
 						}
+						log.Logger.Debug("Created resource job for account", "account", awsAccount, "job", lifecycleResourceJob)
 					}
 				}
 				job.SetStatus("successfully_dispatched")
