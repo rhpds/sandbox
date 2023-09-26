@@ -56,6 +56,7 @@ CREATE TABLE resources (
   -- ex: sandbox1, aws_account
   -- ex: sandbox1, gcp_account
   CONSTRAINT resource_name_type_constraint UNIQUE (resource_name, resource_type),
+  -- TODO: Remove this constraint to consolidate resource kind name with CamelCase
   CONSTRAINT resources_resource_type_check CHECK (resource_type IN ('aws_account'))
 );
 

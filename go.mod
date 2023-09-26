@@ -1,6 +1,6 @@
 module github.com/rhpds/sandbox
 
-go 1.20
+go 1.21
 
 require (
 	github.com/aws/aws-lambda-go v1.40.0

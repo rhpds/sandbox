@@ -2,6 +2,12 @@ package dynamodb
 
 import (
 	"errors"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -10,13 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
-	"github.com/sosedoff/ansible-vault-go"
+	vault "github.com/sosedoff/ansible-vault-go"
 	"golang.org/x/exp/slog"
-	"os"
-	"sort"
-	"strconv"
-	"strings"
-	"time"
 )
 
 func parseNameInt(s string) int {
@@ -40,6 +41,7 @@ type AwsAccountDynamoDB struct {
 	// NameInt: Internal plumbing to easily sort Sandboxes
 	NameInt            int
 	Available          bool    `json:"available"`
+	Reservation        string  `json:"reservation,omitempty"`
 	Guid               string  `json:"guid"`
 	ServiceUUID        string  `json:"service_uuid"`
 	Envtype            string  `json:"envtype"`
@@ -67,8 +69,8 @@ func buildAccounts(r *dynamodb.ScanOutput) []AwsAccountDynamoDB {
 		item := AwsAccountDynamoDB{}
 		err := dynamodbattribute.UnmarshalMap(sandbox, &item)
 		if err != nil {
-			log.Logger.Error("Got error unmarshalling:", err)
-			os.Exit(1)
+			log.Logger.Error("Got error unmarshalling:", "sandbox", sandbox, "error", err)
+			continue
 		}
 
 		item.NameInt = parseNameInt(item.Name)
@@ -101,6 +103,8 @@ func NewAwsAccountDynamoDBProviderWithSecret(vaultSecret string) *AwsAccountDyna
 func makeAccount(account AwsAccountDynamoDB) models.AwsAccount {
 	a := models.AwsAccount{
 		Name:          account.Name,
+		Kind:          "AwsSandbox",
+		Reservation:   account.Reservation,
 		AccountID:     account.AccountID,
 		Zone:          account.Zone,
 		HostedZoneID:  account.HostedZoneID,
@@ -111,7 +115,6 @@ func makeAccount(account AwsAccountDynamoDB) models.AwsAccount {
 		a.ConanTimestamp = conanTime
 	}
 
-	a.Kind = "aws_account"
 	a.ServiceUuid = account.ServiceUUID
 	a.ToCleanup = account.ToCleanup
 	a.Available = account.Available
@@ -248,35 +251,12 @@ func GetAccount(svc *dynamodb.DynamoDB, name string) (AwsAccountDynamoDB, error)
 	return sandbox, nil
 }
 
-func GetAccounts(svc *dynamodb.DynamoDB, filter expression.ConditionBuilder, minBatchSize int64) ([]AwsAccountDynamoDB, error) {
+func GetAccounts(svc *dynamodb.DynamoDB, filter expression.ConditionBuilder, batchSize int) ([]AwsAccountDynamoDB, error) {
 	accounts := []AwsAccountDynamoDB{}
-
-	// Build dynamod query
-	// TODO remove those, it should return every fields by default
-	proj := expression.NamesList(
-		expression.Name("name"),
-		expression.Name("available"),
-		expression.Name("to_cleanup"),
-		expression.Name("guid"),
-		expression.Name("service_uuid"),
-		expression.Name("envtype"),
-		expression.Name("owner"),
-		expression.Name("zone"),
-		expression.Name("hosted_zone_id"),
-		expression.Name("account_id"),
-		expression.Name("comment"),
-		expression.Name("owner_email"),
-		expression.Name("aws:rep:updatetime"),
-		expression.Name("aws_access_key_id"),
-		expression.Name("aws_secret_access_key"),
-		expression.Name("conan_status"),
-		expression.Name("conan_timestamp"),
-		expression.Name("conan_hostname"),
-	)
 
 	builder := expression.NewBuilder().WithFilter(filter)
 
-	expr, err := builder.WithProjection(proj).Build()
+	expr, err := builder.Build()
 
 	if err != nil {
 		log.Logger.Error("error building expression", "error", err)
@@ -294,10 +274,11 @@ func GetAccounts(svc *dynamodb.DynamoDB, filter expression.ConditionBuilder, min
 	errscan := svc.ScanPages(input,
 		func(page *dynamodb.ScanOutput, lastPage bool) bool {
 			accounts = append(accounts, buildAccounts(page)...)
-			if minBatchSize > 0 && *page.Count > minBatchSize {
-				// We got enough, stop here
+			if batchSize > 0 && len(accounts) >= batchSize {
+				accounts = accounts[:batchSize]
 				return false
 			}
+
 			return true
 		})
 
@@ -338,6 +319,17 @@ func (a *AwsAccountDynamoDBProvider) FetchByName(name string) (models.AwsAccount
 // FetchAll returns the list of all accounts from dynamodb
 func (a *AwsAccountDynamoDBProvider) FetchAll() ([]models.AwsAccount, error) {
 	filter := expression.Name("name").AttributeExists()
+	accounts, err := GetAccounts(a.Svc, filter, -1)
+	if err != nil {
+		return []models.AwsAccount{}, err
+	}
+	return makeAccounts(accounts), nil
+}
+
+// FetchAllAvailable returns the list of available accounts from dynamodb
+func (a *AwsAccountDynamoDBProvider) FetchAllAvailable() ([]models.AwsAccount, error) {
+	filter := expression.Name("name").AttributeExists().
+		And(expression.Name("available").Equal(expression.Value(true)))
 	accounts, err := GetAccounts(a.Svc, filter, -1)
 	if err != nil {
 		return []models.AwsAccount{}, err
@@ -434,7 +426,8 @@ func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, count int, ann
 		And(expression.Name("hosted_zone_id").AttributeExists()).
 		And(expression.Name("account_id").AttributeExists())
 
-	accounts, err := GetAccounts(a.Svc, filter, 10)
+	// get 10 spare accounts in case of concurrency doublebooking
+	accounts, err := GetAccounts(a.Svc, filter, count+10)
 
 	if err != nil {
 		log.Logger.Error("Error getting accounts", "error", err)
@@ -448,7 +441,7 @@ func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, count int, ann
 			And(expression.Name("aws_secret_access_key").AttributeExists()).
 			And(expression.Name("hosted_zone_id").AttributeExists()).
 			And(expression.Name("account_id").AttributeExists())
-		accounts, err = GetAccounts(a.Svc, filter, 10)
+		accounts, err = GetAccounts(a.Svc, filter, count+10)
 
 		if err != nil {
 			log.Logger.Error("Error getting accounts", "error", err)
@@ -544,6 +537,175 @@ func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, count int, ann
 	return bookedAccounts, nil
 }
 
+// Reserve reserve accounts for a reservation
+// It takes the number of account to reserve.
+// The function iterates over available accounts and update the 'reservation' column
+func (a *AwsAccountDynamoDBProvider) Reserve(reservation string, count int) ([]models.AwsAccount, error) {
+	maxRetries := 5
+
+	result, err := a.FetchAllByReservation(reservation)
+	if err != nil {
+		return []models.AwsAccount{}, err
+	}
+
+	// If reservation is already bigger than target, return
+	if len(result) >= count {
+		return result, nil
+	}
+
+	for i := 0; i < maxRetries; i++ {
+		todo := count - len(result)
+
+		if todo <= 0 {
+			return result, nil
+		}
+
+		accounts, err := a.reserveInner(reservation, todo)
+
+		if err != nil {
+			return []models.AwsAccount{}, err
+		}
+
+		result = append(result, accounts...)
+
+		if len(result) >= count {
+			return result, nil
+		}
+	}
+
+	return []models.AwsAccount{}, errors.New("error reserving the sandboxes")
+}
+
+// reserveInner is just an helper function for the Reserve function
+// to keep indentation under control.
+// It takes the number of account to reserve.
+// The function iterates over available accounts and update the 'reservation' column
+func (a *AwsAccountDynamoDBProvider) reserveInner(reservation string, count int) ([]models.AwsAccount, error) {
+	if count <= 0 {
+		return []models.AwsAccount{}, errors.New("count must be > 0")
+	}
+
+	filter := expression.Name("available").Equal(expression.Value(true)).
+		And(expression.Name("reservation").AttributeNotExists().
+			Or(expression.Name("reservation").Equal(expression.Value("")))).
+		And(expression.Name("aws_access_key_id").AttributeExists()).
+		And(expression.Name("aws_secret_access_key").AttributeExists()).
+		And(expression.Name("hosted_zone_id").AttributeExists()).
+		And(expression.Name("account_id").AttributeExists())
+
+	accounts, err := GetAccounts(a.Svc, filter, count)
+
+	if err != nil {
+		log.Logger.Error("Error getting accounts", "error", err)
+		return []models.AwsAccount{}, err
+	}
+
+	if len(accounts) < count {
+		return []models.AwsAccount{}, models.ErrNoEnoughAccountsAvailable
+	}
+
+	reserved := []models.AwsAccount{}
+	for _, sandbox := range accounts {
+		// Update the account
+		output, err := a.Svc.UpdateItem(&dynamodb.UpdateItemInput{
+			TableName: aws.String(os.Getenv("dynamodb_table")),
+			Key: map[string]*dynamodb.AttributeValue{
+				"name": {
+					S: aws.String(sandbox.Name),
+				},
+			},
+			UpdateExpression: aws.String(
+				`SET reservation = :rv`,
+			),
+			ConditionExpression: aws.String(
+				`available = :t
+                 and (attribute_not_exists(reservation) or reservation = :empty)
+                 and (attribute_not_exists(to_cleanup) or to_cleanup = :f)`,
+			),
+			ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+				":rv": {
+					S: aws.String(reservation),
+				},
+				":f": {
+					BOOL: aws.Bool(false),
+				},
+				":empty": {
+					S: aws.String(""),
+				},
+				":t": {
+					BOOL: aws.Bool(true),
+				},
+			},
+			ReturnValues: aws.String("ALL_NEW"),
+		})
+		if err != nil {
+			log.Logger.Error("error reserving sandbox",
+				"sandbox", sandbox.Name,
+				"reservation", reservation,
+				"error", err)
+			continue
+		}
+
+		var newReserved AwsAccountDynamoDB
+		if err := dynamodbattribute.UnmarshalMap(output.Attributes, &newReserved); err != nil {
+			log.Logger.Error("error unmarshaling",
+				"error", err,
+				"sandbox", sandbox.Name,
+			)
+			continue
+		}
+		reserved = append(reserved, makeAccount(newReserved))
+		log.Logger.Info(
+			"Sandbox reserved",
+			"reservation", reservation,
+			"sandbox", sandbox.Name)
+		count = count - 1
+		if count == 0 {
+			break
+		}
+	}
+
+	return reserved, nil
+}
+
+// ScaleDownReservation scale down a reservation
+// It removes some of the accounts from the reservation
+func (a *AwsAccountDynamoDBProvider) ScaleDownReservation(reservation string, count int) error {
+	accounts, err := a.FetchAllByReservation(reservation)
+
+	if err != nil {
+		return err
+	}
+
+	if len(accounts) < count {
+		// You can't scale down something that is already smaller than the target
+		return nil
+	}
+
+	// Remove reservation until target is reached.
+
+	done := 0
+	for _, account := range models.Sort(accounts, "name") {
+		if len(accounts)-done <= count {
+			break
+		}
+		if err := a.RemoveReservation(account.Name); err != nil {
+			return err
+		}
+		log.Logger.Info("Reservation removed",
+			"reservation", reservation,
+			"kind", "AwsSandbox",
+			"name", account.Name)
+		done = done + 1
+	}
+
+	if len(accounts)-done > count {
+		return errors.New("error scaling down the reservation")
+	}
+
+	return nil
+}
+
 func (a *AwsAccountDynamoDBProvider) MarkForCleanup(name string) error {
 	_, err := a.Svc.UpdateItem(&dynamodb.UpdateItemInput{
 		TableName: aws.String(os.Getenv("dynamodb_table")),
@@ -600,6 +762,42 @@ func (a *AwsAccountDynamoDBProvider) MarkForCleanupByServiceUuid(serviceUuid str
 	return nil
 }
 
+func (a *AwsAccountDynamoDBProvider) CountAvailable(reservation string) (int, error) {
+	var filter expression.ConditionBuilder
+
+	if reservation == "" {
+		filter = expression.Name("name").AttributeExists().
+			And(expression.Name("reservation").AttributeNotExists().
+				Or(expression.Name("reservation").Equal(expression.Value("")))).
+			And(expression.Name("available").Equal(expression.Value(true))).
+			And(expression.Name("to_cleanup").AttributeNotExists().
+				Or(expression.Name("to_cleanup").Equal(expression.Value(false))))
+
+	} else {
+		filter = expression.Name("name").AttributeExists().
+			And(expression.Name("reservation").AttributeExists()).
+			And(expression.Name("reservation").Equal(expression.Value(reservation))).
+			And(expression.Name("available").Equal(expression.Value(true))).
+			And(expression.Name("to_cleanup").AttributeNotExists().
+				Or(expression.Name("to_cleanup").Equal(expression.Value(false))))
+
+	}
+	accounts, err := GetAccounts(a.Svc, filter, -1)
+	if err != nil {
+		return 0, err
+	}
+	return len(accounts), nil
+}
+
+func (a *AwsAccountDynamoDBProvider) Count() (int, error) {
+	filter := expression.Name("name").AttributeExists()
+	accounts, err := GetAccounts(a.Svc, filter, -1)
+	if err != nil {
+		return 0, err
+	}
+	return len(accounts), nil
+}
+
 func (a *AwsAccountDynamoDBProvider) DecryptSecret(encrypted string) (string, error) {
 	str, err := vault.Decrypt(encrypted, a.VaultSecret)
 	if err != nil {
@@ -607,4 +805,33 @@ func (a *AwsAccountDynamoDBProvider) DecryptSecret(encrypted string) (string, er
 	}
 	str = strings.Trim(string(str), "\r\n\t ")
 	return str, nil
+}
+
+// GetAccountsByReservation returns the list of accounts from dynamodb for a specific reservation
+func (a *AwsAccountDynamoDBProvider) FetchAllByReservation(reservation string) ([]models.AwsAccount, error) {
+	filter := expression.Name("reservation").Equal(expression.Value(reservation))
+	accounts, err := GetAccounts(a.Svc, filter, -1)
+	if err != nil {
+		return []models.AwsAccount{}, err
+	}
+	return makeAccounts(accounts), nil
+}
+
+// RemoveReservation remove an account from a reservation
+func (a *AwsAccountDynamoDBProvider) RemoveReservation(name string) error {
+	_, err := a.Svc.UpdateItem(&dynamodb.UpdateItemInput{
+		TableName: aws.String(os.Getenv("dynamodb_table")),
+		Key: map[string]*dynamodb.AttributeValue{
+			"name": {
+				S: aws.String(name),
+			},
+		},
+		UpdateExpression: aws.String("REMOVE reservation"),
+	})
+	if err != nil {
+		log.Logger.Error("error removing the reservation", "name", name, "error", err)
+		return err
+	}
+
+	return nil
 }

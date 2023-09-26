@@ -32,6 +32,9 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 
 	serviceUuid := r.URL.Query().Get("service_uuid")
 
+	// Get available from Query
+	available := r.URL.Query().Get("available")
+
 	var (
 		accounts []models.AwsAccount
 		err      error
@@ -41,7 +44,11 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 		accounts, err = h.accountProvider.FetchAllByServiceUuid(serviceUuid)
 
 	} else {
-		accounts, err = h.accountProvider.FetchAll()
+		if available != "" && available == "true" {
+			accounts, err = h.accountProvider.FetchAllAvailable()
+		} else {
+			accounts, err = h.accountProvider.FetchAll()
+		}
 	}
 
 	if err != nil {

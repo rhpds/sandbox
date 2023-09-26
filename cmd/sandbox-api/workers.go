@@ -52,7 +52,7 @@ func (w Worker) AssumeRole(account models.AwsAccount) (*sts.AssumeRoleOutput, er
 // It checks the resource type and the lifecycle action and execute the appropriate function
 func (w Worker) Execute(j *models.LifecycleResourceJob) error {
 	switch j.ResourceType {
-	case "aws_account":
+	case "AwsSandbox", "AwsAccount", "aws_account":
 		// Get the sandbox
 		sandbox, err := w.AccountProvider.FetchByName(j.ResourceName)
 		if err != nil {

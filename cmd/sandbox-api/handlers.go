@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -107,7 +108,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 	resources := []any{}
 	for _, request := range placementRequest.Resources {
 		switch request.Kind {
-		case "AwsSandbox":
+		case "AwsSandbox", "AwsAccount", "aws_account":
 			// Create the placement in AWS
 			accounts, err := h.accountProvider.Request(placementRequest.ServiceUuid, request.Count, placementRequest.Annotations)
 			if err != nil {
@@ -805,5 +806,161 @@ func (h *BaseHandler) GetStatusRequestHandler(w http.ResponseWriter, r *http.Req
 		HTTPStatusCode: http.StatusOK,
 		RequestID:      RequestID,
 		Status:         status,
+	})
+}
+
+// Regex to ensure a string is alpha-numeric + underscore + dash
+var nameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// CreateReservationHandler creates a new reservation
+func (h *BaseHandler) CreateReservationHandler(w http.ResponseWriter, r *http.Request) {
+	reservationRequest := models.ReservationRequest{}
+	if err := render.Bind(r, &reservationRequest); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Error decoding request body",
+		})
+		log.Logger.Error("CreateReservationHandler", "error", err)
+
+		return
+	}
+
+	name := reservationRequest.Name
+
+	// Ensure name is in the acceptable format (only alpha-numeric)
+	if !nameRegex.MatchString(name) {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid name",
+		})
+		log.Logger.Error("Invalid name", "name", name)
+		return
+	}
+
+	// If the reservation already exists, return a 409 Status Conflict
+	_, err := models.GetReservationByName(h.dbpool, name)
+	if err != pgx.ErrNoRows {
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				Err:            err,
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Error checking for existing reservation",
+			})
+			log.Logger.Error("CreateReservationHandler", "error", err)
+			return
+		}
+
+		// Reservation already exists
+		w.WriteHeader(http.StatusConflict)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusConflict,
+			Message:        "Reservation already exists",
+		})
+		return
+	}
+
+	// Validate the request
+	if message, err := reservationRequest.Validate(h.accountProvider); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        message,
+		})
+		log.Logger.Error("CreateReservationHandler", "error", err)
+		return
+	}
+
+	// Create the reservation
+	reservation := models.Reservation{
+		Name:    name,
+		Request: reservationRequest,
+		Status:  "new",
+	}
+
+	if err := reservation.Save(h.dbpool); err != nil {
+		log.Logger.Error("Error saving reservation", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error saving reservation",
+		})
+		return
+	}
+
+	// Initialize and construct the reservation.
+	// Here we can use a goroutine as this is an admin endpoint,
+	// we don't need a worker queue to prevent high load, memory exhaustion, or things of the sort.
+
+	if err := reservation.UpdateStatus(h.dbpool, "initializing"); err != nil {
+		log.Logger.Error("Error updating reservation status", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error updating reservation status",
+		})
+		return
+	}
+
+	go reservation.Initialize(h.dbpool, h.accountProvider)
+
+	w.WriteHeader(http.StatusAccepted)
+	render.Render(w, r, &v1.ReservationResponse{
+		Reservation:    reservation,
+		Message:        "Reservation request created",
+		HTTPStatusCode: http.StatusAccepted,
+	})
+}
+
+// DeleteReservationHandler deletes a reservation
+func (h *BaseHandler) DeleteReservationHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	reservation, err := models.GetReservationByName(h.dbpool, name)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Reservation not found",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting reservation",
+		})
+		log.Logger.Error("DeleteReservationHandler", "error", err)
+		return
+	}
+
+	if err := reservation.UpdateStatus(h.dbpool, "deleting"); err != nil {
+		log.Logger.Error("Error updating reservation status", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error updating reservation status",
+		})
+		return
+	}
+
+	go reservation.Remove(h.dbpool, h.accountProvider)
+
+	w.WriteHeader(http.StatusAccepted)
+	render.Render(w, r, &v1.ReservationResponse{
+		Reservation:    reservation,
+		Message:        "Reservation deletion request created",
+		HTTPStatusCode: http.StatusAccepted,
 	})
 }

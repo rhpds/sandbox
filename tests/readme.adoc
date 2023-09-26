@@ -11,6 +11,7 @@ uuid=$(uuidgen)
 
 hurl --test \
   --variable login_token=... \
+  --variable login_token_admin=... \
   --variable host=localhost:8080 \
   --variable uuid=$uuid \
   *.hurl

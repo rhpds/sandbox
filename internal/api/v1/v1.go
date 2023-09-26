@@ -92,6 +92,12 @@ type ResourceRequest struct {
 	Count int    `json:"count"`
 }
 
+type ReservationResponse struct {
+	HTTPStatusCode int    `json:"http_code,omitempty"` // http response status code
+	Message        string `json:"message"`
+	Reservation    models.Reservation
+}
+
 func (p *PlacementRequest) Bind(r *http.Request) error {
 	return nil
 }
@@ -109,5 +115,9 @@ func (t *TokenRequest) Bind(r *http.Request) error {
 }
 
 func (t *TokenResponse) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
+func (p *ReservationResponse) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }

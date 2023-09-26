@@ -172,7 +172,7 @@ HTTP 200
 jsonpath "$.status" count >= 1
 # TODO: instead of getting the first item, use query for the status
 jsonpath "$.status[0].account_name" == "{{account}}"
-jsonpath "$.status[0].account_kind" == "aws_account"
+jsonpath "$.status[0].account_kind" == "AwsSandbox"
 jsonpath "$.status[0].status" == "success"
 
 #################################################################################

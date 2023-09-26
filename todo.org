@@ -3,6 +3,7 @@
 * TODO all endpoints
 ** Placements
 *** DONE GET all
+**** DONE available
 **** TODO min-age param
 **** TODO max-age param
 **** TODO unit param

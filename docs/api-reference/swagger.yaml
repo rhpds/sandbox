@@ -383,7 +383,7 @@ paths:
                 http_code: 200
                 status:
                 - account_name: sandbox3199
-                  account_kind: aws_account
+                  account_kind: AwsAccount
                   instances:
                   - instance_id: i-0850efbed08529f66
                     instance_type: t3a.large
@@ -421,6 +421,7 @@ paths:
           type: string
           enum:
             - aws
+            - AwsSandbox
       - name: available
         in: query
         description: Boolean to filter if available or taken.
@@ -467,6 +468,7 @@ paths:
           type: string
           enum:
             - aws
+            - AwsSandbox
       - name: name
         in: path
         required: true
@@ -515,6 +517,7 @@ paths:
           type: string
           enum:
             - aws
+            - AwsSandbox
       - name: name
         in: path
         required: true
@@ -569,6 +572,7 @@ paths:
           type: string
           enum:
             - aws
+            - AwsSandbox
       - name: name
         in: path
         required: true
@@ -620,6 +624,7 @@ paths:
           type: string
           enum:
             - aws
+            - AwsSandbox
       - name: name
         in: path
         required: true
@@ -671,6 +676,7 @@ paths:
           type: string
           enum:
             - aws
+            - AwsSandbox
       - name: name
         in: path
         required: true
@@ -1320,7 +1326,7 @@ components:
       discriminator:
         propertyName: kind
         mapping:
-          aws_account: '#/components/schemas/AwsAccount'
+          AwsSandbox: '#/components/schemas/AwsAccount'
 
     AccountWithCreds:
       oneOf:
@@ -1328,7 +1334,7 @@ components:
       discriminator:
         propertyName: kind
         mapping:
-          aws_account: '#/components/schemas/AwsAccountWithCreds'
+          AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
 
     Resource:
       type: object
@@ -1352,7 +1358,7 @@ components:
       discriminator:
         propertyName: kind
         mapping:
-          aws_account: '#/components/schemas/AwsAccount'
+          AwsSandbox: '#/components/schemas/AwsAccount'
 
     ResourceWithCreds:
       oneOf:
@@ -1360,7 +1366,7 @@ components:
       discriminator:
         propertyName: kind
         mapping:
-          aws_account: '#/components/schemas/AwsAccountWithCreds'
+          AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
 
     Resources:
       type: array
@@ -1608,8 +1614,6 @@ components:
       items:
         type: object
         properties:
-          kind:
-            $ref: "#/components/schemas/ResourceKind"
           count:
             type: integer
           resources:
@@ -1618,18 +1622,17 @@ components:
             items:
               $ref: '#/components/schemas/Resource'
       example:
-        - kind: AwsSandbox
-          count: 2
+        - count: 2
           resources:
             - name: sandbox123
-              kind: aws_sandbox
+              kind: AwsSandbox
               available: true
               account_id: '0123456'
               zone: sandbox123.domain.com
               hosted_zone_id: Z019612345AH4C7KTTZJ0
               to_cleanup: false
             - name: sandbox124
-              kind: aws_sandbox
+              kind: AwsSandbox
               available: false
               service_uuid: 3fa85f64-5717-4562-b3fc-2c963f66afa6
               annotations:
