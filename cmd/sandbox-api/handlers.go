@@ -28,7 +28,7 @@ type BaseHandler struct {
 	svc             *dynamodb.DynamoDB
 	doc             *openapi3.T
 	oaRouter        oarouters.Router
-	accountProvider models.AwsAccountProvider
+	awsAccountProvider models.AwsAccountProvider
 }
 
 type AdminHandler struct {
@@ -36,13 +36,13 @@ type AdminHandler struct {
 	tokenAuth *jwtauth.JWTAuth
 }
 
-func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, accountProvider models.AwsAccountProvider) *BaseHandler {
+func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider) *BaseHandler {
 	return &BaseHandler{
 		svc:             svc,
 		dbpool:          dbpool,
 		doc:             doc,
 		oaRouter:        oaRouter,
-		accountProvider: accountProvider,
+		awsAccountProvider: awsAccountProvider,
 	}
 }
 
@@ -53,7 +53,7 @@ func NewAdminHandler(b *BaseHandler, tokenAuth *jwtauth.JWTAuth) *AdminHandler {
 			dbpool:          b.dbpool,
 			doc:             b.doc,
 			oaRouter:        b.oaRouter,
-			accountProvider: b.accountProvider,
+			awsAccountProvider: b.awsAccountProvider,
 		},
 		tokenAuth: tokenAuth,
 	}
@@ -111,7 +111,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 		switch request.Kind {
 		case "AwsSandbox", "AwsAccount", "aws_account":
 			// Create the placement in AWS
-			accounts, err := h.accountProvider.Request(
+			accounts, err := h.awsAccountProvider.Request(
 				placementRequest.ServiceUuid,
 				placementRequest.Reservation,
 				request.Count,
@@ -262,7 +262,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 		log.Logger.Error("GetPlacementHandler", "error", err)
 		return
 	}
-	placement.LoadActiveResourcesWithCreds(h.accountProvider)
+	placement.LoadActiveResourcesWithCreds(h.awsAccountProvider)
 
 	w.WriteHeader(http.StatusOK)
 	render.Render(w, r, placement)
@@ -272,7 +272,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Request) {
 	serviceUuid := chi.URLParam(r, "uuid")
 
-	err := models.DeletePlacementByServiceUuid(h.dbpool, h.accountProvider, serviceUuid)
+	err := models.DeletePlacementByServiceUuid(h.dbpool, h.awsAccountProvider, serviceUuid)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			w.WriteHeader(http.StatusNotFound)
@@ -341,7 +341,7 @@ func (h *BaseHandler) LifeCyclePlacementHandler(action string) http.HandlerFunc 
 		if err == pgx.ErrNoRows {
 			// Legacy services don't have a placement, but stop them anyway
 
-			accounts, err := h.accountProvider.FetchAllActiveByServiceUuid(serviceUuid)
+			accounts, err := h.awsAccountProvider.FetchAllActiveByServiceUuid(serviceUuid)
 			if err != nil {
 				log.Logger.Error("GET accounts", "error", err)
 
@@ -445,7 +445,7 @@ func (h *BaseHandler) GetStatusPlacementHandler(w http.ResponseWriter, r *http.R
 	if err == pgx.ErrNoRows {
 		// Legacy services don't have a placement, but get status using the serviceUUID
 
-		accounts, err := h.accountProvider.FetchAllActiveByServiceUuid(serviceUuid)
+		accounts, err := h.awsAccountProvider.FetchAllActiveByServiceUuid(serviceUuid)
 		if err != nil {
 			log.Logger.Error("GET accounts", "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -872,7 +872,7 @@ func (h *BaseHandler) CreateReservationHandler(w http.ResponseWriter, r *http.Re
 	}
 
 	// Validate the request
-	if message, err := reservationRequest.Validate(h.accountProvider); err != nil {
+	if message, err := reservationRequest.Validate(h.awsAccountProvider); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		render.Render(w, r, &v1.Error{
 			Err:            err,
@@ -916,7 +916,7 @@ func (h *BaseHandler) CreateReservationHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	go reservation.Initialize(h.dbpool, h.accountProvider)
+	go reservation.Initialize(h.dbpool, h.awsAccountProvider)
 
 	w.WriteHeader(http.StatusAccepted)
 	render.Render(w, r, &v1.ReservationResponse{
@@ -963,7 +963,7 @@ func (h *BaseHandler) DeleteReservationHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	go reservation.Remove(h.dbpool, h.accountProvider)
+	go reservation.Remove(h.dbpool, h.awsAccountProvider)
 
 	w.WriteHeader(http.StatusAccepted)
 	render.Render(w, r, &v1.ReservationResponse{
@@ -1014,7 +1014,7 @@ func (h *BaseHandler) UpdateReservationHandler(w http.ResponseWriter, r *http.Re
 	}
 
 	// Validate the request
-	if message, err := reservationReq.Validate(h.accountProvider); err != nil {
+	if message, err := reservationReq.Validate(h.awsAccountProvider); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		render.Render(w, r, &v1.Error{
 			Err:            err,
@@ -1038,7 +1038,7 @@ func (h *BaseHandler) UpdateReservationHandler(w http.ResponseWriter, r *http.Re
 	}
 
 	// Async Update the reservation
-	go reservation.Update(h.dbpool, h.accountProvider, reservationReq)
+	go reservation.Update(h.dbpool, h.awsAccountProvider, reservationReq)
 
 	w.WriteHeader(http.StatusAccepted)
 	render.Render(w, r, &v1.ReservationResponse{
@@ -1108,7 +1108,7 @@ func (h *BaseHandler) GetReservationResourcesHandler(w http.ResponseWriter, r *h
 		return
 	}
 
-	accounts, err := h.accountProvider.FetchAllByReservation(reservation.Name)
+	accounts, err := h.awsAccountProvider.FetchAllByReservation(reservation.Name)
 
 	if err != nil {
 		log.Logger.Error("GET accounts", "error", err)

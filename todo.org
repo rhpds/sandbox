@@ -74,9 +74,9 @@
 **** DONE Update OpenAPI schema to support passing the group parameter
 **** DONE patch handlers
 ***** DONE safeguard: do not allow reservation if capacity (after reservation) is <20%
-*** TODO conan: preserve group info when cleaning up
-*** TODO update AWS sandbox prometheus endpoint to show group information
-*** TODO update sandbox-list: add group column
-*** TODO patch legacy scripts to filter out accounts that are in a group
+*** TODO conan: preserve reservation when cleaning up
+*** TODO update AWS sandbox prometheus endpoint to show reservation information
+*** TODO update sandbox-list: add reservation column
+*** TODO patch legacy scripts to filter out accounts that are in a reservation
 *** TODO expiration
 **** make sure a comment is added to accounts when their expiration expires, so we can find them back.

@@ -16,12 +16,12 @@ import (
 )
 
 type AccountHandler struct {
-	accountProvider models.AwsAccountProvider
+	awsAccountProvider models.AwsAccountProvider
 }
 
-func NewAccountHandler(accountProvider models.AwsAccountProvider) *AccountHandler {
+func NewAccountHandler(awsAccountProvider models.AwsAccountProvider) *AccountHandler {
 	return &AccountHandler{
-		accountProvider: accountProvider,
+		awsAccountProvider: awsAccountProvider,
 	}
 }
 
@@ -42,13 +42,13 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 	)
 	if serviceUuid != "" {
 		// Get the account from DynamoDB
-		accounts, err = h.accountProvider.FetchAllByServiceUuid(serviceUuid)
+		accounts, err = h.awsAccountProvider.FetchAllByServiceUuid(serviceUuid)
 
 	} else {
 		if available != "" && available == "true" {
-			accounts, err = h.accountProvider.FetchAllAvailable()
+			accounts, err = h.awsAccountProvider.FetchAllAvailable()
 		} else {
-			accounts, err = h.accountProvider.FetchAll()
+			accounts, err = h.awsAccountProvider.FetchAll()
 		}
 	}
 
@@ -93,7 +93,7 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 	// by the swagger openAPI spec.
 
 	// Get the account from DynamoDB
-	sandbox, err := h.accountProvider.FetchByName(accountName)
+	sandbox, err := h.awsAccountProvider.FetchByName(accountName)
 	if err != nil {
 		if err == models.ErrAccountNotFound {
 			log.Logger.Warn("GET account", "error", err)
@@ -132,7 +132,7 @@ func (h *AccountHandler) CleanupAccountHandler(w http.ResponseWriter, r *http.Re
 	// by the swagger openAPI spec.
 
 	// Get the account from DynamoDB
-	sandbox, err := h.accountProvider.FetchByName(accountName)
+	sandbox, err := h.awsAccountProvider.FetchByName(accountName)
 	if err != nil {
 		if err == models.ErrAccountNotFound {
 			log.Logger.Warn("GET account", "error", err)
@@ -153,7 +153,7 @@ func (h *AccountHandler) CleanupAccountHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	// Mark account for cleanup
-	if err := h.accountProvider.MarkForCleanup(sandbox.Name); err != nil {
+	if err := h.awsAccountProvider.MarkForCleanup(sandbox.Name); err != nil {
 		log.Logger.Error("PUT account cleanup", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
@@ -181,7 +181,7 @@ func (h *BaseHandler) LifeCycleAccountHandler(action string) http.HandlerFunc {
 		reqId := GetReqID(r.Context())
 
 		// Get the account from DynamoDB
-		sandbox, err := h.accountProvider.FetchByName(accountName)
+		sandbox, err := h.awsAccountProvider.FetchByName(accountName)
 		if err != nil {
 			if err == models.ErrAccountNotFound {
 				log.Logger.Warn("GET account", "error", err)
@@ -242,7 +242,7 @@ func (h *BaseHandler) GetStatusAccountHandler(w http.ResponseWriter, r *http.Req
 	// by the swagger openAPI spec.
 
 	// Get the account from DynamoDB
-	sandbox, err := h.accountProvider.FetchByName(accountName)
+	sandbox, err := h.awsAccountProvider.FetchByName(accountName)
 	if err != nil {
 		if err == models.ErrAccountNotFound {
 			log.Logger.Warn("GET account", "error", err)

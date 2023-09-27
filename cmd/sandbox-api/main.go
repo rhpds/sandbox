@@ -106,7 +106,7 @@ func main() {
 	// DynamoDB
 	// ---------------------------------------------------------------------
 	sandboxdb.CheckEnv()
-	accountProvider := sandboxdb.NewAwsAccountDynamoDBProviderWithSecret(vaultSecret)
+	awsAccountProvider := sandboxdb.NewAwsAccountDynamoDBProviderWithSecret(vaultSecret)
 
 	// ---------------------------------------------------------------------
 	// Setup JWT
@@ -128,10 +128,10 @@ func main() {
 	// to the handler maker.
 	// When we need to migrate to Postgresql, we can pass a different "Provider" which will
 	// implement the same interface.
-	accountHandler := NewAccountHandler(accountProvider)
+	accountHandler := NewAccountHandler(awsAccountProvider)
 
 	// Factory for handlers which need connections to both databases
-	baseHandler := NewBaseHandler(accountProvider.Svc, dbPool, doc, oaRouter, accountProvider)
+	baseHandler := NewBaseHandler(awsAccountProvider.Svc, dbPool, doc, oaRouter, awsAccountProvider)
 
 	// Admin handler adds tokenAuth to the baseHandler
 	adminHandler := NewAdminHandler(baseHandler, tokenAuth)

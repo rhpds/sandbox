@@ -23,7 +23,7 @@ type Worker struct {
 	Dbpool *pgxpool.Pool
 
 	// Account provider to interact with the database
-	AccountProvider models.AwsAccountProvider
+	AwsAccountProvider models.AwsAccountProvider
 
 	// AWS client to manage the accounts
 	StsClient *sts.Client
@@ -55,7 +55,7 @@ func (w Worker) Execute(j *models.LifecycleResourceJob) error {
 	switch j.ResourceType {
 	case "AwsSandbox", "AwsAccount", "aws_account":
 		// Get the sandbox
-		sandbox, err := w.AccountProvider.FetchByName(j.ResourceName)
+		sandbox, err := w.AwsAccountProvider.FetchByName(j.ResourceName)
 		if err != nil {
 			log.Logger.Error("Error fetching sandbox", "error", err)
 			return err
@@ -199,7 +199,7 @@ WorkerLoop:
 				}
 
 				// Get all accounts in the placement
-				if err := placement.LoadActiveResources(w.AccountProvider); err != nil {
+				if err := placement.LoadActiveResources(w.AwsAccountProvider); err != nil {
 					log.Logger.Error("Error loading resources", "error", err, "placement", placement)
 					job.SetStatus("error")
 					continue WorkerLoop
@@ -331,7 +331,7 @@ func NewWorker(baseHandler BaseHandler) Worker {
 
 	return Worker{
 		Dbpool:          baseHandler.dbpool,
-		AccountProvider: baseHandler.accountProvider,
+		AwsAccountProvider: baseHandler.awsAccountProvider,
 		StsClient:       stsClient,
 	}
 }
