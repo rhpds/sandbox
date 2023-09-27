@@ -111,7 +111,12 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 		switch request.Kind {
 		case "AwsSandbox", "AwsAccount", "aws_account":
 			// Create the placement in AWS
-			accounts, err := h.accountProvider.Request(placementRequest.ServiceUuid, request.Count, placementRequest.Annotations)
+			accounts, err := h.accountProvider.Request(
+				placementRequest.ServiceUuid,
+				placementRequest.Reservation,
+				request.Count,
+				placementRequest.Annotations,
+			)
 			if err != nil {
 				if err == models.ErrNoEnoughAccountsAvailable {
 					w.WriteHeader(http.StatusInsufficientStorage)
@@ -965,5 +970,173 @@ func (h *BaseHandler) DeleteReservationHandler(w http.ResponseWriter, r *http.Re
 		Reservation:    reservation,
 		Message:        "Reservation deletion request created",
 		HTTPStatusCode: http.StatusAccepted,
+	})
+}
+
+// UpdateReservationHandler updates a reservation
+func (h *BaseHandler) UpdateReservationHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	reservation, err := models.GetReservationByName(h.dbpool, name)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Reservation not found",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting reservation",
+		})
+		log.Logger.Error("UpdateReservationHandler", "error", err)
+		return
+	}
+
+	reservationReq := models.ReservationRequest{}
+
+	// Decode the request body
+	if err := render.Bind(r, &reservationReq); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Error decoding request body",
+		})
+		log.Logger.Error("UpdateReservationHandler", "error", err)
+		return
+	}
+
+	// Validate the request
+	if message, err := reservationReq.Validate(h.accountProvider); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        message,
+		})
+		log.Logger.Error("UpdateReservationHandler", "error", err)
+		return
+	}
+
+	// Update the status
+	if err := reservation.UpdateStatus(h.dbpool, "updating"); err != nil {
+		log.Logger.Error("Error updating reservation status", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error updating reservation status",
+		})
+		return
+	}
+
+	// Async Update the reservation
+	go reservation.Update(h.dbpool, h.accountProvider, reservationReq)
+
+	w.WriteHeader(http.StatusAccepted)
+	render.Render(w, r, &v1.ReservationResponse{
+		Reservation:    reservation,
+		Message:        "Reservation update request created",
+		HTTPStatusCode: http.StatusAccepted,
+	})
+}
+
+// GetReservationHandler gets a reservation
+func (h *BaseHandler) GetReservationHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	reservation, err := models.GetReservationByName(h.dbpool, name)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Reservation not found",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting reservation",
+		})
+		log.Logger.Error("GetReservationHandler", "error", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &v1.ReservationResponse{
+		Reservation:    reservation,
+		Message:        "Reservation found",
+		HTTPStatusCode: http.StatusOK,
+	})
+}
+
+// GetReservationResourcesHandler gets the resources of a reservation
+func (h *BaseHandler) GetReservationResourcesHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	reservation, err := models.GetReservationByName(h.dbpool, name)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Reservation not found",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting reservation",
+		})
+		log.Logger.Error("GetReservationHandler", "error", err)
+		return
+	}
+
+	accounts, err := h.accountProvider.FetchAllByReservation(reservation.Name)
+
+	if err != nil {
+		log.Logger.Error("GET accounts", "error", err)
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error reading account",
+		})
+		return
+	}
+
+	if len(accounts) == 0 {
+		w.WriteHeader(http.StatusNotFound)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
+
+	// Response with accounts
+	resources := []any{}
+	for _, account := range accounts {
+		resources = append(resources, account)
+	}
+
+	render.Render(w, r, &v1.ResourcesResponse{
+		Count:          len(accounts),
+		Resources:      resources,
+		Message:        "Accounts found",
+		HTTPStatusCode: http.StatusOK,
 	})
 }

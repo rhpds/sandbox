@@ -909,6 +909,77 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+    put:
+      parameters:
+        - in: header
+          name: Authorization
+          description: Access JTW Token
+          required: true
+          schema:
+            type: string
+          example: Bearer <ACCESS_TOKEN>
+        - name: name
+          in: path
+          required: true
+          description: The name of the reservation
+          schema:
+            type: string
+            pattern: '^[\w\d_-]+$'
+          example: summit
+      summary: Reserve resources
+      description: |-
+        Update a reservation.
+
+        Scale up or down a reservation. Add or remove resources.
+      operationId: updateReservation
+      tags:
+        - admin
+      requestBody:
+        description: JSON object to specify the reservation.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Reservation"
+            example:
+              name: summit
+              resources:
+                - kind: AwsSandbox
+                  count: 200
+      responses:
+        '202':
+          description: Reservation update request created
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                message: reservation update request created
+
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: reservation already exists
+                http_code: 400
+
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       operationId: deleteReservation
       summary: Delete a reservation

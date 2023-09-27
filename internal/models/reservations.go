@@ -15,10 +15,9 @@ import (
 type Reservation struct {
 	Model
 
-	Name      string             `json:"name"`
-	Status    string             `json:"status"`
-	Request   ReservationRequest `json:"request"`
-	Resources []any              `json:"resources,omitempty"`
+	Name    string             `json:"name"`
+	Status  string             `json:"status"`
+	Request ReservationRequest `json:"request"`
 }
 
 type ResourceRequest struct {
@@ -185,9 +184,21 @@ func GetReservationByName(dbpool *pgxpool.Pool, name string) (Reservation, error
 
 	err := dbpool.QueryRow(
 		context.Background(),
-		"SELECT id, reservation_name, status, request FROM reservations WHERE reservation_name = $1",
+		`SELECT id,
+                reservation_name,
+				status,
+                request,
+				created_at,
+ 				updated_at FROM reservations WHERE reservation_name = $1`,
 		name,
-	).Scan(&reservation.ID, &reservation.Name, &reservation.Status, &reservation.Request)
+	).Scan(
+		&reservation.ID,
+		&reservation.Name,
+		&reservation.Status,
+		&reservation.Request,
+		&reservation.CreatedAt,
+		&reservation.UpdatedAt,
+	)
 
 	return reservation, err
 }
@@ -258,4 +269,36 @@ func (r *Reservation) Remove(dbpool *pgxpool.Pool, a AwsAccountProvider) {
 			}
 		}
 	}
+}
+
+// Update is an async operation to update a reservation from a reservationRequest
+func (r *Reservation) Update(dbpool *pgxpool.Pool, a AwsAccountProvider, req ReservationRequest) {
+	r.UpdateStatus(dbpool, "updating")
+	// Loop through the Request.Resources and try to update the resources
+	// by removing the reservation.
+	for i, resource := range r.Request.Resources {
+		for _, reqResource := range req.Resources {
+			if reqResource.Kind == resource.Kind {
+				// Determine if it's a scale up or a scale down
+				if resource.Count <= reqResource.Count {
+					// scale up
+					if _, err := a.Reserve(r.Name, reqResource.Count); err != nil {
+						r.UpdateStatus(dbpool, "error")
+					} else {
+						r.Request.Resources[i].Count = reqResource.Count
+						r.Save(dbpool)
+					}
+				} else {
+					// scale down
+					if err := a.ScaleDownReservation(r.Name, reqResource.Count); err != nil {
+						r.UpdateStatus(dbpool, "error")
+					} else {
+						r.Request.Resources[i].Count = reqResource.Count
+						r.Save(dbpool)
+					}
+				}
+			}
+		}
+	}
+	r.UpdateStatus(dbpool, "success")
 }

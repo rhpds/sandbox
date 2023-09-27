@@ -61,7 +61,7 @@
 * TODO move handlers per version?
 * DONE mark sandbox for cleanup once migrate from prod to dev
 * Post MVP
-** TODO unit tests and fixture/functional tests
+** TODO unit tests fixture/functional tests
 ** TODO prometheus endpoint and metrics
 ** TODO Encrypt IAM secret key using AWS KMS instead of ansible-vault.  Use and support both while transitioning
 ** TODO aws lambda function to replicate changes from dynamoDB to postgresql
@@ -72,8 +72,8 @@
 *** DONE functional tests (hurl)
 *** sandbox-api
 **** DONE Update OpenAPI schema to support passing the group parameter
-**** TODO patch handlers
-***** TODO safeguard: do not allow reservation if capacity (after reservation) is <20%
+**** DONE patch handlers
+***** DONE safeguard: do not allow reservation if capacity (after reservation) is <20%
 *** TODO conan: preserve group info when cleaning up
 *** TODO update AWS sandbox prometheus endpoint to show group information
 *** TODO update sandbox-list: add group column

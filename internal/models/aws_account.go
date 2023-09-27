@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"errors"
+	"net/http"
 
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/rhpds/sandbox/internal/log"
@@ -39,6 +40,16 @@ type AwsAccount struct {
 	ConanHostname  string    `json:"conan_hostname,omitempty"`
 }
 
+func (a *AwsAccount) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
+type AwsAccounts []AwsAccount
+
+func (a *AwsAccounts) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
 type AwsAccountWithCreds struct {
 	AwsAccount
 
@@ -65,7 +76,7 @@ type AwsAccountProvider interface {
 	FetchAllByServiceUuidWithCreds(serviceUuid string) ([]AwsAccountWithCreds, error)
 	FetchAllActiveByServiceUuidWithCreds(serviceUuid string) ([]AwsAccountWithCreds, error)
 	FetchAllByReservation(reservation string) ([]AwsAccount, error)
-	Request(service_uuid string, count int, annotations map[string]string) ([]AwsAccountWithCreds, error)
+	Request(service_uuid string, reservation string, count int, annotations map[string]string) ([]AwsAccountWithCreds, error)
 	Reserve(reservation string, count int) ([]AwsAccount, error)
 	ScaleDownReservation(reservation string, count int) error
 	MarkForCleanup(name string) error

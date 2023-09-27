@@ -412,7 +412,7 @@ func (a *AwsAccountDynamoDBProvider) FetchAllSorted(by string) ([]models.AwsAcco
 }
 
 // Request reserve accounts for a service
-func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, count int, annotations map[string]string) ([]models.AwsAccountWithCreds, error) {
+func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, reservation string, count int, annotations map[string]string) ([]models.AwsAccountWithCreds, error) {
 	if count <= 0 {
 		return []models.AwsAccountWithCreds{}, errors.New("count must be > 0")
 	}
@@ -427,6 +427,10 @@ func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, count int, ann
 		And(expression.Name("aws_secret_access_key").AttributeExists()).
 		And(expression.Name("hosted_zone_id").AttributeExists()).
 		And(expression.Name("account_id").AttributeExists())
+
+	if reservation != "" {
+		filter = filter.And(expression.Name("reservation").Equal(expression.Value(reservation)))
+	}
 
 	// get 10 spare accounts in case of concurrency doublebooking
 	accounts, err := GetAccounts(a.Svc, filter, count+10)
@@ -443,6 +447,11 @@ func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, count int, ann
 			And(expression.Name("aws_secret_access_key").AttributeExists()).
 			And(expression.Name("hosted_zone_id").AttributeExists()).
 			And(expression.Name("account_id").AttributeExists())
+
+		if reservation != "" {
+			filter = filter.And(expression.Name("reservation").Equal(expression.Value(reservation)))
+		}
+
 		accounts, err = GetAccounts(a.Svc, filter, count+10)
 
 		if err != nil {

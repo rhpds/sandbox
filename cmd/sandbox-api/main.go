@@ -198,6 +198,8 @@ func main() {
 		r.Put("/api/v1/placements/{uuid}/status", baseHandler.LifeCyclePlacementHandler("status"))
 		r.Get("/api/v1/placements/{uuid}/status", baseHandler.GetStatusPlacementHandler)
 		r.Get("/api/v1/requests/{id}/status", baseHandler.GetStatusRequestHandler)
+		r.Get("/api/v1/reservations/{name}", baseHandler.GetReservationHandler)
+		r.Get("/api/v1/reservations/{name}/resources", baseHandler.GetReservationResourcesHandler)
 	})
 
 	// ---------------------------------------------------------------------
@@ -217,7 +219,10 @@ func main() {
 		r.Post("/api/v1/admin/jwt", adminHandler.IssueLoginJWTHandler)
 		r.Get("/api/v1/admin/jwt", baseHandler.GetJWTHandler)
 		r.Put("/api/v1/admin/jwt/{id}/invalidate", baseHandler.InvalidateTokenHandler)
+
+		// Reservations
 		r.Post("/api/v1/reservations", baseHandler.CreateReservationHandler)
+		r.Put("/api/v1/reservations/{name}", baseHandler.UpdateReservationHandler)
 		r.Delete("/api/v1/reservations/{name}", baseHandler.DeleteReservationHandler)
 	})
 
