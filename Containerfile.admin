@@ -35,7 +35,7 @@ RUN dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x
     wget \
     && dnf clean all \
     && VERSION=4.1.0 \
-    curl --silent --location https://github.com/Orange-OpenSource/hurl/releases/download/$VERSION/hurl-$VERSION-x86_64-unknown-linux-gnu.tar.gz \
+    && curl --silent --location https://github.com/Orange-OpenSource/hurl/releases/download/$VERSION/hurl-$VERSION-x86_64-unknown-linux-gnu.tar.gz \
     | tar -xz -C /usr/local/bin --strip-components=1 --wildcards '*/hurl' '*/hurlfmt'
 
 COPY --from=docker.io/migrate/migrate /usr/local/bin/migrate /usr/local/bin/migrate
@@ -44,6 +44,7 @@ USER ${USER_UID}
 COPY build/github_known_hosts /ssh/known_hosts
 env SSH_KNOWN_HOSTS /ssh/known_hosts
 COPY --from=builder /sandbox/build/sandbox-* ./
+COPY --from=builder /sandbox/tools/* ./
 CMD ["/bin/bash"]
 
 
