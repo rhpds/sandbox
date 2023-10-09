@@ -3,7 +3,7 @@
 #################################################################################
 
 GET http://{{host}}/api/v1/login
-Authorization: Bearer {{login_token}}
+Authorization: Bearer {{login_token_admin}}
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -17,7 +17,7 @@ jsonpath "$.access_token_exp" isString
 #################################################################################
 
 POST http://{{host}}/api/v1/reservations
-Authorization: Bearer {{access_token_admin}}
+Authorization: Bearer {{access_token}}
 {
   "name": "{{reservation_name}}",
   "resources": [
