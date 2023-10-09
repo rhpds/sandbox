@@ -60,6 +60,7 @@
 * TODO documentation coverage
 * TODO move handlers per version?
 * DONE mark sandbox for cleanup once migrate from prod to dev
+* DONE add hurl to the admin image
 * Post MVP
 ** TODO unit tests fixture/functional tests
 ** TODO prometheus endpoint and metrics
