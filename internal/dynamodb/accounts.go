@@ -430,6 +430,9 @@ func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, reservation st
 
 	if reservation != "" {
 		filter = filter.And(expression.Name("reservation").Equal(expression.Value(reservation)))
+	} else {
+		filter = filter.And(expression.Name("reservation").AttributeNotExists().
+			Or(expression.Name("reservation").Equal(expression.Value(""))))
 	}
 
 	// get 10 spare accounts in case of concurrency doublebooking
@@ -450,6 +453,9 @@ func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, reservation st
 
 		if reservation != "" {
 			filter = filter.And(expression.Name("reservation").Equal(expression.Value(reservation)))
+		} else {
+			filter = filter.And(expression.Name("reservation").AttributeNotExists().
+				Or(expression.Name("reservation").Equal(expression.Value(""))))
 		}
 
 		accounts, err = GetAccounts(a.Svc, filter, count+10)
