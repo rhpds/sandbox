@@ -44,7 +44,8 @@ USER ${USER_UID}
 COPY build/github_known_hosts /ssh/known_hosts
 env SSH_KNOWN_HOSTS /ssh/known_hosts
 COPY --from=builder /sandbox/build/sandbox-* ./
-COPY --from=builder /sandbox/tools/* ./
+COPY --from=builder /sandbox/tools ./tools
+COPY --from=builder /sandbox/tests ./tests
 CMD ["/bin/bash"]
 
 
