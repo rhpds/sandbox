@@ -24,10 +24,10 @@ import (
 )
 
 type BaseHandler struct {
-	dbpool          *pgxpool.Pool
-	svc             *dynamodb.DynamoDB
-	doc             *openapi3.T
-	oaRouter        oarouters.Router
+	dbpool             *pgxpool.Pool
+	svc                *dynamodb.DynamoDB
+	doc                *openapi3.T
+	oaRouter           oarouters.Router
 	awsAccountProvider models.AwsAccountProvider
 }
 
@@ -38,10 +38,10 @@ type AdminHandler struct {
 
 func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider) *BaseHandler {
 	return &BaseHandler{
-		svc:             svc,
-		dbpool:          dbpool,
-		doc:             doc,
-		oaRouter:        oaRouter,
+		svc:                svc,
+		dbpool:             dbpool,
+		doc:                doc,
+		oaRouter:           oaRouter,
 		awsAccountProvider: awsAccountProvider,
 	}
 }
@@ -49,10 +49,10 @@ func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.
 func NewAdminHandler(b *BaseHandler, tokenAuth *jwtauth.JWTAuth) *AdminHandler {
 	return &AdminHandler{
 		BaseHandler: BaseHandler{
-			svc:             b.svc,
-			dbpool:          b.dbpool,
-			doc:             b.doc,
-			oaRouter:        b.oaRouter,
+			svc:                b.svc,
+			dbpool:             b.dbpool,
+			doc:                b.doc,
+			oaRouter:           b.oaRouter,
 			awsAccountProvider: b.awsAccountProvider,
 		},
 		tokenAuth: tokenAuth,

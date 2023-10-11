@@ -424,7 +424,6 @@ func (a AwsAccount) GetLastStatus(dbpool *pgxpool.Pool) (*LifecycleResourceJob, 
 	return job, nil
 }
 
-
 func (a AwsAccount) GetReservation() string {
 	return a.Reservation
 }

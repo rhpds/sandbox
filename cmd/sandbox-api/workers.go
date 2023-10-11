@@ -15,8 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/pgxpool"
 )
 
 type Worker struct {
@@ -347,8 +347,8 @@ func NewWorker(baseHandler BaseHandler) Worker {
 	})
 
 	return Worker{
-		Dbpool:          baseHandler.dbpool,
+		Dbpool:             baseHandler.dbpool,
 		AwsAccountProvider: baseHandler.awsAccountProvider,
-		StsClient:       stsClient,
+		StsClient:          stsClient,
 	}
 }

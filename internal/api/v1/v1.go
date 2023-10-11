@@ -33,7 +33,7 @@ type HealthCheckResult struct {
 
 type PlacementRequest struct {
 	ServiceUuid string            `json:"service_uuid"`
-	Reservation string 		  `json:"reservation"`
+	Reservation string            `json:"reservation"`
 	Resources   []ResourceRequest `json:"resources"`
 	Annotations map[string]string `json:"annotations"`
 }
