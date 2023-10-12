@@ -10,6 +10,8 @@ image:
   pullPolicy: Always
   tagOverride: ""
 
+dynamodb_table: accounts-dev
+
 deploy: true
 
 route:

@@ -29,6 +29,8 @@ spec:
         ports:
         - containerPort: 2112
         env:
+        - name: dynamodb_table
+          value: {{ .Values.dynamodb_table }}
         - name: AWS_ACCESS_KEY_ID
           valueFrom:
             secretKeyRef:
