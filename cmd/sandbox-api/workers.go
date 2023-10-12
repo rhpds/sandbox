@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	cc "github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 )
 
@@ -22,7 +24,7 @@ type Worker struct {
 	Dbpool *pgxpool.Pool
 
 	// Account provider to interact with the database
-	AccountProvider models.AwsAccountProvider
+	AwsAccountProvider models.AwsAccountProvider
 
 	// AWS client to manage the accounts
 	StsClient *sts.Client
@@ -52,9 +54,9 @@ func (w Worker) AssumeRole(account models.AwsAccount) (*sts.AssumeRoleOutput, er
 // It checks the resource type and the lifecycle action and execute the appropriate function
 func (w Worker) Execute(j *models.LifecycleResourceJob) error {
 	switch j.ResourceType {
-	case "aws_account":
+	case "AwsSandbox", "AwsAccount", "aws_account":
 		// Get the sandbox
-		sandbox, err := w.AccountProvider.FetchByName(j.ResourceName)
+		sandbox, err := w.AwsAccountProvider.FetchByName(j.ResourceName)
 		if err != nil {
 			log.Logger.Error("Error fetching sandbox", "error", err)
 			return err
@@ -105,10 +107,33 @@ WorkerLoop:
 			}
 			job, err := models.GetLifecycleResourceJob(w.Dbpool, id)
 			if err != nil {
+				if err == pgx.ErrNoRows {
+					log.Logger.Debug("Resource job not found", "job", job)
+					continue WorkerLoop
+				}
 				log.Logger.Error("Error getting lifecycle resource job", "error", err)
 				continue WorkerLoop
 			}
 			log.Logger.Debug("Got lifecycle resource job", "job", job)
+			if job.Locality != cc.LocalityID && job.Locality != "any" {
+				// log
+				log.Logger.Debug("Job not for this locality", "job", job)
+
+				// Sleep 2 seconds to give time to original worker to claim the job
+				time.Sleep(2 * time.Second)
+
+				// Check if it's still new
+
+				job, err = models.GetLifecycleResourceJob(w.Dbpool, id)
+				if err != nil {
+					if err == pgx.ErrNoRows {
+						log.Logger.Debug("Resource job not found", "job", job)
+						continue WorkerLoop
+					}
+					log.Logger.Error("Error getting lifecycle placement job", "error", err)
+					continue WorkerLoop
+				}
+			}
 
 			switch job.Status {
 			case "new":
@@ -140,9 +165,35 @@ WorkerLoop:
 			}
 			job, err := models.GetLifecyclePlacementJob(w.Dbpool, id)
 			if err != nil {
+				if err == pgx.ErrNoRows {
+					log.Logger.Debug("Placement job not found", "job", job)
+					continue WorkerLoop
+				}
 				log.Logger.Error("Error getting lifecycle placement job", "error", err)
 				continue WorkerLoop
 			}
+
+			log.Logger.Debug("notification placement job received", "job", job)
+			if job.Locality != cc.LocalityID && job.Locality != "any" {
+				// log
+				log.Logger.Debug("Job not for this locality", "job", job)
+
+				// Sleep 2 seconds to give time to original worker to claim the job
+				time.Sleep(2 * time.Second)
+
+				// Check if it's still new
+
+				job, err = models.GetLifecyclePlacementJob(w.Dbpool, id)
+				if err != nil {
+					if err == pgx.ErrNoRows {
+						log.Logger.Debug("Placement job not found", "job", job)
+						continue WorkerLoop
+					}
+					log.Logger.Error("Error getting lifecycle placement job", "error", err)
+					continue WorkerLoop
+				}
+			}
+
 			switch job.Status {
 			case "new":
 				if err := job.Claim(); err != nil {
@@ -165,7 +216,7 @@ WorkerLoop:
 				}
 
 				// Get all accounts in the placement
-				if err := placement.LoadActiveResources(w.AccountProvider); err != nil {
+				if err := placement.LoadActiveResources(w.AwsAccountProvider); err != nil {
 					log.Logger.Error("Error loading resources", "error", err, "placement", placement)
 					job.SetStatus("error")
 					continue WorkerLoop
@@ -179,9 +230,11 @@ WorkerLoop:
 					switch account.(type) {
 					case models.AwsAccount:
 						awsAccount := account.(models.AwsAccount)
+						log.Logger.Debug("Creating resource job for account", "account", awsAccount)
 
 						lifecycleResourceJob := models.LifecycleResourceJob{
 							ParentID:     job.ID,
+							Locality:     cc.LocalityID,
 							RequestID:    job.RequestID,
 							ResourceType: awsAccount.Kind,
 							ResourceName: awsAccount.Name,
@@ -195,6 +248,7 @@ WorkerLoop:
 							job.SetStatus("error")
 							continue ResourceLoop
 						}
+						log.Logger.Debug("Created resource job for account", "account", awsAccount, "job", lifecycleResourceJob)
 					}
 				}
 				job.SetStatus("successfully_dispatched")
@@ -293,8 +347,8 @@ func NewWorker(baseHandler BaseHandler) Worker {
 	})
 
 	return Worker{
-		Dbpool:          baseHandler.dbpool,
-		AccountProvider: baseHandler.accountProvider,
-		StsClient:       stsClient,
+		Dbpool:             baseHandler.dbpool,
+		AwsAccountProvider: baseHandler.awsAccountProvider,
+		StsClient:          stsClient,
 	}
 }

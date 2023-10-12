@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"errors"
+	"net/http"
 
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/rhpds/sandbox/internal/log"
@@ -27,9 +28,9 @@ var ErrAccountNotFound = errors.New("account not found")
 
 type AwsAccount struct {
 	Account
-	Kind string `json:"kind"` // "aws_account"
-
+	Kind         string `json:"kind"` // "AwsSandbox"
 	Name         string `json:"name"`
+	Reservation  string `json:"reservation,omitempty"`
 	AccountID    string `json:"account_id"`
 	Zone         string `json:"zone"`
 	HostedZoneID string `json:"hosted_zone_id"`
@@ -37,6 +38,16 @@ type AwsAccount struct {
 	ConanStatus    string    `json:"conan_status,omitempty"`
 	ConanTimestamp time.Time `json:"conan_timestamp,omitempty"`
 	ConanHostname  string    `json:"conan_hostname,omitempty"`
+}
+
+func (a *AwsAccount) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
+type AwsAccounts []AwsAccount
+
+func (a *AwsAccounts) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
 }
 
 type AwsAccountWithCreds struct {
@@ -59,14 +70,20 @@ type AwsAccountProvider interface {
 	FetchAll() ([]AwsAccount, error)
 	FetchAllToCleanup() ([]AwsAccount, error)
 	FetchAllSorted(by string) ([]AwsAccount, error)
+	FetchAllAvailable() ([]AwsAccount, error)
 	FetchAllByServiceUuid(serviceUuid string) ([]AwsAccount, error)
 	FetchAllActiveByServiceUuid(serviceUuid string) ([]AwsAccount, error)
 	FetchAllByServiceUuidWithCreds(serviceUuid string) ([]AwsAccountWithCreds, error)
 	FetchAllActiveByServiceUuidWithCreds(serviceUuid string) ([]AwsAccountWithCreds, error)
-	Request(service_uuid string, count int, annotations map[string]string) ([]AwsAccountWithCreds, error)
+	FetchAllByReservation(reservation string) ([]AwsAccount, error)
+	Request(service_uuid string, reservation string, count int, annotations map[string]string) ([]AwsAccountWithCreds, error)
+	Reserve(reservation string, count int) ([]AwsAccount, error)
+	ScaleDownReservation(reservation string, count int) error
 	MarkForCleanup(name string) error
 	MarkForCleanupByServiceUuid(serviceUuid string) error
 	DecryptSecret(encrypted string) (string, error)
+	CountAvailable(reservation string) (int, error)
+	Count() (int, error)
 	//Annotations(account AwsAccount) (map[string]string, error)
 }
 
@@ -290,8 +307,12 @@ func MakeStatus(job *LifecycleResourceJob) Status {
 
 	status = job.Result
 	status.AccountKind = job.ResourceType
+	if status.AccountKind == "aws_account" {
+		status.AccountKind = "AwsSandbox"
+	}
 	status.AccountName = job.ResourceName
 	status.UpdatedAt = job.UpdatedAt
+	// TODO: convert to CamelCase
 	status.Status = job.Status
 
 	return status
@@ -401,4 +422,8 @@ func (a AwsAccount) GetLastStatus(dbpool *pgxpool.Pool) (*LifecycleResourceJob, 
 	}
 
 	return job, nil
+}
+
+func (a AwsAccount) GetReservation() string {
+	return a.Reservation
 }

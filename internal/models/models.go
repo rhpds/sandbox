@@ -5,7 +5,7 @@ import (
 )
 
 type Model struct {
-	ID        int       `json:"id"`
+	ID        int       `json:"id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -33,6 +33,7 @@ type Account struct {
 type AvailabilityMarker interface {
 	isAvailable() bool
 	markedForCleanup() bool
+	GetReservation() string
 }
 
 func (r Resource) isAvailable() bool {
@@ -95,4 +96,15 @@ func CountOlder(duration time.Duration, accounts []Resource) (int, error) {
 	}
 
 	return total, nil
+}
+
+func FilterByReservation[T AvailabilityMarker](resources []T, reservation string) []T {
+	result := []T{}
+	for _, r := range resources {
+		if r.GetReservation() == reservation {
+			result = append(result, r)
+		}
+	}
+
+	return result
 }

@@ -25,7 +25,7 @@ jobs:
         elif [[ $GITHUB_REF == refs/heads/* ]]; then
           VERSION=$(echo ${GITHUB_REF#refs/heads/} | sed -r 's#/+#-#g')
         elif [[ $GITHUB_REF == refs/pull/* ]]; then
-          VERSION=pr-${{ github.event.number }}
+          VERSION=temporary-pr-${{ github.event.number }}
         fi
         TAGS="${DOCKER_IMAGE}:${VERSION}"
         if [ "${{ github.event_name }}" = "push" ]; then
@@ -55,14 +55,14 @@ jobs:
         tags: ${{ steps.prep.outputs.tags }}
         # images from Pull expire after 1d
         labels: |
-          quay.expires-after=1d
+          quay.expires-after=7d
           org.opencontainers.image.source=${{ github.event.repository.html_url }}
           org.opencontainers.image.created=${{ steps.prep.outputs.created }}
           org.opencontainers.image.revision=${{ github.sha }}
 
   build-and-push-api:
     concurrency:
-      group: pr-${{ github.event.number }}
+      group: temporary-pr-${{ github.event.number }}
       cancel-in-progress: true
 
     uses: ./.github/workflows/build-push.yml
@@ -70,16 +70,16 @@ jobs:
       registry_username: ${{ secrets.QUAY_RHPDS_SANDBOX_API_USER }}
       registry_password: ${{ secrets.QUAY_RHPDS_SANDBOX_API_PASSWORD }}
     with:
-      tag: pr-${{ github.event.number }}
+      tag: temporary-pr-${{ github.event.number }}
       image: api
       labels: |-
-        quay.expires-after=1d
+        quay.expires-after=7d
         org.opencontainers.image.source=${{ github.event.repository.html_url }}
         org.opencontainers.image.revision=${{ github.sha }}
 
   build-and-push-admin:
     concurrency:
-      group: pr-${{ github.event.number }}-admin
+      group: temporary-pr-${{ github.event.number }}-admin
       cancel-in-progress: true
 
     uses: ./.github/workflows/build-push.yml
@@ -87,9 +87,9 @@ jobs:
       registry_username: ${{ secrets.QUAY_RHPDS_SANDBOX_API_USER }}
       registry_password: ${{ secrets.QUAY_RHPDS_SANDBOX_API_PASSWORD }}
     with:
-      tag: pr-${{ github.event.number }}
+      tag: temporary-pr-${{ github.event.number }}
       image: admin
       labels: |-
-        quay.expires-after=1d
+        quay.expires-after=7d
         org.opencontainers.image.source=${{ github.event.repository.html_url }}
         org.opencontainers.image.revision=${{ github.sha }}

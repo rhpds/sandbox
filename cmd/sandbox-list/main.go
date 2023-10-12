@@ -22,6 +22,7 @@ var noHeadersFlag bool
 var padding = 2
 var versionFlag bool
 var sortFlag string
+var reservationFlag string
 
 // Build info
 var Version = "development"
@@ -72,6 +73,7 @@ func (a accountPrint) String() string {
 		supdatetime,
 		a.ServiceUuid,
 		toCleanupString,
+		a.Reservation,
 		a.Annotations["comment"],
 	}, separator)
 }
@@ -101,6 +103,7 @@ func printHeaders(w *tabwriter.Writer) {
 		"UpdateTime",
 		"UUID",
 		"ToCleanup?",
+		"Reservation",
 		"Comment",
 	}
 	for _, h := range headers {
@@ -118,6 +121,7 @@ func parseFlags() {
 	flag.BoolVar(&debugFlag, "debug", false, "Debug mode.\nEnvironment variable: DEBUG\n")
 	flag.BoolVar(&versionFlag, "version", false, "Print build version.")
 	flag.StringVar(&sortFlag, "sort", "UpdateTime", "Sort by column. Possible values: [UpdateTime, Name]")
+	flag.StringVar(&reservationFlag, "reservation", "", "Print only sandboxes part of reservation")
 
 	flag.Parse()
 
@@ -142,12 +146,20 @@ func parseFlags() {
 func printMostRecentlyUsed(accounts []models.AwsAccount) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, padding, ' ', 0)
 	m := models.Sort(models.Used(accounts), "UpdateTime")
+	max := 10
+	if len(m) < max {
+		max = len(m)
+	}
 
 	fmt.Println()
 	fmt.Println("# Most recently used sandboxes")
 	fmt.Println()
 	printHeaders(w)
-	for i := 0; i < 10; i++ {
+	if len(m) == 0 {
+		fmt.Println("None")
+		return
+	}
+	for i := 0; i < max; i++ {
 		fmt.Fprintln(w, accountPrint(m[i]))
 	}
 	w.Flush()
@@ -156,12 +168,20 @@ func printMostRecentlyUsed(accounts []models.AwsAccount) {
 func printOldest(accounts []models.AwsAccount) {
 	m := models.Sort(models.Used(accounts), "UpdateTime")
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, padding, ' ', 0)
+	max := 10
+	if len(m) < max {
+		max = len(m)
+	}
 
 	fmt.Println()
 	fmt.Println("# Oldest sandboxes in use")
 	fmt.Println()
 	printHeaders(w)
-	for i := 10; i >= 1; i-- {
+	if len(m) == 0 {
+		fmt.Println("None")
+		return
+	}
+	for i := max; i >= 1; i-- {
 		fmt.Fprintln(w, accountPrint(m[len(m)-i]))
 	}
 	w.Flush()
@@ -218,6 +238,10 @@ func main() {
 		if err != nil {
 			log.Err.Fatal(err)
 		}
+	}
+
+	if reservationFlag != "" {
+		accounts = models.FilterByReservation(accounts, reservationFlag)
 	}
 
 	accounts = models.Sort(accounts, sortFlag)

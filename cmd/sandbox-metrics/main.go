@@ -39,7 +39,7 @@ func createMetrics() {
 			Name: "aws_sandbox_usage",
 			Help: "Accounts in use",
 		},
-		[]string{"name", "status", "to_cleanup"},
+		[]string{"name", "status", "to_cleanup", "reservation"},
 	)
 
 	used := promauto.NewGauge(prometheus.GaugeOpts{
@@ -89,7 +89,7 @@ func createMetrics() {
 					toCleanup = "true"
 				}
 
-				gaugeVec.WithLabelValues(sandbox.Name, status, toCleanup).Set(value)
+				gaugeVec.WithLabelValues(sandbox.Name, status, toCleanup, sandbox.Reservation).Set(value)
 			}
 			time.Sleep(interval)
 		}

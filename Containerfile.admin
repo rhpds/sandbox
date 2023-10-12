@@ -1,4 +1,4 @@
-ARG GO_VERSION=1.20
+ARG GO_VERSION=1.21
 # Switch back to Red Hat go-toolset when it supports go 1.20
 #FROM registry.access.redhat.com/ubi8/go-toolset:latest AS builder
 FROM docker.io/golang:${GO_VERSION} as builder
@@ -33,13 +33,19 @@ RUN dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x
     unzip \
     vim \
     wget \
-    && dnf clean all
+    && dnf clean all \
+    && VERSION=4.1.0 \
+    && curl --silent --location https://github.com/Orange-OpenSource/hurl/releases/download/$VERSION/hurl-$VERSION-x86_64-unknown-linux-gnu.tar.gz \
+    | tar -xz -C /usr/local/bin --strip-components=1 --wildcards '*/hurl' '*/hurlfmt'
+
 COPY --from=docker.io/migrate/migrate /usr/local/bin/migrate /usr/local/bin/migrate
 WORKDIR /sandbox/
 USER ${USER_UID}
 COPY build/github_known_hosts /ssh/known_hosts
 env SSH_KNOWN_HOSTS /ssh/known_hosts
 COPY --from=builder /sandbox/build/sandbox-* ./
+COPY --from=builder /sandbox/tools ./tools
+COPY --from=builder /sandbox/tests ./tests
 CMD ["/bin/bash"]
 
 

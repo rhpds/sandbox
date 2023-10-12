@@ -33,6 +33,7 @@ type HealthCheckResult struct {
 
 type PlacementRequest struct {
 	ServiceUuid string            `json:"service_uuid"`
+	Reservation string            `json:"reservation"`
 	Resources   []ResourceRequest `json:"resources"`
 	Annotations map[string]string `json:"annotations"`
 }
@@ -72,6 +73,17 @@ type PlacementStatusResponse struct {
 	Status         []models.Status `json:"status,omitempty"`
 }
 
+type ResourcesResponse struct {
+	HTTPStatusCode int    `json:"http_code,omitempty"` // http response status code
+	Message        string `json:"message"`
+	Resources      []any  `json:"resources,omitempty"`
+	Count          int    `json:"count,omitempty"`
+}
+
+func (o *ResourcesResponse) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
 func (p *AccountStatusResponse) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
@@ -92,6 +104,12 @@ type ResourceRequest struct {
 	Count int    `json:"count"`
 }
 
+type ReservationResponse struct {
+	HTTPStatusCode int                `json:"http_code,omitempty"` // http response status code
+	Message        string             `json:"message"`
+	Reservation    models.Reservation `json:"reservation"`
+}
+
 func (p *PlacementRequest) Bind(r *http.Request) error {
 	return nil
 }
@@ -109,5 +127,9 @@ func (t *TokenRequest) Bind(r *http.Request) error {
 }
 
 func (t *TokenResponse) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
+func (p *ReservationResponse) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }

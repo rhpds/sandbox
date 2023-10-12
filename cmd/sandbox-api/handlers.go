@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -17,16 +18,17 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 
 	"github.com/rhpds/sandbox/internal/api/v1"
+	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
 )
 
 type BaseHandler struct {
-	dbpool          *pgxpool.Pool
-	svc             *dynamodb.DynamoDB
-	doc             *openapi3.T
-	oaRouter        oarouters.Router
-	accountProvider models.AwsAccountProvider
+	dbpool             *pgxpool.Pool
+	svc                *dynamodb.DynamoDB
+	doc                *openapi3.T
+	oaRouter           oarouters.Router
+	awsAccountProvider models.AwsAccountProvider
 }
 
 type AdminHandler struct {
@@ -34,24 +36,24 @@ type AdminHandler struct {
 	tokenAuth *jwtauth.JWTAuth
 }
 
-func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, accountProvider models.AwsAccountProvider) *BaseHandler {
+func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider) *BaseHandler {
 	return &BaseHandler{
-		svc:             svc,
-		dbpool:          dbpool,
-		doc:             doc,
-		oaRouter:        oaRouter,
-		accountProvider: accountProvider,
+		svc:                svc,
+		dbpool:             dbpool,
+		doc:                doc,
+		oaRouter:           oaRouter,
+		awsAccountProvider: awsAccountProvider,
 	}
 }
 
 func NewAdminHandler(b *BaseHandler, tokenAuth *jwtauth.JWTAuth) *AdminHandler {
 	return &AdminHandler{
 		BaseHandler: BaseHandler{
-			svc:             b.svc,
-			dbpool:          b.dbpool,
-			doc:             b.doc,
-			oaRouter:        b.oaRouter,
-			accountProvider: b.accountProvider,
+			svc:                b.svc,
+			dbpool:             b.dbpool,
+			doc:                b.doc,
+			oaRouter:           b.oaRouter,
+			awsAccountProvider: b.awsAccountProvider,
 		},
 		tokenAuth: tokenAuth,
 	}
@@ -107,9 +109,14 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 	resources := []any{}
 	for _, request := range placementRequest.Resources {
 		switch request.Kind {
-		case "AwsSandbox":
+		case "AwsSandbox", "AwsAccount", "aws_account":
 			// Create the placement in AWS
-			accounts, err := h.accountProvider.Request(placementRequest.ServiceUuid, request.Count, placementRequest.Annotations)
+			accounts, err := h.awsAccountProvider.Request(
+				placementRequest.ServiceUuid,
+				placementRequest.Reservation,
+				request.Count,
+				placementRequest.Annotations,
+			)
 			if err != nil {
 				if err == models.ErrNoEnoughAccountsAvailable {
 					w.WriteHeader(http.StatusInsufficientStorage)
@@ -255,7 +262,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 		log.Logger.Error("GetPlacementHandler", "error", err)
 		return
 	}
-	placement.LoadActiveResourcesWithCreds(h.accountProvider)
+	placement.LoadActiveResourcesWithCreds(h.awsAccountProvider)
 
 	w.WriteHeader(http.StatusOK)
 	render.Render(w, r, placement)
@@ -265,7 +272,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Request) {
 	serviceUuid := chi.URLParam(r, "uuid")
 
-	err := models.DeletePlacementByServiceUuid(h.dbpool, h.accountProvider, serviceUuid)
+	err := models.DeletePlacementByServiceUuid(h.dbpool, h.awsAccountProvider, serviceUuid)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			w.WriteHeader(http.StatusNotFound)
@@ -303,6 +310,7 @@ func (h *BaseHandler) LifeCyclePlacementHandler(action string) http.HandlerFunc 
 
 			lifecyclePlacementJob := models.LifecyclePlacementJob{
 				PlacementID: placement.ID,
+				Locality:    config.LocalityID,
 				RequestID:   reqId,
 				Action:      action,
 				Status:      "new",
@@ -333,7 +341,7 @@ func (h *BaseHandler) LifeCyclePlacementHandler(action string) http.HandlerFunc 
 		if err == pgx.ErrNoRows {
 			// Legacy services don't have a placement, but stop them anyway
 
-			accounts, err := h.accountProvider.FetchAllActiveByServiceUuid(serviceUuid)
+			accounts, err := h.awsAccountProvider.FetchAllActiveByServiceUuid(serviceUuid)
 			if err != nil {
 				log.Logger.Error("GET accounts", "error", err)
 
@@ -360,6 +368,7 @@ func (h *BaseHandler) LifeCyclePlacementHandler(action string) http.HandlerFunc 
 				lifecycleResourceJob := models.LifecycleResourceJob{
 					ResourceType: account.Kind,
 					ResourceName: account.Name,
+					Locality:     config.LocalityID,
 					RequestID:    reqId,
 					Action:       action,
 					Status:       "new",
@@ -436,7 +445,7 @@ func (h *BaseHandler) GetStatusPlacementHandler(w http.ResponseWriter, r *http.R
 	if err == pgx.ErrNoRows {
 		// Legacy services don't have a placement, but get status using the serviceUUID
 
-		accounts, err := h.accountProvider.FetchAllActiveByServiceUuid(serviceUuid)
+		accounts, err := h.awsAccountProvider.FetchAllActiveByServiceUuid(serviceUuid)
 		if err != nil {
 			log.Logger.Error("GET accounts", "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -805,5 +814,329 @@ func (h *BaseHandler) GetStatusRequestHandler(w http.ResponseWriter, r *http.Req
 		HTTPStatusCode: http.StatusOK,
 		RequestID:      RequestID,
 		Status:         status,
+	})
+}
+
+// Regex to ensure a string is alpha-numeric + underscore + dash
+var nameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// CreateReservationHandler creates a new reservation
+func (h *BaseHandler) CreateReservationHandler(w http.ResponseWriter, r *http.Request) {
+	reservationRequest := models.ReservationRequest{}
+	if err := render.Bind(r, &reservationRequest); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Error decoding request body",
+		})
+		log.Logger.Error("CreateReservationHandler", "error", err)
+
+		return
+	}
+
+	name := reservationRequest.Name
+
+	// Ensure name is in the acceptable format (only alpha-numeric)
+	if !nameRegex.MatchString(name) {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid name",
+		})
+		log.Logger.Error("Invalid name", "name", name)
+		return
+	}
+
+	// If the reservation already exists, return a 409 Status Conflict
+	_, err := models.GetReservationByName(h.dbpool, name)
+	if err != pgx.ErrNoRows {
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				Err:            err,
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Error checking for existing reservation",
+			})
+			log.Logger.Error("CreateReservationHandler", "error", err)
+			return
+		}
+
+		// Reservation already exists
+		w.WriteHeader(http.StatusConflict)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusConflict,
+			Message:        "Reservation already exists",
+		})
+		return
+	}
+
+	// Validate the request
+	if message, err := reservationRequest.Validate(h.awsAccountProvider); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        message,
+		})
+		log.Logger.Error("CreateReservationHandler", "error", err)
+		return
+	}
+
+	// Create the reservation
+	reservation := models.Reservation{
+		Name:    name,
+		Request: reservationRequest,
+		Status:  "new",
+	}
+
+	if err := reservation.Save(h.dbpool); err != nil {
+		log.Logger.Error("Error saving reservation", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error saving reservation",
+		})
+		return
+	}
+
+	// Initialize and construct the reservation.
+	// Here we can use a goroutine as this is an admin endpoint,
+	// we don't need a worker queue to prevent high load, memory exhaustion, or things of the sort.
+
+	if err := reservation.UpdateStatus(h.dbpool, "initializing"); err != nil {
+		log.Logger.Error("Error updating reservation status", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error updating reservation status",
+		})
+		return
+	}
+
+	go reservation.Initialize(h.dbpool, h.awsAccountProvider)
+
+	w.WriteHeader(http.StatusAccepted)
+	render.Render(w, r, &v1.ReservationResponse{
+		Reservation:    reservation,
+		Message:        "Reservation request created",
+		HTTPStatusCode: http.StatusAccepted,
+	})
+}
+
+// DeleteReservationHandler deletes a reservation
+func (h *BaseHandler) DeleteReservationHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	reservation, err := models.GetReservationByName(h.dbpool, name)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Reservation not found",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting reservation",
+		})
+		log.Logger.Error("DeleteReservationHandler", "error", err)
+		return
+	}
+
+	if err := reservation.UpdateStatus(h.dbpool, "deleting"); err != nil {
+		log.Logger.Error("Error updating reservation status", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error updating reservation status",
+		})
+		return
+	}
+
+	go reservation.Remove(h.dbpool, h.awsAccountProvider)
+
+	w.WriteHeader(http.StatusAccepted)
+	render.Render(w, r, &v1.ReservationResponse{
+		Reservation:    reservation,
+		Message:        "Reservation deletion request created",
+		HTTPStatusCode: http.StatusAccepted,
+	})
+}
+
+// UpdateReservationHandler updates a reservation
+func (h *BaseHandler) UpdateReservationHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	reservation, err := models.GetReservationByName(h.dbpool, name)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Reservation not found",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting reservation",
+		})
+		log.Logger.Error("UpdateReservationHandler", "error", err)
+		return
+	}
+
+	reservationReq := models.ReservationRequest{}
+
+	// Decode the request body
+	if err := render.Bind(r, &reservationReq); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Error decoding request body",
+		})
+		log.Logger.Error("UpdateReservationHandler", "error", err)
+		return
+	}
+
+	// Validate the request
+	if message, err := reservationReq.Validate(h.awsAccountProvider); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        message,
+		})
+		log.Logger.Error("UpdateReservationHandler", "error", err)
+		return
+	}
+
+	// Update the status
+	if err := reservation.UpdateStatus(h.dbpool, "updating"); err != nil {
+		log.Logger.Error("Error updating reservation status", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error updating reservation status",
+		})
+		return
+	}
+
+	// Async Update the reservation
+	go reservation.Update(h.dbpool, h.awsAccountProvider, reservationReq)
+
+	w.WriteHeader(http.StatusAccepted)
+	render.Render(w, r, &v1.ReservationResponse{
+		Reservation:    reservation,
+		Message:        "Reservation update request created",
+		HTTPStatusCode: http.StatusAccepted,
+	})
+}
+
+// GetReservationHandler gets a reservation
+func (h *BaseHandler) GetReservationHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	reservation, err := models.GetReservationByName(h.dbpool, name)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Reservation not found",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting reservation",
+		})
+		log.Logger.Error("GetReservationHandler", "error", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &v1.ReservationResponse{
+		Reservation:    reservation,
+		Message:        "Reservation found",
+		HTTPStatusCode: http.StatusOK,
+	})
+}
+
+// GetReservationResourcesHandler gets the resources of a reservation
+func (h *BaseHandler) GetReservationResourcesHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	reservation, err := models.GetReservationByName(h.dbpool, name)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Reservation not found",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting reservation",
+		})
+		log.Logger.Error("GetReservationHandler", "error", err)
+		return
+	}
+
+	accounts, err := h.awsAccountProvider.FetchAllByReservation(reservation.Name)
+
+	if err != nil {
+		log.Logger.Error("GET accounts", "error", err)
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error reading account",
+		})
+		return
+	}
+
+	if len(accounts) == 0 {
+		w.WriteHeader(http.StatusNotFound)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
+
+	// Response with accounts
+	resources := []any{}
+	for _, account := range accounts {
+		resources = append(resources, account)
+	}
+
+	render.Render(w, r, &v1.ResourcesResponse{
+		Count:          len(accounts),
+		Resources:      resources,
+		Message:        "Accounts found",
+		HTTPStatusCode: http.StatusOK,
 	})
 }

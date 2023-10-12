@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/rhpds/sandbox/internal/config"
 	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"github.com/rhpds/sandbox/internal/log"
 
@@ -105,7 +106,7 @@ func main() {
 	// DynamoDB
 	// ---------------------------------------------------------------------
 	sandboxdb.CheckEnv()
-	accountProvider := sandboxdb.NewAwsAccountDynamoDBProviderWithSecret(vaultSecret)
+	awsAccountProvider := sandboxdb.NewAwsAccountDynamoDBProviderWithSecret(vaultSecret)
 
 	// ---------------------------------------------------------------------
 	// Setup JWT
@@ -127,10 +128,10 @@ func main() {
 	// to the handler maker.
 	// When we need to migrate to Postgresql, we can pass a different "Provider" which will
 	// implement the same interface.
-	accountHandler := NewAccountHandler(accountProvider)
+	accountHandler := NewAccountHandler(awsAccountProvider)
 
 	// Factory for handlers which need connections to both databases
-	baseHandler := NewBaseHandler(accountProvider.Svc, dbPool, doc, oaRouter, accountProvider)
+	baseHandler := NewBaseHandler(awsAccountProvider.Svc, dbPool, doc, oaRouter, awsAccountProvider)
 
 	// Admin handler adds tokenAuth to the baseHandler
 	adminHandler := NewAdminHandler(baseHandler, tokenAuth)
@@ -197,6 +198,8 @@ func main() {
 		r.Put("/api/v1/placements/{uuid}/status", baseHandler.LifeCyclePlacementHandler("status"))
 		r.Get("/api/v1/placements/{uuid}/status", baseHandler.GetStatusPlacementHandler)
 		r.Get("/api/v1/requests/{id}/status", baseHandler.GetStatusRequestHandler)
+		r.Get("/api/v1/reservations/{name}", baseHandler.GetReservationHandler)
+		r.Get("/api/v1/reservations/{name}/resources", baseHandler.GetReservationResourcesHandler)
 	})
 
 	// ---------------------------------------------------------------------
@@ -216,6 +219,11 @@ func main() {
 		r.Post("/api/v1/admin/jwt", adminHandler.IssueLoginJWTHandler)
 		r.Get("/api/v1/admin/jwt", baseHandler.GetJWTHandler)
 		r.Put("/api/v1/admin/jwt/{id}/invalidate", baseHandler.InvalidateTokenHandler)
+
+		// Reservations
+		r.Post("/api/v1/reservations", baseHandler.CreateReservationHandler)
+		r.Put("/api/v1/reservations/{name}", baseHandler.UpdateReservationHandler)
+		r.Delete("/api/v1/reservations/{name}", baseHandler.DeleteReservationHandler)
 	})
 
 	// ---------------------------------------------------------------------
@@ -243,6 +251,7 @@ func main() {
 		port = "8080"
 	}
 
+	log.Logger.Info("Instance", "LocalityID", config.LocalityID)
 	log.Logger.Info("Listening on port " + port)
 	log.Err.Fatal(http.ListenAndServe(":"+port, router))
 }

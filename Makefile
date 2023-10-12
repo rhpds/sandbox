@@ -16,7 +16,7 @@ test:
 	@echo "VERSION: $(VERSION)"
 	@go test -v ./...
 
-run-api: cmd/sandbox-api/assets/swagger.yaml .dev.pgenv .dev.jwtauth_env migrate
+run-api: cmd/sandbox-api/assets/swagger.yaml .dev.pgenv .dev.jwtauth_env #migrate
 	. ./.dev.pgenv && . ./.dev.jwtauth_env && cd cmd/sandbox-api && CGO_ENABLED=0 go run .
 
 rm-local-pg:
@@ -25,7 +25,7 @@ rm-local-pg:
 
 run-local-pg: .dev.pg_password rm-local-pg
 	@echo "Running local postgres..."
-	@podman run  -p 5432:5432 --name localpg -e POSTGRES_PASSWORD=$(shell cat .dev.pg_password) -d postgres
+	@podman run  -p 5432:5432 --name localpg -e POSTGRES_PASSWORD=$(shell cat .dev.pg_password) -d postgres:16-bullseye
 	# See full list of parameters here:
 	# https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
 

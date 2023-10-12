@@ -3,6 +3,7 @@
 * TODO all endpoints
 ** Placements
 *** DONE GET all
+**** DONE available
 **** TODO min-age param
 **** TODO max-age param
 **** TODO unit param
@@ -58,11 +59,25 @@
 * TODO patch clients (sandbox-list, mark_for_cleanup script, etc) to use the sandbox-API instead of dynamodb
 * TODO documentation coverage
 * TODO move handlers per version?
+* DONE mark sandbox for cleanup once migrate from prod to dev
+* DONE add hurl to the admin image
 * Post MVP
-** TODO unit tests and fixture/functional tests
+** TODO unit tests fixture/functional tests
 ** TODO prometheus endpoint and metrics
 ** TODO Encrypt IAM secret key using AWS KMS instead of ansible-vault.  Use and support both while transitioning
 ** TODO aws lambda function to replicate changes from dynamoDB to postgresql
 ** TODO add POST /refresh   to get new access token
+** TODO Prometheus endpoint
 ** TODO rename env variable:  prefix with DYNAMODB_ for anything related to dynamodb access
-
+** TODO Reservations
+*** DONE functional tests (hurl)
+*** sandbox-api
+**** DONE Update OpenAPI schema to support passing the group parameter
+**** DONE patch handlers
+***** DONE safeguard: do not allow reservation if capacity (after reservation) is <20%
+*** TODO conan: preserve reservation when cleaning up
+*** TODO update AWS sandbox prometheus endpoint to show reservation information
+*** TODO update sandbox-list: add reservation column
+*** TODO patch legacy scripts to filter out accounts that are in a reservation
+*** TODO expiration
+**** make sure a comment is added to accounts when their expiration expires, so we can find them back.

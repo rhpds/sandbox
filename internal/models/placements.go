@@ -103,7 +103,6 @@ func (p *Placement) LoadActiveResourcesWithCreds(accountProvider AwsAccountProvi
 	return nil
 }
 
-
 func (p *Placement) Save(dbpool *pgxpool.Pool) error {
 	var id int
 	// Check if placement already exists in the DB
@@ -128,6 +127,10 @@ func (p *Placement) Save(dbpool *pgxpool.Pool) error {
 			"INSERT INTO placements (service_uuid, request, annotations) VALUES ($1, $2, $3) RETURNING id",
 			p.ServiceUuid, p.Request, p.Annotations,
 		).Scan(&id)
+
+		if err != nil {
+			return err
+		}
 
 		p.ID = id
 		return nil

@@ -44,6 +44,36 @@
 
 - when: operation == 'RESET'
   block:
+    - name: Get sandbox reservation
+      vars:
+        _data:
+          name:
+            S: "{{ account_name }}"
+      command: >-
+        aws --profile {{ dynamodb_profile | quote }}
+        --region {{ dynamodb_region | quote }}
+        dynamodb get-item
+        --table-name {{ dynamodb_table }}
+        --key '{{ _data | to_json }}'
+        --query 'Item.reservation'
+        --output text
+      register: r_get_reservation
+      changed_when: false
+
+    - name: Save some values for after cleanup
+      set_fact:
+        sandbox_reservation: "{{ r_get_reservation.stdout }}"
+
+    - when: sandbox_reservation | default("", true) not in ["", "None", "null"]
+      set_fact:
+        additional_data:
+          reservation:
+            S: "{{ sandbox_reservation }}"
+
+    - when: sandbox_reservation | default("", true) in ["", "None", "null"]
+      set_fact:
+        additional_data: {}
+
     - name: Pre-Reset account information for validation
       vars:
         _data:
@@ -66,7 +96,7 @@
         --region {{ dynamodb_region }}
         dynamodb put-item
         --table-name {{ dynamodb_table }}
-        --item '{{ _data | to_json }}'
+        --item '{{ _data | combine(additional_data | default({}), recursive=True) | to_json }}'
 
     - name: Validate Sandbox
       include_tasks: validate.yaml
@@ -93,5 +123,5 @@
         --region {{ dynamodb_region }}
         dynamodb put-item
         --table-name {{ dynamodb_table }}
-        --item '{{ _data | to_json }}'
+        --item '{{ _data | combine(additional_data | default({}), recursive=True) | to_json }}'
       register: _resetaccount
