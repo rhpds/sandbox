@@ -10,7 +10,7 @@ oc run -n babylon-sandbox-api admin-$$ \
 .Example create a summit reservation of 4 AwsSandbox
 ----
 # Run from within the admin pod
-hurl reservation_create.hurl  \
+hurl tools/reservation_create.hurl  \
 --variable host=sandbox-api.babylon-sandbox-api.svc.cluster.local:8080 \
 --variable login_token_admin=...  \
 --variable reservation_name=summit \
@@ -25,7 +25,7 @@ Scale Up or Down a reservation
 .Example update reservation named 'summit', scale it up to 40 AwsSandbox
 ----
 # Run from within the admin pod
-hurl reservation_update.hurl  \
+hurl tools/reservation_update.hurl  \
 --variable host=sandbox-api.babylon-sandbox-api.svc.cluster.local:8080 \
 --variable login_token_admin=...  \
 --variable reservation_name=summit \
@@ -38,7 +38,7 @@ hurl reservation_update.hurl  \
 .Example delete a reservation named 'summit'
 ----
 # Run from within the admin pod
-hurl reservation_delete.hurl  \
+hurl tools/reservation_delete.hurl  \
 --variable host=sandbox-api.babylon-sandbox-api.svc.cluster.local:8080 \
 --variable login_token_admin=...  \
 --variable reservation_name=summit
