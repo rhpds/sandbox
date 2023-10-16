@@ -1,7 +1,7 @@
 == Run admin pod ==
 
 ----
-oc run -n babylon-sandbox-api admin \
+oc run -n babylon-sandbox-api admin-$$ \
 --image=quay.io/rhpds/sandbox-admin:latest -i -t --restart=Never --rm -- /bin/bash
 ----
 
