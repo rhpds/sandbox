@@ -5,15 +5,41 @@ oc run -n babylon-sandbox-api admin \
 --image=quay.io/rhpds/sandbox-admin:latest -i -t --restart=Never --rm -- /bin/bash
 ----
 
-== `reserve.hurl` ==
+== Create a new reservation ==
 
 .Example create a summit reservation of 4 AwsSandbox
 ----
 # Run from within the admin pod
-hurl reserve.hurl  \
+hurl reservation_create.hurl  \
 --variable host=sandbox-api.babylon-sandbox-api.svc.cluster.local:8080 \
 --variable login_token_admin=...  \
 --variable reservation_name=summit \
 --variable reservation_resource_kind=AwsSandbox \
---variable reservation_resource_count=4 --verbose
+--variable reservation_resource_count=4
+----
+
+== Update reservation ==
+
+Scale Up or Down a reservation
+
+.Example update reservation named 'summit', scale it up to 40 AwsSandbox
+----
+# Run from within the admin pod
+hurl reservation_update.hurl  \
+--variable host=sandbox-api.babylon-sandbox-api.svc.cluster.local:8080 \
+--variable login_token_admin=...  \
+--variable reservation_name=summit \
+--variable reservation_resource_kind=AwsSandbox \
+--variable reservation_resource_count=40
+----
+
+== Delete a reservation ==
+
+.Example delete a reservation named 'summit'
+----
+# Run from within the admin pod
+hurl reservation_delete.hurl  \
+--variable host=sandbox-api.babylon-sandbox-api.svc.cluster.local:8080 \
+--variable login_token_admin=...  \
+--variable reservation_name=summit
 ----

@@ -46,6 +46,7 @@ env SSH_KNOWN_HOSTS /ssh/known_hosts
 COPY --from=builder /sandbox/build/sandbox-* ./
 COPY --from=builder /sandbox/tools ./tools
 COPY --from=builder /sandbox/tests ./tests
+COPY --from=builder /sandbox/db ./db
 CMD ["/bin/bash"]
 
 
