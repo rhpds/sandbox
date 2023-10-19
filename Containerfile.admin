@@ -22,7 +22,11 @@ RUN dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x
     gcc \
     git \
     jq \
+    libevent \
+    libevent-devel \
+    make \
     nc \
+    ncurses-devel \
     net-tools \
     openssl \
     postgresql \
@@ -33,10 +37,18 @@ RUN dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x
     unzip \
     vim \
     wget \
+    && cd /tmp \
+    && TMUX_VERSION="3.3a" \
+    && curl --silent --location https://github.com/tmux/tmux/releases/download/${TMUX_VERSION}/tmux-${TMUX_VERSION}.tar.gz -O \
+    && tar -zxf tmux-*.tar.gz \
+    && cd tmux-*/ \
+    && ./configure \
+    && make && make install \
     && dnf clean all \
-    && VERSION=4.1.0 \
-    && curl --silent --location https://github.com/Orange-OpenSource/hurl/releases/download/$VERSION/hurl-$VERSION-x86_64-unknown-linux-gnu.tar.gz \
-    | tar -xz -C /usr/local/bin --strip-components=1 --wildcards '*/hurl' '*/hurlfmt'
+    && HURL_VERSION=4.1.0 \
+    && curl --silent --location https://github.com/Orange-OpenSource/hurl/releases/download/${HURL_VERSION}/hurl-${HURL_VERSION}-x86_64-unknown-linux-gnu.tar.gz \
+    | tar -xz -C /usr/local/bin --strip-components=1 --wildcards '*/hurl' '*/hurlfmt' \
+    && rm -rf /tmp/* && rm -rf /var/cache/dnf/* && rm -rf /var/log/dnf*
 
 COPY --from=docker.io/migrate/migrate /usr/local/bin/migrate /usr/local/bin/migrate
 WORKDIR /sandbox/
@@ -47,7 +59,7 @@ COPY --from=builder /sandbox/build/sandbox-* ./
 COPY --from=builder /sandbox/tools ./tools
 COPY --from=builder /sandbox/tests ./tests
 COPY --from=builder /sandbox/db ./db
-CMD ["/bin/bash"]
+CMD ["/usr/local/bin/tmux", "new-session", "-s", "sandbox", "-c", "/sandbox"]
 
 
 ENV DESCRIPTION="Image for Admins to interact with the Sandbox API"
