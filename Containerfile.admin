@@ -21,6 +21,7 @@ RUN dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x
     findutils \
     gcc \
     git \
+    gnupg2 \
     jq \
     libevent \
     libevent-devel \
@@ -30,6 +31,7 @@ RUN dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x
     net-tools \
     openssl \
     postgresql \
+    procps-ng \
     python39 \
     python39-pip \
     rsync \
@@ -37,6 +39,7 @@ RUN dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x
     unzip \
     vim \
     wget \
+    && dnf clean all \
     && cd /tmp \
     && TMUX_VERSION="3.3a" \
     && curl --silent --location https://github.com/tmux/tmux/releases/download/${TMUX_VERSION}/tmux-${TMUX_VERSION}.tar.gz -O \
@@ -44,11 +47,10 @@ RUN dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x
     && cd tmux-*/ \
     && ./configure \
     && make && make install \
-    && dnf clean all \
     && HURL_VERSION=4.1.0 \
     && curl --silent --location https://github.com/Orange-OpenSource/hurl/releases/download/${HURL_VERSION}/hurl-${HURL_VERSION}-x86_64-unknown-linux-gnu.tar.gz \
     | tar -xz -C /usr/local/bin --strip-components=1 --wildcards '*/hurl' '*/hurlfmt' \
-    && rm -rf /tmp/* && rm -rf /var/cache/dnf/* && rm -rf /var/log/dnf*
+    && rm -rf /tmp/* && rm -rf /var/log/dnf*
 
 COPY --from=docker.io/migrate/migrate /usr/local/bin/migrate /usr/local/bin/migrate
 WORKDIR /sandbox/
@@ -59,8 +61,9 @@ COPY --from=builder /sandbox/build/sandbox-* ./
 COPY --from=builder /sandbox/tools ./tools
 COPY --from=builder /sandbox/tests ./tests
 COPY --from=builder /sandbox/db ./db
-CMD ["/usr/local/bin/tmux", "new-session", "-s", "sandbox", "-c", "/sandbox"]
 
+ENTRYPOINT ["/bin/tini", "--"]
+CMD ["/bin/bash"]
 
 ENV DESCRIPTION="Image for Admins to interact with the Sandbox API"
 LABEL name="rhpds/sandbox-admin" \
