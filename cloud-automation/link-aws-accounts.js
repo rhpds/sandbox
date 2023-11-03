@@ -6,7 +6,7 @@ const path = require("path");
 const headless = true;
 const username = process.env.USERNAME;
 const password = process.env.PASSWORD;
-const separator = "    ";
+const separator = / +/;
 
 class Job {
   constructor(id, cb) {
