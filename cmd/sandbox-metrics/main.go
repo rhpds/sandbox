@@ -8,6 +8,7 @@ import (
 	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -96,9 +97,18 @@ func createMetrics() {
 	}()
 }
 
+// Build info
+var Version = "development"
+var buildTime = "undefined"
+var buildCommit = "HEAD"
+
 func main() {
 	parseFlags()
-	log.InitLoggers(debugFlag)
+	log.InitLoggers(debugFlag, []slog.Attr{
+		slog.String("version", Version),
+		slog.String("buildTime", buildTime),
+		slog.String("buildCommit", buildCommit),
+	})
 
 	sandboxdb.CheckEnv()
 

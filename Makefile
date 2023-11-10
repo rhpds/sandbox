@@ -47,7 +47,7 @@ sandbox-api: cmd/sandbox-api/assets/swagger.yaml
 	CGO_ENABLED=0 go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" -o build/sandbox-api ./cmd/sandbox-api
 
 sandbox-metrics:
-	CGO_ENABLED=0 go build -o build/sandbox-metrics ./cmd/sandbox-metrics
+	CGO_ENABLED=0 go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" -o build/sandbox-metrics ./cmd/sandbox-metrics
 
 sandbox-issue-jwt:
 	CGO_ENABLED=0 go build -o build/sandbox-issue-jwt ./cmd/sandbox-issue-jwt
@@ -56,13 +56,16 @@ sandbox-replicate:
 	CGO_ENABLED=0 go build -o build/sandbox-replicate ./cmd/sandbox-replicate
 
 sandbox-dynamodb-rotate-vault:
-	CGO_ENABLED=0 go build -o build/sandbox-dynamodb-rotate-vault ./cmd/sandbox-dynamodb-rotate-vault
+	CGO_ENABLED=0 go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" -o build/sandbox-dynamodb-rotate-vault ./cmd/sandbox-dynamodb-rotate-vault
 
 
 push-lambda: deploy/lambda/sandbox-replicate.zip
 	python ./deploy/lambda/sandbox-replicate.py
 
-.PHONY: sandbox-api sandbox-issue-jwt sandbox-list sandbox-metrics sandbox-dynamodb-rotate-vault run-api sandbox-replicate migrate fixtures test run-local-pg push-lambda clean
+fmt:
+	@go fmt ./...
+
+.PHONY: sandbox-api sandbox-issue-jwt sandbox-list sandbox-metrics sandbox-dynamodb-rotate-vault run-api sandbox-replicate migrate fixtures test run-local-pg push-lambda clean fmt
 
 clean: rm-local-pg
 	rm -f build/sandbox-*

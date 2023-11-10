@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"golang.org/x/term"
+	"log/slog"
 	"os"
 	"strings"
 	"syscall"
@@ -17,8 +18,17 @@ import (
 	"github.com/rhpds/sandbox/internal/log"
 )
 
+// Build info
+var Version = "development"
+var buildTime = "undefined"
+var buildCommit = "HEAD"
+
 func main() {
-	log.InitLoggers(false)
+	log.InitLoggers(false, []slog.Attr{
+		slog.String("version", Version),
+		slog.String("buildTime", buildTime),
+		slog.String("buildCommit", buildCommit),
+	})
 
 	var sandboxName string
 

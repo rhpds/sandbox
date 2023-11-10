@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -211,7 +212,11 @@ func printBroken(accounts []models.AwsAccount) {
 
 func main() {
 	parseFlags()
-	log.InitLoggers(debugFlag)
+	log.InitLoggers(debugFlag, []slog.Attr{
+		slog.String("version", Version),
+		slog.String("buildTime", buildTime),
+		slog.String("buildCommit", buildCommit),
+	})
 
 	if os.Getenv("AWS_PROFILE") == "" {
 		os.Setenv("AWS_PROFILE", "pool-manager")
