@@ -3,4 +3,3 @@ deploy/lambda/*.zip
 Containerfile*
 .containerignore
 .dev.*
-.git
