@@ -2,6 +2,7 @@ package dynamodb
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"sort"
 	"strconv"
@@ -17,7 +18,6 @@ import (
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
 	vault "github.com/sosedoff/ansible-vault-go"
-	"golang.org/x/exp/slog"
 )
 
 func parseNameInt(s string) int {

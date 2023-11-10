@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	_ "embed"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/rhpds/sandbox/internal/config"
 	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
@@ -15,7 +17,7 @@ import (
 	gorillamux "github.com/getkin/kin-openapi/routers/gorillamux"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/httplog"
+	"github.com/go-chi/httplog/v2"
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/jackc/pgx/v4/pgxpool"
 )
@@ -23,11 +25,26 @@ import (
 //go:embed assets/swagger.yaml
 var openapiSpec []byte
 
+// Build info
+var Version = "development"
+var buildTime = "undefined"
+var buildCommit = "HEAD"
+
 func main() {
 	if os.Getenv("DEBUG") == "true" {
-		log.InitLoggers(true)
+		log.InitLoggers(true, []slog.Attr{
+			slog.String("version", Version),
+			slog.String("buildTime", buildTime),
+			slog.String("buildCommit", buildCommit),
+			slog.String("locality", config.LocalityID),
+		})
 	} else {
-		log.InitLoggers(false)
+		log.InitLoggers(false, []slog.Attr{
+			slog.String("version", Version),
+			slog.String("buildTime", buildTime),
+			slog.String("buildCommit", buildCommit),
+			slog.String("locality", config.LocalityID),
+		})
 	}
 	ctx := context.Background()
 
@@ -139,15 +156,6 @@ func main() {
 	// HTTP router
 	router := chi.NewRouter()
 
-	// Structured Logger (JSON)
-	// Logger middleware is currently using zerolog but will switch to slog
-	// see https://github.com/go-chi/httplog/issues/16
-	// and https://github.com/go-chi/httplog/pull/17
-	// For the rest of the API we use slog already.
-	logger := httplog.NewLogger("httplog-example", httplog.Options{
-		JSON: true,
-	})
-
 	// ---------------------------------------------------------------------
 	// Workers
 	// ---------------------------------------------------------------------
@@ -155,6 +163,32 @@ func main() {
 	worker := NewWorker(*baseHandler)
 
 	go worker.WatchLifecycleDBChannels(context.Background())
+
+	logLevel := slog.LevelInfo
+	if os.Getenv("DEBUG") == "true" {
+		logLevel = slog.LevelDebug
+	}
+
+	// Logger
+	logger := httplog.NewLogger("httplog", httplog.Options{
+		JSON:             true,
+		LogLevel:         logLevel,
+		Concise:          true,
+		RequestHeaders:   true,
+		MessageFieldName: "message",
+		Tags: map[string]string{
+			"version":     Version,
+			"buildTime":   buildTime,
+			"buildCommit": buildCommit,
+			"locality":    config.LocalityID,
+		},
+		QuietDownRoutes: []string{
+			"/api/v1/health",
+			"/ping",
+		},
+		QuietDownPeriod: 10 * time.Second,
+		// SourceFieldName: "source",
+	})
 
 	// ---------------------------------------------------------------------
 	// Middlewares

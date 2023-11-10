@@ -1,9 +1,9 @@
 package log
 
 import (
-	"golang.org/x/exp/slog"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 )
 
@@ -23,7 +23,7 @@ var Report *log.Logger
 var Logger *slog.Logger
 
 // InitLoggers sets logger
-func InitLoggers(debugFlag bool) {
+func InitLoggers(debugFlag bool, attrs []slog.Attr) {
 	Err = log.New(os.Stderr, "!!! ", log.LstdFlags)
 	Out = log.New(os.Stdout, "    ", log.LstdFlags)
 	opts := slog.HandlerOptions{
@@ -39,5 +39,5 @@ func InitLoggers(debugFlag bool) {
 	}
 	Report = log.New(os.Stdout, "+++ ", log.LstdFlags)
 
-	Logger = slog.New(opts.NewJSONHandler(os.Stdout))
+	Logger = slog.New(slog.NewJSONHandler(os.Stdout, &opts).WithAttrs(attrs))
 }
