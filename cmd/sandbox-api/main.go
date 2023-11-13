@@ -187,7 +187,6 @@ func main() {
 			"/ping",
 		},
 		QuietDownPeriod: 10 * time.Second,
-		TimeFieldName: "time",
 		// SourceFieldName: "source",
 	})
 
