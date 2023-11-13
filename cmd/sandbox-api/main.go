@@ -173,7 +173,7 @@ func main() {
 	logger := httplog.NewLogger("httplog", httplog.Options{
 		JSON:             true,
 		LogLevel:         logLevel,
-		Concise:          true,
+		Concise:          false,
 		RequestHeaders:   true,
 		MessageFieldName: "message",
 		Tags: map[string]string{
