@@ -175,7 +175,7 @@ func main() {
 		LogLevel:         logLevel,
 		Concise:          false,
 		RequestHeaders:   true,
-		MessageFieldName: "message",
+		MessageFieldName: "msg",
 		Tags: map[string]string{
 			"version":     Version,
 			"buildTime":   buildTime,
