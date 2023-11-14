@@ -73,7 +73,7 @@ func (w Worker) Execute(j *models.LifecycleResourceJob) error {
 		ctx := context.TODO()
 
 		// Add RequestID to context
-		ctx = context.WithValue(ctx, "RequestID", string(j.RequestID))
+		ctx = context.WithValue(ctx, "RequestID", j.RequestID)
 		// If job has a parent, add serviceUUID to context
 		if j.ParentID != 0 {
 			// Load parent job from DB
