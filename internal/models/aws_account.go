@@ -207,6 +207,7 @@ func (a AwsAccount) Start(creds *ststypes.Credentials) error {
 					"instance_id", *instance.InstanceId,
 					"instance_type", instance.InstanceType,
 					"region", *region.RegionName,
+					"instance_tags", instance.Tags,
 				)
 			}
 		}
@@ -288,6 +289,7 @@ func (a AwsAccount) Stop(creds *ststypes.Credentials) error {
 					"instance_id", *instance.InstanceId,
 					"instance_type", instance.InstanceType,
 					"region", *region.RegionName,
+					"instance_tags", instance.Tags,
 				)
 			}
 		}
