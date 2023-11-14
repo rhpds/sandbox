@@ -43,9 +43,9 @@ func GetLifecycleResourceJob(dbpool *pgxpool.Pool, id int) (*LifecycleResourceJo
 
 	err := dbpool.QueryRow(
 		context.Background(),
-		"SELECT id, COALESCE(parent_id, 0), resource_name, resource_type, status, request, lifecycle_result, lifecycle_action, updated_at, locality FROM lifecycle_resource_jobs WHERE id = $1",
+		"SELECT id, COALESCE(parent_id, 0), resource_name, resource_type, status, request_id, request, lifecycle_result, lifecycle_action, updated_at, locality FROM lifecycle_resource_jobs WHERE id = $1",
 		id,
-	).Scan(&j.ID, &j.ParentID, &j.ResourceName, &j.ResourceType, &j.Status, &j.Request, &j.Result, &j.Action, &j.UpdatedAt, &j.Locality)
+	).Scan(&j.ID, &j.ParentID, &j.ResourceName, &j.ResourceType, &j.Status, &j.RequestID, &j.Request, &j.Result, &j.Action, &j.UpdatedAt, &j.Locality)
 
 	if err != nil {
 		return nil, err
@@ -80,9 +80,9 @@ func GetLifecyclePlacementJob(dbpool *pgxpool.Pool, id int) (*LifecyclePlacement
 
 	err := dbpool.QueryRow(
 		context.Background(),
-		"SELECT id, placement_id, status, request, lifecycle_action, locality FROM lifecycle_placement_jobs WHERE id = $1",
+		"SELECT id, placement_id, status, request_id, request, lifecycle_action, locality FROM lifecycle_placement_jobs WHERE id = $1",
 		id,
-	).Scan(&j.ID, &j.PlacementID, &j.Status, &j.Request, &j.Action, &j.Locality)
+	).Scan(&j.ID, &j.PlacementID, &j.Status, &j.RequestID, &j.Request, &j.Action, &j.Locality)
 	if err != nil {
 		return nil, err
 	}
@@ -98,9 +98,9 @@ func GetLifecyclePlacementJobByRequestID(dbpool *pgxpool.Pool, requestID string)
 
 	err := dbpool.QueryRow(
 		context.Background(),
-		"SELECT id, placement_id, status, request, lifecycle_action, locality FROM lifecycle_placement_jobs WHERE request_id = $1",
+		"SELECT id, placement_id, status, request_id, request, lifecycle_action, locality FROM lifecycle_placement_jobs WHERE request_id = $1",
 		requestID,
-	).Scan(&j.ID, &j.PlacementID, &j.Status, &j.Request, &j.Action, &j.Locality)
+	).Scan(&j.ID, &j.PlacementID, &j.Status, &j.RequestID, &j.Request, &j.Action, &j.Locality)
 	if err != nil {
 		return nil, err
 	}

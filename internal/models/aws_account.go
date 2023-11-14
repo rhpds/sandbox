@@ -130,7 +130,7 @@ func Sort[T Sortable](accounts []T, by string) []T {
 }
 
 // Start method starts all the stopped instances in the account
-func (a AwsAccount) Start(creds *ststypes.Credentials) error {
+func (a AwsAccount) Start(ctx context.Context, creds *ststypes.Credentials) error {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		log.Logger.Error("Error loading config", "error", err)
@@ -207,8 +207,8 @@ func (a AwsAccount) Start(creds *ststypes.Credentials) error {
 					"instance_id", *instance.InstanceId,
 					"instance_type", instance.InstanceType,
 					"region", *region.RegionName,
-					// Get only the first 10 tags
-					"instance_tags", instance.Tags[:min(10,len(instance.Tags))],
+					"request_id", ctx.Value("RequestID"),
+					"service_uuid", ctx.Value("ServiceUUID"),
 				)
 			}
 		}
@@ -218,7 +218,7 @@ func (a AwsAccount) Start(creds *ststypes.Credentials) error {
 }
 
 // Stop method stops all the running instances in the account
-func (a AwsAccount) Stop(creds *ststypes.Credentials) error {
+func (a AwsAccount) Stop(ctx context.Context, creds *ststypes.Credentials) error {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		log.Logger.Error("Error loading config", "error", err)
@@ -290,8 +290,8 @@ func (a AwsAccount) Stop(creds *ststypes.Credentials) error {
 					"instance_id", *instance.InstanceId,
 					"instance_type", instance.InstanceType,
 					"region", *region.RegionName,
-					// Get only the first 10 tags
-					"instance_tags", instance.Tags[:min(10,len(instance.Tags))],
+					"request_id", ctx.Value("RequestID"),
+					"service_uuid", ctx.Value("ServiceUUID"),
 				)
 			}
 		}
@@ -335,7 +335,7 @@ func MakeStatus(job *LifecycleResourceJob) Status {
 }
 
 // Status method returns the status of all the instances in the account
-func (a AwsAccount) Status(creds *ststypes.Credentials, job *LifecycleResourceJob) (Status, error) {
+func (a AwsAccount) Status(ctx context.Context, creds *ststypes.Credentials, job *LifecycleResourceJob) (Status, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		log.Logger.Error("Error loading config", "error", err)

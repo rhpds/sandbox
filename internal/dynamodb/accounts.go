@@ -2,7 +2,6 @@ package dynamodb
 
 import (
 	"errors"
-	"log/slog"
 	"os"
 	"sort"
 	"strconv"
