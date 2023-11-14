@@ -201,7 +201,13 @@ func (a AwsAccount) Start(creds *ststypes.Credentials) error {
 					errR = err
 					continue
 				}
-				log.Logger.Info("Start instance", "account", a.Name, "instance_id", *instance.InstanceId)
+				log.Logger.Info("Start instance",
+					"account", a.Name,
+					"account_id", a.AccountID,
+					"instance_id", *instance.InstanceId,
+					"instance_type", instance.InstanceType,
+					"region", *region.RegionName,
+				)
 			}
 		}
 	}
@@ -276,7 +282,13 @@ func (a AwsAccount) Stop(creds *ststypes.Credentials) error {
 					errR = err
 					continue
 				}
-				log.Logger.Info("Stop instance", "account", a.Name, "instance_id", *instance.InstanceId)
+				log.Logger.Info("Stop instance",
+					"account", a.Name,
+					"account_id", a.AccountID,
+					"instance_id", *instance.InstanceId,
+					"instance_type", instance.InstanceType,
+					"region", *region.RegionName,
+				)
 			}
 		}
 	}
