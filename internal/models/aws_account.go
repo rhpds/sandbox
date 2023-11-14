@@ -130,7 +130,7 @@ func Sort[T Sortable](accounts []T, by string) []T {
 }
 
 // Start method starts all the stopped instances in the account
-func (a AwsAccount) Start(creds *ststypes.Credentials) error {
+func (a AwsAccount) Start(ctx context.Context, creds *ststypes.Credentials) error {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		log.Logger.Error("Error loading config", "error", err)
@@ -201,7 +201,15 @@ func (a AwsAccount) Start(creds *ststypes.Credentials) error {
 					errR = err
 					continue
 				}
-				log.Logger.Info("Start instance", "account", a.Name, "instance_id", *instance.InstanceId)
+				log.Logger.Info("Start instance",
+					"account", a.Name,
+					"account_id", a.AccountID,
+					"instance_id", *instance.InstanceId,
+					"instance_type", instance.InstanceType,
+					"region", *region.RegionName,
+					"request_id", ctx.Value("RequestID"),
+					"service_uuid", ctx.Value("ServiceUUID"),
+				)
 			}
 		}
 	}
@@ -210,7 +218,7 @@ func (a AwsAccount) Start(creds *ststypes.Credentials) error {
 }
 
 // Stop method stops all the running instances in the account
-func (a AwsAccount) Stop(creds *ststypes.Credentials) error {
+func (a AwsAccount) Stop(ctx context.Context, creds *ststypes.Credentials) error {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		log.Logger.Error("Error loading config", "error", err)
@@ -276,7 +284,15 @@ func (a AwsAccount) Stop(creds *ststypes.Credentials) error {
 					errR = err
 					continue
 				}
-				log.Logger.Info("Stop instance", "account", a.Name, "instance_id", *instance.InstanceId)
+				log.Logger.Info("Stop instance",
+					"account", a.Name,
+					"account_id", a.AccountID,
+					"instance_id", *instance.InstanceId,
+					"instance_type", instance.InstanceType,
+					"region", *region.RegionName,
+					"request_id", ctx.Value("RequestID"),
+					"service_uuid", ctx.Value("ServiceUUID"),
+				)
 			}
 		}
 	}
@@ -319,7 +335,7 @@ func MakeStatus(job *LifecycleResourceJob) Status {
 }
 
 // Status method returns the status of all the instances in the account
-func (a AwsAccount) Status(creds *ststypes.Credentials, job *LifecycleResourceJob) (Status, error) {
+func (a AwsAccount) Status(ctx context.Context, creds *ststypes.Credentials, job *LifecycleResourceJob) (Status, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		log.Logger.Error("Error loading config", "error", err)

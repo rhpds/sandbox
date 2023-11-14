@@ -36,7 +36,7 @@ func InitLoggers(debugFlag bool, attrs []slog.Attr) {
 	}
 
 	opts := slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level:       slog.LevelInfo,
 		ReplaceAttr: replaceAttrs,
 	}
 	if debugFlag {

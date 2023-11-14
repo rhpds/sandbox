@@ -69,16 +69,42 @@ func (w Worker) Execute(j *models.LifecycleResourceJob) error {
 		}
 
 		log.Logger.Debug("assume successful")
+
+		ctx := context.TODO()
+
+		// Add RequestID to context
+		ctx = context.WithValue(ctx, "RequestID", j.RequestID)
+		// If job has a parent, add serviceUUID to context
+		if j.ParentID != 0 {
+			// Load parent job from DB
+			parentJob, err := models.GetLifecyclePlacementJob(w.Dbpool, j.ParentID)
+
+			if err != nil {
+				log.Logger.Error("Error getting parent job", "error", err)
+				return err
+			}
+
+			// Load placement from DB
+			placement, err := models.GetPlacement(w.Dbpool, parentJob.PlacementID)
+			if err != nil {
+				log.Logger.Error("Error getting placement", "error", err)
+				return err
+			}
+
+			// Add service UUID to context
+			ctx = context.WithValue(ctx, "ServiceUUID", placement.ServiceUuid)
+		}
+
 		switch j.Action {
 		case "start":
 			j.SetStatus("running")
-			return sandbox.Start(assume.Credentials)
+			return sandbox.Start(ctx, assume.Credentials)
 		case "stop":
 			j.SetStatus("running")
-			return sandbox.Stop(assume.Credentials)
+			return sandbox.Stop(ctx, assume.Credentials)
 		case "status":
 			j.SetStatus("running")
-			status, err := sandbox.Status(assume.Credentials, j)
+			status, err := sandbox.Status(ctx, assume.Credentials, j)
 			if err != nil {
 				j.SetStatus("error")
 				log.Logger.Error("Error getting status", "error", err)

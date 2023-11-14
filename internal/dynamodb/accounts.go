@@ -2,7 +2,6 @@ package dynamodb
 
 import (
 	"errors"
-	"log/slog"
 	"os"
 	"sort"
 	"strconv"
@@ -246,7 +245,6 @@ func GetAccount(svc *dynamodb.DynamoDB, name string) (AwsAccountDynamoDB, error)
 		log.Logger.Error("Unmarshalling dynamodb item", "error", err)
 		return AwsAccountDynamoDB{}, err
 	}
-	log.Logger.Info("GetItem succeeded", slog.String("sandbox", sandbox.Name))
 
 	return sandbox, nil
 }
