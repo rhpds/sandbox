@@ -7,7 +7,7 @@
   tasks:
     - fail:
         msg: Please set _account_num
-      when: _account_num is not defined
+      when: _account_num is not defined or _account_num == ""
 
     - include_role:
         name: infra-aws-sandbox

@@ -47,6 +47,7 @@
       retries: "{{ aws_nuke_retries }}"
       delay: 30
       until: _awsnuke is succeeded
+      no_log: true
 
     - debug:
         var: _awsnuke
@@ -79,6 +80,7 @@
           retries: 0
           delay: 30
           until: _awsnuke2 is succeeded
+          no_log: true
 
         - debug:
             var: _awsnuke2
