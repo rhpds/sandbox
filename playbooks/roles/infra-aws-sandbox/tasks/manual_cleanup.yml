@@ -140,6 +140,7 @@
         --account {{ account_id | quote }}
         --region {{ _region | quote }}
       register: r_access_points
+      changed_when: false
 
     - name: List all multi-region access points (us-west-2 only)
       command: >-
@@ -147,6 +148,7 @@
         --account {{ account_id | quote }}
         --region us-west-2
       register: r_access_points_multi
+      changed_when: false
 
 
     - when: >-
@@ -192,6 +194,7 @@
         --query 'items[*].arn'  --output json
 
       register: r_target_groups
+      changed_when: false
       failed_when: >-
         r_target_groups.rc != 0
         and 'Could not connect to the endpoint URL' not in r_target_groups.stderr
