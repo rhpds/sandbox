@@ -19,6 +19,7 @@
          --query VpcEndpointConnections[] --output json
 
       register: r_connections
+      changed_when: false
 
     - name: Reject all VPC endpoint connections
       loop: "{{ r_connections.stdout | from_json }}"
