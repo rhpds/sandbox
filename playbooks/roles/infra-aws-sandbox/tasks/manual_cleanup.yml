@@ -188,7 +188,8 @@
     - name: List all target groups
       command: >-
         {{ aws_cli }} --region "{{ _region }}"
-        vpc-lattice --query 'items[*].arn'  --output json
+        vpc-lattice list-target-groups
+        --query 'items[*].arn'  --output json
       register: r_target_groups
 
     - when: r_target_groups.stdout | from_json | length > 0
