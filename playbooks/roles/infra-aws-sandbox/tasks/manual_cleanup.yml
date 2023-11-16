@@ -190,7 +190,11 @@
         {{ aws_cli }} --region "{{ _region }}"
         vpc-lattice list-target-groups
         --query 'items[*].arn'  --output json
+
       register: r_target_groups
+      failed_when: >-
+        r_target_groups.rc != 0
+        and 'Could not connect to the endpoint URL' not in r_target_groups.stderr
 
     - when: r_target_groups.stdout | from_json | length > 0
       block:
