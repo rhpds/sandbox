@@ -14,7 +14,7 @@
 
     - name: Get all VPC endpoint connections
       command: >-
-         aws ec2 --region {{ _region | quote }}
+         {{ aws_cli }} ec2 --region {{ _region | quote }}
          describe-vpc-endpoint-connections
          --query VpcEndpointConnections[] --output json
 
@@ -25,7 +25,7 @@
       loop_control:
         loop_var: conn
       command: >-
-        aws ec2 --region {{ _region | quote }}
+        {{ aws_cli }} ec2 --region {{ _region | quote }}
         reject-vpc-endpoint-connections
         --service-id {{ conn.ServiceId }}
         --vpc-endpoint-ids {{ conn.VpcEndpointId }}
@@ -62,7 +62,7 @@
       block:
         - name: Disable termination protection on all instances
           command: >-
-            aws ec2 --profile "{{ account_profile }}"
+            {{ aws_cli }} ec2 --profile "{{ account_profile }}"
             --region "{{ _region }}"
             modify-instance-attribute
             --instance-id {{ _instance.instance_id }}
@@ -81,7 +81,7 @@
 
     - name: Get all RDS DB instances
       command: >-
-        aws --profile {{ account_profile | quote }}
+        {{ aws_cli }} --profile {{ account_profile | quote }}
         --region {{ _region | quote }}
         rds describe-db-instances
         --output json
@@ -96,7 +96,7 @@
     - name: Disable termination protection on all DBInstances
       loop: "{{ db_instances }}"
       command: >-
-        aws --profile {{ account_profile | quote }}
+        {{ aws_cli }} --profile {{ account_profile | quote }}
         --region {{ _region | quote }}
         rds modify-db-instance
         --db-instance-identifier {{ item }}
@@ -122,7 +122,7 @@
 
         - name: Disassociate EIP
           command: >-
-            aws ec2 --profile "{{ account_profile }}"
+            {{ aws_cli }} ec2 --profile "{{ account_profile }}"
             --region "{{ _region }}"
             disassociate-address
             --public-ip "{{ _eip.public_ip }}"
@@ -136,10 +136,18 @@
     # Access Points
     - name: List all Access points
       command: >-
-        aws s3control list-access-points
+        {{ aws_cli }} s3control list-access-points
         --account {{ account_id | quote }}
         --region {{ _region | quote }}
       register: r_access_points
+
+    - name: List all multi-region access points (us-west-2 only)
+      command: >-
+        {{ aws_cli }} s3control list-multi-region-access-points
+        --account {{ account_id | quote }}
+        --region us-west-2
+      register: r_access_points_multi
+
 
     - when: >-
         (r_access_points.stdout | from_json).AccessPointList
@@ -150,10 +158,47 @@
             {{ (r_access_points.stdout | from_json).AccessPointList
             | default([]) }}
           command: >-
-            aws s3control delete-access-point
+            {{ aws_cli }} s3control delete-access-point
             --account-id {{ account_id | quote }}
             --name {{ item.Name | quote }}
             --region {{ _region | quote }}
+
+        - set_fact:
+            run_aws_nuke_again: true
+
+    # delete all multi-region access points
+    - when: >-
+        (r_access_points_multi.stdout | from_json).AccessPoints
+        | default([])  | length > 0
+      block:
+        - name: Delete all multi-region access points
+          loop: >-
+            {{ (r_access_points_multi.stdout | from_json).AccessPoints
+            | default([]) }}
+          command: >-
+            {{ aws_cli }} s3control delete-multi-region-access-point
+            --region us-west-2
+            --account-id {{ account_id | quote }}
+            --detail Name={{ item.Name | quote }}
+
+        - set_fact:
+            run_aws_nuke_again: true
+
+    # Target groups
+    - name: List all target groups
+      command: >-
+        {{ aws_cli }} --region "{{ _region }}"
+        vpc-lattice --query 'items[*].arn'  --output json
+      register: r_target_groups
+
+    - when: r_target_groups.stdout | from_json | length > 0
+      block:
+        - name: Delete all target groups
+          loop: "{{ r_target_groups.stdout | from_json }}"
+          command: >-
+            {{ aws_cli }} --region "{{ _region }}"
+            vpc-lattice delete-target-group
+            --target-group-identifier {{ item | quote }}
 
         - set_fact:
             run_aws_nuke_again: true

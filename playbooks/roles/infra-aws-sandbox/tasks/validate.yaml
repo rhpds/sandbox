@@ -8,7 +8,7 @@
       name:
         S: "{{ account_name }}"
   command: >-
-    aws --profile {{ dynamodb_profile }} --region {{ dynamodb_region }}
+    {{ aws_cli }} --profile {{ dynamodb_profile }} --region {{ dynamodb_region }}
     dynamodb get-item
     --table-name {{ dynamodb_table }}
     --key '{{ _data | to_json }}'

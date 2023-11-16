@@ -15,13 +15,13 @@
 
     - name: Attach user to AdministratorAccess policy
       command: >-
-        aws iam attach-user-policy
+        {{ aws_cli }} iam attach-user-policy
         --user-name {{ account_user }}
         --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
 
     - name: Get access keys for user
       command: >-
-        aws iam list-access-keys --user-name {{ account_user }}
+        {{ aws_cli }} iam list-access-keys --user-name {{ account_user }}
         --query 'AccessKeyMetadata[].AccessKeyId'
       register: _listkeys
       changed_when: false
@@ -29,7 +29,7 @@
     - when: operation in ['RESET', 'CREATE']
       name: Delete all access keys
       command: >-
-        aws iam delete-access-key
+        {{ aws_cli }} iam delete-access-key
         --user-name {{ account_user }}
         --access-key-id {{ _key }}
       loop: "{{_listkeys.stdout|from_json|list }}"

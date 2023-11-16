@@ -1,7 +1,7 @@
 ---
 - name: Set Alias name to account
   command: >-
-    aws --profile {{ account_name }}
+    {{ aws_cli }} --profile {{ account_name }}
     iam create-account-alias --account-alias {{ account_name }}{{ alias_suffix }}
   register: _createaccountalias
   failed_when:

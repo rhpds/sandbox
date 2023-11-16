@@ -39,7 +39,7 @@ sandbox_unlock() {
   }
 EOM
 
-    "$VENV/bin/aws" --profile "${dynamodb_profile}" \
+    "$AWSCLI" --profile "${dynamodb_profile}" \
         --region "${dynamodb_region}" \
         dynamodb update-item \
         --table-name "${dynamodb_table}" \
@@ -69,7 +69,7 @@ EOM
 
     errlog=$(mktemp)
 
-    if ! "$VENV/bin/aws" --profile "${dynamodb_profile}" \
+    if ! "${AWSCLI}" --profile "${dynamodb_profile}" \
         --region "${dynamodb_region}" \
         dynamodb update-item \
         --table-name "${dynamodb_table}" \
@@ -146,6 +146,7 @@ sandbox_reset() {
                      -e aws_nuke_binary_path="${aws_nuke_binary_path}" \
                      -e output_dir="${workdir}/output_dir_sandbox" \
                      -e vault_file="${vault_file}" \
+                     -e aws_cli="${AWSCLI}" \
                      reset_single.yml > "${logfile}"
 
     if [ $? = 0 ]; then
