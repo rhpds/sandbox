@@ -12,3 +12,8 @@ feature-flags:
 accounts:
   "{{ account_id }}":
     filters: {{ aws_nuke_filters_default | combine(aws_nuke_filters) | to_json }}
+
+resource-types:
+  excludes:
+    # don't nuke OpenSearch Packages, see https://github.com/rebuy-de/aws-nuke/issues/1123
+    - OSPackage
