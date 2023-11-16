@@ -201,7 +201,6 @@
 
     - when: >-
         r_target_groups.rc == 0 and r_target_groups.stdout != ""
-        and r_target_groups.stdout | from_json | default([]) | length > 0
       block:
         - name: Delete all target groups
           loop: "{{ r_target_groups.stdout | default('[]') | from_json | default([]) }}"
