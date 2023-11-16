@@ -204,7 +204,7 @@
         and r_target_groups.stdout | from_json | default([]) | length > 0
       block:
         - name: Delete all target groups
-          loop: "{{ r_target_groups.stdout | from_json | default([])}}"
+          loop: "{{ r_target_groups.stdout | default('[]') | from_json | default([]) }}"
           command: >-
             {{ aws_cli }} --region "{{ _region }}"
             vpc-lattice delete-target-group
