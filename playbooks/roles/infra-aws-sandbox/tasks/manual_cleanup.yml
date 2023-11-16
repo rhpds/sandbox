@@ -199,10 +199,12 @@
         r_target_groups.rc != 0
         and 'Could not connect to the endpoint URL' not in r_target_groups.stderr
 
-    - when: r_target_groups.rc == 0 and r_target_groups.stdout | from_json | length > 0
+    - when: >-
+        r_target_groups.rc == 0
+        and r_target_groups.stdout | from_json | default([]) | length > 0
       block:
         - name: Delete all target groups
-          loop: "{{ r_target_groups.stdout | from_json }}"
+          loop: "{{ r_target_groups.stdout | from_json | default([])}}"
           command: >-
             {{ aws_cli }} --region "{{ _region }}"
             vpc-lattice delete-target-group
