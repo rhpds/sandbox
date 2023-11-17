@@ -11,7 +11,8 @@
 
     - name: Create new IAM user
       when: account_user not in _listusers.stdout|from_json|list
-      command: aws iam create-user --user-name {{ account_user }}
+      command: >-
+        {{ aws_cli }} iam create-user --user-name {{ account_user }}
       register: _iamuser
 
     - name: Attach user to AdministratorAccess policy
@@ -43,7 +44,8 @@
         or operation in ['RESET', 'CREATE']
       block:
         - name: create new IAM access keys
-          command: aws iam create-access-key --user-name {{ account_user }}
+          command: >-
+            {{ aws_cli }} iam create-access-key --user-name {{ account_user }}
           register: _iamuserkey
 
         - name: Save user access key and secret
