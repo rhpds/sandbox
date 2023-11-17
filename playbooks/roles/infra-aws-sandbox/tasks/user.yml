@@ -4,7 +4,8 @@
     AWS_PROFILE: "{{ account_profile }}"
   block:
     - name: Check if user already exists
-      command: aws iam list-users --query 'Users[].UserName'
+      command: >-
+        {{ aws_cli }} iam list-users --query 'Users[].UserName'
       register: _listusers
       changed_when: false
 
