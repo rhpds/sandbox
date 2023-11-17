@@ -1,7 +1,7 @@
 ---
 - name: Get all records
   command: >-
-    aws --profile {{ account_name }}
+    {{ aws_cli }} --profile {{ account_name }}
     route53 list-resource-record-sets --hosted-zone-id {{ _hostedzoneid }}
   changed_when: false
   register: records
@@ -34,7 +34,7 @@
 
     - name: Delete all record from the zone
       command: >-
-        aws --profile {{ account_name }}
+        {{ aws_cli }} --profile {{ account_name }}
         route53 change-resource-record-sets
         --hosted-zone-id={{_hostedzoneid}}
         --change-batch=file://{{ change_batch_dest }}

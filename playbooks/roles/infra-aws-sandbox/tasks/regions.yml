@@ -4,7 +4,7 @@
   block:
     - name: Fetch all AWS regions
       command: >-
-        aws ec2 describe-regions
+        {{ aws_cli }} ec2 describe-regions
         --query "Regions[].RegionName"
         --output json --region us-east-1
         --filter Name=opt-in-status,Values=opted-in,opt-in-not-required

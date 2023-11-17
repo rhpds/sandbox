@@ -14,18 +14,19 @@
 
     - name: Get all VPC endpoint connections
       command: >-
-         aws ec2 --region {{ _region | quote }}
+         {{ aws_cli }} ec2 --region {{ _region | quote }}
          describe-vpc-endpoint-connections
          --query VpcEndpointConnections[] --output json
 
       register: r_connections
+      changed_when: false
 
     - name: Reject all VPC endpoint connections
       loop: "{{ r_connections.stdout | from_json }}"
       loop_control:
         loop_var: conn
       command: >-
-        aws ec2 --region {{ _region | quote }}
+        {{ aws_cli }} ec2 --region {{ _region | quote }}
         reject-vpc-endpoint-connections
         --service-id {{ conn.ServiceId }}
         --vpc-endpoint-ids {{ conn.VpcEndpointId }}
@@ -62,7 +63,7 @@
       block:
         - name: Disable termination protection on all instances
           command: >-
-            aws ec2 --profile "{{ account_profile }}"
+            {{ aws_cli }} ec2
             --region "{{ _region }}"
             modify-instance-attribute
             --instance-id {{ _instance.instance_id }}
@@ -81,7 +82,7 @@
 
     - name: Get all RDS DB instances
       command: >-
-        aws --profile {{ account_profile | quote }}
+        {{ aws_cli }}
         --region {{ _region | quote }}
         rds describe-db-instances
         --output json
@@ -96,7 +97,7 @@
     - name: Disable termination protection on all DBInstances
       loop: "{{ db_instances }}"
       command: >-
-        aws --profile {{ account_profile | quote }}
+        {{ aws_cli }}
         --region {{ _region | quote }}
         rds modify-db-instance
         --db-instance-identifier {{ item }}
@@ -122,7 +123,7 @@
 
         - name: Disassociate EIP
           command: >-
-            aws ec2 --profile "{{ account_profile }}"
+            {{ aws_cli }} ec2
             --region "{{ _region }}"
             disassociate-address
             --public-ip "{{ _eip.public_ip }}"
@@ -136,10 +137,20 @@
     # Access Points
     - name: List all Access points
       command: >-
-        aws s3control list-access-points
+        {{ aws_cli }} s3control list-access-points
         --account {{ account_id | quote }}
         --region {{ _region | quote }}
       register: r_access_points
+      changed_when: false
+
+    - name: List all multi-region access points (us-west-2 only)
+      command: >-
+        {{ aws_cli }} s3control list-multi-region-access-points
+        --account {{ account_id | quote }}
+        --region us-west-2
+      register: r_access_points_multi
+      changed_when: false
+
 
     - when: >-
         (r_access_points.stdout | from_json).AccessPointList
@@ -150,10 +161,158 @@
             {{ (r_access_points.stdout | from_json).AccessPointList
             | default([]) }}
           command: >-
-            aws s3control delete-access-point
+            {{ aws_cli }} s3control delete-access-point
             --account-id {{ account_id | quote }}
             --name {{ item.Name | quote }}
             --region {{ _region | quote }}
+
+        - set_fact:
+            run_aws_nuke_again: true
+
+    # delete all multi-region access points
+    - when: >-
+        (r_access_points_multi.stdout | from_json).AccessPoints
+        | default([])  | length > 0
+      block:
+        - name: Delete all multi-region access points
+          loop: >-
+            {{ (r_access_points_multi.stdout | from_json).AccessPoints
+            | default([]) }}
+          command: >-
+            {{ aws_cli }} s3control delete-multi-region-access-point
+            --region us-west-2
+            --account-id {{ account_id | quote }}
+            --detail Name={{ item.Name | quote }}
+
+        - set_fact:
+            run_aws_nuke_again: true
+
+    # Target groups
+    - name: List all target groups
+      command: >-
+        {{ aws_cli }} --region "{{ _region }}"
+        vpc-lattice list-target-groups
+        --query 'items[*].arn'  --output json
+
+      register: r_target_groups
+      changed_when: false
+      failed_when: >-
+        r_target_groups.rc != 0
+        and 'Could not connect to the endpoint URL' not in r_target_groups.stderr
+
+    - when: >-
+        r_target_groups.rc == 0 and r_target_groups.stdout != ""
+      block:
+        - name: Delete all target groups
+          loop: "{{ r_target_groups.stdout | default('[]', true) | from_json | default([]) }}"
+          command: >-
+            {{ aws_cli }} --region "{{ _region }}"
+            vpc-lattice delete-target-group
+            --target-group-identifier {{ item | quote }}
+
+        - set_fact:
+            run_aws_nuke_again: true
+
+    # FSx filesystem cleanup
+    - name: List all fsx volumes
+      command: >-
+        {{ aws_cli }} --region {{ _region }}
+        fsx describe-volumes
+        --query 'Volumes[*].VolumeId' --output json
+      register: r_fsx_volumes
+      changed_when: false
+
+    - when: >-
+        r_fsx_volumes.stdout | default('[]', true)
+        | from_json | default([]) | length > 0
+      block:
+        - name: Delete all fsx volumes
+          loop: >-
+            {{ r_fsx_volumes.stdout | default('[]', true)
+            | from_json | default([]) }}
+          command: >-
+            {{ aws_cli }} --region {{ _region }}
+            fsx delete-volume
+            --volume-id {{ item | quote }}
+            --ontap-configuration SkipFinalBackup=true
+
+        - set_fact:
+            run_aws_nuke_again: true
+
+    - name: List all storage virtual machine
+      command: >-
+        {{ aws_cli }} --region {{ _region }}
+        fsx describe-storage-virtual-machines
+        --query 'StorageVirtualMachines[*].StorageVirtualMachineId' --output json
+      register: r_fsx_svms
+      changed_when: false
+
+    - when: >-
+        r_fsx_svms.stdout | default('[]', true)
+        | from_json | default([]) | length > 0
+      block:
+        - name: Delete all storage virtual machine
+          loop: >-
+            {{ r_fsx_svms.stdout | default('[]', true)
+            | from_json | default([]) }}
+          command: >-
+            {{ aws_cli }} --region {{ _region }}
+            fsx delete-storage-virtual-machine
+            --storage-virtual-machine-id {{ item | quote }}
+
+        - set_fact:
+            run_aws_nuke_again: true
+
+    - name: List all fsx filesystem
+      command: >-
+        {{ aws_cli }} --region {{ _region }}
+        fsx describe-file-systems
+        --query 'FileSystems[*].FileSystemId' --output json
+
+      register: r_fsx_filesystems
+      changed_when: false
+
+    - when: >-
+        r_fsx_filesystems.stdout | default('[]', true)
+        | from_json | default([]) | length > 0
+      block:
+        - name: Delete all fsx filesystems
+          loop: >-
+            {{ r_fsx_filesystems.stdout | default('[]', true)
+            | from_json | default([]) }}
+          command: >-
+            {{ aws_cli }} --region {{ _region }}
+            fsx delete-file-system
+            --file-system-id {{ item | quote }}
+
+        - set_fact:
+            run_aws_nuke_again: true
+
+    # Directory Service cleanup
+
+    - name: List all directory services (ds)
+      command: >-
+        {{ aws_cli }} --region {{ _region }}
+        ds describe-directories
+        --query 'DirectoryDescriptions[*].DirectoryId' --output json
+      register: r_ds_directories
+      changed_when: false
+
+    - when: >-
+        r_ds_directories.stdout | default('[]', true)
+        | from_json | default([]) | length > 0
+      block:
+        - name: Delete all directory services (ds)
+          loop: >-
+            {{ r_ds_directories.stdout | default('[]', true)
+            | from_json | default([]) }}
+          shell: |-
+            # Deregister workspaces associate to this DS
+            {{ aws_cli }} --region {{ _region }} workspaces deregister-workspace-directory --directory-id {{ item | quote }}
+
+            sleep 5
+
+            {{ aws_cli }} --region {{ _region }} ds delete-directory --directory-id {{ item | quote }}
 
         - set_fact:
             run_aws_nuke_again: true

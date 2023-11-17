@@ -29,6 +29,9 @@ noop=${noop:-false}
 # python virtualenv
 VENV=${VENV:-~/pool_management/python_virtualenv}
 
+# AWS CLI
+AWSCLI=${AWSCLI:-~/pool_management/aws/dist/aws}
+
 # Conan instance: the name of the host running the cleanup
 conan_instance=${conan_instance:-$(hostname)}
 
@@ -60,6 +63,7 @@ export lock_timeout
 export conan_instance
 export workdir
 export vault_file
+export AWSCLI
 
 ORIG="$(cd "$(dirname "$0")" || exit; pwd)"
 

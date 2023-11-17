@@ -5,13 +5,14 @@
       name:
         S: "{{ account_name }}"
   command: >-
-    aws --profile {{ dynamodb_profile }}
+    {{ aws_cli }} --profile {{ dynamodb_profile }}
     --region {{ dynamodb_region }}
     dynamodb get-item
     --table-name {{ dynamodb_table }}
     --key '{{ _data | to_json }}'
     --query 'Item.account_id' --output text
   register: _getaccountid
+  changed_when: false
 
 - when:
     - _getaccountid.stdout != 'None'
@@ -26,7 +27,7 @@
   block:
     - name: List all accounts in the organization.
       command: >-
-        aws --profile {{ aws_master_profile }}
+        {{ aws_cli }} --profile {{ aws_master_profile }}
         organizations list-accounts
         --query 'Accounts[].{Name: Name, Id: Id}'
       register: _listaccounts
@@ -40,7 +41,7 @@
     - account_name not in all_accounts|json_query('[].Name')
   name: Create New account.
   command: >-
-    aws --profile {{ aws_master_profile }}
+    {{ aws_cli }} --profile {{ aws_master_profile }}
     organizations create-account
     --email {{ account_email }}
     --account-name "{{ account_name }}"
@@ -73,7 +74,7 @@
   block:
     - name: Wait for account to be created.
       command: >-
-        aws --profile {{ aws_master_profile }}
+        {{ aws_cli }} --profile {{ aws_master_profile }}
         organizations describe-create-account-status
         --create-account-request-id {{ _createaccount.stdout }}
         --query 'CreateAccountStatus.[State]'
@@ -82,6 +83,7 @@
       until: _describestatus.stdout in ['SUCCEEDED', 'FAILED']
       delay: 5
       retries: 40
+      changed_when: false
 
     - fail:
         msg: The creation of the account failed.
@@ -89,12 +91,13 @@
 
     - name: Get the account ID
       command: >-
-        aws --profile {{ aws_master_profile }}
+        {{ aws_cli }} --profile {{ aws_master_profile }}
         organizations describe-create-account-status
         --create-account-request-id {{ _createaccount.stdout }}
         --query 'CreateAccountStatus.[AccountId]'
         --output text
       register: _describestatusid
+      changed_when: false
 
     - name: Save account id in variable 'account_id'
       set_fact:

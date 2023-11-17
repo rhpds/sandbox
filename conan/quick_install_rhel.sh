@@ -31,3 +31,10 @@ echo "copy secret: infra-sandbox-vault into ~opentlc-mgr/secrets/"
 
 sudo cp ~opentlc-mgr/pool_management/sandbox/conan/conan.service /etc/systemd/system/
 sudo systemctl daemon-reload
+
+# Install AWS v2
+
+cd ~opentlc-mgr/pool_management
+curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+rm awscliv2.zip

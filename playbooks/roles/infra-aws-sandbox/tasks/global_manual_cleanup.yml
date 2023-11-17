@@ -1,10 +1,20 @@
 ---
-# IAM
-- name: Delete all signing-certificates
-  shell: |
-    set -e -o pipefail
-    for user in $(aws --profile {{ account_profile | quote }} iam list-users --query 'Users[*].UserName' --output text); do
-      for cert in $(aws --profile {{ account_profile | quote }} iam list-signing-certificates --user-name $user --query 'Certificates[*].CertificateId' --output text); do
-        aws --profile {{ account_profile | quote }} iam delete-signing-certificate --user-name $user --certificate-id $cert
-      done
-    done
+- environment:
+    AWS_ACCESS_KEY_ID: "{{ assumed_role.sts_creds.access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ assumed_role.sts_creds.secret_key }}"
+    AWS_SECURITY_TOKEN: "{{ assumed_role.sts_creds.session_token }}"
+  ignore_errors: true
+  block:
+    # IAM
+    - name: Delete all signing-certificates and MFA devices
+      shell: |
+        set -e -o pipefail
+        for user in $(aws iam list-users --query 'Users[*].UserName' --output text); do
+          for cert in $(aws iam list-signing-certificates --user-name $user --query 'Certificates[*].CertificateId' --output text); do
+            aws iam delete-signing-certificate --user-name $user --certificate-id $cert
+          done
+
+          for k in $( {{ aws_cli }} iam list-mfa-devices --user-name "${user}" --query 'MFADevices[*].SerialNumber' --output text); do
+            {{ aws_cli }} iam deactivate-mfa-device --user-name "${user}" --serial-number $k
+          done
+        done
