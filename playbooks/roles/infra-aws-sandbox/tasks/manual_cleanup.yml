@@ -233,7 +233,7 @@
             {{ aws_cli }} --region {{ _region }}
             fsx delete-volume
             --volume-id {{ item | quote }}
-            --ontap-configuration SkipFinalBackup=true,BypassSnaplockEnterpriseRetention=true
+            --ontap-configuration SkipFinalBackup=true
 
         - set_fact:
             run_aws_nuke_again: true
