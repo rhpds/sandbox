@@ -307,11 +307,6 @@
             {{ r_ds_directories.stdout | default('[]', true)
             | from_json | default([]) }}
           shell: |-
-            # Delete workdocs users associate to this DS
-            for user in $( {{ aws_cli }} workdocs describe-users --organization-id {{ item | quote }} --query 'Users[*].Id' --output text ); do
-              {{ aws_cli }} workdocs delete-user --user-id "${user}"
-            done
-
             # Deregister workspaces associate to this DS
             {{ aws_cli }} --region {{ _region }} workspaces deregister-workspace-directory --directory-id {{ item | quote }}
 
