@@ -108,6 +108,9 @@ aws_nuke_filters_default:
     - alias/aws/s3
     - alias/aws/ssm
     - alias/aws/xray
+    - type: glob
+      value: alias/eks/*
+
   KMSKey:
     # AWS managed key
     - 019e63a9-089e-42d8-9125-9e8461923851
