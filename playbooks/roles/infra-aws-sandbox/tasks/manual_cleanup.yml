@@ -214,6 +214,28 @@
             run_aws_nuke_again: true
 
     # FSx filesystem cleanup
+    - name: List all fsx volumes
+      command: >-
+        {{ aws_cli }} --region {{ _region }}
+        fsx describe-volumes
+        --query 'Volumes[*].VolumeId' --output json
+      register: r_fsx_volumes
+
+    - when: >-
+        r_fsx_volumes.stdout | default('[]', true)
+        | from_json | default([]) | length > 0
+      block:
+        - name: Delete all fsx volumes
+          loop: >-
+            {{ r_fsx_volumes.stdout | default('[]', true)
+            | from_json | default([]) }}
+          command: >-
+            {{ aws_cli }} --region {{ _region }}
+            fsx delete-volume
+            --volume-id {{ item | quote }}
+
+        - set_fact:
+            run_aws_nuke_again: true
 
     - name: List all storage virtual machine
       command: >-
