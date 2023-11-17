@@ -220,6 +220,7 @@
         fsx describe-volumes
         --query 'Volumes[*].VolumeId' --output json
       register: r_fsx_volumes
+      changed_when: false
 
     - when: >-
         r_fsx_volumes.stdout | default('[]', true)
@@ -283,6 +284,32 @@
             {{ aws_cli }} --region {{ _region }}
             fsx delete-file-system
             --file-system-id {{ item | quote }}
+
+        - set_fact:
+            run_aws_nuke_again: true
+
+    # Directory Service cleanup
+
+    - name: List all directory services (ds)
+      command: >-
+        {{ aws_cli }} --region {{ _region }}
+        ds describe-directories
+        --query 'DirectoryDescriptions[*].DirectoryId' --output json
+      register: r_ds_directories
+      changed_when: false
+
+    - when: >-
+        r_ds_directories.stdout | default('[]', true)
+        | from_json | default([]) | length > 0
+      block:
+        - name: Delete all directory services (ds)
+          loop: >-
+            {{ r_ds_directories.stdout | default('[]', true)
+            | from_json | default([]) }}
+          command: >-
+            {{ aws_cli }} --region {{ _region }}
+            ds delete-directory
+            --directory-id {{ item | quote }}
 
         - set_fact:
             run_aws_nuke_again: true
