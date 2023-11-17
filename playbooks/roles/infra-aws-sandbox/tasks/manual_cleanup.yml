@@ -306,7 +306,10 @@
           loop: >-
             {{ r_ds_directories.stdout | default('[]', true)
             | from_json | default([]) }}
-          command: >-
+          shell: >-
+            {{ aws_cli }} --region {{ _region }}
+            workspaces deregister-workspace-directory --directory-id {{ item | quote }};
+            sleep 5;
             {{ aws_cli }} --region {{ _region }}
             ds delete-directory
             --directory-id {{ item | quote }}
