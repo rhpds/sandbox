@@ -63,7 +63,7 @@
       block:
         - name: Disable termination protection on all instances
           command: >-
-            {{ aws_cli }} ec2 --profile "{{ account_profile }}"
+            {{ aws_cli }} ec2
             --region "{{ _region }}"
             modify-instance-attribute
             --instance-id {{ _instance.instance_id }}
@@ -82,7 +82,7 @@
 
     - name: Get all RDS DB instances
       command: >-
-        {{ aws_cli }} --profile {{ account_profile | quote }}
+        {{ aws_cli }}
         --region {{ _region | quote }}
         rds describe-db-instances
         --output json
@@ -97,7 +97,7 @@
     - name: Disable termination protection on all DBInstances
       loop: "{{ db_instances }}"
       command: >-
-        {{ aws_cli }} --profile {{ account_profile | quote }}
+        {{ aws_cli }}
         --region {{ _region | quote }}
         rds modify-db-instance
         --db-instance-identifier {{ item }}
@@ -123,7 +123,7 @@
 
         - name: Disassociate EIP
           command: >-
-            {{ aws_cli }} ec2 --profile "{{ account_profile }}"
+            {{ aws_cli }} ec2
             --region "{{ _region }}"
             disassociate-address
             --public-ip "{{ _eip.public_ip }}"
@@ -209,6 +209,33 @@
             {{ aws_cli }} --region "{{ _region }}"
             vpc-lattice delete-target-group
             --target-group-identifier {{ item | quote }}
+
+        - set_fact:
+            run_aws_nuke_again: true
+
+    # FSx filesystem cleanup
+
+    - name: List all fsx filesystem
+      command: >-
+        {{ aws_cli }} --region {{ _region }}
+        fsx describe-file-systems
+        --query 'FileSystems[*].FileSystemId' --output json
+
+      register: r_fsx_filesystems
+      changed_when: false
+
+    - when: >-
+        r_fsx_filesystems.stdout | default('[]', true)
+        | from_json | default([]) | length > 0
+      block:
+        - name: Delete all fsx filesystems
+          loop: >-
+            {{ r_fsx_filesystems.stdout | default('[]', true)
+            | from_json | default([]) }}
+          command: >-
+            {{ aws_cli }} --region {{ _region }}
+            fsx delete-file-system
+            --file-system-id {{ item | quote }}
 
         - set_fact:
             run_aws_nuke_again: true
