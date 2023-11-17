@@ -215,6 +215,30 @@
 
     # FSx filesystem cleanup
 
+    - name: List all storage virtual machine
+      command: >-
+        {{ aws_cli }} --region {{ _region }}
+        fsx describe-storage-virtual-machines
+        --query 'StorageVirtualMachines[*].StorageVirtualMachineId' --output json
+      register: r_fsx_svms
+      changed_when: false
+
+    - when: >-
+        r_fsx_svms.stdout | default('[]', true)
+        | from_json | default([]) | length > 0
+      block:
+        - name: Delete all storage virtual machine
+          loop: >-
+            {{ r_fsx_svms.stdout | default('[]', true)
+            | from_json | default([]) }}
+          command: >-
+            {{ aws_cli }} --region {{ _region }}
+            fsx delete-storage-virtual-machine
+            --storage-virtual-machine-id {{ item | quote }}
+
+        - set_fact:
+            run_aws_nuke_again: true
+
     - name: List all fsx filesystem
       command: >-
         {{ aws_cli }} --region {{ _region }}
