@@ -16,8 +16,11 @@
       changed_when: >-
         'Changes were made' in r_manual_cleanup.stdout
 
-    # Reject all VPC connections
+    - name: Print output of manual_cleanup.py
+      debug:
+        var: r_manual_cleanup
 
+    # Reject all VPC connections
 
     - name: Get all VPC endpoint connections
       command: >-
