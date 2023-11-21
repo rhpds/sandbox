@@ -10,7 +10,14 @@
     - debug:
         var: _region
 
+    - name: Run files/manual_cleanup.py script
+      script: files/manual_cleanup.py
+      register: r_manual_cleanup
+      changed_when: >-
+        'Changes were made' in r_manual_cleanup.stdout
+
     # Reject all VPC connections
+
 
     - name: Get all VPC endpoint connections
       command: >-
