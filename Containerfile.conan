@@ -1,0 +1,94 @@
+ARG GO_VERSION=1.21
+# Switch back to Red Hat go-toolset when it supports go 1.21
+#FROM registry.access.redhat.com/ubi8/go-toolset:latest AS builder
+FROM docker.io/golang:${GO_VERSION}-bullseye as builder
+WORKDIR /sandbox/
+COPY ./ ./
+RUN make sandbox-list
+
+FROM registry.access.redhat.com/ubi8/ubi-init:latest
+    MAINTAINER Guillaume Coré <gucore@redhat.com>
+
+ARG AWSNUKE_VERSION=v2.25.0
+ARG RUSH_VERSION=v0.5.4
+
+USER root
+
+COPY --from=builder /sandbox/build/sandbox-list /usr/local/bin/sandbox-list
+COPY playbooks/requirements.txt /tmp/requirements.txt
+
+RUN adduser opentlc-mgr \
+    && mkdir -p -m 700 /home/opentlc-mgr/.aws \
+    /home/opentlc-mgr/secrets \
+    /home/opentlc-mgr/pool_management/output_dir_sandbox \
+# Packages
+    && dnf install -y \
+    bash \
+    bind-utils \
+    curl \
+    findutils \
+    gcc \
+    git \
+    jq \
+    krb5-devel \
+    krb5-libs \
+    krb5-workstation \
+    libcurl-devel \
+    libxml2-devel \
+    nc \
+    net-tools \
+    openssl \
+    openssl-devel \
+    python39 \
+    python39-devel \
+    python39-pip \
+    rsync \
+    sshpass \
+    tar \
+    unzip \
+    vim \
+    wget
+##############################
+# aws-nuke
+##############################
+RUN curl --silent --location \
+    https://github.com/rebuy-de/aws-nuke/releases/download/${AWSNUKE_VERSION}/aws-nuke-${AWSNUKE_VERSION}-linux-amd64.tar.gz \
+    | tar -xz -C /usr/local/bin --wildcards 'aws-nuke-*-linux-amd64' \
+    && ln -s /usr/local/bin/aws-nuke-${AWSNUKE_VERSION}-linux-amd64 /usr/local/bin/aws-nuke \
+##############################
+# Rush
+##############################
+    && curl --silent --location \
+    https://github.com/shenwei356/rush/releases/download/${RUSH_VERSION}/rush_linux_amd64.tar.gz \
+    | tar -xz -C /usr/local/bin --wildcards 'rush' \
+##############################
+# AWSCLIv2
+##############################
+    && curl --silent --location \
+    https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip \
+    && unzip -q /tmp/awscliv2.zip -d /home/opentlc-mgr/pool_management \
+    && /home/opentlc-mgr/pool_management/aws/install \
+    && rm -rf /tmp/awscliv2.zip \
+    && aws --version \
+##############################
+# Python
+##############################
+    && alternatives --set python /usr/bin/python3.9 \
+    && alternatives --set python3 /usr/bin/python3.9 \
+    && alternatives --install /usr/bin/pip pip /usr/bin/pip3.9 1 \
+    && pip install --upgrade pip --no-cache-dir \
+    && pip install --no-cache-dir -r /tmp/requirements.txt \
+    && pip freeze \
+##############################
+# Cleanup
+##############################
+    && dnf clean all && rm -rf /tmp/*
+
+COPY . /home/opentlc-mgr/pool_management/sandbox
+USER ${USER_UID}
+
+ENV DESCRIPTION="Conan daemon - Cleanup of sandboxes"
+LABEL name="rhpds/sandbox-conan" \
+      maintainer="Red Hat Demo Platform" \
+      description="${DESCRIPTION}" \
+      summary="${DESCRIPTION}"
