@@ -1,14 +1,8 @@
 ARG GO_VERSION=1.21
-# Switch back to Red Hat go-toolset when it supports go 1.20
+# Switch back to Red Hat go-toolset when it supports go 1.21
 #FROM registry.access.redhat.com/ubi8/go-toolset:latest AS builder
-FROM docker.io/golang:${GO_VERSION} as builder
+FROM docker.io/golang:${GO_VERSION}-bullseye as builder
 WORKDIR /sandbox/
-
-
-USER root
-RUN chown -R ${USER_UID}:0 /sandbox
-USER ${USER_UID}
-
 COPY ./ ./
 RUN make
 
