@@ -93,3 +93,20 @@ jobs:
         quay.expires-after=7d
         org.opencontainers.image.source=${{ github.event.repository.html_url }}
         org.opencontainers.image.revision=${{ github.sha }}
+
+  build-and-push-conan:
+    concurrency:
+      group: temporary-pr-${{ github.event.number }}-conan
+      cancel-in-progress: true
+
+    uses: ./.github/workflows/build-push.yml
+    secrets:
+      registry_username: ${{ secrets.QUAY_RHPDS_SANDBOX_API_USER }}
+      registry_password: ${{ secrets.QUAY_RHPDS_SANDBOX_API_PASSWORD }}
+    with:
+      tag: temporary-pr-${{ github.event.number }}
+      image: conan
+      labels: |-
+        quay.expires-after=7d
+        org.opencontainers.image.source=${{ github.event.repository.html_url }}
+        org.opencontainers.image.revision=${{ github.sha }}
