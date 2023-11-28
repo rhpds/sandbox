@@ -1,40 +1,45 @@
 ---
-- name: Get all records
-  command: >-
-    {{ aws_cli }} --profile {{ account_name }}
-    route53 list-resource-record-sets --hosted-zone-id {{ _hostedzoneid }}
-  changed_when: false
-  register: records
-
-- set_fact:
-    change_batch_dest: "{{ output_dir }}/{{ account_name }}_{{ _hostedzoneid }}_delete_records.json"
-    records_to_delete: >-
-      {{ records.stdout |from_json
-      | json_query('ResourceRecordSets')
-      | rejectattr('Name', 'equalto', aws_public_zone)
-      | list
-      }}
-
-- when: records_to_delete|length > 0
+- environment:
+    AWS_ACCESS_KEY_ID: "{{ assumed_role.sts_creds.access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ assumed_role.sts_creds.secret_key }}"
+    AWS_SESSION_TOKEN: "{{ assumed_role.sts_creds.session_token }}"
   block:
-    - name: Create route53 change batch  (JSON)
-      copy:
-        dest: "{{ change_batch_dest }}"
-        content: |
-          {
-            "Comment": "Delete all records for {{ _hostedzoneid }}",
-            "Changes": [
-            {% for record in records_to_delete %}
-            {   "Action": "DELETE",
-                "ResourceRecordSet": {{ record | to_json }}
-            }{{ "," if not loop.last else "" }}
-            {% endfor %}
-            ]
-          }
-
-    - name: Delete all record from the zone
+    - name: Get all records
       command: >-
-        {{ aws_cli }} --profile {{ account_name }}
-        route53 change-resource-record-sets
-        --hosted-zone-id={{_hostedzoneid}}
-        --change-batch=file://{{ change_batch_dest }}
+        {{ aws_cli }} route53 list-resource-record-sets
+        --hosted-zone-id {{ _hostedzoneid }}
+      changed_when: false
+      register: records
+
+    - set_fact:
+        change_batch_dest: "{{ output_dir }}/{{ account_name }}_{{ _hostedzoneid }}_delete_records.json"
+        records_to_delete: >-
+          {{ records.stdout |from_json
+          | json_query('ResourceRecordSets')
+          | rejectattr('Name', 'equalto', aws_public_zone)
+          | list
+          }}
+
+    - when: records_to_delete|length > 0
+      block:
+        - name: Create route53 change batch  (JSON)
+          copy:
+            dest: "{{ change_batch_dest }}"
+            content: |
+              {
+                "Comment": "Delete all records for {{ _hostedzoneid }}",
+                "Changes": [
+                {% for record in records_to_delete %}
+                {   "Action": "DELETE",
+                    "ResourceRecordSet": {{ record | to_json }}
+                }{{ "," if not loop.last else "" }}
+                {% endfor %}
+                ]
+              }
+
+        - name: Delete all record from the zone
+          command: >-
+            {{ aws_cli }}
+            route53 change-resource-record-sets
+            --hosted-zone-id={{_hostedzoneid}}
+            --change-batch=file://{{ change_batch_dest }}

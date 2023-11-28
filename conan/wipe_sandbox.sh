@@ -16,6 +16,7 @@ TTL_EVENTLOG=$((3600*24))
 : "${aws_profile:?"aws_profile is unset or empty"}"
 : "${aws_nuke_binary_path:?"aws_nuke_binary_path is unset or empty"}"
 : "${lock_timeout:?"lock_timeout is unset or empty"}"
+: "${kerberos_user:?"kerberos_user is unset or empty"}"
 
 checks() {
     if [ -z "${sandbox}" ]; then
@@ -24,7 +25,7 @@ checks() {
         exit 2
     fi
 
-    if [ -z "${VENV}" ]; then
+    if [[ "${NOVENV}" !=  "true" ]] &&  [ -z "${VENV}" ]; then
         echo "VENV is not defined"
         sync
         exit 2
@@ -136,8 +137,13 @@ sandbox_reset() {
         return
     fi
 
-    . "$VENV/bin/activate"
-    "${VENV}/bin/ansible-playbook" -i localhost, \
+    if [[ "${NOVENV}" !=  "true" ]]; then
+        . "$VENV/bin/activate"
+    else
+        export ANSIBLE_PYTHON_INTERPRETER=$(which python3)
+    fi
+
+    ansible-playbook -i localhost, \
                      -e _account_num="${s}" \
                      -e aws_master_profile="${aws_profile}" \
                      -e dynamodb_profile="${dynamodb_profile}" \
@@ -147,6 +153,9 @@ sandbox_reset() {
                      -e output_dir="${workdir}/output_dir_sandbox" \
                      -e vault_file="${vault_file}" \
                      -e aws_cli="${AWSCLI}" \
+                     -e kerberos_keytab="${kerberos_keytab}" \
+                     -e kerberos_user="${kerberos_user}" \
+                     -e kerberos_password="${kerberos_password}" \
                      reset_single.yml > "${logfile}"
 
     if [ $? = 0 ]; then

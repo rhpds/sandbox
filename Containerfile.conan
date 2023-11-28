@@ -6,7 +6,7 @@ WORKDIR /sandbox/
 COPY ./ ./
 RUN make sandbox-list
 
-FROM registry.access.redhat.com/ubi8/ubi-init:latest
+FROM registry.access.redhat.com/ubi8/ubi:latest
     MAINTAINER Guillaume Coré <gucore@redhat.com>
 
 ARG AWSNUKE_VERSION=v2.25.0
@@ -15,12 +15,11 @@ ARG RUSH_VERSION=v0.5.4
 USER root
 
 COPY --from=builder /sandbox/build/sandbox-list /usr/local/bin/sandbox-list
-COPY playbooks/requirements.txt /tmp/requirements.txt
+COPY conan/requirements.txt /tmp/requirements.txt
+COPY conan/requirements.yml /tmp/requirements.yml
 
-RUN adduser opentlc-mgr \
-    && mkdir -p -m 700 /home/opentlc-mgr/.aws \
-    /home/opentlc-mgr/secrets \
-    /home/opentlc-mgr/pool_management/output_dir_sandbox \
+RUN mkdir -p -m 700  /home/opentlc-mgr/pool_management/output_dir_sandbox \
+    && chown -R ${USER_UID}:0 /home/opentlc-mgr \
 # Packages
     && dnf install -y \
     bash \
@@ -76,16 +75,27 @@ RUN curl --silent --location \
     && alternatives --set python /usr/bin/python3.9 \
     && alternatives --set python3 /usr/bin/python3.9 \
     && alternatives --install /usr/bin/pip pip /usr/bin/pip3.9 1 \
+    && alternatives --list \
+##############################
+# Python and Ansible Galaxy collections
+##############################
     && pip install --upgrade pip --no-cache-dir \
     && pip install --no-cache-dir -r /tmp/requirements.txt \
     && pip freeze \
+    && ansible-galaxy collection install -vv \
+    -r /tmp/requirements.yml \
 ##############################
 # Cleanup
 ##############################
     && dnf clean all && rm -rf /tmp/*
 
-COPY . /home/opentlc-mgr/pool_management/sandbox
 USER ${USER_UID}
+
+COPY . /home/opentlc-mgr/pool_management/sandbox
+
+WORKDIR /home/opentlc-mgr/pool_management
+
+CMD ["/home/opentlc-mgr/pool_management/sandbox/conan/conan.sh"]
 
 ENV DESCRIPTION="Conan daemon - Cleanup of sandboxes"
 LABEL name="rhpds/sandbox-conan" \

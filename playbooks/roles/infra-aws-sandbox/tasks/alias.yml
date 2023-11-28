@@ -1,8 +1,12 @@
 ---
 - name: Set Alias name to account
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ assumed_role.sts_creds.access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ assumed_role.sts_creds.secret_key }}"
+    AWS_SESSION_TOKEN: "{{ assumed_role.sts_creds.session_token }}"
   command: >-
-    {{ aws_cli }} --profile {{ account_name }}
-    iam create-account-alias --account-alias {{ account_name }}{{ alias_suffix }}
+    {{ aws_cli }} iam create-account-alias
+    --account-alias {{ account_name }}{{ alias_suffix }}
   register: _createaccountalias
   failed_when:
     - _createaccountalias.rc != 0

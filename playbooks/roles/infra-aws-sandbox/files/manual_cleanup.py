@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 
+import sys
 import boto3
+import botocore
 
 changed = False
 
 # Cleanup Public ECR
 client = boto3.client('ecr-public')
 
-response = client.describe_repositories()
+try:
+    response = client.describe_repositories()
+except botocore.exceptions.EndpointConnectionError:
+    print("ECR Public is not supported in this region")
+    sys.exit()
 
 for repo in response['repositories']:
     # Delete all images inside the repository
