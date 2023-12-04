@@ -84,6 +84,7 @@ RUN curl --silent --location \
     && pip install --no-cache-dir -r /tmp/requirements.txt \
     && pip freeze \
     && ansible-galaxy collection install -vv \
+    -p /usr/share/ansible/collections \
     -r /tmp/requirements.yml \
 ##############################
 # Cleanup
