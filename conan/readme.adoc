@@ -64,12 +64,6 @@ $ cat | podman secret create vault_file -
 <PASTE CONTENT OF VAULT SECRET>
 [CTRL+D]
 
-# Create the hostadmin.keytab secret
-
-$ cat | podman secret create hostadmin.keytab -
-...
-[CTRL+D]
-
 $ podman run \
     --init \
     --secret vault_file \
@@ -83,7 +77,7 @@ $ podman run \
     -e AWS_SHARED_CREDENTIALS_FILE=/run/secrets/aws_credentials \
     -e vault_file=/run/secrets/vault_file \
     -e kerberos_user=hostadmin \
-    -e kerberos_keytab=/run/secrets/hostadmin.keytab \
+    -e kerberos_password="...." \
     -e workdir=/home/opentlc-mgr/pool_management \
     -e AWSCLI=aws \
     -e threads=1 \
@@ -96,5 +90,5 @@ podman run -v $PWD:/home/opentlc-mgr/pool_management/sandbox  ...
 
 # Delete the secrets when done
 
-$ podman secret rm hostadmin.keytab vault_file aws_credentials
+$ podman secret rm vault_file aws_credentials
 ----

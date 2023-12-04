@@ -46,6 +46,10 @@ kerberos_keytab=${kerberos_keytab:-~/secrets/hostadmin.keytab}
 kerberos_user=${kerberos_user:-hostadmin}
 kerberos_password=${kerberos_password:-}
 
+if [ -n "${kerberos_password}" ]; then
+    unset kerberos_keytab
+fi
+
 # Lock timeout:  the number of hours after which a lock on a sandbox expires.
 # For ex: '2': a conan process will have 2h to cleanup the sandbox before another
 # process can claim the sandbox for cleanup.
