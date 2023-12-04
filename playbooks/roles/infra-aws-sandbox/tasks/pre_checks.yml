@@ -18,4 +18,4 @@
   tags: ipa
   when:
     - kerberos_user is defined
-    - kerberos_password is defined or kerberos_keytab is defined
+    - kerberos_password | default("", true) != "" or kerberos_keytab | default("") != ""

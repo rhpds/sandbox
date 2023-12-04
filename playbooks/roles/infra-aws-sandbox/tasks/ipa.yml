@@ -22,12 +22,12 @@
     - ipa
   when: operation == 'CREATE' or nuke_sandbox | bool
   block:
-    - when: kerberos_keytab is defined
+    - when: kerberos_keytab | default("", true) != ""
       name: Login kerberos
       command: >-
         kinit -kt "{{ kerberos_keytab }}" {{ kerberos_user }}
 
-    - when: kerberos_password is defined
+    - when: kerberos_password | default("", true) != ""
       name: Login kerberos
       command: >-
         kinit {{ kerberos_user }}

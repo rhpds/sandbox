@@ -2,7 +2,7 @@
 - environment:
     AWS_ACCESS_KEY_ID: "{{ assumed_role.sts_creds.access_key }}"
     AWS_SECRET_ACCESS_KEY: "{{ assumed_role.sts_creds.secret_key }}"
-    AWS_SECURITY_TOKEN: "{{ assumed_role.sts_creds.session_token }}"
+    AWS_SESSION_TOKEN: "{{ assumed_role.sts_creds.session_token }}"
   ignore_errors: true
   block:
     # IAM

@@ -42,3 +42,53 @@ aws_secret_access_key=...
 systemctl start conan
 systemctl enable conan
 ----
+
+== Run as a container ==
+
+.Using `podman`
+----
+# Create the AWS secret
+
+$ cat | podman secret create aws_credentials -
+[pool-manager]
+aws_access_key_id=...
+aws_secret_access_key=...
+[pool-manager-dev]
+aws_access_key_id=...
+aws_secret_access_key=...
+[CTRL+D]
+
+# Create the Vault secret
+
+$ cat | podman secret create vault_file -
+<PASTE CONTENT OF VAULT SECRET>
+[CTRL+D]
+
+$ podman run \
+    --init \
+    --secret vault_file \
+    --secret aws_credentials \
+    --secret hostadmin.keytab \
+    -e dynamodb_profile=pool-manager-dev \
+    -e dynamodb_table=accounts-dev \
+    -e dynamodb_region=us-east-1 \
+    -e aws_profile=pool-manager \
+    -e conan_instance=container$$ \
+    -e AWS_SHARED_CREDENTIALS_FILE=/run/secrets/aws_credentials \
+    -e vault_file=/run/secrets/vault_file \
+    -e kerberos_user=hostadmin \
+    -e kerberos_password="...." \
+    -e workdir=/home/opentlc-mgr/pool_management \
+    -e AWSCLI=aws \
+    -e threads=1 \
+    -e NOVENV=true \
+    sandbox-conan:latest
+
+# For fast iterations, you can pass a volume of your current version of the repo
+
+podman run -v $PWD:/home/opentlc-mgr/pool_management/sandbox  ...
+
+# Delete the secrets when done
+
+$ podman secret rm vault_file aws_credentials
+----

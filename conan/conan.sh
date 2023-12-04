@@ -21,13 +21,14 @@ dynamodb_region="${dynamodb_region:-us-east-1}"
 poll_interval="${poll_interval:-60}"
 
 # aws-nuke path
-aws_nuke_binary_path="${aws_nuke_binary_path:-/usr/bin/aws-nuke}"
+aws_nuke_binary_path="${aws_nuke_binary_path:-aws-nuke}"
 
 # Noop: don't actually touch the sandboxes
 noop=${noop:-false}
 
 # python virtualenv
 VENV=${VENV:-~/pool_management/python_virtualenv}
+NOVENV=${NOVENV:-false}
 
 # AWS CLI
 AWSCLI=${AWSCLI:-~/pool_management/aws/dist/aws}
@@ -40,6 +41,15 @@ workdir=${workdir:-~/pool_management}
 
 # Vault file
 vault_file=${vault_file:-~/secrets/infra-sandbox-vault}
+
+# Kerberos
+kerberos_keytab=${kerberos_keytab:-~/secrets/hostadmin.keytab}
+kerberos_user=${kerberos_user:-hostadmin}
+kerberos_password=${kerberos_password:-}
+
+if [ -n "${kerberos_password}" ]; then
+    unset kerberos_keytab
+fi
 
 # Lock timeout:  the number of hours after which a lock on a sandbox expires.
 # For ex: '2': a conan process will have 2h to cleanup the sandbox before another
@@ -59,17 +69,25 @@ export poll_interval
 export aws_nuke_binary_path
 export noop
 export VENV
+export NOVENV
 export lock_timeout
 export conan_instance
 export workdir
 export vault_file
 export AWSCLI
+export kerberos_keytab
+export kerberos_user
+export kerberos_password
 
 ORIG="$(cd "$(dirname "$0")" || exit; pwd)"
 
 
 prepare_workdir() {
     mkdir -p "${workdir}"
+
+    if [ "${NOVENV}"=true ]; then
+        return
+    fi
 
     if [ ! -d "${VENV}" ]; then
         set -e

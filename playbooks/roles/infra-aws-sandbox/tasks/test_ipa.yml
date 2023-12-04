@@ -28,12 +28,12 @@
     KRB5CCNAME: /tmp/krb_cache_{{ account_name }}
     KRB5_CONFIG: "{{ output_dir }}/krb5.conf"
   block:
-    - when: kerberos_keytab is defined
+    - when: kerberos_keytab | default("", true) != ""
       name: Login kerberos
       command: >-
         kinit -kt "{{ kerberos_keytab }}" {{ kerberos_user }}
 
-    - when: kerberos_password is defined
+    - when: kerberos_password | default("", true) != ""
       name: Login kerberos
       command: >-
         kinit {{ kerberos_user }}
