@@ -35,7 +35,6 @@ $ sops --encrypt --age [age..PUBLICKEY..] ~/age/conan-dev.yaml
 .Run helm
 ----
 helm secrets install \
-   --create-namespace -n babylon-sandbox-conan \
    --set namespace=babylon-sandbox-conan \
    -f ~/age/conan-dev.yaml sandbox-conan-dev ./
 ----
