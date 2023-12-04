@@ -28,6 +28,7 @@ noop=${noop:-false}
 
 # python virtualenv
 VENV=${VENV:-~/pool_management/python_virtualenv}
+NOVENV=${NOVENV:-false}
 
 # AWS CLI
 AWSCLI=${AWSCLI:-~/pool_management/aws/dist/aws}
@@ -68,6 +69,7 @@ export poll_interval
 export aws_nuke_binary_path
 export noop
 export VENV
+export NOVENV
 export lock_timeout
 export conan_instance
 export workdir
