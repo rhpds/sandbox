@@ -1,0 +1,36 @@
+---
+apiVersion: v2
+name: sandbox-conan
+description: A Helm chart to deploy Conan, the sandbox cleanup daemon
+
+# A chart can be either an 'application' or a 'library' chart.
+#
+# Application charts are a collection of templates that can be packaged into
+# versioned archives to be deployed.
+#
+# Library charts provide useful utilities or functions for the chart developer.
+# They're included as a dependency of application charts to inject those
+# utilities and functions into the rendering pipeline. Library charts do not
+# define any templates and therefore cannot be deployed.
+type: application
+
+# This is the chart version. This version number should be incremented each time you make changes
+# to the chart and its templates, including the (default) app version.
+version: 0.0.1
+
+# This is the default version number of the application being deployed.
+# This version number should be incremented each time you make changes to the application.
+appVersion: 0.3.5
+
+keywords:
+  - sandbox
+  - conan
+
+home: https://github.com/rhpds/sandbox
+
+sources:
+  - https://github.com/rhpds/sandbox
+
+maintainers:
+  - name: Guillaume Core (fridim)
+    url: https://github.com/fridim

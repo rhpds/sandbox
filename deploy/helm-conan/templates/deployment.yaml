@@ -1,0 +1,108 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/version: {{ .Values.deployment.tag | default .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    meta.helm.sh/release-name: {{ .Release.Name }}
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
+    # if labels is defined in values.yaml, merge it with the default labels
+    {{- if .Values.labels }}
+    {{- toYaml .Values.labels | nindent 4 }}
+    {{- end }}
+spec:
+  replicas: {{ .Values.replicas | default 2 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+  strategy:
+    type: {{ .Values.deployment.strategy | default "RollingUpdate" }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Chart.Name }}
+        app.kubernetes.io/version: {{ .Values.deployment.tag | default .Chart.AppVersion | quote }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        meta.helm.sh/release-namespace: {{ .Release.Namespace }}
+        meta.helm.sh/release-name: {{ .Release.Name }}
+        {{- if .Values.labels }}
+        {{- toYaml .Values.labels | nindent 8 }}
+        {{- end }}
+    spec:
+      # Volumes
+      volumes:
+      - name: aws-credentials-volume
+        secret:
+          secretName: {{ .Values.sandbox_conan_secrets.aws_credentials.name }}
+
+      - name: vault-secret-volume
+        secret:
+          secretName: {{ .Values.sandbox_conan_secrets.vault_secret.name }}
+      containers:
+      - name: sandbox-conan
+        image: {{ .Values.deployment.image }}:{{ .Values.deployment.tag | default "latest" }}
+        imagePullPolicy: {{ .Values.deployment.pullPolicy | default "RollingUpdate" }}
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        env:
+        # DynamoDB
+        - name: dynamodb_profile
+          value: {{ .Values.dynamodb_profile }}
+        - name: dynamodb_table
+          value: {{ .Values.dynamodb_table }}
+        - name: dynamodb_region
+          value: {{ .Values.dynamodb_region }}
+
+        # profile to assume role inside the sandbox
+        - name: aws_profile
+          value: {{ .Values.aws_profile }}
+
+        # Where to look for aws creds
+        - name: AWS_SHARED_CREDENTIALS_FILE
+          value: /secrets/aws_credentials/aws_credentials
+
+        - name: conan_instance
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+
+        # Vault (AES256) secret
+        - name: vault_file
+          value: /secrets/vault_file/vault_file
+
+        - name: kerberos_user
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.sandbox_conan_secrets.kerberos_secret.name }}
+              key: username
+
+        - name: workdir
+          value: /home/opentlc-mgr/pool_management
+
+        - name: kerberos_password
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.sandbox_conan_secrets.kerberos_secret.name }}
+              key: password
+
+        - name: AWSCLI
+          value: {{ .Values.awscli | default "aws" | quote }}
+
+        - name: threads
+          value: {{ .Values.threads | default 1 | quote }}
+
+        - name: NOVENV
+          value: {{ .Values.novenv | default "true" | quote }}
+
+        # Mount secrets as volumes.
+        volumeMounts:
+        - name: aws-credentials-volume
+          mountPath: /secrets/aws_credentials
+          readOnly: true
+        - name: vault-secret-volume
+          mountPath: /secrets/vault_file
+          readOnly: true
