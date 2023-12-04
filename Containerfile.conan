@@ -18,7 +18,8 @@ COPY --from=builder /sandbox/build/sandbox-list /usr/local/bin/sandbox-list
 COPY conan/requirements.txt /tmp/requirements.txt
 COPY conan/requirements.yml /tmp/requirements.yml
 
-RUN mkdir -p -m 700  /home/opentlc-mgr/pool_management/output_dir_sandbox \
+RUN mkdir -p -m 770  /home/opentlc-mgr/pool_management/output_dir_sandbox \
+    && chmod -R 770 /home/opentlc-mgr \
     && chown -R ${USER_UID}:0 /home/opentlc-mgr \
 # Packages
     && dnf install -y \
@@ -90,6 +91,7 @@ RUN curl --silent --location \
     && dnf clean all && rm -rf /tmp/*
 
 USER ${USER_UID}
+ENV HOME=/home/opentlc-mgr
 
 COPY . /home/opentlc-mgr/pool_management/sandbox
 
