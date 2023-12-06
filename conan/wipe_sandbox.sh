@@ -60,7 +60,8 @@ sandbox_lock() {
     conan_instance=${conan_instance:-$(hostname)}
     read -r -d '' data << EOM
   {
-        ":av": {"BOOL": false},
+        ":false": {"BOOL": false},
+        ":true": {"BOOL": true},
         ":st": {"S": "cleanup in progress"},
         ":timestamp": {"S": "$(date -uIs)"},
         ":old": {"S": "$(date -uIs -d "now - ${lock_timeout} hour")"},
@@ -75,8 +76,8 @@ EOM
         dynamodb update-item \
         --table-name "${dynamodb_table}" \
         --key "{\"name\": {\"S\": \"${sandbox}\"}}" \
-        --update-expression "SET available = :av, conan_status = :st, conan_timestamp = :timestamp, conan_hostname = :host" \
-        --condition-expression "conan_status <> :st OR conan_timestamp < :old" \
+        --update-expression "SET available = :false, conan_status = :st, conan_timestamp = :timestamp, conan_hostname = :host" \
+        --condition-expression "to_cleanup = :true AND (conan_status <> :st OR conan_timestamp < :old)" \
         --expression-attribute-values "${data}" \
         2> "${errlog}"
     then
