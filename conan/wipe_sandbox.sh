@@ -65,22 +65,38 @@ sandbox_lock() {
         ":st": {"S": "cleanup in progress"},
         ":timestamp": {"S": "$(date -uIs)"},
         ":old": {"S": "$(date -uIs -d "now - ${lock_timeout} hour")"},
-        ":host": {"S": "${conan_instance}"}
+        ":old24h": {"S": "$(date -uIs -d "now - 24 hour")"},
+        ":host": {"S": "${conan_instance}"},
+        ":maxretries": {"N": "${max_retries}"}
   }
 EOM
 
     errlog=$(mktemp)
 
+
+    # Lock when:
+    # - to_cleanup is true
+    # - conan_status is not "cleanup in progress"
+    #   or conan_timestamp is older than lock_timeout
+    # - conan_cleanup_count is less than max_retries
+    #   or conan_timestamp is older than 24h
     if ! "${AWSCLI}" --profile "${dynamodb_profile}" \
         --region "${dynamodb_region}" \
         dynamodb update-item \
         --table-name "${dynamodb_table}" \
         --key "{\"name\": {\"S\": \"${sandbox}\"}}" \
         --update-expression "SET available = :false, conan_status = :st, conan_timestamp = :timestamp, conan_hostname = :host" \
-        --condition-expression "to_cleanup = :true AND (conan_status <> :st OR conan_timestamp < :old)" \
+        --condition-expression "to_cleanup = :true AND (conan_status <> :st OR conan_timestamp < :old) AND (attribute_not_exists(conan_cleanup_count) OR conan_cleanup_count < :maxretries OR conan_timestamp < :old24h)" \
         --expression-attribute-values "${data}" \
         2> "${errlog}"
     then
+
+        # check if max_retries is reached
+        if [ "$(get_conan_cleanup_count "${sandbox}")" -ge "${max_retries}" ]; then
+            echo "$(date -uIs) ${sandbox} max_retries reached, skipping for now"
+            rm "${errlog}"
+            return 1
+        fi
 
         if grep -q ConditionalCheckFailedException "${errlog}"; then
             echo "$(date -uIs) Another process is already cleaning up ${sandbox}: skipping"
@@ -101,10 +117,10 @@ EOM
     return 0
 }
 
-sandbox_increase_cleanup_count() {
+sandbox_increase_conan_cleanup_count() {
     local sandbox=$1
 
-    # increment cleanup_count
+    # increment conan_cleanup_count
     read -r -d '' data << EOM
   {
         ":one": {"N": "1"},
@@ -119,38 +135,34 @@ EOM
             dynamodb update-item \
             --table-name "${dynamodb_table}" \
             --key "{\"name\": {\"S\": \"${sandbox}\"}}" \
-            --update-expression "ADD cleanup_count :one" \
+            --update-expression "ADD conan_cleanup_count :one" \
             --condition-expression "to_cleanup = :true" \
             --expression-attribute-values "${data}" \
             2> "${errlog}"
         then
-            echo "$(date -uIs) Cannot increase cleanup_count for ${sandbox}" >&2
+            echo "$(date -uIs) Cannot increase conan_cleanup_count for ${sandbox}" >&2
             cat "${errlog}" >&2
             rm "${errlog}"
             exit 1
         fi
 }
 
-get_cleanup_count() {
+get_conan_cleanup_count() {
     local sandbox=$1
-    local errlog=$(mktemp)
-    local cleanup_count
+    local conan_cleanup_count
 
-    if ! cleanup_count=$("${AWSCLI}" --profile "${dynamodb_profile}" \
+    if ! conan_cleanup_count=$("${AWSCLI}" --profile "${dynamodb_profile}" \
         --region "${dynamodb_region}" \
         dynamodb get-item \
         --table-name "${dynamodb_table}" \
         --key "{\"name\": {\"S\": \"${sandbox}\"}}" \
-        --projection-expression "cleanup_count" \
-        2> "${errlog}" | jq -r '.Item.cleanup_count.N')
+        --projection-expression "conan_cleanup_count" \
+        2> /dev/null | jq -r '.Item.conan_cleanup_count.N')
     then
-        echo "$(date -uIs) Cannot get cleanup_count for ${sandbox}" >&2
-        cat "${errlog}" >&2
-        rm "${errlog}"
-        exit 1
+        echo "0"
     fi
 
-    echo "${cleanup_count}"
+    echo "${conan_cleanup_count}"
 }
 
 sandbox_reset() {
@@ -165,6 +177,7 @@ sandbox_reset() {
         cp "${logfile}" "${prevlogfile}"
     fi
 
+    # Check max retries locally
     if [ -e "${eventlog}" ]; then
         local age_eventlog=$(( $(date +%s) - $(date -r "${eventlog}" +%s) ))
         # If last attempt was less than 24h (TTL_EVENTLOG) ago
@@ -175,7 +188,6 @@ sandbox_reset() {
             return
         fi
     fi
-
 
     echo "$(date -uIs) reset sandbox${s}" >> ${workdir}/reset.log
     echo "$(date -uIs) reset sandbox${s}" >> "${eventlog}"
@@ -219,8 +231,8 @@ sandbox_reset() {
         echo "$(date -uIs) =========BEGIN========== ${logfile}" >&2
         cat "${logfile}" >&2
         echo "$(date -uIs) =========END============ ${logfile}" >&2
-        sandbox_increase_cleanup_count "${sandbox}"
-        echo "$(date -uIs) ${sandbox} cleanup count: $(get_cleanup_count "${sandbox}")"
+        sandbox_increase_conan_cleanup_count "${sandbox}"
+        echo "$(date -uIs) ${sandbox} cleanup count: $(get_conan_cleanup_count "${sandbox}")"
         sync
         exit 3
     fi

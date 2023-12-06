@@ -99,7 +99,7 @@ spec:
           value: {{ .Values.novenv | default "true" | quote }}
 
         - name: max_retries
-          value: {{ .Values.max_retries | default 0 | quote }}
+          value: {{ .Values.max_retries | default 3 | quote }}
 
         # Mount secrets as volumes.
         volumeMounts:
