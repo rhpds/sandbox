@@ -17,6 +17,8 @@ TTL_EVENTLOG=$((3600*24))
 : "${aws_nuke_binary_path:?"aws_nuke_binary_path is unset or empty"}"
 : "${lock_timeout:?"lock_timeout is unset or empty"}"
 : "${kerberos_user:?"kerberos_user is unset or empty"}"
+: "${vault_file:?"vault_file is unset or empty"}"
+: "${workdir:?"workdir is unset or empty"}"
 
 checks() {
     if [ -z "${sandbox}" ]; then
@@ -51,8 +53,8 @@ EOM
 
 _on_exit() {
     local exit_status=${1:-$?}
-    sandbox_unlock $sandbox
-    exit $exit_status
+    sandbox_unlock "${sandbox}"
+    exit "$exit_status"
 }
 
 get_conan_cleanup_count() {
@@ -188,13 +190,13 @@ sandbox_reset() {
         # If last attempt was less than 24h (TTL_EVENTLOG) ago
         # and if it failed more than max_retries times, skip.
         if [ $age_eventlog -le $TTL_EVENTLOG ] && \
-            [ "$(wc -l "${eventlog}" | awk '{print $1}')" -ge ${max_retries} ]; then
+            [ "$(wc -l "${eventlog}" | awk '{print $1}')" -ge "${max_retries}" ]; then
             echo "$(date -uIs) ${sandbox} Too many attemps, skipping"
             return
         fi
     fi
 
-    echo "$(date -uIs) reset sandbox${s}" >> ${workdir}/reset.log
+    echo "$(date -uIs) reset sandbox${s}" >> "${workdir}/reset.log"
     echo "$(date -uIs) reset sandbox${s}" >> "${eventlog}"
 
     echo "$(date -uIs) ${sandbox} reset starting..."
@@ -208,27 +210,27 @@ sandbox_reset() {
     fi
 
     if [[ "${NOVENV}" !=  "true" ]]; then
+        # shellcheck source=/dev/null
         . "$VENV/bin/activate"
     else
-        export ANSIBLE_PYTHON_INTERPRETER=$(which python3)
+        ANSIBLE_PYTHON_INTERPRETER=$(which python3)
+        export ANSIBLE_PYTHON_INTERPRETER
     fi
 
-    ansible-playbook -i localhost, \
-                     -e _account_num="${s}" \
-                     -e aws_master_profile="${aws_profile}" \
-                     -e dynamodb_profile="${dynamodb_profile}" \
-                     -e dynamodb_table="${dynamodb_table}" \
-                     -e dynamodb_region="${dynamodb_region}" \
-                     -e aws_nuke_binary_path="${aws_nuke_binary_path}" \
-                     -e output_dir="${workdir}/output_dir_sandbox" \
-                     -e vault_file="${vault_file}" \
-                     -e aws_cli="${AWSCLI}" \
-                     -e kerberos_keytab="${kerberos_keytab}" \
-                     -e kerberos_user="${kerberos_user}" \
-                     -e kerberos_password="${kerberos_password}" \
-                     reset_single.yml > "${logfile}"
-
-    if [ $? = 0 ]; then
+    if ansible-playbook -i localhost, \
+        -e _account_num="${s}" \
+        -e aws_master_profile="${aws_profile}" \
+        -e dynamodb_profile="${dynamodb_profile}" \
+        -e dynamodb_table="${dynamodb_table}" \
+        -e dynamodb_region="${dynamodb_region}" \
+        -e aws_nuke_binary_path="${aws_nuke_binary_path}" \
+        -e output_dir="${workdir}/output_dir_sandbox" \
+        -e vault_file="${vault_file}" \
+        -e aws_cli="${AWSCLI}" \
+        -e kerberos_keytab="${kerberos_keytab:-}" \
+        -e kerberos_user="${kerberos_user}" \
+        -e kerberos_password="${kerberos_password:-}" \
+        reset_single.yml > "${logfile}"; then
         echo "$(date -uIs) ${sandbox} reset OK"
         rm "${eventlog}"
     else

@@ -88,7 +88,7 @@ ORIG="$(cd "$(dirname "$0")" || exit; pwd)"
 prepare_workdir() {
     mkdir -p "${workdir}"
 
-    if [ "${NOVENV}"=true ]; then
+    if [ "${NOVENV}" = true ]; then
         return
     fi
 
@@ -96,11 +96,13 @@ prepare_workdir() {
         set -e
         echo "Create python virtualenv"
         python3 -mvenv "${VENV}"
+        # shellcheck source=/dev/null
         . "${VENV}/bin/activate"
         pip install --upgrade pip
         pip install -r "${ORIG}/../playbooks/requirements.txt"
         set +e
     fi
+    # shellcheck source=/dev/null
     . "$VENV/bin/activate"
 }
 
