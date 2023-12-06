@@ -47,11 +47,11 @@ RUN mkdir -p -m 770  /home/opentlc-mgr/pool_management/output_dir_sandbox \
     tar \
     unzip \
     vim \
-    wget
+    wget \
 ##############################
 # aws-nuke
 ##############################
-RUN curl --silent --location \
+    && curl --silent --location \
     https://github.com/rebuy-de/aws-nuke/releases/download/${AWSNUKE_VERSION}/aws-nuke-${AWSNUKE_VERSION}-linux-amd64.tar.gz \
     | tar -xz -C /usr/local/bin --wildcards 'aws-nuke-*-linux-amd64' \
     && ln -s /usr/local/bin/aws-nuke-${AWSNUKE_VERSION}-linux-amd64 /usr/local/bin/aws-nuke \
