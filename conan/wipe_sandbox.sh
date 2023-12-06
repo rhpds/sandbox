@@ -163,9 +163,9 @@ sandbox_reset() {
         rm "${eventlog}"
     else
         echo "$(date -uIs) ${sandbox} reset FAILED." >&2
-        echo "$(date -uIs) ${logfile} =========BEGIN==========" >&2
+        echo "$(date -uIs) =========BEGIN========== ${logfile}" >&2
         cat "${logfile}" >&2
-        echo "$(date -uIs) ${logfile} =========END============" >&2
+        echo "$(date -uIs) =========END============ ${logfile}" >&2
         sync
         exit 3
     fi
