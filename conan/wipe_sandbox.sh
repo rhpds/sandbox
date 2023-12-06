@@ -55,6 +55,29 @@ _on_exit() {
     exit $exit_status
 }
 
+get_conan_cleanup_count() {
+    local sandbox=$1
+    local conan_cleanup_count
+
+    if ! conan_cleanup_count=$("${AWSCLI}" --profile "${dynamodb_profile}" \
+        --region "${dynamodb_region}" \
+        dynamodb get-item \
+        --table-name "${dynamodb_table}" \
+        --key "{\"name\": {\"S\": \"${sandbox}\"}}" \
+        --projection-expression "conan_cleanup_count" \
+        2> /dev/null | jq -r '.Item.conan_cleanup_count.N')
+    then
+        echo "$(date -uIs) Cannot get conan_cleanup_count for ${sandbox}" >&2
+        exit 1
+    fi
+
+    if [ "${conan_cleanup_count}" = "null" ]; then
+        conan_cleanup_count=0
+    fi
+
+    echo "${conan_cleanup_count}"
+}
+
 sandbox_lock() {
     local sandbox=$1
     conan_instance=${conan_instance:-$(hostname)}
@@ -145,24 +168,6 @@ EOM
             rm "${errlog}"
             exit 1
         fi
-}
-
-get_conan_cleanup_count() {
-    local sandbox=$1
-    local conan_cleanup_count
-
-    if ! conan_cleanup_count=$("${AWSCLI}" --profile "${dynamodb_profile}" \
-        --region "${dynamodb_region}" \
-        dynamodb get-item \
-        --table-name "${dynamodb_table}" \
-        --key "{\"name\": {\"S\": \"${sandbox}\"}}" \
-        --projection-expression "conan_cleanup_count" \
-        2> /dev/null | jq -r '.Item.conan_cleanup_count.N')
-    then
-        echo "0"
-    fi
-
-    echo "${conan_cleanup_count}"
 }
 
 sandbox_reset() {
