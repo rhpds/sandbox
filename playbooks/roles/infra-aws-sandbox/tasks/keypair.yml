@@ -7,7 +7,7 @@
     key_material: "{{ opentlc_admin_backdoor }}"
     aws_access_key: "{{ assumed_role.sts_creds.access_key }}"
     aws_secret_key: "{{ assumed_role.sts_creds.secret_key }}"
-    session_token: "{{ assumed_role.sts_creds.session_token }}"
+    security_token: "{{ assumed_role.sts_creds.session_token }}"
   loop: "{{ all_regions }}"
   loop_control:
     loop_var: _region
@@ -23,7 +23,7 @@
     key_material: "{{ ocpkey }}"
     aws_access_key: "{{ assumed_role.sts_creds.access_key }}"
     aws_secret_key: "{{ assumed_role.sts_creds.secret_key }}"
-    session_token: "{{ assumed_role.sts_creds.session_token }}"
+    security_token: "{{ assumed_role.sts_creds.session_token }}"
   loop: "{{ all_regions }}"
   loop_control:
     loop_var: _region
