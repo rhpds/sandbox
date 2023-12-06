@@ -101,6 +101,58 @@ EOM
     return 0
 }
 
+sandbox_increase_cleanup_count() {
+    local sandbox=$1
+
+    # increment cleanup_count
+    read -r -d '' data << EOM
+  {
+        ":one": {"N": "1"},
+        ":true": {"BOOL": true}
+  }
+EOM
+
+        errlog=$(mktemp)
+
+        if ! "${AWSCLI}" --profile "${dynamodb_profile}" \
+            --region "${dynamodb_region}" \
+            dynamodb update-item \
+            --table-name "${dynamodb_table}" \
+            --key "{\"name\": {\"S\": \"${sandbox}\"}}" \
+            --update-expression "ADD cleanup_count :one" \
+            --condition-expression "to_cleanup = :true" \
+            --expression-attribute-values "${data}" \
+            2> "${errlog}"
+        then
+            echo "$(date -uIs) Cannot increase cleanup_count for ${sandbox}" >&2
+            cat "${errlog}" >&2
+            rm "${errlog}"
+            exit 1
+        fi
+}
+
+get_cleanup_count() {
+    local sandbox=$1
+    local errlog=$(mktemp)
+    local cleanup_count
+
+    if ! cleanup_count=$("${AWSCLI}" --profile "${dynamodb_profile}" \
+        --region "${dynamodb_region}" \
+        dynamodb get-item \
+        --table-name "${dynamodb_table}" \
+        --key "{\"name\": {\"S\": \"${sandbox}\"}}" \
+        --projection-expression "cleanup_count" \
+        2> "${errlog}" | jq -r '.Item.cleanup_count.N')
+    then
+        echo "$(date -uIs) Cannot get cleanup_count for ${sandbox}" >&2
+        cat "${errlog}" >&2
+        rm "${errlog}"
+        exit 1
+    fi
+
+    echo "${cleanup_count}"
+}
+
 sandbox_reset() {
     local s=${1##sandbox}
     local prevlogfile=${workdir}/reset_${sandbox}.log.1
@@ -167,6 +219,8 @@ sandbox_reset() {
         echo "$(date -uIs) =========BEGIN========== ${logfile}" >&2
         cat "${logfile}" >&2
         echo "$(date -uIs) =========END============ ${logfile}" >&2
+        sandbox_increase_cleanup_count "${sandbox}"
+        echo "$(date -uIs) ${sandbox} cleanup count: $(get_cleanup_count "${sandbox}")"
         sync
         exit 3
     fi
