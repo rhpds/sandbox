@@ -1,0 +1,42 @@
+---
+deployment:
+  image: quay.io/rhpds/sandbox-conan
+  tag: latest
+  strategy: RollingUpdate
+  pullPolicy: Always
+
+resources:
+  limits:
+    cpu: 1
+    memory: 500Mi
+  requests:
+    cpu: 50m
+    memory: 128Mi
+
+# profile to interact with the dynamodb
+dynamodb_profile: pool-manager-dev
+dynamodb_table: accounts-dev
+dynamodb_region: us-east-1
+# Profile to assume role inside the Sandbox account
+aws_profile: pool-manager
+aws_cli: aws
+novenv: true
+threads: 1
+max_retries: 3
+
+sandbox_conan_secrets:
+  vault_secret:
+    #namespace: ...
+    name: vault-file
+    #content: "..."
+
+  kerberos_secrets:
+    #namespace: ...
+    name: kerberos-ipa
+    kerberos_user: "..."
+    #kerberos_password: "..."
+
+  aws_credentials:
+    #namespace: ...
+    name: aws-credentials
+    #content: "..."

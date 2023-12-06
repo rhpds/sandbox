@@ -1,0 +1,45 @@
+== Development ==
+
+Do not store secret in cleartext on disk.
+
+=== helm secret plugin ===
+
+* Install helm-secret
++
+----
+helm plugin install https://github.com/jkroepke/helm-secrets
+----
+* Install sops: https://github.com/getsops/sops
+* Insall age: https://age-encryption.org/
+
+.Create  a private key for local development
+----
+$ age-keygen
+# created: 2023-12-02T13:00:58+01:00
+# public key: age..PUBLICKEY..
+AGE-SECRET-KEY-..EDITED...
+----
+
+Save the secret key string in your password manager.
+
+
+.Create an encrypted secret vars file
+----
+$ HISTCONTROL=ignorespace
+# Copy paste your key from your password manager
+$  export SOPS_AGE_KEY=[AGE-SECRET-KEY-...]
+$ mkdir -m 700 ~/age
+$ sops --encrypt --age [age..PUBLICKEY..] ~/age/conan-dev.yaml
+----
+
+.Run helm
+----
+helm secrets install \
+   --set namespace=babylon-sandbox-conan \
+   -f ~/age/conan-dev.yaml sandbox-conan-dev ./
+----
+
+
+== Production ==
+
+Use ansible-vault to encrypt the `cluster-vars.yaml` file.

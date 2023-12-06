@@ -18,7 +18,8 @@ COPY --from=builder /sandbox/build/sandbox-list /usr/local/bin/sandbox-list
 COPY conan/requirements.txt /tmp/requirements.txt
 COPY conan/requirements.yml /tmp/requirements.yml
 
-RUN mkdir -p -m 700  /home/opentlc-mgr/pool_management/output_dir_sandbox \
+RUN mkdir -p -m 770  /home/opentlc-mgr/pool_management/output_dir_sandbox \
+    && chmod -R 770 /home/opentlc-mgr \
     && chown -R ${USER_UID}:0 /home/opentlc-mgr \
 # Packages
     && dnf install -y \
@@ -46,11 +47,11 @@ RUN mkdir -p -m 700  /home/opentlc-mgr/pool_management/output_dir_sandbox \
     tar \
     unzip \
     vim \
-    wget
+    wget \
 ##############################
 # aws-nuke
 ##############################
-RUN curl --silent --location \
+    && curl --silent --location \
     https://github.com/rebuy-de/aws-nuke/releases/download/${AWSNUKE_VERSION}/aws-nuke-${AWSNUKE_VERSION}-linux-amd64.tar.gz \
     | tar -xz -C /usr/local/bin --wildcards 'aws-nuke-*-linux-amd64' \
     && ln -s /usr/local/bin/aws-nuke-${AWSNUKE_VERSION}-linux-amd64 /usr/local/bin/aws-nuke \
@@ -83,6 +84,7 @@ RUN curl --silent --location \
     && pip install --no-cache-dir -r /tmp/requirements.txt \
     && pip freeze \
     && ansible-galaxy collection install -vv \
+    -p /usr/share/ansible/collections \
     -r /tmp/requirements.yml \
 ##############################
 # Cleanup
@@ -90,6 +92,7 @@ RUN curl --silent --location \
     && dnf clean all && rm -rf /tmp/*
 
 USER ${USER_UID}
+ENV HOME=/home/opentlc-mgr
 
 COPY . /home/opentlc-mgr/pool_management/sandbox
 

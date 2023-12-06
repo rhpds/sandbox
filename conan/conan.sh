@@ -8,6 +8,8 @@ set -u -o pipefail
 
 # Number of aws-nuke processes to run in parallel
 threads="${threads:-12}"
+# Number of attempts to run cleanup on a sandbox
+max_retries="${max_retries:-2}"
 
 # AWS profile
 aws_profile="${aws_profile:-pool-manager}"
@@ -60,24 +62,25 @@ lock_timeout=${lock_timeout:-2}
 
 ##############
 
-export threads
-export aws_profile
-export dynamodb_profile
-export dynamodb_table
-export dynamodb_region
-export poll_interval
-export aws_nuke_binary_path
-export noop
-export VENV
-export NOVENV
-export lock_timeout
-export conan_instance
-export workdir
-export vault_file
 export AWSCLI
+export NOVENV
+export VENV
+export aws_nuke_binary_path
+export aws_profile
+export conan_instance
+export dynamodb_profile
+export dynamodb_region
+export dynamodb_table
 export kerberos_keytab
-export kerberos_user
 export kerberos_password
+export kerberos_user
+export lock_timeout
+export max_retries
+export noop
+export poll_interval
+export threads
+export vault_file
+export workdir
 
 ORIG="$(cd "$(dirname "$0")" || exit; pwd)"
 
@@ -85,7 +88,7 @@ ORIG="$(cd "$(dirname "$0")" || exit; pwd)"
 prepare_workdir() {
     mkdir -p "${workdir}"
 
-    if [ "${NOVENV}"=true ]; then
+    if [ "${NOVENV}" = true ]; then
         return
     fi
 
@@ -93,11 +96,13 @@ prepare_workdir() {
         set -e
         echo "Create python virtualenv"
         python3 -mvenv "${VENV}"
+        # shellcheck source=/dev/null
         . "${VENV}/bin/activate"
         pip install --upgrade pip
         pip install -r "${ORIG}/../playbooks/requirements.txt"
         set +e
     fi
+    # shellcheck source=/dev/null
     . "$VENV/bin/activate"
 }
 
