@@ -91,6 +91,8 @@
             S: "{{ account_hosted_zone_id }}"
           zone:
             S: "{{ account_name }}{{subdomain_base}}"
+          comment:
+            S: "validation in progress"
       command: >-
         {{ aws_cli }} --profile {{ dynamodb_profile }}
         --region {{ dynamodb_region }}
