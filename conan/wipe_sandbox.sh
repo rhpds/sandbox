@@ -2,8 +2,8 @@
 
 ORIG="$(cd "$(dirname "$0")" || exit; pwd)"
 
-# Stop after MAX_ATTEMPTS
-MAX_ATTEMPTS=2
+# Stop after max_retries
+max_retries=${max_retries:-2}
 # retry after 48h
 TTL_EVENTLOG=$((3600*24))
 
@@ -115,9 +115,9 @@ sandbox_reset() {
     if [ -e "${eventlog}" ]; then
         local age_eventlog=$(( $(date +%s) - $(date -r "${eventlog}" +%s) ))
         # If last attempt was less than 24h (TTL_EVENTLOG) ago
-        # and if it failed more than MAX_ATTEMPTS times, skip.
+        # and if it failed more than max_retries times, skip.
         if [ $age_eventlog -le $TTL_EVENTLOG ] && \
-            [ "$(wc -l "${eventlog}" | awk '{print $1}')" -ge ${MAX_ATTEMPTS} ]; then
+            [ "$(wc -l "${eventlog}" | awk '{print $1}')" -ge ${max_retries} ]; then
             echo "$(date -uIs) ${sandbox} Too many attemps, skipping"
             return
         fi

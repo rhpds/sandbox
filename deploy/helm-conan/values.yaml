@@ -22,6 +22,7 @@ aws_profile: pool-manager
 aws_cli: aws
 novenv: true
 threads: 1
+max_retries: 0
 
 sandbox_conan_secrets:
   vault_secret:
