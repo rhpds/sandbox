@@ -13,6 +13,9 @@ service:
   port:
     api: 8080
 
+# Provide bitwarden_secret_name to use get secrets with BitwardenSyncSecrets
+#bitwarden_secret_name: ...
+
 dynamodb_table: accounts-dev
 dynamodb_region: us-east-1
 
