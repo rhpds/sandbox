@@ -13,6 +13,8 @@
     - name: Run files/manual_cleanup.py script
       script: files/manual_cleanup.py
       register: r_manual_cleanup
+      # timeout after 2 minutes
+      timeout: 120
       changed_when: >-
         'Changes were made' in r_manual_cleanup.stdout
 
