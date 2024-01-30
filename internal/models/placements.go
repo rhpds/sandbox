@@ -20,6 +20,7 @@ type Placement struct {
 	Request     any               `json:"request"`
 }
 
+
 type PlacementWithCreds struct {
 	Placement
 

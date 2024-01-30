@@ -7,7 +7,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v4"
-	"github.com/rhpds/sandbox/internal/api/v1"
+	v1 "github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
@@ -18,38 +18,62 @@ import (
 
 type AccountHandler struct {
 	awsAccountProvider models.AwsAccountProvider
+	OcpAccountProvider models.OcpAccountProvider
 }
 
-func NewAccountHandler(awsAccountProvider models.AwsAccountProvider) *AccountHandler {
+func NewAccountHandler(awsAccountProvider models.AwsAccountProvider, OcpAccountProvider models.OcpAccountProvider) *AccountHandler {
 	return &AccountHandler{
 		awsAccountProvider: awsAccountProvider,
+		OcpAccountProvider: OcpAccountProvider,
 	}
 }
 
-// GetAccountsHandler returns all accounts
-// GET /accounts
+// GetAccountsHandler returns all accounts by kind
+// GET /accounts/{kind}
 func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", " ")
 
+	kind := chi.URLParam(r, "kind")
 	serviceUuid := r.URL.Query().Get("service_uuid")
 
 	// Get available from Query
 	available := r.URL.Query().Get("available")
 
-	var (
-		accounts []models.AwsAccount
-		err      error
-	)
-	if serviceUuid != "" {
-		// Get the account from DynamoDB
-		accounts, err = h.awsAccountProvider.FetchAllByServiceUuid(serviceUuid)
-
-	} else {
-		if available != "" && available == "true" {
-			accounts, err = h.awsAccountProvider.FetchAllAvailable()
+	log.Logger.Error("GET accounts", "error", kind)
+	var err error
+	var accountlist []interface{}
+	switch kind {
+	case "AwsSandbox", "aws":
+		var (
+			accounts []models.AwsAccount
+		)
+		if serviceUuid != "" {
+			// Get the account from DynamoDB
+			accounts, err = h.awsAccountProvider.FetchAllByServiceUuid(serviceUuid)
 		} else {
-			accounts, err = h.awsAccountProvider.FetchAll()
+			if available != "" && available == "true" {
+				accounts, err = h.awsAccountProvider.FetchAllAvailable()
+			} else {
+				accounts, err = h.awsAccountProvider.FetchAll()
+			}
+		}
+		accountlist = make([]interface{}, len(accounts))
+		for i, acc := range accounts {
+			accountlist[i] = acc
+		}
+	case "OcpSandbox", "Ocp":
+		var (
+			accounts []models.OcpAccount
+		)
+		if available != "" && available == "true" {
+			accounts, err = h.OcpAccountProvider.FetchAllAvailable()
+		} else {
+			accounts, err = h.OcpAccountProvider.FetchAll()
+		}
+		accountlist = make([]interface{}, len(accounts))
+		for i, acc := range accounts {
+			accountlist[i] = acc
 		}
 	}
 
@@ -63,15 +87,14 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 		})
 		return
 	}
-
-	if len(accounts) == 0 {
+	if len(accountlist) == 0 {
 		w.WriteHeader(http.StatusNotFound)
 	} else {
 		w.WriteHeader(http.StatusOK)
 	}
 
 	// Print accounts using JSON
-	if err := enc.Encode(accounts); err != nil {
+	if err := enc.Encode(accountlist); err != nil {
 		log.Logger.Error("GET accounts", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		enc.Encode(v1.Error{
@@ -124,7 +147,6 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 		})
 	}
 }
-
 func (h *AccountHandler) CleanupAccountHandler(w http.ResponseWriter, r *http.Request) {
 	// Grab the parameters from Params
 	accountName := chi.URLParam(r, "account")
