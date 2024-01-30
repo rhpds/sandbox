@@ -422,6 +422,8 @@ paths:
           enum:
             - aws
             - AwsSandbox
+            - Ocp
+            - OcpSandbox
       - name: available
         in: query
         description: Boolean to filter if available or taken.
@@ -469,12 +471,15 @@ paths:
           enum:
             - aws
             - AwsSandbox
+            - Ocp
+            - OcpSandbox
       - name: name
         in: path
         required: true
         description: The name of the sandbox
         schema:
           type: string
+
     get:
       tags:
         - account
@@ -562,6 +567,8 @@ paths:
           enum:
             - aws
             - AwsSandbox
+            - Ocp
+            - OcpSandbox
       - name: name
         in: path
         required: true
@@ -617,6 +624,8 @@ paths:
           enum:
             - aws
             - AwsSandbox
+            - Ocp
+            - OcpSandbox
       - name: name
         in: path
         required: true
@@ -669,6 +678,8 @@ paths:
           enum:
             - aws
             - AwsSandbox
+            - Ocp
+            - OcpSandbox
       - name: name
         in: path
         required: true
@@ -721,6 +732,8 @@ paths:
           enum:
             - aws
             - AwsSandbox
+            - Ocp
+            - OcpSandbox
       - name: name
         in: path
         required: true
@@ -1372,7 +1385,6 @@ components:
           type: array
           items:
             type: object
-            additionalProperties: false
             properties:
               kind:
                 $ref: '#/components/schemas/ResourceKind'
@@ -1381,6 +1393,8 @@ components:
                 minimum: 1
                 default: 1
                 example: 1
+              provider:
+                type: string
         annotations:
           $ref: "#/components/schemas/Annotations"
       example:
@@ -1438,6 +1452,7 @@ components:
       oneOf:
         - $ref: '#/components/schemas/AwsAccount'
         - $ref: '#/components/schemas/AzureAccount'
+        - $ref: '#/components/schemas/OcpAccount'
       discriminator:
         propertyName: kind
         mapping:
@@ -1579,6 +1594,29 @@ components:
               items:
                 $ref: '#/components/schemas/Credentials'
 
+
+    OcpAccount:
+      type: object
+      required:
+        - name
+        - sa_account
+        - sa_token
+      properties:
+        name:
+          type: string
+          example: sandbox123
+        service_uuid:
+          $ref: '#/components/schemas/UUID'
+        annotations:
+          $ref: '#/components/schemas/Annotations'
+        sa_account:
+          type: string
+          example: 'sa_1234'
+        sa_token:
+          type: string
+          example: "abcde"
+
+
     Accounts:
       type: array
       items:
@@ -1672,6 +1710,7 @@ components:
       default: AwsSandbox
       enum:
         - AwsSandbox
+        - OcpAccount
 
     Reservation:
       type: object

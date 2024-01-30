@@ -32,10 +32,12 @@ type HealthCheckResult struct {
 }
 
 type PlacementRequest struct {
-	ServiceUuid string            `json:"service_uuid"`
-	Reservation string            `json:"reservation"`
-	Resources   []ResourceRequest `json:"resources"`
-	Annotations map[string]string `json:"annotations"`
+	ServiceUuid string              `json:"service_uuid"`
+	Provider    string              `json:"provider"`
+	Reservation string              `json:"reservation"`
+	Resources   []ResourceRequest   `json:"resources"`
+	Annotations map[string]string   `json:"annotations"`
+	CloudSelector map[string]string `json:"cloud_selector,omitempty"`
 }
 
 type TokenRequest struct {
@@ -100,8 +102,9 @@ func (p *PlacementResponse) Render(w http.ResponseWriter, r *http.Request) error
 }
 
 type ResourceRequest struct {
-	Kind  string `json:"kind"`
-	Count int    `json:"count"`
+	Kind     string `json:"kind"`
+	Count    int    `json:"count"`
+	Provider string `json:"provider,omitempty"`
 }
 
 type ReservationResponse struct {

@@ -17,7 +17,7 @@ import (
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 
-	"github.com/rhpds/sandbox/internal/api/v1"
+	v1 "github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
@@ -29,6 +29,7 @@ type BaseHandler struct {
 	doc                *openapi3.T
 	oaRouter           oarouters.Router
 	awsAccountProvider models.AwsAccountProvider
+	OcpAccountProvider models.OcpAccountProvider
 }
 
 type AdminHandler struct {
@@ -36,13 +37,14 @@ type AdminHandler struct {
 	tokenAuth *jwtauth.JWTAuth
 }
 
-func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider) *BaseHandler {
+func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider, OcpAccountProvider models.OcpAccountProvider) *BaseHandler {
 	return &BaseHandler{
 		svc:                svc,
 		dbpool:             dbpool,
 		doc:                doc,
 		oaRouter:           oaRouter,
 		awsAccountProvider: awsAccountProvider,
+		OcpAccountProvider: OcpAccountProvider,
 	}
 }
 
@@ -54,6 +56,7 @@ func NewAdminHandler(b *BaseHandler, tokenAuth *jwtauth.JWTAuth) *AdminHandler {
 			doc:                b.doc,
 			oaRouter:           b.oaRouter,
 			awsAccountProvider: b.awsAccountProvider,
+			OcpAccountProvider: b.OcpAccountProvider,
 		},
 		tokenAuth: tokenAuth,
 	}
@@ -141,6 +144,28 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				log.Logger.Info("AWS sandbox booked", "account", account.Name, "service_uuid", placementRequest.ServiceUuid)
 				resources = append(resources, account)
 			}
+		case "OcpAccount", "ocp_account":
+			// Create the placement in OCP
+			account, err := h.OcpAccountProvider.Request(
+				placementRequest.ServiceUuid,
+				placementRequest.CloudSelector,
+				h.dbpool,
+				placementRequest.Annotations,
+			)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					Err:            err,
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error creating placement in Ocp",
+				})
+				log.Logger.Error("CreatePlacementHandler", "error", err)
+				return
+			}
+      placementRequest.Annotations["OCPProvider"] = account.OCPProvider
+			log.Logger.Info("Ocp sandbox booked", "account", account.Name, "service_uuid", placementRequest.ServiceUuid)
+			resources = append(resources, account)
+
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 			render.Render(w, r, &v1.Error{
@@ -271,8 +296,32 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 // Delete placement by service uuid
 func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Request) {
 	serviceUuid := chi.URLParam(r, "uuid")
+	placement, err := models.GetPlacementByServiceUuid(h.dbpool, serviceUuid)
+	requestInfo := placement.Request.(map[string]interface{})
+	for _, request := range requestInfo["resources"].([]any) {
+		resourceInfo := request.(map[string]interface{})
+		switch resourceInfo["kind"] {
+		case "OcpAccount", "ocp_account":
+			// Delete the placement in OCP
+			err := h.OcpAccountProvider.Release(
+				serviceUuid,
+				h.dbpool,
+				requestInfo["annotations"].(map[string]interface{}),
+			)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					Err:            err,
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error deleting placement in Ocp",
+				})
+				log.Logger.Error("CreatePlacementHandler", "error", err)
+				return
+			}
 
-	err := models.DeletePlacementByServiceUuid(h.dbpool, h.awsAccountProvider, serviceUuid)
+			log.Logger.Info("Ocp sandbox deleted", "service_uuid", serviceUuid)
+		}
+	}
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			w.WriteHeader(http.StatusNotFound)
@@ -282,7 +331,9 @@ func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Requ
 			})
 			return
 		}
-
+	}
+	err = models.DeletePlacementByServiceUuid(h.dbpool, h.awsAccountProvider, serviceUuid)
+	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
 			Err:            err,
