@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"time"
 
+  sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
+
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/getkin/kin-openapi/openapi3"
 	oarouters "github.com/getkin/kin-openapi/routers"
@@ -134,6 +136,25 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				log.Logger.Info("AWS sandbox booked", "account", account.Name, "service_uuid", placementRequest.ServiceUuid)
 				resources = append(resources, account)
 			}
+		case "OcpAccount":
+      accountProvider := sandboxdb.NewOcpAccountDynamoDBProvider()
+			accounts, err := accountProvider.Request(placementRequest.ServiceUuid, request.Count, placementRequest.Annotations)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					Err:            err,
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error creating account on OCP",
+				})
+				log.Logger.Error("CreatePlacementHandler", "error", err)
+				return
+			}
+
+			for _, account := range accounts {
+				log.Logger.Info("OCP sandbox booked", "account", account.Name, "service_uuid", placementRequest.ServiceUuid)
+				resources = append(resources, account)
+			}
+
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 			render.Render(w, r, &v1.Error{

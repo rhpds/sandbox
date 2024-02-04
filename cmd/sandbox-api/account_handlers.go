@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
+  sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
+
 	"github.com/jackc/pgx/v4"
 	v1 "github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/log"
@@ -16,7 +18,6 @@ import (
 
 type AccountHandler struct {
 	AwsAccountProvider models.AwsAccountProvider
-	OcpAccountProvider models.OcpAccountProvider
 }
 
 func NewAccountHandler(awsAccountProvider models.AwsAccountProvider) *AccountHandler {
@@ -35,7 +36,8 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 	enc.SetIndent("", " ")
 	serviceUuid := r.URL.Query().Get("service_uuid")
 	kind := chi.URLParam(r, "kind")
-  if kind == "aws" {
+  switch kind {
+  case "aws":
     var (
       err  error
       accounts []models.AwsAccount
@@ -73,22 +75,22 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
         Message:        "Error reading account",
       })
     }
-  } else if kind == "ocp" {
+  case "ocp":
 		log.Logger.Warn("OCP accounts")
+    accountProvider := sandboxdb.NewOcpAccountDynamoDBProvider()
     var (
       err  error
       accounts []models.OcpAccount
     )
     if serviceUuid != "" {
-      // Get the account from DynamoDB
-      accounts, err = h.OcpAccountProvider.FetchAllByServiceUuid(serviceUuid)
+      accounts, err = accountProvider.FetchAllByServiceUuid(serviceUuid)
 
     } else {
-      accounts, err = h.OcpAccountProvider.FetchAll()
+      log.Logger.Warn("OCP accounts.1")
+      accounts, err = accountProvider.FetchAll()
+      log.Logger.Warn("OCP accounts.2")
     }
     if err != nil {
-      log.Logger.Error("GET accounts", "error", err)
-
       w.WriteHeader(http.StatusInternalServerError)
       enc.Encode(v1.Error{
         HTTPStatusCode: 500,
@@ -128,7 +130,8 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 
 	// We don't need 'kind' param for now as it is checked and validated
 	// by the swagger openAPI spec.
-  if kind == "aws" {
+  switch kind {
+  case "aws":
     // Get the account from DynamoDB
     sandbox, err := h.AwsAccountProvider.FetchByName(accountName)
     if err != nil {
@@ -159,7 +162,7 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
         Message:        "Error reading account",
       })
     }
-  } else {
+  case "ocp":
       log.Logger.Warn("Implementing")
   }
 }

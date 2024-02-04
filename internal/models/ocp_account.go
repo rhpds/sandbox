@@ -11,18 +11,16 @@ import (
 //  corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 //  "k8s.io/client-go/tools/clientcmd"
 
-	"time"
 )
 
 
 type OcpAccount struct {
 	Account
 
-	AccountID    string `json:"account_id"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+	SAtoken string `json:"sa_token"`
 
-	ConanStatus    string    `json:"conan_status,omitempty"`
-	ConanTimestamp time.Time `json:"conan_timestamp,omitempty"`
-	ConanHostname  string    `json:"conan_hostname,omitempty"`
 }
 
 type OcpAccountWithCreds struct {
@@ -46,3 +44,13 @@ type OcpAccountProvider interface {
 	DecryptSecret(encrypted string) (string, error)
 	//Annotations(account OcpAccount) (map[string]string, error)
 }
+type OcpAccountProviderImpl struct {
+  OcpAccountProvider
+}
+
+/*func  (a *OcpAccountProviderImpl) FetchAll() ([]OcpAccount, error) {
+  log.Logger.Warn("OCP accounts2")
+  return nil,nil
+}*/
+
+

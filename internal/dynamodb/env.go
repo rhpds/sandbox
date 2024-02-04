@@ -18,4 +18,7 @@ func CheckEnv() {
 	if os.Getenv("dynamodb_table") == "" {
 		os.Setenv("dynamodb_table", "accounts-dev")
 	}
+	if os.Getenv("dynamodb_ocp_table") == "" {
+		os.Setenv("dynamodb_ocp_table", "accounts-ocp-dev")
+	}
 }
