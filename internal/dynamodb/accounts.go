@@ -54,10 +54,11 @@ type AwsAccountDynamoDB struct {
 	AwsAccessKeyID     string  `json:"aws_access_key_id"`
 	AwsSecretAccessKey string  `json:"aws_secret_access_key"`
 	// Conan
-	ToCleanup      bool   `json:"to_cleanup"`
-	ConanStatus    string `json:"conan_status"`
-	ConanTimestamp string `json:"conan_timestamp"`
-	ConanHostname  string `json:"conan_hostname"`
+	ToCleanup         bool   `json:"to_cleanup"`
+	ConanStatus       string `json:"conan_status"`
+	ConanTimestamp    string `json:"conan_timestamp"`
+	ConanHostname     string `json:"conan_hostname"`
+	ConanCleanupCount int    `json:"conan_cleanup_count"`
 }
 
 // buildAccounts returns the list of accounts from dynamodb scan output
@@ -101,14 +102,15 @@ func NewAwsAccountDynamoDBProviderWithSecret(vaultSecret string) *AwsAccountDyna
 // makeAccount creates new models.AwsAccount from AwsAccountDynamoDB
 func makeAccount(account AwsAccountDynamoDB) models.AwsAccount {
 	a := models.AwsAccount{
-		Name:          account.Name,
-		Kind:          "AwsSandbox",
-		Reservation:   account.Reservation,
-		AccountID:     account.AccountID,
-		Zone:          account.Zone,
-		HostedZoneID:  account.HostedZoneID,
-		ConanStatus:   account.ConanStatus,
-		ConanHostname: account.ConanHostname,
+		Name:              account.Name,
+		Kind:              "AwsSandbox",
+		Reservation:       account.Reservation,
+		AccountID:         account.AccountID,
+		Zone:              account.Zone,
+		HostedZoneID:      account.HostedZoneID,
+		ConanStatus:       account.ConanStatus,
+		ConanHostname:     account.ConanHostname,
+		ConanCleanupCount: account.ConanCleanupCount,
 	}
 	if conanTime, err := time.Parse(time.RFC3339, account.ConanTimestamp); err != nil {
 		a.ConanTimestamp = conanTime
@@ -845,6 +847,26 @@ func (a *AwsAccountDynamoDBProvider) RemoveReservation(name string) error {
 	})
 	if err != nil {
 		log.Logger.Error("error removing the reservation", "name", name, "error", err)
+		return err
+	}
+
+	return nil
+}
+
+// Delete deletes an account from dynamodb
+func (a *AwsAccountDynamoDBProvider) Delete(name string) error {
+	// Delete the entry from the DynamoDB table
+	_, err := a.Svc.DeleteItem(&dynamodb.DeleteItemInput{
+		TableName: aws.String(os.Getenv("dynamodb_table")),
+		Key: map[string]*dynamodb.AttributeValue{
+			"name": {
+				S: aws.String(name),
+			},
+		},
+	})
+
+	if err != nil {
+		log.Logger.Error("error deleting the sandbox", "name", name, "error", err)
 		return err
 	}
 

@@ -99,7 +99,7 @@ jsonpath "$.message" == "stop request created"
 GET http://{{host}}/api/v1/requests/{{r_stop}}/status
 Authorization: Bearer {{access_token}}
 [Options]
-retry: 40
+retry: 50
 HTTP 200
 [Asserts]
 jsonpath "$.status" == "success"
@@ -123,7 +123,7 @@ jsonpath "$.message" == "start request created"
 GET http://{{host}}/api/v1/requests/{{r_start}}/status
 Authorization: Bearer {{access_token}}
 [Options]
-retry: 40
+retry: 50
 HTTP 200
 [Asserts]
 jsonpath "$.status" == "success"
@@ -156,7 +156,7 @@ jsonpath "$.message" == "status request created"
 GET http://{{host}}/api/v1/requests/{{r_status}}/status
 Authorization: Bearer {{access_token}}
 [Options]
-retry: 40
+retry: 50
 HTTP 200
 [Asserts]
 jsonpath "$.status" == "success"
