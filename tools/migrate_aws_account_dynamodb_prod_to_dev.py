@@ -49,22 +49,25 @@ try:
                 'S': sandbox
             }
         },
-        UpdateExpression="set available = :a, #c = :c",
+        UpdateExpression="set available = :false, to_cleanup = :false, #c = :comment",
         ExpressionAttributeNames={
             '#c': 'comment'
         },
         ExpressionAttributeValues={
-            ':a': {
+            ':false': {
                 'BOOL': False
             },
-            ':b': {
+            ':true': {
                 'BOOL': True
             },
-            ':c': {
+            ':comment': {
                 'S': 'Migrating from prod to dev'
+            },
+            ':inprogress': {
+                'S': 'cleanup in progress'
             }
         },
-        ConditionExpression="available = :b OR #c = :c",
+        ConditionExpression="#c = :comment OR available = :true OR (to_cleanup = :true AND conan_status <> :inprogress)",
     )
 
 except Exception as e:
@@ -112,19 +115,19 @@ try:
                 'S': sandbox
             }
         },
-        UpdateExpression="set to_cleanup = :a, #c = :c",
+        UpdateExpression="set to_cleanup = :true, #c = :comment",
         ExpressionAttributeNames={
             '#c': 'comment'
         },
         ExpressionAttributeValues={
-            ':a': {
+            ':true': {
                 'BOOL': True
             },
-            ':c': {
+            ':comment': {
                 'S': 'Migrating from prod to dev'
             }
         },
-        ConditionExpression=" #c = :c",
+        ConditionExpression=" #c = :comment",
     )
 
 except Exception as e:
