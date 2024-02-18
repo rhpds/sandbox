@@ -224,6 +224,7 @@ func main() {
 		r.Put("/api/v1/accounts/{kind}/{account}/start", baseHandler.LifeCycleAccountHandler("start"))
 		r.Put("/api/v1/accounts/{kind}/{account}/status", baseHandler.LifeCycleAccountHandler("status"))
 		r.Get("/api/v1/accounts/{kind}/{account}/status", baseHandler.GetStatusAccountHandler)
+		r.Delete("/api/v1/accounts/{kind}/{account}", baseHandler.DeleteAccountHandler)
 		r.Post("/api/v1/placements", baseHandler.CreatePlacementHandler)
 		r.Get("/api/v1/placements/{uuid}", baseHandler.GetPlacementHandler)
 		r.Delete("/api/v1/placements/{uuid}", baseHandler.DeletePlacementHandler)

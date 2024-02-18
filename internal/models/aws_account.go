@@ -13,6 +13,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/organizations"
+	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	ststypes "github.com/aws/aws-sdk-go-v2/service/sts/types"
 
 	"os"
@@ -35,9 +37,10 @@ type AwsAccount struct {
 	Zone         string `json:"zone"`
 	HostedZoneID string `json:"hosted_zone_id"`
 
-	ConanStatus    string    `json:"conan_status,omitempty"`
-	ConanTimestamp time.Time `json:"conan_timestamp,omitempty"`
-	ConanHostname  string    `json:"conan_hostname,omitempty"`
+	ConanStatus       string    `json:"conan_status,omitempty"`
+	ConanTimestamp    time.Time `json:"conan_timestamp,omitempty"`
+	ConanHostname     string    `json:"conan_hostname,omitempty"`
+	ConanCleanupCount int       `json:"conan_cleanup_count,omitempty"`
 }
 
 func (a *AwsAccount) Render(w http.ResponseWriter, r *http.Request) error {
@@ -66,25 +69,26 @@ type AwsIamKey struct {
 // AwsAccountProvider interface to interact with different databases:
 // dynamodb and postgresql
 type AwsAccountProvider interface {
-	FetchByName(name string) (AwsAccount, error)
+	//Annotations(account AwsAccount) (map[string]string, error)
+	Count() (int, error)
+	CountAvailable(reservation string) (int, error)
+	DecryptSecret(encrypted string) (string, error)
+	Delete(name string) error
 	FetchAll() ([]AwsAccount, error)
-	FetchAllToCleanup() ([]AwsAccount, error)
-	FetchAllSorted(by string) ([]AwsAccount, error)
-	FetchAllAvailable() ([]AwsAccount, error)
-	FetchAllByServiceUuid(serviceUuid string) ([]AwsAccount, error)
 	FetchAllActiveByServiceUuid(serviceUuid string) ([]AwsAccount, error)
-	FetchAllByServiceUuidWithCreds(serviceUuid string) ([]AwsAccountWithCreds, error)
 	FetchAllActiveByServiceUuidWithCreds(serviceUuid string) ([]AwsAccountWithCreds, error)
+	FetchAllAvailable() ([]AwsAccount, error)
 	FetchAllByReservation(reservation string) ([]AwsAccount, error)
+	FetchAllByServiceUuid(serviceUuid string) ([]AwsAccount, error)
+	FetchAllByServiceUuidWithCreds(serviceUuid string) ([]AwsAccountWithCreds, error)
+	FetchAllSorted(by string) ([]AwsAccount, error)
+	FetchAllToCleanup() ([]AwsAccount, error)
+	FetchByName(name string) (AwsAccount, error)
+	MarkForCleanup(name string) error
+	MarkForCleanupByServiceUuid(serviceUuid string) error
 	Request(service_uuid string, reservation string, count int, annotations map[string]string) ([]AwsAccountWithCreds, error)
 	Reserve(reservation string, count int) ([]AwsAccount, error)
 	ScaleDownReservation(reservation string, count int) error
-	MarkForCleanup(name string) error
-	MarkForCleanupByServiceUuid(serviceUuid string) error
-	DecryptSecret(encrypted string) (string, error)
-	CountAvailable(reservation string) (int, error)
-	Count() (int, error)
-	//Annotations(account AwsAccount) (map[string]string, error)
 }
 
 type Sortable interface {
@@ -442,4 +446,58 @@ func (a AwsAccount) GetLastStatus(dbpool *pgxpool.Pool) (*LifecycleResourceJob, 
 
 func (a AwsAccount) GetReservation() string {
 	return a.Reservation
+}
+
+func (a AwsAccount) CloseAccount() error {
+
+	cfg, err := config.LoadDefaultConfig(
+		context.TODO(),
+	)
+	if err != nil {
+		log.Logger.Error("Error loading config", "error", err)
+		return err
+	}
+
+	// Create a client
+	// Use ASSUMEROLE_AWS_ACCESS_KEY_ID and ASSUMEROLE_AWS_SECRET_ACCESS_KEY for credentials
+	svc := organizations.NewFromConfig(cfg, func(o *organizations.Options) {
+		o.Credentials = credentials.NewStaticCredentialsProvider(
+			os.Getenv("ASSUMEROLE_AWS_ACCESS_KEY_ID"),
+			os.Getenv("ASSUMEROLE_AWS_SECRET_ACCESS_KEY"),
+			"",
+		)
+	})
+
+	// Get status of the account
+	accountStatus, err := svc.DescribeAccount(context.TODO(), &organizations.DescribeAccountInput{
+		AccountId: &a.AccountID,
+	})
+	if err != nil {
+		// if string 'AccountNotFoundException' is in the error message, the account does not exist
+		if strings.Contains(err.Error(), "AccountNotFoundException") {
+			return nil
+		}
+
+		return err
+	}
+
+	switch accountStatus.Account.Status {
+	case orgtypes.AccountStatusActive:
+		// Close the account
+		if _, err := svc.CloseAccount(context.TODO(), &organizations.CloseAccountInput{
+			AccountId: &a.AccountID,
+		}); err != nil {
+			return err
+		}
+		return nil
+
+	case orgtypes.AccountStatusSuspended, orgtypes.AccountStatusPendingClosure:
+		log.Logger.Info(
+			"Account already closed",
+			"status", accountStatus.Account.Status,
+			"account", a.Name,
+			"account_id", a.AccountID)
+		return nil
+	}
+	return nil
 }

@@ -499,6 +499,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+    delete:
+      tags:
+        - account
+      operationId: deleteAccount
+      summary: Delete an account
+      description: |-
+        Delete an account by its name.
+
+        The account will be close and removed from the database.
+      responses:
+        '200':
+          description: The account deletion request is accepted and successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: Account is not deletable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: 'Error deleting account'
+                http_code: 500
+                code: '500'
+        default:
+          description: deleteAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /accounts/{kind}/{name}/cleanup:
     parameters:

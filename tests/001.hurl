@@ -219,7 +219,7 @@ jsonpath "$.message" == "Reservation update request created"
 GET http://{{host}}/api/v1/reservations/summit
 Authorization: Bearer {{access_token}}
 [Options]
-retry: 10
+retry: 20
 HTTP 200
 [Asserts]
 jsonpath "$.reservation.status" == "updating"
@@ -362,8 +362,6 @@ jsonpath "$.message" == "Reservation deletion request created"
 
 GET http://{{host}}/api/v1/reservations/summit
 Authorization: Bearer {{access_token}}
-[Options]
-retry: 10
 HTTP 200
 [Asserts]
 jsonpath "$.reservation.status" == "deleting"

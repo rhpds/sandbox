@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"context"
 
 	"github.com/jackc/pgx/v4"
 	"github.com/rhpds/sandbox/internal/api/v1"
@@ -303,5 +304,120 @@ func (h *BaseHandler) GetStatusAccountHandler(w http.ResponseWriter, r *http.Req
 			Message:        "Error getting account status",
 		})
 		return
+	}
+}
+
+// DeleteAccountHandler deletes an account
+// DELETE /accounts/{kind}/{account}
+func (h *BaseHandler) DeleteAccountHandler(w http.ResponseWriter, r *http.Request) {
+	// Grab the parameters from Params
+	accountName := chi.URLParam(r, "account")
+	kind := chi.URLParam(r, "kind")
+
+	switch kind {
+	case "AwsSandbox", "AwsAccount", "aws_account":
+		// Get the account from DynamoDB
+		sandbox, err := h.awsAccountProvider.FetchByName(accountName)
+		if err != nil {
+			if err == models.ErrAccountNotFound {
+				log.Logger.Warn("DELETE account", "error", err)
+				w.WriteHeader(http.StatusNotFound)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusNotFound,
+					Message:        "Account not found",
+				})
+				return
+			}
+			log.Logger.Error("DELETE account", "error", err)
+
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: 500,
+				Message:        "Error reading account",
+			})
+			return
+		}
+
+		// Ensure:
+		// - the account is marked for cleanup
+		// - cleanup was attempted at least 3 times
+		// - cleanup is not in progress
+		if sandbox.ToCleanup == false {
+			w.WriteHeader(http.StatusConflict)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusConflict,
+				Message:        "Account must be marked for cleanup before deletion",
+			})
+			return
+		}
+
+		if sandbox.ConanCleanupCount < 3 {
+			w.WriteHeader(http.StatusConflict)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusConflict,
+				Message: "Cleanup must be attempted at least 3 times before deletion",
+			})
+			return
+		}
+
+		if sandbox.ConanStatus == "cleanup in progress" {
+			w.WriteHeader(http.StatusConflict)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusConflict,
+				Message: "Cleanup is in progress",
+			})
+			return
+		}
+
+
+		// Close the AWS account using CloseAccount
+		if err := sandbox.CloseAccount(); err != nil {
+			log.Logger.Error("Error closing account", "error", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: 500,
+				Message:        "Error closing account",
+				ErrorText:      err.Error(),
+			})
+
+			return
+		}
+
+		err = h.awsAccountProvider.Delete(sandbox.Name)
+		if err != nil {
+			log.Logger.Error("Error deleting account", "error", err)
+
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: 500,
+				Message:        "Error deleting account",
+				ErrorText:      err.Error(),
+			})
+
+			return
+		}
+		// Insert a line into the resources_events table
+		// here is the table schema for reference
+		_, err = h.dbpool.Exec(
+			context.TODO(),
+			`INSERT INTO resources_events (resource_name, resource_type, event_type, annotations)
+		VALUES ($1, $2, $3, $4)`,
+			sandbox.Name, sandbox.Kind, "close_account", nil,
+		)
+		if err != nil {
+			log.Logger.Error("Error inserting into resources_events", "error", err)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		render.Render(w, r, &v1.SimpleMessage{
+			Message: "Account deleted",
+		})
+		return
+	default:
+		w.WriteHeader(http.StatusNotFound)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusNotFound,
+			Message:        "Account kind not found",
+		})
 	}
 }
