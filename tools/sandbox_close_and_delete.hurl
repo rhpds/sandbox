@@ -17,4 +17,3 @@ jsonpath "$.access_token_exp" isString
 
 DELETE {{host}}/api/v1/accounts/{{type}}/{{name}}
 Authorization: Bearer {{access_token}}
-HTTP 200
