@@ -1393,8 +1393,10 @@ components:
                 minimum: 1
                 default: 1
                 example: 1
-              provider:
-                type: string
+              cloud_selector:
+                $ref: "#/components/schemas/Annotations"
+              annotations:
+                $ref: "#/components/schemas/Annotations"
         annotations:
           $ref: "#/components/schemas/Annotations"
       example:
@@ -1427,6 +1429,15 @@ components:
           $ref: "#/components/schemas/UUID"
         resources:
           $ref: "#/components/schemas/Resources"
+        status:
+          type: string
+          enum:
+            - new
+            - initializing
+            - updating
+            - success
+            - error
+            - deleting
         created_at:
           description: The date (UTC and RFC3339 format) the placement was made.
           type: string
@@ -1615,8 +1626,14 @@ components:
         sa_token:
           type: string
           example: "abcde"
-
-
+        status:
+          type: string
+          enum:
+            - initializing
+            - electing_cluster
+            - success
+            - error
+            - deleting
     Accounts:
       type: array
       items:
@@ -1710,7 +1727,7 @@ components:
       default: AwsSandbox
       enum:
         - AwsSandbox
-        - OcpAccount
+        - OcpSandbox
 
     Reservation:
       type: object

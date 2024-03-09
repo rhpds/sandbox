@@ -169,6 +169,7 @@ func (provider *AwsAccountDynamoDBProvider) makeAccountWithCreds(account AwsAcco
 
 	result := models.AwsAccountWithCreds{
 		AwsAccount: a,
+		Provider:   provider,
 	}
 
 	decrypted, err := provider.DecryptSecret(account.AwsSecretAccessKey)

@@ -33,6 +33,14 @@ issue-jwt: .dev.jwtauth_env
 	@. ./.dev.pgenv && . ./.dev.jwtauth_env && go run ./cmd/sandbox-issue-jwt
 
 migrate: .dev.pgenv
+    # Print a message with the database URL and ask for confirmation
+	# Remove password from the URL before printing
+	@echo "Database URL: $$(echo $${DATABASE_URL} | sed -E 's/:[^@]+@/:<password>@/g')"
+	@read -p "Are you sure [y/n]? " -n 1 -r; \
+	if [[ ! $$REPLY =~ ^[Yy]$$ ]]; then \
+		echo "Aborting."; \
+		exit 1; \
+	fi
 	@echo "Running migrations..."
 	@. ./.dev.pgenv && migrate -database "$${DATABASE_URL}" -path db/migrations up
 

@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -32,13 +33,14 @@ type HealthCheckResult struct {
 }
 
 type PlacementRequest struct {
-	ServiceUuid string              `json:"service_uuid"`
-	Provider    string              `json:"provider"`
-	Reservation string              `json:"reservation"`
-	Resources   []ResourceRequest   `json:"resources"`
-	Annotations map[string]string   `json:"annotations"`
-	CloudSelector map[string]string `json:"cloud_selector,omitempty"`
+	ServiceUuid string            `json:"service_uuid"`
+	Provider    string            `json:"provider,omitempty"`
+	Reservation string            `json:"reservation,omitempty"`
+	Resources   []ResourceRequest `json:"resources"`
+	Annotations Annotations       `json:"annotations,omitempty"`
 }
+
+type Annotations map[string]string
 
 type TokenRequest struct {
 	Claims map[string]any `json:"claims"`
@@ -102,9 +104,10 @@ func (p *PlacementResponse) Render(w http.ResponseWriter, r *http.Request) error
 }
 
 type ResourceRequest struct {
-	Kind     string `json:"kind"`
-	Count    int    `json:"count"`
-	Provider string `json:"provider,omitempty"`
+	Kind          string      `json:"kind"`
+	Count         int         `json:"count"`
+	Annotations   Annotations `json:"annotations,omitempty"`
+	CloudSelector Annotations `json:"cloud_selector,omitempty"`
 }
 
 type ReservationResponse struct {
@@ -114,6 +117,26 @@ type ReservationResponse struct {
 }
 
 func (p *PlacementRequest) Bind(r *http.Request) error {
+	if p.Annotations == nil {
+		p.Annotations = make(Annotations)
+	}
+
+	if p.Resources == nil {
+		p.Resources = make([]ResourceRequest, 0)
+		return nil
+	}
+	if len(p.Resources) == 0 {
+		return errors.New("no resources specified")
+	}
+	for i := range p.Resources {
+		if p.Resources[i].Annotations == nil {
+			p.Resources[i].Annotations = make(Annotations)
+		}
+		if p.Resources[i].CloudSelector == nil {
+			p.Resources[i].CloudSelector = make(Annotations)
+		}
+	}
+
 	return nil
 }
 
@@ -135,4 +158,15 @@ func (t *TokenResponse) Render(w http.ResponseWriter, r *http.Request) error {
 
 func (p *ReservationResponse) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
+}
+
+func (a Annotations) Merge(b Annotations) Annotations {
+	c := make(Annotations)
+	for k, v := range a {
+		c[k] = v
+	}
+	for k, v := range b {
+		c[k] = v
+	}
+	return c
 }

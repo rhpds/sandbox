@@ -1,0 +1,99 @@
+#################################################################################
+# Get an access token using the login token
+#################################################################################
+
+GET {{host}}/api/v1/login
+Authorization: Bearer {{login_token}}
+HTTP 200
+[Captures]
+access_token: jsonpath "$.access_token"
+[Asserts]
+jsonpath "$.access_token" isString
+jsonpath "$.access_token_exp" isString
+
+#################################################################################
+# Ensure the placement is deleted before starting
+#################################################################################
+
+DELETE {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 40
+HTTP 404
+
+#################################################################################
+# Ensure placement doesn't exist
+#################################################################################
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+HTTP 404
+
+#################################################################################
+# Create a new placement
+#################################################################################
+
+POST {{host}}/api/v1/placements
+Authorization: Bearer {{access_token}}
+{
+  "service_uuid": "{{uuid}}",
+  "resources": [
+    {
+      "kind": "OcpSandbox"
+    }
+  ],
+  "annotations": {
+    "guid": "testg-1",
+    "env_type": "ocp4-cluster-blablablabla"
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "Placement Created"
+jsonpath "$.Placement.service_uuid" == "{{uuid}}"
+jsonpath "$.Placement.resources" count == 1
+jsonpath "$.Placement.resources[0].status" == "initializing"
+
+#################################################################################
+# Wait until the placement is succesfull and resources are ready
+#################################################################################
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 40
+HTTP 200
+[Asserts]
+jsonpath "$.service_uuid" == "{{uuid}}"
+jsonpath "$.resources" count == 1
+jsonpath "$.resources[0].status" == "success"
+
+#################################################################################
+# Create the same placement should return 409 conflict
+#################################################################################
+
+POST {{host}}/api/v1/placements
+Authorization: Bearer {{access_token}}
+{
+  "service_uuid": "{{uuid}}",
+  "resources": [
+    {
+      "kind": "OcpSandbox"
+    }
+  ],
+  "annotations": {
+    "guid": "testg-1",
+    "env_type": "ocp4-cluster-blablablabla"
+  }
+}
+HTTP 409
+
+#################################################################################
+# Delete placement
+#################################################################################
+
+DELETE {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 40
+HTTP 404

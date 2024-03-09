@@ -47,6 +47,10 @@ func (a *AwsAccount) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func (a *AwsAccountWithCreds) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
 type AwsAccounts []AwsAccount
 
 func (a *AwsAccounts) Render(w http.ResponseWriter, r *http.Request) error {
@@ -56,7 +60,8 @@ func (a *AwsAccounts) Render(w http.ResponseWriter, r *http.Request) error {
 type AwsAccountWithCreds struct {
 	AwsAccount
 
-	Credentials []any `json:"credentials"`
+	Credentials []any              `json:"credentials"`
+	Provider    AwsAccountProvider `json:"-"`
 }
 
 type AwsIamKey struct {
@@ -500,4 +505,8 @@ func (a AwsAccount) CloseAccount() error {
 		return nil
 	}
 	return nil
+}
+
+func (a *AwsAccountWithCreds) Delete() error {
+	return a.Provider.MarkForCleanup(a.Name)
 }

@@ -43,6 +43,11 @@ func (r Resource) markedForCleanup() bool {
 	return r.ToCleanup
 }
 
+// interface Deletable
+type Deletable interface {
+	Delete() error
+}
+
 // Used return the resources in use
 func Used[T AvailabilityMarker](resources []T) []T {
 	r := []T{}
