@@ -20,7 +20,7 @@ type LifecycleResourceJob struct {
 	Action       string        `json:"lifecycle_action"`
 	Request      any           `json:"request,omitempty"`
 	RequestID    string        `json:"request_id,omitempty"`
-	DbPool       *pgxpool.Pool `json:"dbpool,omitempty"`
+	DbPool       *pgxpool.Pool `json:"-"`
 	Result       Status        `json:"lifecycle_result,omitempty"`
 	Locality     string        `json:"locality,omitempty"`
 }
@@ -33,7 +33,7 @@ type LifecyclePlacementJob struct {
 	Action      string        `json:"lifecycle_action"`
 	Request     any           `json:"request,omitempty"`
 	RequestID   string        `json:"request_id,omitempty"`
-	DbPool      *pgxpool.Pool `json:"dbpool"`
+	DbPool      *pgxpool.Pool `json:"-"`
 	Locality    string        `json:"locality,omitempty"`
 }
 

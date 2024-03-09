@@ -7,12 +7,12 @@ See link:https://hurl.dev/[hurl.dev] for upstream documentation.
 ----
 make run-api
 
-uuid=$(uuidgen)
+uuid=$(uuidgen -r)
 
 hurl --test \
   --variable login_token=... \
   --variable login_token_admin=... \
-  --variable host=localhost:8080 \
+  --variable host=http://localhost:8080 \
   --variable uuid=$uuid \
   *.hurl
 ----

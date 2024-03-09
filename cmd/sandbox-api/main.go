@@ -129,7 +129,7 @@ func main() {
 	// ---------------------------------------------------------------------
 	// Ocp
 	// ---------------------------------------------------------------------
-	OcpAccountProvider := models.NewOcpAccountProvider(vaultSecret)
+	OcpAccountProvider := models.NewOcpAccountProvider(dbPool, vaultSecret)
 
 	// ---------------------------------------------------------------------
 	// Setup JWT

@@ -1,13 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"context"
 
 	"github.com/jackc/pgx/v4"
-	v1 "github.com/rhpds/sandbox/internal/api/v1"
+	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
@@ -377,7 +377,7 @@ func (h *BaseHandler) DeleteAccountHandler(w http.ResponseWriter, r *http.Reques
 			w.WriteHeader(http.StatusConflict)
 			render.Render(w, r, &v1.Error{
 				HTTPStatusCode: http.StatusConflict,
-				Message: "Cleanup must be attempted at least 3 times before deletion",
+				Message:        "Cleanup must be attempted at least 3 times before deletion",
 			})
 			return
 		}
@@ -386,11 +386,10 @@ func (h *BaseHandler) DeleteAccountHandler(w http.ResponseWriter, r *http.Reques
 			w.WriteHeader(http.StatusConflict)
 			render.Render(w, r, &v1.Error{
 				HTTPStatusCode: http.StatusConflict,
-				Message: "Cleanup is in progress",
+				Message:        "Cleanup is in progress",
 			})
 			return
 		}
-
 
 		// Close the AWS account using CloseAccount
 		if err := sandbox.CloseAccount(); err != nil {

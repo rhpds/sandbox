@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -17,7 +18,7 @@ import (
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 
-	v1 "github.com/rhpds/sandbox/internal/api/v1"
+	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
@@ -75,6 +76,15 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 
 		return
 	}
+	if len(placementRequest.Resources) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "No resources requested",
+		})
+		log.Logger.Info("CreatePlacementHandler", "error", "No resources requested")
+		return
+	}
 
 	_, err := models.GetPlacementByServiceUuid(h.dbpool, placementRequest.ServiceUuid)
 	if err != pgx.ErrNoRows {
@@ -98,17 +108,11 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if len(placementRequest.Resources) == 0 {
-		w.WriteHeader(http.StatusBadRequest)
-		render.Render(w, r, &v1.Error{
-			HTTPStatusCode: http.StatusBadRequest,
-			Message:        "No resources requested",
-		})
-		log.Logger.Info("CreatePlacementHandler", "error", "No resources requested")
-		return
-	}
-
 	// Create the placement
+
+	// keep resources to cleanup in case something goes wrong while creating the placement
+	// useful only if multiple resources are created within a placement
+	tocleanup := []models.Deletable{}
 	resources := []any{}
 	for _, request := range placementRequest.Resources {
 		switch request.Kind {
@@ -121,6 +125,12 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				placementRequest.Annotations,
 			)
 			if err != nil {
+				// Cleanup previous accouts
+				for _, account := range tocleanup {
+					if err := account.Delete(); err != nil {
+						log.Logger.Error("Error deleting account", "error", err)
+					}
+				}
 				if err == models.ErrNoEnoughAccountsAvailable {
 					w.WriteHeader(http.StatusInsufficientStorage)
 					render.Render(w, r, &v1.Error{
@@ -142,17 +152,30 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 
 			for _, account := range accounts {
 				log.Logger.Info("AWS sandbox booked", "account", account.Name, "service_uuid", placementRequest.ServiceUuid)
+				tocleanup = append(tocleanup, &account)
 				resources = append(resources, account)
 			}
-		case "OcpAccount", "ocp_account":
+		case "OcpSandbox", "OcpAccount":
 			// Create the placement in OCP
 			account, err := h.OcpAccountProvider.Request(
 				placementRequest.ServiceUuid,
-				placementRequest.CloudSelector,
-				h.dbpool,
-				placementRequest.Annotations,
+				request.CloudSelector,
+				placementRequest.Annotations.Merge(request.Annotations),
 			)
 			if err != nil {
+				if strings.Contains(err.Error(), "already exists") {
+					w.WriteHeader(http.StatusConflict)
+					render.Render(w, r, &v1.Error{
+						Err:            err,
+						HTTPStatusCode: http.StatusConflict,
+						Message:        "OCP sandbox already exists",
+						ErrorMultiline: []string{
+							err.Error(),
+						},
+					})
+					return
+				}
+
 				w.WriteHeader(http.StatusInternalServerError)
 				render.Render(w, r, &v1.Error{
 					Err:            err,
@@ -162,8 +185,8 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				log.Logger.Error("CreatePlacementHandler", "error", err)
 				return
 			}
-      placementRequest.Annotations["OCPProvider"] = account.OCPProvider
 			log.Logger.Info("Ocp sandbox booked", "account", account.Name, "service_uuid", placementRequest.ServiceUuid)
+			tocleanup = append(tocleanup, &account)
 			resources = append(resources, account)
 
 		default:
@@ -177,12 +200,12 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	w.WriteHeader(http.StatusOK)
 	placement := models.PlacementWithCreds{
 		Placement: models.Placement{
 			ServiceUuid: placementRequest.ServiceUuid,
 			Annotations: placementRequest.Annotations,
 			Request:     placementRequest,
+			Resources:   resources,
 		},
 	}
 	placement.Resources = resources
@@ -198,6 +221,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	w.WriteHeader(http.StatusOK)
 	render.Render(w, r, &v1.PlacementResponse{
 		Placement:      placement,
 		Message:        "Placement Created",
@@ -287,7 +311,18 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 		log.Logger.Error("GetPlacementHandler", "error", err)
 		return
 	}
-	placement.LoadActiveResourcesWithCreds(h.awsAccountProvider)
+	if err := placement.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpAccountProvider); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error loading resources",
+			ErrorMultiline: []string{
+				err.Error(),
+			},
+		})
+		return
+	}
 
 	w.WriteHeader(http.StatusOK)
 	render.Render(w, r, placement)
@@ -296,44 +331,17 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 // Delete placement by service uuid
 func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Request) {
 	serviceUuid := chi.URLParam(r, "uuid")
-	placement, err := models.GetPlacementByServiceUuid(h.dbpool, serviceUuid)
-	requestInfo := placement.Request.(map[string]interface{})
-	for _, request := range requestInfo["resources"].([]any) {
-		resourceInfo := request.(map[string]interface{})
-		switch resourceInfo["kind"] {
-		case "OcpAccount", "ocp_account":
-			// Delete the placement in OCP
-			err := h.OcpAccountProvider.Release(
-				serviceUuid,
-				h.dbpool,
-				requestInfo["annotations"].(map[string]interface{}),
-			)
-			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				render.Render(w, r, &v1.Error{
-					Err:            err,
-					HTTPStatusCode: http.StatusInternalServerError,
-					Message:        "Error deleting placement in Ocp",
-				})
-				log.Logger.Error("CreatePlacementHandler", "error", err)
-				return
-			}
 
-			log.Logger.Info("Ocp sandbox deleted", "service_uuid", serviceUuid)
-		}
-	}
-	if err != nil {
+	if err := models.DeletePlacementByServiceUuid(h.dbpool, h.awsAccountProvider, h.OcpAccountProvider, serviceUuid); err != nil {
 		if err == pgx.ErrNoRows {
 			w.WriteHeader(http.StatusNotFound)
+
 			render.Render(w, r, &v1.Error{
 				HTTPStatusCode: http.StatusNotFound,
 				Message:        "Placement not found",
 			})
 			return
 		}
-	}
-	err = models.DeletePlacementByServiceUuid(h.dbpool, h.awsAccountProvider, serviceUuid)
-	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
 			Err:            err,

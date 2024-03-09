@@ -3,8 +3,8 @@ appName: sandbox-api
 namespace: babylon-sandbox-api
 
 deployment:
-  image: quay.io/agonzalezrh/sandbox-api
-  tag: ocpsandbox
+  image: quay.io/rhpds/sandbox-api
+  tag: latest
   strategy: RollingUpdate
   pullPolicy: Always
 

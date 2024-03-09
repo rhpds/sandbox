@@ -19,13 +19,6 @@ spec:
         app.kubernetes.io/name: {{ .Values.appName }}
         app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
     spec:
-      ##########################################
-      # OCP Provider - kubeconfig files
-      ##########################################
-      volumes:
-        - name: kubeconfigs
-          secret:
-            secretName: babylon-sandbox-api-kubeconfigs
       containers:
       - name: sandbox-api
         image: {{ .Values.deployment.image }}:{{ .Values.image_tag | default .Values.deployment.tag }}
@@ -39,13 +32,6 @@ spec:
           timeoutSeconds: 1
         ports:
         - containerPort: 8080
-        ##########################################
-        # OCP Provider - kubeconfig files
-        ##########################################
-        volumeMounts:
-          - mountPath: "/var/kubeconfigs"
-            name: kubeconfigs
-            readOnly: true
         env:
         ##########################################
         # Postgres

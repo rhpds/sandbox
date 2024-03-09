@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"golang.org/x/term"
@@ -14,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
 	"github.com/sosedoff/ansible-vault-go"
 
+	"github.com/jackc/pgx/v4/pgxpool"
 	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"github.com/rhpds/sandbox/internal/log"
 )
@@ -109,5 +111,39 @@ func main() {
 		}
 
 		fmt.Println("done", account.Name)
+	}
+
+	// connect to postgresql using DATABASE_URL env variable
+	if os.Getenv("DATABASE_URL") == "" {
+		log.Logger.Error("DATABASE_URL environment variable not set")
+		os.Exit(1)
+	}
+	connStr := os.Getenv("DATABASE_URL")
+
+	dbPool, err := pgxpool.Connect(context.Background(), connStr)
+	if err != nil {
+		log.Logger.Error("Error opening database connection", "error", err)
+		os.Exit(1)
+	}
+	defer dbPool.Close()
+
+	// Update PostgreSQL columns that are encrypted
+	// update ocp_providers set kubeconfig = pgp_sym_encrypt( pgp_sym_decrypt(kubeconfig::bytea, 'old'), 'new');
+
+	if _, err = dbPool.Exec(
+		context.Background(),
+		"UPDATE ocp_providers SET kubeconfig = pgp_sym_encrypt( pgp_sym_decrypt(kubeconfig::bytea, $1), $2)",
+		old, new); err != nil {
+
+		log.Logger.Error("Error updating kubeconfig", "error", err)
+		os.Exit(1)
+	}
+	if _, err = dbPool.Exec(
+		context.Background(),
+		"UPDATE resources SET resource_credentials = pgp_sym_encrypt( pgp_sym_decrypt(resource_credentials::bytea, $1), $2)",
+		old, new); err != nil {
+
+		log.Logger.Error("Error updating kubeconfig", "error", err)
+		os.Exit(1)
 	}
 }
