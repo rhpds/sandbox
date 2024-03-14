@@ -67,7 +67,15 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 			accounts []models.OcpAccount
 		)
 		if available != "" && available == "true" {
-			accounts, err = h.OcpAccountProvider.FetchAllAvailable()
+			// Account are created on the fly, so this request doesn't make sense
+			// for OcpAccounts
+			// Return bad request
+			w.WriteHeader(http.StatusBadRequest)
+			enc.Encode(v1.Error{
+				HTTPStatusCode: http.StatusBadRequest,
+				Message:        "Bad request, Ocp Account are created on the fly",
+				})
+			return
 		} else {
 			accounts, err = h.OcpAccountProvider.FetchAll()
 		}
