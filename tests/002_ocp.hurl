@@ -67,6 +67,9 @@ HTTP 200
 jsonpath "$.service_uuid" == "{{uuid}}"
 jsonpath "$.resources" count == 1
 jsonpath "$.resources[0].status" == "success"
+jsonpath "$.resources[0].credentials" count >= 1
+jsonpath "$.resources[0].credentials[0].kind" == "ServiceAccount"
+jsonpath "$.resources[0].credentials[0].token" isString
 
 #################################################################################
 # Create the same placement should return 409 conflict
@@ -87,6 +90,8 @@ Authorization: Bearer {{access_token}}
   }
 }
 HTTP 409
+
+# TODO: test multi-accounts Aws + OCP
 
 #################################################################################
 # Delete placement

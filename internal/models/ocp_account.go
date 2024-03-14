@@ -52,7 +52,7 @@ type OcpAccountWithCreds struct {
 type OcpServiceAccount struct {
 	Kind  string `json:"kind"` // "service_account"
 	Name  string `json:"name"`
-	token string `json:"token"`
+	Token string `json:"token"`
 }
 
 func (a *OcpAccount) Render(w http.ResponseWriter, r *http.Request) error {
@@ -89,9 +89,9 @@ func (a *OcpAccountWithCreds) Update() error {
 		return errors.New("id must be > 0")
 	}
 
-	withoutCreds := a
-	withoutCreds.Credentials = []any{}
 	creds, _ := json.Marshal(a.Credentials)
+	withoutCreds := *a
+	withoutCreds.Credentials = []any{}
 
 	// Update resource
 	if _, err := a.Provider.DbPool.Exec(
@@ -116,9 +116,10 @@ func (a *OcpAccountWithCreds) Save() error {
 	if a.ID != 0 {
 		return a.Update()
 	}
-	withoutCreds := a
-	withoutCreds.Credentials = []any{}
 	creds, _ := json.Marshal(a.Credentials)
+	// Unset credentials in a struct withoutCreds
+	withoutCreds := *a
+	withoutCreds.Credentials = []any{}
 	// Insert resource and get Id
 	if err := a.Provider.DbPool.QueryRow(
 		context.Background(),
@@ -255,12 +256,9 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 	var selectedCluster string
 	var selectedApiUrl string
 
-	// Ensure annotation has guid and env_type
+	// Ensure annotation has guid
 	if _, exists := annotations["guid"]; !exists {
 		return OcpAccountWithCreds{}, errors.New("guid not found in annotations")
-	}
-	if _, exists := annotations["env_type"]; !exists {
-		return OcpAccountWithCreds{}, errors.New("env_type not found in annotations")
 	}
 
 	err := a.DbPool.QueryRow(
@@ -530,7 +528,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 			OcpServiceAccount{
 				Kind:  "ServiceAccount",
 				Name:  serviceAccountName,
-				token: string(saSecret.Data["token"]),
+				Token: string(saSecret.Data["token"]),
 			},
 		}
 		r := OcpAccountWithCreds{
