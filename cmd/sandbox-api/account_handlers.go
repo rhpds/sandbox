@@ -76,9 +76,14 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 				Message:        "Bad request, Ocp Account are created on the fly",
 				})
 			return
+		}
+		if serviceUuid != "" {
+			// Get the account from DynamoDB
+			accounts, err = h.OcpAccountProvider.FetchAllByServiceUuid(serviceUuid)
 		} else {
 			accounts, err = h.OcpAccountProvider.FetchAll()
 		}
+
 		accountlist = make([]interface{}, len(accounts))
 		for i, acc := range accounts {
 			accountlist[i] = acc

@@ -50,7 +50,7 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 		p.Resources = append(p.Resources, account)
 	}
 
-	ocpAccounts, err := ocpProvider.FetchAllOcpAccountByServiceUuid(p.ServiceUuid)
+	ocpAccounts, err := ocpProvider.FetchAllByServiceUuid(p.ServiceUuid)
 
 	if err != nil {
 		return err
@@ -77,7 +77,7 @@ func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpPr
 		p.Resources = append(p.Resources, account)
 	}
 
-	ocpAccounts, err := ocpProvider.FetchAllOcpAccountByServiceUuidWithCreds(p.ServiceUuid)
+	ocpAccounts, err := ocpProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
 
 	if err != nil {
 		return err
@@ -120,7 +120,7 @@ func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider,
 		p.Resources = append(p.Resources, account)
 	}
 
-	ocpAccounts, err := ocpProvider.FetchAllOcpAccountByServiceUuidWithCreds(p.ServiceUuid)
+	ocpAccounts, err := ocpProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
 
 	if err != nil {
 		return err
