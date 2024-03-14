@@ -586,15 +586,43 @@ func NewOcpAccountProvider(dbpool *pgxpool.Pool, vaultSecret string) OcpAccountP
 }
 
 func (a *OcpAccountProvider) FetchAll() ([]OcpAccount, error) {
-	// TODO
-	log.Logger.Error("Error getting accounts", "error", "hello")
-	return []OcpAccount{}, errors.New("count must be > 0")
-}
+	accounts := []OcpAccount{}
+	// Get resource from above 'resources' table
+	rows, err := a.DbPool.Query(
+		context.Background(),
+		`SELECT
+		 resource_data, id, resource_name, resource_type,
+		 created_at, updated_at, status, cleanup_count
+		 FROM resources`,
+	)
 
-func (a *OcpAccountProvider) FetchAllAvailable() ([]OcpAccount, error) {
-	// TODO
-	log.Logger.Error("Error getting accounts", "error", "hello")
-	return []OcpAccount{}, errors.New("count must be > 0")
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			log.Logger.Info("No account found")
+			return []OcpAccount{}, OcpErrAccountNotFound
+		}
+		return accounts, err
+	}
+
+	for rows.Next() {
+		var account OcpAccount
+		if err := rows.Scan(
+			&account,
+			&account.ID,
+			&account.Name,
+			&account.Kind,
+			&account.CreatedAt,
+			&account.UpdatedAt,
+			&account.Status,
+			&account.CleanupCount,
+		); err != nil {
+			return accounts, err
+		}
+
+		accounts = append(accounts, account)
+	}
+
+	return accounts, nil
 }
 
 func (account *OcpAccountWithCreds) Delete() error {
