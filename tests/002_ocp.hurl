@@ -48,6 +48,8 @@ Authorization: Bearer {{access_token}}
   }
 }
 HTTP 200
+[Captures]
+sandbox_name: jsonpath "$.Placement.resources[0].name"
 [Asserts]
 jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
@@ -110,6 +112,17 @@ service_uuid: {{uuid}}
 HTTP 200
 [Asserts]
 jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 1
+
+#################################################################################
+# Get  OcpAccount using name
+#################################################################################
+GET {{host}}/api/v1/accounts/OcpSandbox/{{sandbox_name}}
+Authorization: Bearer {{access_token}}
+HTTP 200
+[Asserts]
+jsonpath "$.name" == "{{sandbox_name}}"
+jsonpath "$.service_uuid" == "{{uuid}}"
+
 
 #################################################################################
 # Delete placement
