@@ -154,7 +154,7 @@ func (a *OcpAccountWithCreds) IncrementCleanupCount() error {
 
 	return err
 }
-func (a *OcpAccountProvider) FetchAllOcpAccountByServiceUuid(serviceUuid string) ([]OcpAccount, error) {
+func (a *OcpAccountProvider) FetchAllByServiceUuid(serviceUuid string) ([]OcpAccount, error) {
 	accounts := []OcpAccount{}
 	// Get resource from above 'resources' table
 	rows, err := a.DbPool.Query(
@@ -196,7 +196,7 @@ func (a *OcpAccountProvider) FetchAllOcpAccountByServiceUuid(serviceUuid string)
 	return accounts, nil
 }
 
-func (a *OcpAccountProvider) FetchAllOcpAccountByServiceUuidWithCreds(serviceUuid string) ([]OcpAccountWithCreds, error) {
+func (a *OcpAccountProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) ([]OcpAccountWithCreds, error) {
 	accounts := []OcpAccountWithCreds{}
 	// Get resource from above 'resources' table
 	rows, err := a.DbPool.Query(
@@ -561,7 +561,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 }
 
 func (a *OcpAccountProvider) Release(service_uuid string) error {
-	accounts, err := a.FetchAllOcpAccountByServiceUuidWithCreds(service_uuid)
+	accounts, err := a.FetchAllByServiceUuidWithCreds(service_uuid)
 
 	if err != nil {
 		return err

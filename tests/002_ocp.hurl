@@ -101,6 +101,17 @@ HTTP 200
 jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 1
 
 #################################################################################
+# Get all OcpAccounts using service_uuid query
+#################################################################################
+GET {{host}}/api/v1/accounts/OcpSandbox
+Authorization: Bearer {{access_token}}
+[QueryStringParams]
+service_uuid: {{uuid}}
+HTTP 200
+[Asserts]
+jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 1
+
+#################################################################################
 # Delete placement
 #################################################################################
 
