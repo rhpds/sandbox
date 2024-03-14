@@ -54,11 +54,12 @@ type AwsAccountDynamoDB struct {
 	AwsAccessKeyID     string  `json:"aws_access_key_id"`
 	AwsSecretAccessKey string  `json:"aws_secret_access_key"`
 	// Conan
-	ToCleanup         bool   `json:"to_cleanup"`
-	ConanStatus       string `json:"conan_status"`
-	ConanTimestamp    string `json:"conan_timestamp"`
-	ConanHostname     string `json:"conan_hostname"`
-	ConanCleanupCount int    `json:"conan_cleanup_count"`
+	ToCleanup         bool              `json:"to_cleanup"`
+	ConanStatus       string            `json:"conan_status"`
+	ConanTimestamp    string            `json:"conan_timestamp"`
+	ConanHostname     string            `json:"conan_hostname"`
+	ConanCleanupCount int               `json:"conan_cleanup_count"`
+	Annotations       map[string]string `json:"annotations,omitempty"`
 }
 
 // buildAccounts returns the list of accounts from dynamodb scan output
@@ -128,26 +129,29 @@ func makeAccount(account AwsAccountDynamoDB) models.AwsAccount {
 
 	a.UpdatedAt = time.Unix(ti, 0)
 
-	// Rest of the fields are annotations
-	annotations := map[string]string{}
+	a.Annotations = map[string]string{}
+	// Restore original Annotations
+	if account.Annotations != nil {
+		for k, v := range account.Annotations {
+			a.Annotations[k] = v
+		}
+	}
 
 	if account.Guid != "" {
-		annotations["guid"] = account.Guid
+		a.Annotations["guid"] = account.Guid
 	}
 	if account.Owner != "" {
-		annotations["owner"] = account.Owner
+		a.Annotations["owner"] = account.Owner
 	}
 	if account.OwnerEmail != "" {
-		annotations["owner_email"] = account.OwnerEmail
+		a.Annotations["owner_email"] = account.OwnerEmail
 	}
 	if account.Comment != "" {
-		annotations["comment"] = account.Comment
+		a.Annotations["comment"] = account.Comment
 	}
 	if account.Envtype != "" {
-		annotations["env_type"] = account.Envtype
+		a.Annotations["env_type"] = account.Envtype
 	}
-
-	a.Resource.Annotations = annotations
 
 	return a
 }
@@ -413,7 +417,7 @@ func (a *AwsAccountDynamoDBProvider) FetchAllSorted(by string) ([]models.AwsAcco
 }
 
 // Request reserve accounts for a service
-func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, reservation string, count int, annotations map[string]string) ([]models.AwsAccountWithCreds, error) {
+func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, reservation string, count int, annotations models.Annotations) ([]models.AwsAccountWithCreds, error) {
 	if count <= 0 {
 		return []models.AwsAccountWithCreds{}, errors.New("count must be > 0")
 	}
@@ -472,6 +476,13 @@ func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, reservation st
 	}
 
 	bookedAccounts := []models.AwsAccountWithCreds{}
+
+	annotationsAttr, err := dynamodbattribute.MarshalMap(annotations)
+	if err != nil {
+		log.Logger.Error("Can't marshal annotations")
+
+		return []models.AwsAccountWithCreds{}, err
+	}
 	for _, sandbox := range accounts {
 		// Update the account
 		output, err := a.Svc.UpdateItem(&dynamodb.UpdateItemInput{
@@ -488,7 +499,8 @@ func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, reservation st
 				service_uuid = :uu,
 				#o = :ow,
  				owner_email = :email,
- 				#c = :co
+ 				#c = :co,
+                annotations = :annotations
 				`,
 			),
 			ExpressionAttributeNames: map[string]*string{
@@ -521,6 +533,9 @@ func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, reservation st
 				":co": {
 					S: aws.String(annotations["comment"]),
 				},
+				":annotations": {
+					M: annotationsAttr,
+				},
 			},
 			ReturnValues: aws.String("ALL_NEW"),
 		})
@@ -540,7 +555,9 @@ func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, reservation st
 			return []models.AwsAccountWithCreds{}, err
 		}
 		booked.AwsSecretAccessKey = strings.Trim(booked.AwsSecretAccessKey, "\n\r\t ")
-		bookedAccounts = append(bookedAccounts, a.makeAccountWithCreds(booked))
+		bookedFinal := a.makeAccountWithCreds(booked)
+		bookedFinal.Annotations = bookedFinal.Annotations.Merge(annotations)
+		bookedAccounts = append(bookedAccounts, bookedFinal)
 		count = count - 1
 		if count == 0 {
 			break

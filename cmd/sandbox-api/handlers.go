@@ -122,7 +122,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				placementRequest.ServiceUuid,
 				placementRequest.Reservation,
 				request.Count,
-				placementRequest.Annotations,
+				placementRequest.Annotations.Merge(request.Annotations),
 			)
 			if err != nil {
 				// Cleanup previous accouts

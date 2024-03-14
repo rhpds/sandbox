@@ -91,7 +91,7 @@ type AwsAccountProvider interface {
 	FetchByName(name string) (AwsAccount, error)
 	MarkForCleanup(name string) error
 	MarkForCleanupByServiceUuid(serviceUuid string) error
-	Request(service_uuid string, reservation string, count int, annotations map[string]string) ([]AwsAccountWithCreds, error)
+	Request(service_uuid string, reservation string, count int, annotations Annotations) ([]AwsAccountWithCreds, error)
 	Reserve(reservation string, count int) ([]AwsAccount, error)
 	ScaleDownReservation(reservation string, count int) error
 }

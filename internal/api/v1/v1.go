@@ -33,14 +33,12 @@ type HealthCheckResult struct {
 }
 
 type PlacementRequest struct {
-	ServiceUuid string            `json:"service_uuid"`
-	Provider    string            `json:"provider,omitempty"`
-	Reservation string            `json:"reservation,omitempty"`
-	Resources   []ResourceRequest `json:"resources"`
-	Annotations Annotations       `json:"annotations,omitempty"`
+	ServiceUuid string             `json:"service_uuid"`
+	Provider    string             `json:"provider,omitempty"`
+	Reservation string             `json:"reservation,omitempty"`
+	Resources   []ResourceRequest  `json:"resources"`
+	Annotations models.Annotations `json:"annotations,omitempty"`
 }
-
-type Annotations map[string]string
 
 type TokenRequest struct {
 	Claims map[string]any `json:"claims"`
@@ -104,10 +102,10 @@ func (p *PlacementResponse) Render(w http.ResponseWriter, r *http.Request) error
 }
 
 type ResourceRequest struct {
-	Kind          string      `json:"kind"`
-	Count         int         `json:"count"`
-	Annotations   Annotations `json:"annotations,omitempty"`
-	CloudSelector Annotations `json:"cloud_selector,omitempty"`
+	Kind          string             `json:"kind"`
+	Count         int                `json:"count"`
+	Annotations   models.Annotations `json:"annotations,omitempty"`
+	CloudSelector models.Annotations `json:"cloud_selector,omitempty"`
 }
 
 type ReservationResponse struct {
@@ -118,7 +116,7 @@ type ReservationResponse struct {
 
 func (p *PlacementRequest) Bind(r *http.Request) error {
 	if p.Annotations == nil {
-		p.Annotations = make(Annotations)
+		p.Annotations = make(models.Annotations)
 	}
 
 	if p.Resources == nil {
@@ -130,10 +128,10 @@ func (p *PlacementRequest) Bind(r *http.Request) error {
 	}
 	for i := range p.Resources {
 		if p.Resources[i].Annotations == nil {
-			p.Resources[i].Annotations = make(Annotations)
+			p.Resources[i].Annotations = make(models.Annotations)
 		}
 		if p.Resources[i].CloudSelector == nil {
-			p.Resources[i].CloudSelector = make(Annotations)
+			p.Resources[i].CloudSelector = make(models.Annotations)
 		}
 	}
 
@@ -158,15 +156,4 @@ func (t *TokenResponse) Render(w http.ResponseWriter, r *http.Request) error {
 
 func (p *ReservationResponse) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
-}
-
-func (a Annotations) Merge(b Annotations) Annotations {
-	c := make(Annotations)
-	for k, v := range a {
-		c[k] = v
-	}
-	for k, v := range b {
-		c[k] = v
-	}
-	return c
 }
