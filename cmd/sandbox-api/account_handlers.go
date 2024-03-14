@@ -62,7 +62,7 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 		for i, acc := range accounts {
 			accountlist[i] = acc
 		}
-	case "OcpSandbox", "Ocp":
+	case "OcpSandbox", "ocp":
 		var (
 			accounts []models.OcpAccount
 		)
@@ -120,44 +120,64 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 // GetAccountHandler returns an account
 // GET /accounts/{kind}/{account}
 func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Request) {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", " ")
-
 	// Grab the parameters from Params
 	accountName := chi.URLParam(r, "account")
+	kind := chi.URLParam(r, "kind")
 
-	// We don't need 'kind' param for now as it is checked and validated
-	// by the swagger openAPI spec.
+	switch kind {
+	case "AwsSandbox", "aws":
 
-	// Get the account from DynamoDB
-	sandbox, err := h.awsAccountProvider.FetchByName(accountName)
-	if err != nil {
-		if err == models.ErrAccountNotFound {
-			log.Logger.Warn("GET account", "error", err)
-			w.WriteHeader(http.StatusNotFound)
-			enc.Encode(v1.Error{
-				HTTPStatusCode: http.StatusNotFound,
-				Message:        "Account not found",
+		// Get the account from DynamoDB
+		sandbox, err := h.awsAccountProvider.FetchByName(accountName)
+		if err != nil {
+			if err == models.ErrAccountNotFound {
+				log.Logger.Warn("GET account", "error", err)
+				w.WriteHeader(http.StatusNotFound)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusNotFound,
+					Message:        "Account not found",
+				})
+				return
+			}
+			log.Logger.Error("GET account", "error", err)
+
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: 500,
+				Message:        "Error reading account",
 			})
 			return
 		}
-		log.Logger.Error("GET account", "error", err)
-
-		w.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(v1.Error{
-			HTTPStatusCode: 500,
-			Message:        "Error reading account",
-		})
+		// Print account using JSON
+		w.WriteHeader(http.StatusOK)
+		render.Render(w, r, &sandbox)
 		return
-	}
-	// Print account using JSON
-	if err := enc.Encode(sandbox); err != nil {
-		log.Logger.Error("GET account", "error", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(v1.Error{
-			HTTPStatusCode: 500,
-			Message:        "Error reading account",
-		})
+	case "OcpSandbox", "ocp":
+		// Get the account from DynamoDB
+		sandbox, err := h.OcpAccountProvider.FetchByName(accountName)
+		if err != nil {
+			if err == models.ErrAccountNotFound {
+				log.Logger.Warn("GET account", "error", err)
+				w.WriteHeader(http.StatusNotFound)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusNotFound,
+					Message:        "Account not found",
+				})
+				return
+			}
+			log.Logger.Error("GET account", "error", err)
+
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: 500,
+				Message:        "Error reading account",
+			})
+			return
+		}
+		// Print account using JSON
+		w.WriteHeader(http.StatusOK)
+		render.Render(w, r, &sandbox)
+		return
 	}
 }
 func (h *AccountHandler) CleanupAccountHandler(w http.ResponseWriter, r *http.Request) {

@@ -704,3 +704,30 @@ func (account *OcpAccountWithCreds) Delete() error {
 	)
 	return err
 }
+
+func (p *OcpAccountProvider) FetchByName(name string) (OcpAccount, error) {
+	// Get resource from above 'resources' table
+	row := p.DbPool.QueryRow(
+		context.Background(),
+		`SELECT
+		 resource_data, id, resource_name, resource_type,
+		 created_at, updated_at, status, cleanup_count
+		 FROM resources WHERE resource_name = $1`,
+		name,
+	)
+
+	var account OcpAccount
+	if err := row.Scan(
+		&account,
+		&account.ID,
+		&account.Name,
+		&account.Kind,
+		&account.CreatedAt,
+		&account.UpdatedAt,
+		&account.Status,
+		&account.CleanupCount,
+	); err != nil {
+		return OcpAccount{}, err
+	}
+	return account, nil
+}

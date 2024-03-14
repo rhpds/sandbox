@@ -422,7 +422,7 @@ paths:
           enum:
             - aws
             - AwsSandbox
-            - Ocp
+            - ocp
             - OcpSandbox
       - name: available
         in: query
@@ -471,7 +471,7 @@ paths:
           enum:
             - aws
             - AwsSandbox
-            - Ocp
+            - ocp
             - OcpSandbox
       - name: name
         in: path
@@ -567,7 +567,7 @@ paths:
           enum:
             - aws
             - AwsSandbox
-            - Ocp
+            - ocp
             - OcpSandbox
       - name: name
         in: path
@@ -624,7 +624,7 @@ paths:
           enum:
             - aws
             - AwsSandbox
-            - Ocp
+            - ocp
             - OcpSandbox
       - name: name
         in: path
@@ -678,7 +678,7 @@ paths:
           enum:
             - aws
             - AwsSandbox
-            - Ocp
+            - ocp
             - OcpSandbox
       - name: name
         in: path
@@ -732,7 +732,7 @@ paths:
           enum:
             - aws
             - AwsSandbox
-            - Ocp
+            - ocp
             - OcpSandbox
       - name: name
         in: path
