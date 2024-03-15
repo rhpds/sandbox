@@ -30,6 +30,66 @@ Failed files:    0 (0.0%)
 Duration:        35680 ms
 ----
 
+== OCP tests ==
+
+=== requirements ===
+
+* ocp cluster with matching annotations, see below
+* the entry in the `ocp_clusters` table
+
+=== Create the OcpCluster entry ===
+
+Either you're using the DEV database,  or you'll have to setup the OCP cluster in your local DB table `ocp_cluster`. That can be done using link:../tools/ocp_cluster_create.hurl[ocp_cluster_create.hurl]
+
+
+[source,json]
+.`.dev.kube.json`
+----
+{
+  "name": "cluster-foo",
+  "api_url": "https://api.domain.com:6443",
+  "annotations":
+    {
+      "virt":"no",
+      "cloud":"cnv",
+      "purpose":"dev"
+    },
+  "kubeconfig": "..."
+}
+----
+
+The tricky part is to embed the kubeconfig, that is usually in the YAML format into a JSON string. This can be done with the following command:
+
+----
+jq --raw-input --slurp < KUBECONFIGFILE
+----
+
+For example if you have access to an ocp-cluster bastion, you can do:
+----
+ssh user@bastion cat .kube/config|jq --raw-input --slurp
+----
+
+.Add the entry to the DB
+----
+hurl --variable login_token_admin=$admintoken \
+--file-root .
+--variable host=http://localhost:8080 \
+--variable ocp_cluster_def=.dev.kube.json \
+--variable ocp_cluster_name=cluster-foo \
+../tools/ocp_cluster_create.hurl
+----
+
+.Run the test
+----
+uuid=$(uuidgen -r)
+hurl --variable login_token_admin=$admintoken \
+--variable login_token=$apptoken \
+--variable host=http://localhost:8080 \
+--variable uuid=$uuid \
+--variable ocp_cluster_def=.dev.kube.json \
+--variable ocp_cluster_name=cluster-foo 002_ocp.hurl --test
+----
+
 === Troubleshoot ===
 
 Add the `--verbose` argument to the `hurl` command to see the full requests.

@@ -319,6 +319,7 @@ func GetAllPlacements(dbpool *pgxpool.Pool) (Placements, error) {
 func GetPlacementByServiceUuid(dbpool *pgxpool.Pool, serviceUuid string) (*Placement, error) {
 	var p Placement
 
+	log.Logger.Info("GetPlacementByServiceUuid", "serviceUuid", serviceUuid)
 	err := dbpool.QueryRow(
 		context.Background(),
 		"SELECT id, service_uuid, request, annotations, created_at, updated_at FROM placements WHERE service_uuid = $1", serviceUuid,

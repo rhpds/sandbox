@@ -261,6 +261,15 @@ func main() {
 		r.Get("/api/v1/admin/jwt", baseHandler.GetJWTHandler)
 		r.Put("/api/v1/admin/jwt/{id}/invalidate", baseHandler.InvalidateTokenHandler)
 
+		// ---------------------------------
+		// Ocp
+		// ---------------------------------
+		r.Post("/api/v1/ocp-clusters", baseHandler.CreateOcpClusterHandler)
+		r.Get("/api/v1/ocp-clusters", baseHandler.GetOcpClustersHandler)
+		r.Get("/api/v1/ocp-clusters/{name}", baseHandler.GetOcpClusterHandler)
+		r.Put("/api/v1/ocp-clusters/{name}/disable", baseHandler.DisableOcpClusterHandler)
+		r.Delete("/api/v1/ocp-clusters/{name}", baseHandler.DeleteOcpClusterHandler)
+
 		// Reservations
 		r.Post("/api/v1/reservations", baseHandler.CreateReservationHandler)
 		r.Put("/api/v1/reservations/{name}", baseHandler.UpdateReservationHandler)

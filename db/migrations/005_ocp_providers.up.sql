@@ -1,29 +1,29 @@
--- Create table ocp_providers
+-- Create table ocp_clusters
 
 BEGIN;
 -- install the pgcrypto extension if not installed
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-CREATE TABLE ocp_providers (
+CREATE TABLE ocp_clusters (
     id SERIAL PRIMARY KEY,
-    name  VARCHAR(64) NOT NULL, -- Name for the Ocp Provider
+    name VARCHAR(255) NOT NULL UNIQUE,
     api_url VARCHAR(255) NOT NULL, -- OCP Api URL
     kubeconfig BYTEA NOT NULL, -- kubeconfig content encrypted with pgp_sym_encrypt
     created_at TIMESTAMP with time zone NOT NULL DEFAULT (now() at time zone 'utc'),
     updated_at TIMESTAMP with time zone NOT NULL DEFAULT (now() at time zone 'utc'),
     annotations JSONB DEFAULT '{}'::jsonb NOT NULL,
-    valid BOOLEAN NOT NULL DEFAULT TRUE -- Used to invalidate ocp_providers
+    valid BOOLEAN NOT NULL DEFAULT TRUE -- Used to invalidate ocp_clusters
 );
 
-CREATE TRIGGER ocp_providers_updated_at
-  BEFORE UPDATE ON ocp_providers
+CREATE TRIGGER ocp_clusters_updated_at
+  BEFORE UPDATE ON ocp_clusters
   FOR EACH ROW
   WHEN (OLD.* IS DISTINCT FROM NEW.*)
   EXECUTE FUNCTION updated_at_column();
 
-CREATE INDEX ON ocp_providers (api_url);
+CREATE INDEX ON ocp_clusters (api_url);
 -- Insert a dummy record, encrypt the kubeconfig using pgp_sym_encrypt
--- INSERT INTO ocp_providers (name, api_url, kubeconfig)
+-- INSERT INTO ocp_clusters (name, api_url, kubeconfig)
 -- VALUES ('dummy', 'https://dummy', pgp_sym_encrypt('dummy', 'dummy'));
 
 
