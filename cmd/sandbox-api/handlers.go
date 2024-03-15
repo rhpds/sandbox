@@ -169,16 +169,25 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 						Err:            err,
 						HTTPStatusCode: http.StatusConflict,
 						Message:        "OCP sandbox already exists",
-						ErrorMultiline: []string{
-							err.Error(),
-						},
+						ErrorMultiline: []string{err.Error()},
+					})
+					return
+				}
+
+				if err == models.ErrNoSchedule {
+					w.WriteHeader(http.StatusNotFound)
+					render.Render(w, r, &v1.Error{
+						Err:            err,
+						HTTPStatusCode: http.StatusNotFound,
+						Message:        "No OCP cluster found",
+						ErrorMultiline: []string{err.Error()},
 					})
 					return
 				}
 
 				w.WriteHeader(http.StatusInternalServerError)
 				render.Render(w, r, &v1.Error{
-					Err:            err,
+					ErrorMultiline: []string{err.Error()},
 					HTTPStatusCode: http.StatusInternalServerError,
 					Message:        "Error creating placement in Ocp",
 				})

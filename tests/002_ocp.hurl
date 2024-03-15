@@ -135,6 +135,32 @@ Authorization: Bearer {{access_token}}
 HTTP 404
 
 #################################################################################
+# Create a new placement with a  cloud_selector too restrictive
+#################################################################################
+
+POST {{host}}/api/v1/placements
+Authorization: Bearer {{access_token}}
+{
+  "service_uuid": "{{uuid}}",
+  "resources": [
+    {
+      "kind": "OcpSandbox",
+      "cloud_selector": {
+        "cannot": "find"
+      }
+    }
+  ],
+  "annotations": {
+    "guid": "testg-1",
+    "env_type": "ocp4-cluster-blablablabla"
+  }
+}
+HTTP 404
+[Asserts]
+jsonpath "$.message" == "No OCP cluster found"
+
+
+#################################################################################
 # Create a new placement
 #################################################################################
 

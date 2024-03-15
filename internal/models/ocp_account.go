@@ -481,6 +481,8 @@ func (a *OcpAccountProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 	return accounts, nil
 }
 
+var ErrNoSchedule error = errors.New("No OCP cluster found")
+
 func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string) (OcpAccountWithCreds, error) {
 	var name string
 	var api_url string
@@ -506,7 +508,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 
 	if rowcount == 0 {
 		log.Logger.Error("No OCP cluster found", "cloud_selector", cloud_selector)
-		return OcpAccountWithCreds{}, errors.New("Ocp provider not found")
+		return OcpAccountWithCreds{}, ErrNoSchedule
 	}
 	if err != nil {
 		log.Logger.Error("OCP cluster query error", "err", err)
