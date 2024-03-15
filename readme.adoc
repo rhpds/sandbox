@@ -113,6 +113,32 @@ token=[ACCESS TOKEN]
 curl -H "Authorization: Bearer ${token}" sandbox-api:8080/api/v1/health
 ----
 
+=== Setup local development environment ===
+
+All filed used for the local development environment are prefixed by `.dev` and are ignored by Git, see link:.gitignore[`.gitignore`]
+
+[source,shell]
+----
+make run-local-pg  # run postgresql locally in a Container
+make migrate  # Run the DB migrations to setup the db schema
+# Set the following secrets, notice the heading space ' ' to avoid shell history
+# IAM secrets to access AWS sandboxes
+ export ASSUMEROLE_AWS_SECRET_ACCESS_KEY=...
+ export ASSUMEROLE_AWS_ACCESS_KEY_ID=...
+# IAM secrets to access dynamodb table that contains info of the AWS sandboxes
+ export AWS_ACCESS_KEY_ID=...
+ export AWS_SECRET_ACCESS_KEY=...
+# AES key to encrypt sensible data in the different databases
+# If you're using the dynamoDB dev database for AWS sandboxes (which you probably are)
+# Then this needs to match the one in use on the DEV environment
+ export VAULT_SECRET=...
+
+make issue-jwt  # issue some JWT token for access
+make run-api # <1>
+----
+<1> When iterating, you will be stopping and relaunching this step
+
+
 == sandbox-replicate ==
 
 The role of the lambda function is to replicate any changes made to the dynamoDB table into a postgresql database.
