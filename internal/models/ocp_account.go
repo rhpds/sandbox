@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -20,24 +21,259 @@ import (
 )
 
 type OcpAccountProvider struct {
-	DbPool      *pgxpool.Pool
-	VaultSecret string
+	DbPool      *pgxpool.Pool `json:"-"`
+	VaultSecret string        `json:"-"`
+}
+
+type OcpCluster struct {
+	ID          int               `json:"id"`
+	Name        string            `json:"name"`
+	ApiUrl      string            `json:"api_url"`
+	Kubeconfig  string            `json:"kubeconfig"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
+	Annotations map[string]string `json:"annotations"`
+	Valid       bool              `json:"valid"`
+	DbPool      *pgxpool.Pool     `json:"-"`
+	VaultSecret string            `json:"-"`
+}
+
+type OcpClusters []OcpCluster
+
+var nameRegex = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
+
+// Bind and Render
+func (p *OcpCluster) Bind(r *http.Request) error {
+	// Ensure the name is not empty
+	if p.Name == "" {
+		return errors.New("name is required")
+	}
+
+	// Ensure the name is valid
+	if !nameRegex.MatchString(p.Name) {
+		return errors.New("name is invalid, must be only alphanumeric and '-'")
+	}
+
+	// Ensure the api_url is not empty
+	if p.ApiUrl == "" {
+		return errors.New("api_url is required")
+	}
+
+	// Ensure Annotations is provided
+	if len(p.Annotations) == 0 {
+		return errors.New("annotations is required")
+	}
+
+	p.Valid = true
+
+	return nil
+}
+
+func (p *OcpCluster) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
+// Bind and Render for OcpClusters
+func (p *OcpClusters) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
+func (p *OcpCluster) Save() error {
+	if p.ID != 0 {
+		return p.Update()
+	}
+
+	// Insert resource and get Id
+	if err := p.DbPool.QueryRow(
+		context.Background(),
+		`INSERT INTO ocp_clusters
+			(name, api_url, kubeconfig, annotations, valid)
+			VALUES ($1, $2, pgp_sym_encrypt($3::text, $4), $5, $6) RETURNING id`,
+		p.Name, p.ApiUrl, p.Kubeconfig, p.VaultSecret, p.Annotations, p.Valid,
+	).Scan(&p.ID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *OcpCluster) Update() error {
+	if p.ID == 0 {
+		return errors.New("id must be > 0")
+	}
+
+	// Update resource
+	if _, err := p.DbPool.Exec(
+		context.Background(),
+		`UPDATE ocp_clusters
+		 SET name = $1,
+			 api_url = $2,
+			 kubeconfig = pgp_sym_encrypt($3::text, $4),
+			 annotations = $5,
+			 valid = $6
+		 WHERE id = $7`,
+		p.Name, p.ApiUrl, p.Kubeconfig, p.VaultSecret, p.Annotations, p.Valid, p.ID,
+	); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *OcpCluster) Delete() error {
+	_, err := p.DbPool.Exec(
+		context.Background(),
+		"DELETE FROM ocp_clusters WHERE id = $1",
+		p.ID,
+	)
+	return err
+}
+
+// Disable an OcpCluster
+func (p *OcpCluster) Disable() error {
+	p.Valid = false
+	return p.Update()
+}
+
+// CountAccounts returns the number of accounts for an OcpCluster
+func (p *OcpCluster) GetAccountCount() (int, error) {
+	var count int
+	if err := p.DbPool.QueryRow(
+		context.Background(),
+		"SELECT count(*) FROM resources WHERE resource_type = 'OcpAccount' AND resource_data->>'ocp_cluster' = $1",
+		p.Name,
+	).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// GetOcpClusterByName returns an OcpCluster by name
+func (p *OcpAccountProvider) GetOcpClusterByName(name string) (OcpCluster, error) {
+	// Get resource from above 'ocp_clusters' table
+	row := p.DbPool.QueryRow(
+		context.Background(),
+		`SELECT
+		 id, name, api_url, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid
+		 FROM ocp_clusters WHERE name = $2`,
+		p.VaultSecret, name,
+	)
+
+	var cluster OcpCluster
+	if err := row.Scan(
+		&cluster.ID,
+		&cluster.Name,
+		&cluster.ApiUrl,
+		&cluster.Kubeconfig,
+		&cluster.CreatedAt,
+		&cluster.UpdatedAt,
+		&cluster.Annotations,
+		&cluster.Valid,
+	); err != nil {
+		return OcpCluster{}, err
+	}
+	cluster.DbPool = p.DbPool
+	cluster.VaultSecret = p.VaultSecret
+	return cluster, nil
+}
+
+// GetOcpClusters returns the full list of OcpCluster
+func (p *OcpAccountProvider) GetOcpClusters() (OcpClusters, error) {
+	clusters := []OcpCluster{}
+
+	// Get resource from 'ocp_clusters' table
+	rows, err := p.DbPool.Query(
+		context.Background(),
+		`SELECT
+		 id, name, api_url, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid
+		 FROM ocp_clusters`,
+		p.VaultSecret,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			log.Logger.Info("No cluster found")
+		}
+		return []OcpCluster{}, err
+	}
+
+	for rows.Next() {
+		var cluster OcpCluster
+
+		if err := rows.Scan(
+			&cluster.ID,
+			&cluster.Name,
+			&cluster.ApiUrl,
+			&cluster.Kubeconfig,
+			&cluster.CreatedAt,
+			&cluster.UpdatedAt,
+			&cluster.Annotations,
+			&cluster.Valid,
+		); err != nil {
+			return []OcpCluster{}, err
+		}
+
+		cluster.DbPool = p.DbPool
+		cluster.VaultSecret = p.VaultSecret
+		clusters = append(clusters, cluster)
+	}
+
+	return clusters, nil
+}
+
+// GetOcpClusterByAnnotations returns a list of OcpCluster by annotations
+func (p *OcpAccountProvider) GetOcpClusterByAnnotations(annotations map[string]string) ([]OcpCluster, error) {
+	clusters := []OcpCluster{}
+	// Get resource from above 'ocp_clusters' table
+	rows, err := p.DbPool.Query(
+		context.Background(),
+		`SELECT
+		 id, name, api_url, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid
+		 FROM ocp_clusters WHERE annotations @> $2`,
+		p.VaultSecret, annotations,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			log.Logger.Info("No cluster found", "annotations", annotations)
+		}
+		return []OcpCluster{}, err
+	}
+
+	for rows.Next() {
+		var cluster OcpCluster
+
+		if err := rows.Scan(
+			&cluster.ID,
+			&cluster.Name,
+			&cluster.ApiUrl,
+			&cluster.Kubeconfig,
+			&cluster.CreatedAt,
+			&cluster.UpdatedAt,
+			&cluster.Annotations,
+			&cluster.Valid,
+		); err != nil {
+			return []OcpCluster{}, err
+		}
+
+		cluster.DbPool = p.DbPool
+		cluster.VaultSecret = p.VaultSecret
+		clusters = append(clusters, cluster)
+	}
+
+	return clusters, nil
 }
 
 var OcpErrNoEnoughAccountsAvailable = errors.New("no enough accounts available")
 
-var OcpErrAccountNotFound = errors.New("account not found")
-
 type OcpAccount struct {
 	Account
-	Name         string            `json:"name"`
-	Kind         string            `json:"kind"` // "OcpSandbox"
-	ServiceUuid  string            `json:"service_uuid"`
-	OCPProvider  string            `json:"ocp_provider"`
-	OCPApiUrl    string            `json:"api_url"`
-	Annotations  map[string]string `json:"annotations"`
-	Status       string            `json:"status"`
-	CleanupCount int               `json:"cleanup_count"`
+	Name           string            `json:"name"`
+	Kind           string            `json:"kind"` // "OcpSandbox"
+	ServiceUuid    string            `json:"service_uuid"`
+	OcpClusterName string            `json:"ocp_cluster"`
+	OCPApiUrl      string            `json:"api_url"`
+	Annotations    map[string]string `json:"annotations"`
+	Status         string            `json:"status"`
+	CleanupCount   int               `json:"cleanup_count"`
 }
 
 type OcpAccountWithCreds struct {
@@ -169,7 +405,6 @@ func (a *OcpAccountProvider) FetchAllByServiceUuid(serviceUuid string) ([]OcpAcc
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			log.Logger.Info("No account found", "service_uuid", serviceUuid)
-			return []OcpAccount{}, OcpErrAccountNotFound
 		}
 		return accounts, err
 	}
@@ -212,7 +447,6 @@ func (a *OcpAccountProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			log.Logger.Info("No account found", "service_uuid", serviceUuid)
-			return []OcpAccountWithCreds{}, OcpErrAccountNotFound
 		}
 		return accounts, err
 	}
@@ -261,26 +495,28 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		return OcpAccountWithCreds{}, errors.New("guid not found in annotations")
 	}
 
+	// TODO use the OcpCluster type don't interact directly with this table from here
 	err := a.DbPool.QueryRow(
 		context.Background(),
-		`SELECT count(*) FROM ocp_providers
+		`SELECT count(*) FROM ocp_clusters
          WHERE annotations @> $1
          and valid=true`,
 		cloud_selector,
 	).Scan(&rowcount)
 
 	if rowcount == 0 {
-		log.Logger.Error("No ocp provider found", "cloud_selector", cloud_selector)
+		log.Logger.Error("No OCP cluster found", "cloud_selector", cloud_selector)
 		return OcpAccountWithCreds{}, errors.New("Ocp provider not found")
 	}
 	if err != nil {
-		log.Logger.Error("Ocp provider query error", "err", err)
+		log.Logger.Error("OCP cluster query error", "err", err)
 		return OcpAccountWithCreds{}, err
 	}
+	// TODO use the OcpCluster type don't interact directly with this table from here
 	rows, err := a.DbPool.Query(
 		context.Background(),
 		`SELECT name, api_url, pgp_sym_decrypt(kubeconfig::bytea, $1)
-  		 FROM ocp_providers WHERE annotations @> $2 and valid=true`,
+  		 FROM ocp_clusters WHERE annotations @> $2 and valid=true`,
 		a.VaultSecret, cloud_selector,
 	)
 
@@ -394,7 +630,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 		err = a.DbPool.QueryRow(
 			context.Background(),
-			"SELECT pgp_sym_decrypt(kubeconfig::bytea, $1) FROM ocp_providers WHERE name = $2",
+			"SELECT pgp_sym_decrypt(kubeconfig::bytea, $1) FROM ocp_clusters WHERE name = $2",
 			a.VaultSecret, selectedCluster,
 		).Scan(&kubeconfig)
 
@@ -533,13 +769,13 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 		r := OcpAccountWithCreds{
 			OcpAccount: OcpAccount{
-				Name:        "sandbox-" + annotations["guid"],
-				Kind:        "OcpAccount",
-				OCPProvider: selectedCluster,
-				OCPApiUrl:   selectedApiUrl,
-				Annotations: annotations,
-				ServiceUuid: serviceUuid,
-				Status:      "success",
+				Name:           "sandbox-" + annotations["guid"],
+				Kind:           "OcpAccount",
+				OcpClusterName: selectedCluster,
+				OCPApiUrl:      selectedApiUrl,
+				Annotations:    annotations,
+				ServiceUuid:    serviceUuid,
+				Status:         "success",
 			},
 			Credentials: creds,
 			Provider:    a,
@@ -599,7 +835,6 @@ func (a *OcpAccountProvider) FetchAll() ([]OcpAccount, error) {
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			log.Logger.Info("No account found")
-			return []OcpAccount{}, OcpErrAccountNotFound
 		}
 		return accounts, err
 	}
@@ -635,16 +870,16 @@ func (account *OcpAccountWithCreds) Delete() error {
 
 	err := account.Provider.DbPool.QueryRow(
 		context.Background(),
-		"SELECT api_url, pgp_sym_decrypt(kubeconfig::bytea, $1) FROM ocp_providers WHERE name = $2",
+		"SELECT api_url, pgp_sym_decrypt(kubeconfig::bytea, $1) FROM ocp_clusters WHERE name = $2",
 		account.Provider.VaultSecret,
-		account.OCPProvider,
+		account.OcpClusterName,
 	).Scan(&api_url, &kubeconfig)
 
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			log.Logger.Error("Ocp provider doesn't exist", "provider", account.OCPProvider, "name", account.Name)
+			log.Logger.Error("Ocp provider doesn't exist", "provider", account.OcpClusterName, "name", account.Name)
 			account.SetStatus("error")
-			return err
+			return errors.New("Ocp provider doesn't exist for resource")
 		} else {
 			log.Logger.Error("Ocp provider query error", "err", err)
 			account.SetStatus("error")

@@ -12,6 +12,111 @@ jsonpath "$.access_token" isString
 jsonpath "$.access_token_exp" isString
 
 #################################################################################
+# Get an Admin access token using the login token
+#################################################################################
+
+GET {{host}}/api/v1/login
+Authorization: Bearer {{login_token_admin}}
+HTTP 200
+[Captures]
+access_token_admin: jsonpath "$.access_token"
+[Asserts]
+jsonpath "$.access_token" isString
+jsonpath "$.access_token_exp" isString
+
+#################################################################################
+# Add an OCP Cluster
+#################################################################################
+POST {{host}}/api/v1/ocp-clusters
+Authorization: Bearer {{access_token}}
+{
+    "name": "ocp-cluster-test1",
+    "api_url": "https://api.ocp-cluster-1.com:6443",
+    "kubeconfig": "apiVersion: v1 ..."
+}
+HTTP 401
+[Asserts]
+jsonpath "$.message" == "Unauthorized"
+
+DELETE {{host}}/api/v1/ocp-clusters/ocp-cluster-test1
+Authorization: Bearer {{access_token_admin}}
+[Options]
+retry: 2
+HTTP 404
+
+POST {{host}}/api/v1/ocp-clusters
+Authorization: Bearer {{access_token_admin}}
+{
+    "name": "ocp-cluster-test1",
+    "api_url": "https://api.ocp-cluster-1.com:6443",
+    "kubeconfig": "apiVersion: v1 ..."
+}
+HTTP 400
+[Asserts]
+jsonpath "$.message" == "Bad request: payload doesn't pass OpenAPI spec"
+
+POST {{host}}/api/v1/ocp-clusters
+Authorization: Bearer {{access_token_admin}}
+{
+    "name": "ocp-cluster-test1",
+    "api_url": "https://api.ocp-cluster-1.com:6443",
+    "kubeconfig": "apiVersion: v1 ...",
+    "annotations": {
+        "virt": "no",
+        "cloud": "ibm",
+        "purpose": "dev"
+    }
+}
+HTTP 201
+[Asserts]
+jsonpath "$.message" == "OCP cluster created"
+
+POST {{host}}/api/v1/ocp-clusters
+Authorization: Bearer {{access_token_admin}}
+{
+    "name": "ocp-cluster-test1",
+    "api_url": "https://api.ocp-cluster-1.com:6443",
+    "kubeconfig": "apiVersion: v1 ...",
+    "annotations": {
+        "virt": "no",
+        "cloud": "ibm",
+        "purpose": "dev"
+    }
+}
+HTTP 500
+[Asserts]
+jsonpath "$.error_multiline[0]" contains "duplicate key value violates unique constraint"
+
+
+GET {{host}}/api/v1/ocp-clusters/ocp-cluster-test1
+Authorization: Bearer {{access_token_admin}}
+HTTP 200
+[Asserts]
+jsonpath "$.name" == "ocp-cluster-test1"
+jsonpath "$.annotations.virt" == "no"
+jsonpath "$.valid" == true
+
+PUT {{host}}/api/v1/ocp-clusters/ocp-cluster-test1/disable
+Authorization: Bearer {{access_token_admin}}
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "OCP cluster is disabled"
+
+GET {{host}}/api/v1/ocp-clusters/ocp-cluster-test1
+Authorization: Bearer {{access_token_admin}}
+HTTP 200
+[Asserts]
+jsonpath "$.name" == "ocp-cluster-test1"
+jsonpath "$.annotations.virt" == "no"
+jsonpath "$.valid" == false
+
+DELETE {{host}}/api/v1/ocp-clusters/ocp-cluster-test1
+Authorization: Bearer {{access_token_admin}}
+[Options]
+retry: 2
+HTTP 404
+
+#################################################################################
 # Ensure the placement is deleted before starting
 #################################################################################
 
