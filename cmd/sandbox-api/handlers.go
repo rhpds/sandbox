@@ -126,11 +126,13 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			)
 			if err != nil {
 				// Cleanup previous accouts
-				for _, account := range tocleanup {
-					if err := account.Delete(); err != nil {
-						log.Logger.Error("Error deleting account", "error", err)
+				go func() {
+					for _, account := range tocleanup {
+						if err := account.Delete(); err != nil {
+							log.Logger.Error("Error deleting account", "error", err)
+						}
 					}
-				}
+				}()
 				if err == models.ErrNoEnoughAccountsAvailable {
 					w.WriteHeader(http.StatusInsufficientStorage)
 					render.Render(w, r, &v1.Error{
@@ -163,6 +165,14 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				placementRequest.Annotations.Merge(request.Annotations),
 			)
 			if err != nil {
+				// Cleanup previous accounts
+				go func() {
+					for _, account := range tocleanup {
+						if err := account.Delete(); err != nil {
+							log.Logger.Error("Error deleting account", "error", err)
+						}
+					}
+				}()
 				if strings.Contains(err.Error(), "already exists") {
 					w.WriteHeader(http.StatusConflict)
 					render.Render(w, r, &v1.Error{

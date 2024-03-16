@@ -146,7 +146,7 @@ Authorization: Bearer {{access_token}}
     {
       "kind": "OcpSandbox",
       "cloud_selector": {
-        "cannot": "find"
+        "cannot": "schedule"
       }
     }
   ],
@@ -234,6 +234,50 @@ Authorization: Bearer {{access_token}}
 [Options]
 retry: 40
 HTTP 404
+
+#################################################################################
+# Create a failed placement with a multiple Ocp and make sure cleanup works
+#################################################################################
+
+POST {{host}}/api/v1/placements
+Authorization: Bearer {{access_token}}
+{
+  "service_uuid": "{{uuid}}",
+  "resources": [
+    {
+      "kind": "OcpSandbox"
+    },
+    {
+      "kind": "OcpSandbox"
+    },
+    {
+      "kind": "OcpSandbox",
+      "cloud_selector": {
+         "cannot": "schedule"
+      }
+    }
+  ],
+  "annotations": {
+    "guid": "testg-1",
+    "env_type": "ocp4-cluster-blablablabla"
+  }
+}
+HTTP 404
+[Asserts]
+jsonpath "$.message" == "No OCP cluster found"
+
+#################################################################################
+# Ensure there is no OcpAccount matching uuid
+#################################################################################
+GET {{host}}/api/v1/accounts/OcpSandbox
+Authorization: Bearer {{access_token}}
+[QueryStringParams]
+service_uuid: {{uuid}}
+[Options]
+retry: 40
+HTTP 404
+[Asserts]
+jsonpath "$" count == 0
 
 #################################################################################
 # Create a new placement
