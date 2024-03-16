@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -527,10 +528,47 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		return OcpAccountWithCreds{}, err
 	}
 
+	// Determine guid, auto increment the guid if there are multiple resources
+	// for a serviceUuid
+	guid := annotations["guid"]
+	increment := 0
+
+	for {
+		if increment > 100 {
+			// something clearly went wrong, shouldn't never happen, but be defensive
+			return OcpAccountWithCreds{}, errors.New("Too many iterations guessing guid")
+		}
+
+		if increment > 0 {
+			guid = annotations["guid"] + "-" + fmt.Sprintf("%v", increment+1)
+		}
+		// If a sandbox already has the same name for that serviceuuid, increment
+		// If so, increment the guid and try again
+		candidateName := guid + "-" + serviceUuid
+
+		err := a.DbPool.QueryRow(
+			context.Background(),
+			`SELECT count(*) FROM resources
+			WHERE resource_name = $1
+			AND resource_type = 'OcpAccount'`,
+			candidateName,
+		).Scan(&rowcount)
+
+		if err != nil {
+			log.Logger.Error("Error checking resources names", "error", err)
+			return OcpAccountWithCreds{}, err
+		}
+
+		if rowcount == 0 {
+			break
+		}
+		increment++
+	}
+
 	// Return the Placement with a status 'initializing'
 	rnew := OcpAccountWithCreds{
 		OcpAccount: OcpAccount{
-			Name:        "sandbox-" + annotations["guid"],
+			Name:        guid + "-" + serviceUuid,
 			Kind:        "OcpAccount",
 			Annotations: annotations,
 			ServiceUuid: serviceUuid,
@@ -657,9 +695,9 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 			return
 		}
 
-		serviceAccountName := "sandbox-" + annotations["guid"] + "-" + serviceUuid
+		serviceAccountName := "sandbox-" + rnew.Name
 		serviceAccountName = serviceAccountName[:min(63, len(serviceAccountName))] // truncate to 63
-		namespaceName := "sandbox-" + annotations["guid"] + "-" + serviceUuid
+		namespaceName := "sandbox-" + rnew.Name
 		namespaceName = namespaceName[:min(63, len(namespaceName))] // truncate to 63
 
 		delay := time.Second
@@ -771,7 +809,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 		r := OcpAccountWithCreds{
 			OcpAccount: OcpAccount{
-				Name:           "sandbox-" + annotations["guid"],
+				Name:           rnew.Name,
 				Kind:           "OcpAccount",
 				OcpClusterName: selectedCluster,
 				OCPApiUrl:      selectedApiUrl,
@@ -904,9 +942,9 @@ func (account *OcpAccountWithCreds) Delete() error {
 		return err
 	}
 	// Define the Service Account name
-	namespaceName := "sandbox-" + account.Annotations["guid"] + "-" + account.ServiceUuid
+	namespaceName := "sandbox-" + account.Name
 	namespaceName = namespaceName[:min(63, len(namespaceName))] // truncate to 63
-	serviceAccountName := "sandbox-" + account.Annotations["guid"] + "-" + account.ServiceUuid
+	serviceAccountName := "sandbox-" + account.Name
 	serviceAccountName = serviceAccountName[:min(63, len(serviceAccountName))] // truncate to 63
 
 	// Check if the namespace exists
@@ -949,7 +987,7 @@ func (p *OcpAccountProvider) FetchByName(name string) (OcpAccount, error) {
 		`SELECT
 		 resource_data, id, resource_name, resource_type,
 		 created_at, updated_at, status, cleanup_count
-		 FROM resources WHERE resource_name = $1`,
+		 FROM resources WHERE resource_name = $1 and resource_type = 'OcpAccount'`,
 		name,
 	)
 
