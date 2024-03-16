@@ -381,6 +381,17 @@ func (a *OcpAccountWithCreds) SetStatus(status string) error {
 	return err
 }
 
+func (a *OcpAccountWithCreds) GetStatus() (string, error) {
+	var status string
+	err := a.Provider.DbPool.QueryRow(
+		context.Background(),
+		"SELECT status FROM resources WHERE id = $1",
+		a.ID,
+	).Scan(&status)
+
+	return status, err
+}
+
 func (a *OcpAccountWithCreds) IncrementCleanupCount() error {
 	a.CleanupCount = a.CleanupCount + 1
 	_, err := a.Provider.DbPool.Exec(
@@ -901,10 +912,57 @@ func (a *OcpAccountProvider) FetchAll() ([]OcpAccount, error) {
 }
 
 func (account *OcpAccountWithCreds) Delete() error {
-	account.SetStatus("deleting")
-	account.IncrementCleanupCount()
 	var api_url string
 	var kubeconfig string
+
+	if account.ID == 0 {
+		return errors.New("resource ID must be > 0")
+	}
+
+	// Wait for the status of the resource until it's in final state
+	maxRetries := 10
+	for {
+		status, err := account.GetStatus()
+		if err != nil {
+			log.Logger.Error("cannot get status of resource", "error", err, "name", account.Name)
+			break
+		}
+		if maxRetries == 0 {
+			log.Logger.Error("Resource is not in a final state", "name", account.Name, status)
+			return errors.New("Resource is not in a final state, cannot delete")
+		}
+
+		if status == "success" || status == "error" {
+			break
+		}
+
+		time.Sleep(5 * time.Second)
+		maxRetries--
+	}
+
+	if account.OcpClusterName == "" {
+		// Get the OCP cluster name from the resources.resource_data column using ID
+		err := account.Provider.DbPool.QueryRow(
+			context.Background(),
+			"SELECT resource_data->>'ocp_cluster' FROM resources WHERE id = $1",
+			account.ID,
+		).Scan(&account.OcpClusterName)
+
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				log.Logger.Error("Ocp cluster doesn't exist for resource", "name", account.Name)
+				account.SetStatus("error")
+				return errors.New("Ocp cluster doesn't exist for resource")
+			}
+
+			log.Logger.Error("Ocp cluster query error", "err", err)
+			account.SetStatus("error")
+			return err
+		}
+	}
+
+	account.SetStatus("deleting")
+	account.IncrementCleanupCount()
 
 	// Get the OCP provider from the resources.resource_data column
 
@@ -917,11 +975,11 @@ func (account *OcpAccountWithCreds) Delete() error {
 
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			log.Logger.Error("Ocp provider doesn't exist", "provider", account.OcpClusterName, "name", account.Name)
+			log.Logger.Error("Ocp cluster doesn't exist for resource", "cluster", account.OcpClusterName, "name", account.Name)
 			account.SetStatus("error")
-			return errors.New("Ocp provider doesn't exist for resource")
+			return errors.New("Ocp cluster doesn't exist for resource")
 		} else {
-			log.Logger.Error("Ocp provider query error", "err", err)
+			log.Logger.Error("Ocp cluster query error", "err", err)
 			account.SetStatus("error")
 			return err
 		}
