@@ -159,6 +159,81 @@ HTTP 404
 [Asserts]
 jsonpath "$.message" == "No OCP cluster found"
 
+#################################################################################
+# Create a new placement with a multiple Ocp
+#################################################################################
+
+POST {{host}}/api/v1/placements
+Authorization: Bearer {{access_token}}
+{
+  "service_uuid": "{{uuid}}",
+  "resources": [
+    {
+      "kind": "OcpSandbox",
+      "cloud_selector": {
+        "purpose": "dev"
+      }
+    },
+    {
+      "kind": "OcpSandbox",
+      "cloud_selector": {
+        "purpose": "dev"
+      }
+    },
+    {
+      "kind": "OcpSandbox",
+      "cloud_selector": {
+        "purpose": "dev"
+      }
+    }
+  ],
+  "annotations": {
+    "guid": "testg-1",
+    "env_type": "ocp4-cluster-blablablabla"
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "Placement Created"
+jsonpath "$.Placement.service_uuid" == "{{uuid}}"
+jsonpath "$.Placement.resources" count == 3
+jsonpath "$.Placement.resources[0].status" == "initializing"
+
+#################################################################################
+# Wait until the placement is succesfull and resources are ready
+#################################################################################
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 40
+HTTP 200
+[Asserts]
+jsonpath "$.service_uuid" == "{{uuid}}"
+jsonpath "$.resources" count == 3
+jsonpath "$.resources[0].status" == "success"
+jsonpath "$.resources[0].credentials" count >= 1
+jsonpath "$.resources[0].credentials[0].kind" == "ServiceAccount"
+jsonpath "$.resources[0].credentials[0].token" isString
+jsonpath "$.resources[1].status" == "success"
+jsonpath "$.resources[1].credentials" count >= 1
+jsonpath "$.resources[1].credentials[0].kind" == "ServiceAccount"
+jsonpath "$.resources[1].credentials[0].token" isString
+jsonpath "$.resources[2].status" == "success"
+jsonpath "$.resources[2].credentials" count >= 1
+jsonpath "$.resources[2].credentials[0].kind" == "ServiceAccount"
+jsonpath "$.resources[2].credentials[0].token" isString
+
+
+#################################################################################
+# Delete placement
+#################################################################################
+
+DELETE {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 40
+HTTP 404
 
 #################################################################################
 # Create a new placement
