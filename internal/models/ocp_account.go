@@ -667,6 +667,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 			if minOcpMemoryUsage == 0 || memoryUsage < minOcpMemoryUsage {
 				selectedCluster = name
 				selectedApiUrl = api_url
+        minOcpMemoryUsage = memoryUsage
 			}
 			log.Logger.Info("Cluster Usage",
 				"CPU Usage (Requests)", cpuUsage,
