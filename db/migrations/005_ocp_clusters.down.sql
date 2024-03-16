@@ -3,6 +3,9 @@ BEGIN;
 DROP TRIGGER IF EXISTS ocp_clusters_updated_at ON ocp_clusters;
 DROP TABLE IF EXISTS ocp_clusters;
 
+DROP TRIGGER IF EXISTS resource_delete ON resources;
+DROP FUNCTION IF EXISTS resource_del;
+
 ALTER TABLE resources ALTER COLUMN resource_type TYPE VARCHAR(32) USING resource_type::VARCHAR(32);
 ALTER TABLE resources DROP COLUMN IF EXISTS resource_data;
 ALTER TABLE resources DROP COLUMN IF EXISTS resource_credentials;

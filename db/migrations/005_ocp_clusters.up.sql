@@ -65,5 +65,21 @@ ALTER TABLE resources ADD CONSTRAINT resources_placement_id_fkey FOREIGN KEY (pl
 -- Deletion
 -- Add a column 'cleanup_count' to the resources table
 ALTER TABLE resources ADD COLUMN cleanup_count INT DEFAULT 0 NOT NULL;
+--
+-- Function to add logs when resources are deleted
+CREATE FUNCTION resource_del()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Add log entry to resources_events
+    INSERT INTO resources_events (resource_name, resource_type, service_uuid, event_type)
+    VALUES (OLD.resource_name, OLD.resource_type, OLD.service_uuid, 'resource_deleted');
+
+    RETURN OLD;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER resource_delete BEFORE DELETE ON resources
+FOR EACH ROW
+EXECUTE FUNCTION resource_del();
 
 COMMIT;

@@ -392,6 +392,16 @@ func (a *OcpAccountWithCreds) GetStatus() (string, error) {
 	return status, err
 }
 
+func (a *OcpAccountWithCreds) MarkForCleanup() error {
+	_, err := a.Provider.DbPool.Exec(
+		context.Background(),
+		"UPDATE resources SET to_cleanup = true WHERE id = $1",
+		a.ID,
+	)
+
+	return err
+}
+
 func (a *OcpAccountWithCreds) IncrementCleanupCount() error {
 	a.CleanupCount = a.CleanupCount + 1
 	_, err := a.Provider.DbPool.Exec(
@@ -535,7 +545,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 	)
 
 	if err != nil {
-		log.Logger.Error("Error querying ocp providers", "error", err)
+		log.Logger.Error("Error querying ocp clusters", "error", err)
 		return OcpAccountWithCreds{}, err
 	}
 
@@ -604,7 +614,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		for rows.Next() {
 			rnew.SetStatus("scheduling")
 			if err := rows.Scan(&name, &api_url, &kubeconfig); err != nil {
-				log.Logger.Error("Error scanning ocp providers", "error", err)
+				log.Logger.Error("Error scanning ocp clusters", "error", err)
 				rnew.SetStatus("error")
 				continue providerLoop
 			}
@@ -963,9 +973,11 @@ func (account *OcpAccountWithCreds) Delete() error {
 	}
 
 	account.SetStatus("deleting")
+	// In case anything goes wrong, we'll know it can safely be deleted
+	account.MarkForCleanup()
 	account.IncrementCleanupCount()
 
-	// Get the OCP provider from the resources.resource_data column
+	// Get the OCP cluster from the resources.resource_data column
 
 	err := account.Provider.DbPool.QueryRow(
 		context.Background(),
