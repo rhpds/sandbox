@@ -280,9 +280,8 @@ type OcpAccount struct {
 type OcpAccountWithCreds struct {
 	OcpAccount
 
-	Credentials []any `json:"credentials"`
-	// TODO: move to OcpAccount
-	Provider *OcpAccountProvider `json:"-"`
+	Credentials []any               `json:"credentials"`
+	Provider    *OcpAccountProvider `json:"-"`
 }
 
 // Credential for service account
@@ -677,7 +676,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 			if minOcpMemoryUsage == 0 || memoryUsage < minOcpMemoryUsage {
 				selectedCluster = name
 				selectedApiUrl = api_url
-        minOcpMemoryUsage = memoryUsage
+				minOcpMemoryUsage = memoryUsage
 			}
 			log.Logger.Info("Cluster Usage",
 				"CPU Usage (Requests)", cpuUsage,
