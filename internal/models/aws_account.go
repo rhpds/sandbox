@@ -337,7 +337,6 @@ func MakeStatus(job *LifecycleResourceJob) Status {
 	}
 	status.AccountName = job.ResourceName
 	status.UpdatedAt = job.UpdatedAt
-	// TODO: convert to CamelCase
 	status.Status = job.Status
 
 	return status

@@ -106,7 +106,7 @@ jsonpath "$.message" == "Kind AwsSandbox is defined more than once"
 # Ensure reservation expiring in the past is a bad request
 #################################################################################
 
-#TODO: uncomment
+# TODO: uncomment when ready
 # POST {{host}}/api/v1/reservations
 # Authorization: Bearer {{access_token_admin}}
 # {
