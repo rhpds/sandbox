@@ -504,14 +504,55 @@ func (a *OcpAccountProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 
 var ErrNoSchedule error = errors.New("No OCP cluster found")
 
+func (a *OcpAccountProvider) GetSchedulableClusters(cloud_selector map[string]string) (OcpClusters, error) {
+	clusters := OcpClusters{}
+	// Get resource from 'ocp_clusters' table
+	rows, err := a.DbPool.Query(
+		context.Background(),
+		`SELECT
+		 id, name, api_url, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid
+		 FROM ocp_clusters WHERE annotations @> $2 and valid=true`,
+		a.VaultSecret, cloud_selector,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			log.Logger.Info("No cluster found", "cloud_selector", cloud_selector)
+			return OcpClusters{}, ErrNoSchedule
+		}
+
+		log.Logger.Error("Error querying ocp clusters", "error", err)
+		return OcpClusters{}, err
+	}
+
+	for rows.Next() {
+		var cluster OcpCluster
+
+		if err := rows.Scan(
+			&cluster.ID,
+			&cluster.Name,
+			&cluster.ApiUrl,
+			&cluster.Kubeconfig,
+			&cluster.CreatedAt,
+			&cluster.UpdatedAt,
+			&cluster.Annotations,
+			&cluster.Valid,
+		); err != nil {
+			return OcpClusters{}, err
+		}
+
+		cluster.DbPool = a.DbPool
+		cluster.VaultSecret = a.VaultSecret
+		clusters = append(clusters, cluster)
+	}
+
+	return clusters, nil
+}
+
 func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string) (OcpAccountWithCreds, error) {
-	var name string
-	var api_url string
-	var kubeconfig string
 	var rowcount int
 	var minOcpMemoryUsage float64
-	var selectedCluster string
-	var selectedApiUrl string
+	var selectedCluster OcpCluster
 
 	// Ensure annotation has guid
 	if _, exists := annotations["guid"]; !exists {
@@ -545,6 +586,13 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 
 	if err != nil {
 		log.Logger.Error("Error querying ocp clusters", "error", err)
+		return OcpAccountWithCreds{}, err
+	}
+
+	// Version with OcpCluster methods
+	candidateClusters, err := a.GetSchedulableClusters(cloud_selector)
+	if err != nil {
+		log.Logger.Error("Error getting schedulable clusters", "error", err)
 		return OcpAccountWithCreds{}, err
 	}
 
@@ -610,19 +658,14 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 	go func() {
 		defer rows.Close()
 	providerLoop:
-		for rows.Next() {
+		for _, cluster := range candidateClusters {
 			rnew.SetStatus("scheduling")
-			if err := rows.Scan(&name, &api_url, &kubeconfig); err != nil {
-				log.Logger.Error("Error scanning ocp clusters", "error", err)
-				rnew.SetStatus("error")
-				continue providerLoop
-			}
 
 			log.Logger.Info("Cluster",
-				"name", name,
-				"api_url", api_url)
+				"name", cluster.Name,
+				"ApiUrl", cluster.ApiUrl)
 
-			config, err := clientcmd.RESTConfigFromKubeConfig([]byte(kubeconfig))
+			config, err := clientcmd.RESTConfigFromKubeConfig([]byte(cluster.Kubeconfig))
 			if err != nil {
 				log.Logger.Error("Error creating OCP config", "error", err)
 				rnew.SetStatus("error")
@@ -674,26 +717,20 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 			cpuUsage := (float64(totalRequestedCpu) / float64(totalAllocatableCpu)) * 100
 			memoryUsage := (float64(totalRequestedMemory) / float64(totalAllocatableMemory)) * 100
 			if minOcpMemoryUsage == 0 || memoryUsage < minOcpMemoryUsage {
-				selectedCluster = name
-				selectedApiUrl = api_url
+				selectedCluster = cluster
 				minOcpMemoryUsage = memoryUsage
 			}
 			log.Logger.Info("Cluster Usage",
 				"CPU Usage (Requests)", cpuUsage,
 				"Memory Usage (Requests)", memoryUsage)
 		}
-		log.Logger.Info("selectedCluster", "cluster", selectedCluster)
+		log.Logger.Info("selectedCluster", "cluster", selectedCluster.Name)
 
-		if selectedCluster == "" {
+		if selectedCluster.Name == "" {
 			log.Logger.Error("Error electing cluster", "name", rnew.Name)
 			rnew.SetStatus("error")
 			return
 		}
-		err = a.DbPool.QueryRow(
-			context.Background(),
-			"SELECT pgp_sym_decrypt(kubeconfig::bytea, $1) FROM ocp_clusters WHERE name = $2",
-			a.VaultSecret, selectedCluster,
-		).Scan(&kubeconfig)
 
 		if err != nil {
 			log.Logger.Error("Error decrypting kubeconfig", "error", err)
@@ -701,7 +738,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 			return
 		}
 
-		config, err := clientcmd.RESTConfigFromKubeConfig([]byte(kubeconfig))
+		config, err := clientcmd.RESTConfigFromKubeConfig([]byte(selectedCluster.Kubeconfig))
 		if err != nil {
 			log.Logger.Error("Error creating OCP config", "error", err)
 			rnew.SetStatus("error")
@@ -832,8 +869,8 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 			OcpAccount: OcpAccount{
 				Name:           rnew.Name,
 				Kind:           "OcpAccount",
-				OcpClusterName: selectedCluster,
-				OCPApiUrl:      selectedApiUrl,
+				OcpClusterName: selectedCluster.Name,
+				OCPApiUrl:      selectedCluster.ApiUrl,
 				Annotations:    annotations,
 				ServiceUuid:    serviceUuid,
 				Status:         "success",
