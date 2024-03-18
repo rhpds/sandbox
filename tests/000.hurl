@@ -99,7 +99,7 @@ jsonpath "$.message" == "stop request created"
 GET {{host}}/api/v1/requests/{{r_stop}}/status
 Authorization: Bearer {{access_token}}
 [Options]
-retry: 50
+retry: 60
 HTTP 200
 [Asserts]
 jsonpath "$.status" == "success"
