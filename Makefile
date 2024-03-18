@@ -9,7 +9,7 @@ VERSION ?= $(shell git describe --tags 2>/dev/null | cut -c 2-)
 COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null)
 DATE ?= $(shell date -u)
 
-build: sandbox-list sandbox-metrics sandbox-api sandbox-issue-jwt sandbox-dynamodb-rotate-vault
+build: sandbox-list sandbox-metrics sandbox-api sandbox-issue-jwt sandbox-rotate-vault
 
 test:
 	@echo "Running tests..."
@@ -63,8 +63,8 @@ sandbox-issue-jwt:
 sandbox-replicate:
 	CGO_ENABLED=0 go build -o build/sandbox-replicate ./cmd/sandbox-replicate
 
-sandbox-dynamodb-rotate-vault:
-	CGO_ENABLED=0 go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" -o build/sandbox-dynamodb-rotate-vault ./cmd/sandbox-dynamodb-rotate-vault
+sandbox-rotate-vault:
+	CGO_ENABLED=0 go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" -o build/sandbox-rotate-vault ./cmd/sandbox-rotate-vault
 
 
 push-lambda: deploy/lambda/sandbox-replicate.zip
@@ -73,7 +73,7 @@ push-lambda: deploy/lambda/sandbox-replicate.zip
 fmt:
 	@go fmt ./...
 
-.PHONY: sandbox-api sandbox-issue-jwt sandbox-list sandbox-metrics sandbox-dynamodb-rotate-vault run-api sandbox-replicate migrate fixtures test run-local-pg push-lambda clean fmt
+.PHONY: sandbox-api sandbox-issue-jwt sandbox-list sandbox-metrics sandbox-rotate-vault run-api sandbox-replicate migrate fixtures test run-local-pg push-lambda clean fmt
 
 clean: rm-local-pg
 	rm -f build/sandbox-*
