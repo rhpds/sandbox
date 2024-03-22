@@ -140,6 +140,14 @@ func main() {
 	}
 	if _, err = dbPool.Exec(
 		context.Background(),
+		"UPDATE ocp_clusters SET egressconfig = pgp_sym_encrypt( pgp_sym_decrypt(egressconfig::bytea, $1), $2)",
+		old, new); err != nil {
+
+		log.Logger.Error("Error updating egressconfig", "error", err)
+		os.Exit(1)
+	}
+	if _, err = dbPool.Exec(
+		context.Background(),
 		"UPDATE resources SET resource_credentials = pgp_sym_encrypt( pgp_sym_decrypt(resource_credentials::bytea, $1), $2)",
 		old, new); err != nil {
 

@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/rhpds/sandbox/internal/log"
+  netbox "github.com/rhpds/sandbox/internal/netbox"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	//	"k8s.io/client-go/rest"
@@ -27,16 +28,17 @@ type OcpAccountProvider struct {
 }
 
 type OcpCluster struct {
-	ID          int               `json:"id"`
-	Name        string            `json:"name"`
-	ApiUrl      string            `json:"api_url"`
-	Kubeconfig  string            `json:"kubeconfig"`
-	CreatedAt   time.Time         `json:"created_at"`
-	UpdatedAt   time.Time         `json:"updated_at"`
-	Annotations map[string]string `json:"annotations"`
-	Valid       bool              `json:"valid"`
-	DbPool      *pgxpool.Pool     `json:"-"`
-	VaultSecret string            `json:"-"`
+	ID           int               `json:"id"`
+	Name         string            `json:"name"`
+	ApiUrl       string            `json:"api_url"`
+	Kubeconfig   string            `json:"kubeconfig"`
+	Egressconfig map[string]string `json:"egressconfig"`
+	CreatedAt    time.Time         `json:"created_at"`
+	UpdatedAt    time.Time         `json:"updated_at"`
+	Annotations  map[string]string `json:"annotations"`
+	Valid        bool              `json:"valid"`
+	DbPool       *pgxpool.Pool     `json:"-"`
+	VaultSecret  string            `json:"-"`
 }
 
 type OcpClusters []OcpCluster
@@ -88,9 +90,9 @@ func (p *OcpCluster) Save() error {
 	if err := p.DbPool.QueryRow(
 		context.Background(),
 		`INSERT INTO ocp_clusters
-			(name, api_url, kubeconfig, annotations, valid)
-			VALUES ($1, $2, pgp_sym_encrypt($3::text, $4), $5, $6) RETURNING id`,
-		p.Name, p.ApiUrl, p.Kubeconfig, p.VaultSecret, p.Annotations, p.Valid,
+			(name, api_url, kubeconfig, egressconfig, annotations, valid)
+			VALUES ($1, $2, pgp_sym_encrypt($3::text, $4), pgp_sym_encrypt($5::text, $4), $6, $7) RETURNING id`,
+		p.Name, p.ApiUrl, p.Kubeconfig, p.VaultSecret, p.Egressconfig, p.Annotations, p.Valid,
 	).Scan(&p.ID); err != nil {
 		return err
 	}
@@ -109,10 +111,11 @@ func (p *OcpCluster) Update() error {
 		 SET name = $1,
 			 api_url = $2,
 			 kubeconfig = pgp_sym_encrypt($3::text, $4),
-			 annotations = $5,
-			 valid = $6
-		 WHERE id = $7`,
-		p.Name, p.ApiUrl, p.Kubeconfig, p.VaultSecret, p.Annotations, p.Valid, p.ID,
+       egressconfig = pgp_sym_encrypt($5::text, $4),
+			 annotations = $6,
+			 valid = $7
+		 WHERE id = $8`,
+		p.Name, p.ApiUrl, p.Kubeconfig, p.VaultSecret, p.Egressconfig, p.Annotations, p.Valid, p.ID,
 	); err != nil {
 		return err
 	}
@@ -153,7 +156,7 @@ func (p *OcpAccountProvider) GetOcpClusterByName(name string) (OcpCluster, error
 	row := p.DbPool.QueryRow(
 		context.Background(),
 		`SELECT
-		 id, name, api_url, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid
+		 id, name, api_url, pgp_sym_decrypt(kubeconfig::bytea, $1), pgp_sym_decrypt(egressconfig::bytea, $1)::jsonb, created_at, updated_at, annotations, valid
 		 FROM ocp_clusters WHERE name = $2`,
 		p.VaultSecret, name,
 	)
@@ -164,6 +167,7 @@ func (p *OcpAccountProvider) GetOcpClusterByName(name string) (OcpCluster, error
 		&cluster.Name,
 		&cluster.ApiUrl,
 		&cluster.Kubeconfig,
+		&cluster.Egressconfig,
 		&cluster.CreatedAt,
 		&cluster.UpdatedAt,
 		&cluster.Annotations,
@@ -184,7 +188,7 @@ func (p *OcpAccountProvider) GetOcpClusters() (OcpClusters, error) {
 	rows, err := p.DbPool.Query(
 		context.Background(),
 		`SELECT
-		 id, name, api_url, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid
+		 id, name, api_url, pgp_sym_decrypt(kubeconfig::bytea, $1), pgp_sym_decrypt(egressconfig::bytea, $1)::jsonb, created_at, updated_at, annotations, valid
 		 FROM ocp_clusters`,
 		p.VaultSecret,
 	)
@@ -204,6 +208,7 @@ func (p *OcpAccountProvider) GetOcpClusters() (OcpClusters, error) {
 			&cluster.Name,
 			&cluster.ApiUrl,
 			&cluster.Kubeconfig,
+			&cluster.Egressconfig,
 			&cluster.CreatedAt,
 			&cluster.UpdatedAt,
 			&cluster.Annotations,
@@ -227,7 +232,7 @@ func (p *OcpAccountProvider) GetOcpClusterByAnnotations(annotations map[string]s
 	rows, err := p.DbPool.Query(
 		context.Background(),
 		`SELECT
-		 id, name, api_url, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid
+		 id, name, api_url, pgp_sym_decrypt(kubeconfig::bytea, $1), pgp_sym_decrypt(egressconfig::bytea, $1)::jsonb, created_at, updated_at, annotations, valid
 		 FROM ocp_clusters WHERE annotations @> $2`,
 		p.VaultSecret, annotations,
 	)
@@ -247,6 +252,7 @@ func (p *OcpAccountProvider) GetOcpClusterByAnnotations(annotations map[string]s
 			&cluster.Name,
 			&cluster.ApiUrl,
 			&cluster.Kubeconfig,
+			&cluster.Egressconfig,
 			&cluster.CreatedAt,
 			&cluster.UpdatedAt,
 			&cluster.Annotations,
@@ -499,6 +505,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 	var name string
 	var api_url string
 	var kubeconfig string
+	var egressconfig map[string]string
 	var rowcount int
 	var minOcpMemoryUsage float64
 	var selectedCluster string
@@ -682,15 +689,25 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 		err = a.DbPool.QueryRow(
 			context.Background(),
-			"SELECT pgp_sym_decrypt(kubeconfig::bytea, $1) FROM ocp_clusters WHERE name = $2",
+			"SELECT pgp_sym_decrypt(kubeconfig::bytea, $1),pgp_sym_decrypt(egressconfig::bytea, $1)::jsonb FROM ocp_clusters WHERE name = $2",
 			a.VaultSecret, selectedCluster,
-		).Scan(&kubeconfig)
-
+		).Scan(&kubeconfig,&egressconfig)
 		if err != nil {
-			log.Logger.Error("Error decrypting kubeconfig", "error", err)
+			log.Logger.Error("Error decrypting kubeconfig or egressconfig", "error", err)
 			rnew.SetStatus("error")
 			return
 		}
+
+		log.Logger.Info("selectedCluster", "egressconfig", egressconfig)
+    if egressconfig != nil {
+      egressip,err := netbox.RequestIP(egressconfig["api_url"],egressconfig["token"],rnew.Name)
+      log.Logger.Info("selectedCluster", "egressip", egressip)
+      if err != nil {
+        log.Logger.Error("Error creating Egressip", "error", err)
+        rnew.SetStatus("error")
+        return
+      }
+    }
 
 		config, err := clientcmd.RESTConfigFromKubeConfig([]byte(kubeconfig))
 		if err != nil {

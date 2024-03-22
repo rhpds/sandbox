@@ -1360,6 +1360,9 @@ paths:
                 virt: available
                 cloud: ibm
                 purpose: dev
+              egressconfig:
+                api_url: https://netbox.example.com
+                token: <TOKEN>
       responses:
         '201':
           description: OcpCluster created
@@ -2028,6 +2031,7 @@ components:
         - name
         - api_url
         - kubeconfig
+        - egressconfig
         - annotations
       properties:
         name:
@@ -2065,6 +2069,8 @@ components:
                 token: <TOKEN>
         annotations:
           $ref: "#/components/schemas/Annotations"
+        egressconfig:
+          $ref: "#/components/schemas/Annotations"
       example:
         name: ocp-cluster-1
         api_url: https://api.ocp-cluster-1.com:6443
@@ -2090,6 +2096,10 @@ components:
           virt: available
           cloud: ibm
           purpose: dev
+        egressconfig:
+          api_url: https://netbox.example.com
+          token: <TOKEN>
+
     OcpClusters:
       description: The list of OcpClusters
       type: array

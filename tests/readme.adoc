@@ -55,6 +55,11 @@ Either you're using the DEV database,  or you'll have to setup the OCP cluster i
       "purpose":"dev"
     },
   "kubeconfig": "..."
+  "egressconfig":
+    {
+      api_url: "http://netbox.example.com",
+      token: ""
+    }
 }
 ----
 

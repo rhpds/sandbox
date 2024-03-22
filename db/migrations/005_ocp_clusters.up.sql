@@ -9,6 +9,7 @@ CREATE TABLE ocp_clusters (
     name VARCHAR(255) NOT NULL UNIQUE,
     api_url VARCHAR(255) NOT NULL, -- OCP Api URL
     kubeconfig BYTEA NOT NULL, -- kubeconfig content encrypted with pgp_sym_encrypt
+    egressconfig BYTEA DEFAULT NULL, -- egress json with API access to netbox
     created_at TIMESTAMP with time zone NOT NULL DEFAULT (now() at time zone 'utc'),
     updated_at TIMESTAMP with time zone NOT NULL DEFAULT (now() at time zone 'utc'),
     annotations JSONB DEFAULT '{}'::jsonb NOT NULL,
