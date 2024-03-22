@@ -14,6 +14,16 @@
 - debug:
     var: _getaccount
 
+- when: sandbox_reservation | default("", true) not in ["", "None", "null"]
+  set_fact:
+    additional_data:
+      reservation:
+        S: "{{ sandbox_reservation }}"
+
+- when: sandbox_reservation | default("", true) in ["", "None", "null"]
+  set_fact:
+    additional_data: {}
+
 - name: Create account in DB if it doesn't exist
   vars:
     _data:
@@ -35,7 +45,7 @@
     {{ aws_cli }} --profile {{ dynamodb_profile }} --region {{ dynamodb_region }}
     dynamodb put-item
     --table-name {{ dynamodb_table }}
-    --item '{{ _data | to_json }}'
+    --item '{{ _data | combine(additional_data | default({}), recursive=True) | to_json }}'
   register: _putaccount
   when: _getaccount.stdout == '' or force_create
 
