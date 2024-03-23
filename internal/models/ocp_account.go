@@ -15,6 +15,7 @@ import (
 	"github.com/rhpds/sandbox/internal/log"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+
 	//	"k8s.io/client-go/rest"
 	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -764,6 +765,10 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 			_, err = clientset.CoreV1().Namespaces().Create(context.TODO(), &v1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: namespaceName,
+					Labels: map[string]string{
+						"mutatepods.kubemacpool.io":            "ignore",
+						"mutatevirtualmachines.kubemacpool.io": "ignore",
+					},
 				},
 			}, metav1.CreateOptions{})
 
@@ -815,13 +820,99 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 				{
 					Kind:      "ServiceAccount",
 					Name:      serviceAccountName,
-					Namespace: serviceAccountName,
+					Namespace: namespaceName,
 				},
 			},
 		}, metav1.CreateOptions{})
 
 		if err != nil {
 			log.Logger.Error("Error creating OCP RoleBind", "error", err)
+			if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+				log.Logger.Error("Error cleaning up the namespace", "error", err)
+			}
+			rnew.SetStatus("error")
+			return
+		}
+
+		// Create RoleBind for the Service Account in the Namespace for kubevirt
+		_, err = clientset.RbacV1().RoleBindings(serviceAccountName).Create(context.TODO(), &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "kubevirt-" + serviceAccountName[:min(53, len(serviceAccountName))],
+			},
+			RoleRef: rbacv1.RoleRef{
+				APIGroup: rbacv1.GroupName,
+				Kind:     "ClusterRole",
+				Name:     "kubevirt.io:admin",
+			},
+			Subjects: []rbacv1.Subject{
+				{
+					Kind:      "ServiceAccount",
+					Name:      serviceAccountName,
+					Namespace: namespaceName,
+				},
+			},
+		}, metav1.CreateOptions{})
+
+		if err != nil {
+			log.Logger.Error("Error creating OCP RoleBind", "error", err)
+			if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+				log.Logger.Error("Error cleaning up the namespace", "error", err)
+			}
+			rnew.SetStatus("error")
+			return
+		}
+
+		// Create RoleBind for the Service Account in the Namespace for NetworkAttachDefinition
+		_, err = clientset.RbacV1().RoleBindings(serviceAccountName).Create(context.TODO(), &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "nad-" + serviceAccountName[:min(59, len(serviceAccountName))],
+			},
+			RoleRef: rbacv1.RoleRef{
+				APIGroup: rbacv1.GroupName,
+				Kind:     "ClusterRole",
+				Name:     "nad-manager",
+			},
+			Subjects: []rbacv1.Subject{
+				{
+					Kind:      "ServiceAccount",
+					Name:      serviceAccountName,
+					Namespace: namespaceName,
+				},
+			},
+		}, metav1.CreateOptions{})
+
+		if err != nil {
+			log.Logger.Error("Error creating OCP RoleBind", "error", err)
+			if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+				log.Logger.Error("Error cleaning up the namespace", "error", err)
+			}
+			rnew.SetStatus("error")
+			return
+		}
+
+		rb := &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "allow-clone-" + serviceAccountName[:min(51, len(serviceAccountName))],
+				Namespace: "cnv-images",
+			},
+			Subjects: []rbacv1.Subject{
+				{
+					Kind:      "ServiceAccount",
+					Name:      "default",
+					Namespace: namespaceName,
+				},
+			},
+			RoleRef: rbacv1.RoleRef{
+				Kind:     "ClusterRole",
+				Name:     "datavolume-cloner",
+				APIGroup: "rbac.authorization.k8s.io",
+			},
+		}
+
+		_, err = clientset.RbacV1().RoleBindings("cnv-images").Create(context.TODO(), rb, metav1.CreateOptions{})
+		if err != nil {
+			log.Logger.Error("Error creating rolebinding on cnv-images", "error", err)
+
 			if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
 				log.Logger.Error("Error cleaning up the namespace", "error", err)
 			}
@@ -975,7 +1066,7 @@ func (account *OcpAccountWithCreds) Delete() error {
 			break
 		}
 		if maxRetries == 0 {
-			log.Logger.Error("Resource is not in a final state", "name", account.Name, status)
+			log.Logger.Error("Resource is not in a final state", "name", account.Name, "status", status)
 			return errors.New("Resource is not in a final state, cannot delete")
 		}
 
