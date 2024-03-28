@@ -709,6 +709,11 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 
 		if err != nil {
 			log.Logger.Error("Error decrypting kubeconfig", "error", err)
+		rnew.OCPApiUrl = selectedCluster.ApiUrl
+		rnew.OcpClusterName = selectedCluster.Name
+
+		if err := rnew.Save(); err != nil {
+			log.Logger.Error("Error saving OCP account", "error", err)
 			rnew.SetStatus("error")
 			return
 		}
