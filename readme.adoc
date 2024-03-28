@@ -135,8 +135,10 @@ make migrate  # Run the DB migrations to setup the db schema
 
 make issue-jwt  # issue some JWT token for access
 make run-api # <1>
+air # <2>
 ----
 <1> When iterating, you will be stopping and relaunching this step
+<2> You can use link:https://github.com/cosmtrek/air[cosmtrek/air] instead. That will watch local files and rebuild + launch the API automatically if any changes are made.
 
 
 == sandbox-replicate ==
