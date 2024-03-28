@@ -1173,7 +1173,17 @@ func (account *OcpAccountWithCreds) Delete() error {
 	// Check if the namespace exists
 	_, err = clientset.CoreV1().Namespaces().Get(context.TODO(), account.Namespace, metav1.GetOptions{})
 	if err != nil {
-		// TODO: if namespace is not found, consider deletion a success
+		// if error ends with 'not found', consider deletion a success
+		if strings.Contains(err.Error(), "not found") {
+			log.Logger.Info("Namespace not found, consider deletion a success", "name", account.Name)
+			_, err = account.Provider.DbPool.Exec(
+				context.Background(),
+				"DELETE FROM resources WHERE id = $1",
+				account.ID,
+			)
+			return err
+		}
+
 		log.Logger.Error("Error getting OCP namespace", "error", err, "name", account.Name)
 		account.SetStatus("error")
 		return err
