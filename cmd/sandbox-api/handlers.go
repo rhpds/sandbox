@@ -204,7 +204,6 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				log.Logger.Error("CreatePlacementHandler", "error", err)
 				return
 			}
-			log.Logger.Info("Ocp sandbox booked", "account", account.Name, "service_uuid", placementRequest.ServiceUuid)
 			tocleanup = append(tocleanup, &account)
 			resources = append(resources, account)
 

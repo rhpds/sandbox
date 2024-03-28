@@ -276,6 +276,7 @@ type OcpAccount struct {
 	Annotations    map[string]string `json:"annotations"`
 	Status         string            `json:"status"`
 	CleanupCount   int               `json:"cleanup_count"`
+	Namespace      string            `json:"namespace"`
 }
 
 type OcpAccountWithCreds struct {
@@ -560,41 +561,15 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		return OcpAccountWithCreds{}, errors.New("guid not found in annotations")
 	}
 
-	// TODO use the OcpCluster type don't interact directly with this table from here
-	err := a.DbPool.QueryRow(
-		context.Background(),
-		`SELECT count(*) FROM ocp_clusters
-         WHERE annotations @> $1
-         and valid=true`,
-		cloud_selector,
-	).Scan(&rowcount)
-
-	if rowcount == 0 {
-		log.Logger.Error("No OCP cluster found", "cloud_selector", cloud_selector)
-		return OcpAccountWithCreds{}, ErrNoSchedule
-	}
-	if err != nil {
-		log.Logger.Error("OCP cluster query error", "err", err)
-		return OcpAccountWithCreds{}, err
-	}
-	// TODO use the OcpCluster type don't interact directly with this table from here
-	rows, err := a.DbPool.Query(
-		context.Background(),
-		`SELECT name, api_url, pgp_sym_decrypt(kubeconfig::bytea, $1)
-  		 FROM ocp_clusters WHERE annotations @> $2 and valid=true`,
-		a.VaultSecret, cloud_selector,
-	)
-
-	if err != nil {
-		log.Logger.Error("Error querying ocp clusters", "error", err)
-		return OcpAccountWithCreds{}, err
-	}
-
 	// Version with OcpCluster methods
 	candidateClusters, err := a.GetSchedulableClusters(cloud_selector)
 	if err != nil {
 		log.Logger.Error("Error getting schedulable clusters", "error", err)
 		return OcpAccountWithCreds{}, err
+	}
+	if len(candidateClusters) == 0 {
+		log.Logger.Error("No OCP cluster found", "cloud_selector", cloud_selector)
+		return OcpAccountWithCreds{}, ErrNoSchedule
 	}
 
 	// Determine guid, auto increment the guid if there are multiple resources
@@ -657,7 +632,6 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 	//--------------------------------------------------
 	// The following is async
 	go func() {
-		defer rows.Close()
 	providerLoop:
 		for _, cluster := range candidateClusters {
 			rnew.SetStatus("scheduling")
@@ -787,10 +761,17 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 				rnew.SetStatus("error")
 				return
 			}
+
+			rnew.Namespace = namespaceName
+			if err := rnew.Save(); err != nil {
+				log.Logger.Error("Error saving OCP account", "error", err)
+				rnew.SetStatus("error")
+				return
+			}
 			break
 		}
 
-		_, err = clientset.CoreV1().ServiceAccounts(serviceAccountName).Create(context.TODO(), &v1.ServiceAccount{
+		_, err = clientset.CoreV1().ServiceAccounts(namespaceName).Create(context.TODO(), &v1.ServiceAccount{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: serviceAccountName,
 			},
@@ -807,7 +788,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 
 		// Create RoleBind for the Service Account in the Namespace
-		_, err = clientset.RbacV1().RoleBindings(serviceAccountName).Create(context.TODO(), &rbacv1.RoleBinding{
+		_, err = clientset.RbacV1().RoleBindings(namespaceName).Create(context.TODO(), &rbacv1.RoleBinding{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: serviceAccountName,
 			},
@@ -835,9 +816,9 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 
 		// Create RoleBind for the Service Account in the Namespace for kubevirt
-		_, err = clientset.RbacV1().RoleBindings(serviceAccountName).Create(context.TODO(), &rbacv1.RoleBinding{
+		_, err = clientset.RbacV1().RoleBindings(namespaceName).Create(context.TODO(), &rbacv1.RoleBinding{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "kubevirt-" + serviceAccountName[:min(53, len(serviceAccountName))],
+				Name: "kubevirt-" + namespaceName[:min(53, len(namespaceName))],
 			},
 			RoleRef: rbacv1.RoleRef{
 				APIGroup: rbacv1.GroupName,
@@ -863,9 +844,9 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 
 		// Create RoleBind for the Service Account in the Namespace for NetworkAttachDefinition
-		_, err = clientset.RbacV1().RoleBindings(serviceAccountName).Create(context.TODO(), &rbacv1.RoleBinding{
+		_, err = clientset.RbacV1().RoleBindings(namespaceName).Create(context.TODO(), &rbacv1.RoleBinding{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "nad-" + serviceAccountName[:min(59, len(serviceAccountName))],
+				Name: "nad-" + namespaceName[:min(59, len(namespaceName))],
 			},
 			RoleRef: rbacv1.RoleRef{
 				APIGroup: rbacv1.GroupName,
@@ -892,7 +873,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 
 		rb := &rbacv1.RoleBinding{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "allow-clone-" + serviceAccountName[:min(51, len(serviceAccountName))],
+				Name:      "allow-clone-" + namespaceName[:min(51, len(namespaceName))],
 				Namespace: "cnv-images",
 			},
 			Subjects: []rbacv1.Subject{
@@ -920,7 +901,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 			return
 		}
 
-		secrets, err := clientset.CoreV1().Secrets(serviceAccountName).List(context.TODO(), metav1.ListOptions{})
+		secrets, err := clientset.CoreV1().Secrets(namespaceName).List(context.TODO(), metav1.ListOptions{})
 
 		if err != nil {
 			log.Logger.Error("Error listing OCP secrets", "error", err)
@@ -965,6 +946,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 				Annotations:    annotations,
 				ServiceUuid:    serviceUuid,
 				Status:         "success",
+				Namespace:      namespaceName,
 			},
 			Credentials: creds,
 			Provider:    a,
@@ -979,6 +961,8 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 				log.Logger.Error("Error cleaning up OCP account", "error", err)
 			}
 		}
+		log.Logger.Info("Ocp sandbox booked", "account", r.Name, "service_uuid", r.ServiceUuid,
+			"cluster", r.OcpClusterName, "namespace", r.Namespace)
 	}()
 	//--------------------------------------------------
 
@@ -995,6 +979,12 @@ func (a *OcpAccountProvider) Release(service_uuid string) error {
 	var errorHappened error
 
 	for _, account := range accounts {
+		if account.Namespace == "" {
+			log.Logger.Error("Namespace not found for account", "account", account)
+			errorHappened = errors.New("Namespace not found for account")
+			continue
+		}
+
 		if err := account.Delete(); err != nil {
 			errorHappened = err
 			continue
@@ -1078,6 +1068,12 @@ func (account *OcpAccountWithCreds) Delete() error {
 		maxRetries--
 	}
 
+	// Reload account
+	if err := account.Reload(); err != nil {
+		log.Logger.Error("Error reloading account", "error", err)
+		return err
+	}
+
 	if account.OcpClusterName == "" {
 		// Get the OCP cluster name from the resources.resource_data column using ID
 		err := account.Provider.DbPool.QueryRow(
@@ -1140,13 +1136,11 @@ func (account *OcpAccountWithCreds) Delete() error {
 		return err
 	}
 	// Define the Service Account name
-	namespaceName := "sandbox-" + account.Name
-	namespaceName = namespaceName[:min(63, len(namespaceName))] // truncate to 63
 	serviceAccountName := "sandbox-" + account.Name
 	serviceAccountName = serviceAccountName[:min(63, len(serviceAccountName))] // truncate to 63
 
 	// Check if the namespace exists
-	_, err = clientset.CoreV1().Namespaces().Get(context.TODO(), namespaceName, metav1.GetOptions{})
+	_, err = clientset.CoreV1().Namespaces().Get(context.TODO(), account.Namespace, metav1.GetOptions{})
 	if err != nil {
 		// TODO: if namespace is not found, consider deletion a success
 		log.Logger.Error("Error getting OCP namespace", "error", err, "name", account.Name)
@@ -1154,7 +1148,7 @@ func (account *OcpAccountWithCreds) Delete() error {
 		return err
 	}
 	// Delete the Namespace
-	err = clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{})
+	err = clientset.CoreV1().Namespaces().Delete(context.TODO(), account.Namespace, metav1.DeleteOptions{})
 	if err != nil {
 		log.Logger.Error("Error deleting OCP namespace", "error", err, "name", account.Name)
 		account.SetStatus("error")
@@ -1163,7 +1157,7 @@ func (account *OcpAccountWithCreds) Delete() error {
 
 	// Delete the Service Account
 	if err = clientset.CoreV1().
-		ServiceAccounts(namespaceName).
+		ServiceAccounts(account.Namespace).
 		Delete(context.TODO(), serviceAccountName, metav1.DeleteOptions{}); err != nil {
 		log.Logger.Error("Error deleting OCP service account", "error", err)
 		account.SetStatus("error")
@@ -1203,4 +1197,81 @@ func (p *OcpAccountProvider) FetchByName(name string) (OcpAccount, error) {
 		return OcpAccount{}, err
 	}
 	return account, nil
+}
+
+func (p *OcpAccountProvider) FetchById(id int) (OcpAccount, error) {
+	// Get resource from above 'resources' table
+	row := p.DbPool.QueryRow(
+		context.Background(),
+		`SELECT
+		 resource_data, id, resource_name, resource_type,
+		 created_at, updated_at, status, cleanup_count
+		 FROM resources WHERE id = $1 and resource_type = 'OcpAccount'`,
+		id,
+	)
+
+	var account OcpAccount
+	if err := row.Scan(
+		&account,
+		&account.ID,
+		&account.Name,
+		&account.Kind,
+		&account.CreatedAt,
+		&account.UpdatedAt,
+		&account.Status,
+		&account.CleanupCount,
+	); err != nil {
+		return OcpAccount{}, err
+	}
+	return account, nil
+}
+
+func (a *OcpAccountWithCreds) Reload() error {
+	// Ensude ID is set
+	if a.ID == 0 {
+		return errors.New("id must be > 0 to use Reload()")
+	}
+
+	// Enusre provider is set
+	if a.Provider == nil {
+		return errors.New("provider must be set to use Reload()")
+	}
+
+	// Get resource from above 'resources' table
+	row := a.Provider.DbPool.QueryRow(
+		context.Background(),
+		`SELECT
+		 resource_data, id, resource_name, resource_type,
+		 created_at, updated_at, status, cleanup_count,
+		 pgp_sym_decrypt(resource_credentials, $2)
+		 FROM resources WHERE id = $1`,
+		a.ID, a.Provider.VaultSecret,
+	)
+
+	var creds string
+	var account OcpAccountWithCreds
+	if err := row.Scan(
+		&account,
+		&account.ID,
+		&account.Name,
+		&account.Kind,
+		&account.CreatedAt,
+		&account.UpdatedAt,
+		&account.Status,
+		&account.CleanupCount,
+		&creds,
+	); err != nil {
+		return err
+	}
+	// Add provider before copying
+	account.Provider = a.Provider
+	// Copy account into a
+	*a = account
+
+	// Unmarshal creds into account.Credentials
+	if err := json.Unmarshal([]byte(creds), &a.Credentials); err != nil {
+		return err
+	}
+
+	return nil
 }

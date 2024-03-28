@@ -72,7 +72,7 @@ ssh user@bastion cat .kube/config|jq --raw-input --slurp
 .Add the entry to the DB
 ----
 hurl --variable login_token_admin=$admintoken \
---file-root .
+--file-root . \
 --variable host=http://localhost:8080 \
 --variable ocp_cluster_def=.dev.kube.json \
 --variable ocp_cluster_name=cluster-foo \
