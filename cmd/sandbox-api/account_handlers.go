@@ -40,7 +40,6 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 	// Get available from Query
 	available := r.URL.Query().Get("available")
 
-	log.Logger.Error("GET accounts", "error", kind)
 	var err error
 	var accountlist []interface{}
 	switch kind {
@@ -74,7 +73,7 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 			enc.Encode(v1.Error{
 				HTTPStatusCode: http.StatusBadRequest,
 				Message:        "Bad request, Ocp Account are created on the fly",
-				})
+			})
 			return
 		}
 		if serviceUuid != "" {
