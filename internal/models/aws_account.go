@@ -47,6 +47,10 @@ func (a *AwsAccount) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func (a *AwsAccountWithCreds) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
 type AwsAccounts []AwsAccount
 
 func (a *AwsAccounts) Render(w http.ResponseWriter, r *http.Request) error {
@@ -56,7 +60,8 @@ func (a *AwsAccounts) Render(w http.ResponseWriter, r *http.Request) error {
 type AwsAccountWithCreds struct {
 	AwsAccount
 
-	Credentials []any `json:"credentials"`
+	Credentials []any              `json:"credentials"`
+	Provider    AwsAccountProvider `json:"-"`
 }
 
 type AwsIamKey struct {
@@ -86,7 +91,7 @@ type AwsAccountProvider interface {
 	FetchByName(name string) (AwsAccount, error)
 	MarkForCleanup(name string) error
 	MarkForCleanupByServiceUuid(serviceUuid string) error
-	Request(service_uuid string, reservation string, count int, annotations map[string]string) ([]AwsAccountWithCreds, error)
+	Request(service_uuid string, reservation string, count int, annotations Annotations) ([]AwsAccountWithCreds, error)
 	Reserve(reservation string, count int) ([]AwsAccount, error)
 	ScaleDownReservation(reservation string, count int) error
 }
@@ -332,7 +337,6 @@ func MakeStatus(job *LifecycleResourceJob) Status {
 	}
 	status.AccountName = job.ResourceName
 	status.UpdatedAt = job.UpdatedAt
-	// TODO: convert to CamelCase
 	status.Status = job.Status
 
 	return status
@@ -500,4 +504,8 @@ func (a AwsAccount) CloseAccount() error {
 		return nil
 	}
 	return nil
+}
+
+func (a *AwsAccountWithCreds) Delete() error {
+	return a.Provider.MarkForCleanup(a.Name)
 }

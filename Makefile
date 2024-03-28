@@ -9,7 +9,7 @@ VERSION ?= $(shell git describe --tags 2>/dev/null | cut -c 2-)
 COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null)
 DATE ?= $(shell date -u)
 
-build: sandbox-list sandbox-metrics sandbox-api sandbox-issue-jwt sandbox-dynamodb-rotate-vault
+build: sandbox-list sandbox-metrics sandbox-api sandbox-issue-jwt sandbox-rotate-vault
 
 test:
 	@echo "Running tests..."
@@ -26,13 +26,21 @@ rm-local-pg:
 run-local-pg: .dev.pg_password rm-local-pg
 	@echo "Running local postgres..."
 	@podman run  -p 5432:5432 --name localpg -e POSTGRES_PASSWORD=$(shell cat .dev.pg_password) -d postgres:16-bullseye
-	# See full list of parameters here:
-	# https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
+# See full list of parameters here:
+# https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
 
 issue-jwt: .dev.jwtauth_env
 	@. ./.dev.pgenv && . ./.dev.jwtauth_env && go run ./cmd/sandbox-issue-jwt
 
 migrate: .dev.pgenv
+# Print a message with the database URL and ask for confirmation
+# Remove password from the URL before printing
+	@. ./.dev.pgenv && echo "Database URL: $$(echo $${DATABASE_URL} | sed -E 's/:[^@]+@/:<password>@/g')"
+	@read -p "Are you sure [y/n]? " -n 1 -r; \
+	if [[ ! $$REPLY =~ ^[Yy]$$ ]]; then \
+		echo "Aborting."; \
+		exit 1; \
+	fi
 	@echo "Running migrations..."
 	@. ./.dev.pgenv && migrate -database "$${DATABASE_URL}" -path db/migrations up
 
@@ -55,8 +63,8 @@ sandbox-issue-jwt:
 sandbox-replicate:
 	CGO_ENABLED=0 go build -o build/sandbox-replicate ./cmd/sandbox-replicate
 
-sandbox-dynamodb-rotate-vault:
-	CGO_ENABLED=0 go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" -o build/sandbox-dynamodb-rotate-vault ./cmd/sandbox-dynamodb-rotate-vault
+sandbox-rotate-vault:
+	CGO_ENABLED=0 go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" -o build/sandbox-rotate-vault ./cmd/sandbox-rotate-vault
 
 
 push-lambda: deploy/lambda/sandbox-replicate.zip
@@ -65,7 +73,7 @@ push-lambda: deploy/lambda/sandbox-replicate.zip
 fmt:
 	@go fmt ./...
 
-.PHONY: sandbox-api sandbox-issue-jwt sandbox-list sandbox-metrics sandbox-dynamodb-rotate-vault run-api sandbox-replicate migrate fixtures test run-local-pg push-lambda clean fmt
+.PHONY: sandbox-api sandbox-issue-jwt sandbox-list sandbox-metrics sandbox-rotate-vault run-api sandbox-replicate migrate fixtures test run-local-pg push-lambda clean fmt
 
 clean: rm-local-pg
 	rm -f build/sandbox-*

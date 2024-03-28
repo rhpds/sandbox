@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -32,10 +33,11 @@ type HealthCheckResult struct {
 }
 
 type PlacementRequest struct {
-	ServiceUuid string            `json:"service_uuid"`
-	Reservation string            `json:"reservation"`
-	Resources   []ResourceRequest `json:"resources"`
-	Annotations map[string]string `json:"annotations"`
+	ServiceUuid string             `json:"service_uuid"`
+	Provider    string             `json:"provider,omitempty"`
+	Reservation string             `json:"reservation,omitempty"`
+	Resources   []ResourceRequest  `json:"resources"`
+	Annotations models.Annotations `json:"annotations,omitempty"`
 }
 
 type TokenRequest struct {
@@ -100,8 +102,10 @@ func (p *PlacementResponse) Render(w http.ResponseWriter, r *http.Request) error
 }
 
 type ResourceRequest struct {
-	Kind  string `json:"kind"`
-	Count int    `json:"count"`
+	Kind          string             `json:"kind"`
+	Count         int                `json:"count"`
+	Annotations   models.Annotations `json:"annotations,omitempty"`
+	CloudSelector models.Annotations `json:"cloud_selector,omitempty"`
 }
 
 type ReservationResponse struct {
@@ -111,6 +115,26 @@ type ReservationResponse struct {
 }
 
 func (p *PlacementRequest) Bind(r *http.Request) error {
+	if p.Annotations == nil {
+		p.Annotations = make(models.Annotations)
+	}
+
+	if p.Resources == nil {
+		p.Resources = make([]ResourceRequest, 0)
+		return nil
+	}
+	if len(p.Resources) == 0 {
+		return errors.New("no resources specified")
+	}
+	for i := range p.Resources {
+		if p.Resources[i].Annotations == nil {
+			p.Resources[i].Annotations = make(models.Annotations)
+		}
+		if p.Resources[i].CloudSelector == nil {
+			p.Resources[i].CloudSelector = make(models.Annotations)
+		}
+	}
+
 	return nil
 }
 
