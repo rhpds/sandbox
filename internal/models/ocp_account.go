@@ -736,12 +736,16 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		delay := time.Second
 		for {
 			// Create the Namespace
+			// Add serviceUuid as label to the namespace
+
 			_, err = clientset.CoreV1().Namespaces().Create(context.TODO(), &v1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: namespaceName,
 					Labels: map[string]string{
 						"mutatepods.kubemacpool.io":            "ignore",
 						"mutatevirtualmachines.kubemacpool.io": "ignore",
+						"serviceUuid":                          serviceUuid,
+						"guid":                                 annotations["guid"],
 					},
 				},
 			}, metav1.CreateOptions{})
@@ -774,6 +778,10 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		_, err = clientset.CoreV1().ServiceAccounts(namespaceName).Create(context.TODO(), &v1.ServiceAccount{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: serviceAccountName,
+				Labels: map[string]string{
+					"serviceUuid": serviceUuid,
+					"guid":        annotations["guid"],
+				},
 			},
 		}, metav1.CreateOptions{})
 
@@ -791,6 +799,10 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		_, err = clientset.RbacV1().RoleBindings(namespaceName).Create(context.TODO(), &rbacv1.RoleBinding{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: serviceAccountName,
+				Labels: map[string]string{
+					"serviceUuid": serviceUuid,
+					"guid":        annotations["guid"],
+				},
 			},
 			RoleRef: rbacv1.RoleRef{
 				APIGroup: rbacv1.GroupName,
@@ -819,6 +831,10 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		_, err = clientset.RbacV1().RoleBindings(namespaceName).Create(context.TODO(), &rbacv1.RoleBinding{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "kubevirt-" + namespaceName[:min(53, len(namespaceName))],
+				Labels: map[string]string{
+					"serviceUuid": serviceUuid,
+					"guid":        annotations["guid"],
+				},
 			},
 			RoleRef: rbacv1.RoleRef{
 				APIGroup: rbacv1.GroupName,
@@ -847,6 +863,10 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		_, err = clientset.RbacV1().RoleBindings(namespaceName).Create(context.TODO(), &rbacv1.RoleBinding{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "nad-" + namespaceName[:min(59, len(namespaceName))],
+				Labels: map[string]string{
+					"serviceUuid": serviceUuid,
+					"guid":        annotations["guid"],
+				},
 			},
 			RoleRef: rbacv1.RoleRef{
 				APIGroup: rbacv1.GroupName,
