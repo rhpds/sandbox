@@ -2,6 +2,8 @@
 
 This tool cleans up sandboxes.
 
+image::conan.webp[Conan the destroyer of Sandboxes,300,300,float="left"]
+
 It watches the pool of sandboxes, and look for those marked as `to_cleanup`.
 
 Then it runs link:https://github.com/rebuy-de/aws-nuke[aws-nuke] to wipe them, and put them back in the pool of available sandboxes.
