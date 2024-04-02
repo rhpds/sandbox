@@ -15,8 +15,9 @@ type Placement struct {
 	Model
 
 	ServiceUuid string            `json:"service_uuid"`
-	Resources   []any             `json:"resources,omitempty"`
+	Status      string            `json:"status"`
 	Annotations map[string]string `json:"annotations"`
+	Resources   []any             `json:"resources,omitempty"`
 	Request     any               `json:"request"`
 }
 
@@ -50,6 +51,9 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 		p.Resources = append(p.Resources, account)
 	}
 
+	// AwsAccounts are always ready
+	status := "success"
+
 	ocpAccounts, err := ocpProvider.FetchAllByServiceUuid(p.ServiceUuid)
 
 	if err != nil {
@@ -58,7 +62,12 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 
 	for _, account := range ocpAccounts {
 		p.Resources = append(p.Resources, account)
+		if account.Status != "success" {
+			status = account.Status
+		}
 	}
+
+	p.Status = status
 
 	return nil
 }
@@ -76,6 +85,8 @@ func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpPr
 	for _, account := range accounts {
 		p.Resources = append(p.Resources, account)
 	}
+	// AwsAccounts are always ready
+	status := "success"
 
 	ocpAccounts, err := ocpProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
 
@@ -85,7 +96,11 @@ func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpPr
 
 	for _, account := range ocpAccounts {
 		p.Resources = append(p.Resources, account)
+		if account.Status != "success" {
+			status = account.Status
+		}
 	}
+	p.Status = status
 
 	return nil
 }
@@ -119,6 +134,8 @@ func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider,
 	for _, account := range accounts {
 		p.Resources = append(p.Resources, account)
 	}
+	// AwsAccounts are always ready
+	status := "success"
 
 	ocpAccounts, err := ocpProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
 
@@ -128,7 +145,12 @@ func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider,
 
 	for _, account := range ocpAccounts {
 		p.Resources = append(p.Resources, account)
+		if account.Status != "success" {
+			status = account.Status
+		}
 	}
+
+	p.Status = status
 
 	return nil
 }

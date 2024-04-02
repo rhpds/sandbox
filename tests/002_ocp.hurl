@@ -210,6 +210,7 @@ retry: 40
 HTTP 200
 [Asserts]
 jsonpath "$.service_uuid" == "{{uuid}}"
+jsonpath "$.status" == "success"
 jsonpath "$.resources" count == 3
 jsonpath "$.resources[0].status" == "success"
 jsonpath "$.resources[0].credentials" count >= 1
@@ -317,6 +318,7 @@ retry: 40
 HTTP 200
 [Asserts]
 jsonpath "$.service_uuid" == "{{uuid}}"
+jsonpath "$.status" == "success"
 jsonpath "$.resources" count == 1
 jsonpath "$.resources[0].status" == "success"
 jsonpath "$.resources[0].credentials" count >= 1
@@ -421,6 +423,7 @@ HTTP 200
 [Asserts]
 jsonpath "$.service_uuid" == "{{uuid}}"
 jsonpath "$.resources" count == 2
+jsonpath "$.status" == "success"
 jsonpath "$.resources[?(@.annotations.purpose == 'ocp')]" count == 1
 jsonpath "$.resources[?(@.annotations.purpose == 'aws')]" count == 1
 jsonpath "$.resources[?(@.annotations.purpose == 'ocp')].status" includes "success"
