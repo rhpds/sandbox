@@ -32,6 +32,7 @@ Authorization: Bearer {{access_token}}
 {
     "name": "ocp-cluster-test1",
     "api_url": "https://api.ocp-cluster-1.com:6443",
+    "ingress_domain": "apps.ocp-cluster-1.com",
     "kubeconfig": "apiVersion: v1 ..."
 }
 HTTP 401
@@ -49,6 +50,7 @@ Authorization: Bearer {{access_token_admin}}
 {
     "name": "ocp-cluster-test1",
     "api_url": "https://api.ocp-cluster-1.com:6443",
+    "ingress_domain": "apps.ocp-cluster-1.com",
     "kubeconfig": "apiVersion: v1 ..."
 }
 HTTP 400
@@ -60,6 +62,7 @@ Authorization: Bearer {{access_token_admin}}
 {
     "name": "ocp-cluster-test1",
     "api_url": "https://api.ocp-cluster-1.com:6443",
+    "ingress_domain": "apps.ocp-cluster-1.com",
     "kubeconfig": "apiVersion: v1 ...",
     "annotations": {
         "virt": "no",
@@ -76,6 +79,7 @@ Authorization: Bearer {{access_token_admin}}
 {
     "name": "ocp-cluster-test1",
     "api_url": "https://api.ocp-cluster-1.com:6443",
+    "ingress_domain": "apps.ocp-cluster-1.com",
     "kubeconfig": "apiVersion: v1 ...",
     "annotations": {
         "virt": "no",
@@ -213,6 +217,7 @@ jsonpath "$.service_uuid" == "{{uuid}}"
 jsonpath "$.status" == "success"
 jsonpath "$.resources" count == 3
 jsonpath "$.resources[0].status" == "success"
+jsonpath "$.resources[0].ingress_domain" split "." count > 2
 jsonpath "$.resources[0].credentials" count >= 1
 jsonpath "$.resources[0].credentials[0].kind" == "ServiceAccount"
 jsonpath "$.resources[0].credentials[0].token" isString
@@ -321,6 +326,7 @@ jsonpath "$.service_uuid" == "{{uuid}}"
 jsonpath "$.status" == "success"
 jsonpath "$.resources" count == 1
 jsonpath "$.resources[0].status" == "success"
+jsonpath "$.resources[0].ingress_domain" split "." count > 2
 jsonpath "$.resources[0].credentials" count >= 1
 jsonpath "$.resources[0].credentials[0].kind" == "ServiceAccount"
 jsonpath "$.resources[0].credentials[0].token" isString

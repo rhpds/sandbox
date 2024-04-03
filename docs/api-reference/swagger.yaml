@@ -1338,6 +1338,7 @@ paths:
             example:
               name: ocp-cluster-1
               api_url: https://api.ocp-cluster-1.com:6443
+              ingress_domain: apps.ocp-cluster-1.com
               kubeconfig: |
                 apiVersion: v1
                 clusters:
@@ -1676,10 +1677,12 @@ components:
     AccountWithCreds:
       oneOf:
         - $ref: '#/components/schemas/AwsAccountWithCreds'
+        - $ref: '#/components/schemas/OcpAccountWithCreds'
       discriminator:
         propertyName: kind
         mapping:
           AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
+          OcpSandbox: '#/components/schemas/OcpAccountWithCreds'
 
     Resource:
       type: object
@@ -1712,6 +1715,7 @@ components:
         propertyName: kind
         mapping:
           AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
+          OcpSandbox: '#/components/schemas/OcpAccountWithCreds'
 
     Resources:
       type: array
@@ -1722,10 +1726,30 @@ components:
     Credential:
       oneOf:
         - $ref: '#/components/schemas/AwsIamKey'
+        - $ref: '#/components/schemas/OcpServiceAccount'
       discriminator:
         propertyName: kind
         mapping:
           aws_iam_key: '#/components/schemas/AwsIamKey'
+          ServiceAccount: '#/components/schemas/OcpServiceAccount'
+
+    # Credential for OcpSandbox
+    OcpServiceAccount:
+      type: object
+      required:
+        - name
+        - kind
+        - token
+      properties:
+        kind:
+          type: string
+          example: ServiceAccount
+        name:
+          type: string
+          example: guid-uuid
+        token:
+          type: string
+          example: 1234567890abcdefghij
 
     Credentials:
       type: array
@@ -1814,22 +1838,31 @@ components:
       type: object
       required:
         - name
-        - sa_account
-        - sa_token
+        - kind
+        - service_uuid
+        - ocp_cluster
+        - ingress_domain
+        - api_url
       properties:
         name:
           type: string
           example: sandbox123
+        ocp_cluster:
+          type: string
+          example: ocp-cluster-1
+        kind:
+          type: string
+          example: OcpSandbox
         service_uuid:
           $ref: '#/components/schemas/UUID'
         annotations:
           $ref: '#/components/schemas/Annotations'
-        sa_account:
+        api_url:
           type: string
-          example: 'sa_1234'
-        sa_token:
+          example: https://api.ocp-cluster-1.com:6443
+        ingress_domain:
           type: string
-          example: "abcde"
+          example: apps.ocp-cluster-1.com
         status:
           type: string
           enum:
@@ -1838,6 +1871,16 @@ components:
             - success
             - error
             - deleting
+
+    OcpAccountWithCreds:
+      allOf:
+        - $ref: '#/components/schemas/OcpAccount'
+        - type: object
+          properties:
+            credentials:
+              type: array
+              items:
+                $ref: '#/components/schemas/Credentials'
     Accounts:
       type: array
       items:
@@ -2027,6 +2070,7 @@ components:
       required:
         - name
         - api_url
+        - ingress_domain
         - kubeconfig
         - annotations
       properties:
@@ -2038,6 +2082,10 @@ components:
           type: string
           description: The API URL of the cluster
           example: https://api.ocp-cluster-1.com:6443
+        ingress_domain:
+          type: string
+          description: The default ingress domain of the cluster
+          example: apps.ocp-cluster-1.com
         valid:
           type: boolean
           description: true if the cluster is valid
@@ -2068,6 +2116,7 @@ components:
       example:
         name: ocp-cluster-1
         api_url: https://api.ocp-cluster-1.com:6443
+        ingress_domain: apps.ocp-cluster-1.com
         kubeconfig: |
           apiVersion: v1
           clusters:

@@ -28,19 +28,54 @@ type OcpAccountProvider struct {
 }
 
 type OcpCluster struct {
-	ID          int               `json:"id"`
-	Name        string            `json:"name"`
-	ApiUrl      string            `json:"api_url"`
-	Kubeconfig  string            `json:"kubeconfig"`
-	CreatedAt   time.Time         `json:"created_at"`
-	UpdatedAt   time.Time         `json:"updated_at"`
-	Annotations map[string]string `json:"annotations"`
-	Valid       bool              `json:"valid"`
-	DbPool      *pgxpool.Pool     `json:"-"`
-	VaultSecret string            `json:"-"`
+	ID            int               `json:"id"`
+	Name          string            `json:"name"`
+	ApiUrl        string            `json:"api_url"`
+	IngressDomain string            `json:"ingress_domain"`
+	Kubeconfig    string            `json:"kubeconfig"`
+	CreatedAt     time.Time         `json:"created_at"`
+	UpdatedAt     time.Time         `json:"updated_at"`
+	Annotations   map[string]string `json:"annotations"`
+	Valid         bool              `json:"valid"`
+	DbPool        *pgxpool.Pool     `json:"-"`
+	VaultSecret   string            `json:"-"`
 }
 
 type OcpClusters []OcpCluster
+
+type OcpAccount struct {
+	Account
+	Name             string            `json:"name"`
+	Kind             string            `json:"kind"` // "OcpSandbox"
+	ServiceUuid      string            `json:"service_uuid"`
+	OcpClusterName   string            `json:"ocp_cluster"`
+	OcpIngressDomain string            `json:"ingress_domain"`
+	OcpApiUrl        string            `json:"api_url"`
+	Annotations      map[string]string `json:"annotations"`
+	Status           string            `json:"status"`
+	CleanupCount     int               `json:"cleanup_count"`
+	Namespace        string            `json:"namespace"`
+}
+
+type OcpAccountWithCreds struct {
+	OcpAccount
+
+	Credentials []any               `json:"credentials"`
+	Provider    *OcpAccountProvider `json:"-"`
+}
+
+// Credential for service account
+type OcpServiceAccount struct {
+	Kind  string `json:"kind"` // "ServiceAccount"
+	Name  string `json:"name"`
+	Token string `json:"token"`
+}
+
+type OcpAccounts []OcpAccount
+
+type TokenResponse struct {
+	AccessToken string `json:"access_token"`
+}
 
 var nameRegex = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
 
@@ -59,6 +94,16 @@ func (p *OcpCluster) Bind(r *http.Request) error {
 	// Ensure the api_url is not empty
 	if p.ApiUrl == "" {
 		return errors.New("api_url is required")
+	}
+
+	// Ensure the kubeconfig is not empty
+	if p.Kubeconfig == "" {
+		return errors.New("kubeconfig is required")
+	}
+
+	// Ensure IngressDomain is provided
+	if p.IngressDomain == "" {
+		return errors.New("ingress_domain is required")
 	}
 
 	// Ensure Annotations is provided
@@ -89,9 +134,9 @@ func (p *OcpCluster) Save() error {
 	if err := p.DbPool.QueryRow(
 		context.Background(),
 		`INSERT INTO ocp_clusters
-			(name, api_url, kubeconfig, annotations, valid)
-			VALUES ($1, $2, pgp_sym_encrypt($3::text, $4), $5, $6) RETURNING id`,
-		p.Name, p.ApiUrl, p.Kubeconfig, p.VaultSecret, p.Annotations, p.Valid,
+			(name, api_url, ingress_domain, kubeconfig, annotations, valid)
+			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), $6, $7) RETURNING id`,
+		p.Name, p.ApiUrl, p.IngressDomain, p.Kubeconfig, p.VaultSecret, p.Annotations, p.Valid,
 	).Scan(&p.ID); err != nil {
 		return err
 	}
@@ -109,11 +154,12 @@ func (p *OcpCluster) Update() error {
 		`UPDATE ocp_clusters
 		 SET name = $1,
 			 api_url = $2,
-			 kubeconfig = pgp_sym_encrypt($3::text, $4),
-			 annotations = $5,
-			 valid = $6
-		 WHERE id = $7`,
-		p.Name, p.ApiUrl, p.Kubeconfig, p.VaultSecret, p.Annotations, p.Valid, p.ID,
+             ingress_domain = $3,
+			 kubeconfig = pgp_sym_encrypt($4::text, $5),
+			 annotations = $6,
+			 valid = $7
+		 WHERE id = $8`,
+		p.Name, p.ApiUrl, p.IngressDomain, p.Kubeconfig, p.VaultSecret, p.Annotations, p.Valid, p.ID,
 	); err != nil {
 		return err
 	}
@@ -121,6 +167,10 @@ func (p *OcpCluster) Update() error {
 }
 
 func (p *OcpCluster) Delete() error {
+	if p.ID == 0 {
+		return errors.New("id must be > 0")
+	}
+
 	_, err := p.DbPool.Exec(
 		context.Background(),
 		"DELETE FROM ocp_clusters WHERE id = $1",
@@ -154,7 +204,7 @@ func (p *OcpAccountProvider) GetOcpClusterByName(name string) (OcpCluster, error
 	row := p.DbPool.QueryRow(
 		context.Background(),
 		`SELECT
-		 id, name, api_url, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid
+		 id, name, api_url, ingress_domain, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid
 		 FROM ocp_clusters WHERE name = $2`,
 		p.VaultSecret, name,
 	)
@@ -164,6 +214,7 @@ func (p *OcpAccountProvider) GetOcpClusterByName(name string) (OcpCluster, error
 		&cluster.ID,
 		&cluster.Name,
 		&cluster.ApiUrl,
+		&cluster.IngressDomain,
 		&cluster.Kubeconfig,
 		&cluster.CreatedAt,
 		&cluster.UpdatedAt,
@@ -185,7 +236,7 @@ func (p *OcpAccountProvider) GetOcpClusters() (OcpClusters, error) {
 	rows, err := p.DbPool.Query(
 		context.Background(),
 		`SELECT
-		 id, name, api_url, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid
+		 id, name, api_url, ingress_domain, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid
 		 FROM ocp_clusters`,
 		p.VaultSecret,
 	)
@@ -204,6 +255,7 @@ func (p *OcpAccountProvider) GetOcpClusters() (OcpClusters, error) {
 			&cluster.ID,
 			&cluster.Name,
 			&cluster.ApiUrl,
+			&cluster.IngressDomain,
 			&cluster.Kubeconfig,
 			&cluster.CreatedAt,
 			&cluster.UpdatedAt,
@@ -227,10 +279,8 @@ func (p *OcpAccountProvider) GetOcpClusterByAnnotations(annotations map[string]s
 	// Get resource from above 'ocp_clusters' table
 	rows, err := p.DbPool.Query(
 		context.Background(),
-		`SELECT
-		 id, name, api_url, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid
-		 FROM ocp_clusters WHERE annotations @> $2`,
-		p.VaultSecret, annotations,
+		`SELECT name FROM ocp_clusters WHERE annotations @> $1`,
+		annotations,
 	)
 
 	if err != nil {
@@ -241,23 +291,17 @@ func (p *OcpAccountProvider) GetOcpClusterByAnnotations(annotations map[string]s
 	}
 
 	for rows.Next() {
-		var cluster OcpCluster
+		var clusterName string
 
-		if err := rows.Scan(
-			&cluster.ID,
-			&cluster.Name,
-			&cluster.ApiUrl,
-			&cluster.Kubeconfig,
-			&cluster.CreatedAt,
-			&cluster.UpdatedAt,
-			&cluster.Annotations,
-			&cluster.Valid,
-		); err != nil {
+		if err := rows.Scan(&clusterName); err != nil {
 			return []OcpCluster{}, err
 		}
 
-		cluster.DbPool = p.DbPool
-		cluster.VaultSecret = p.VaultSecret
+		cluster, err := p.GetOcpClusterByName(clusterName)
+		if err != nil {
+			return []OcpCluster{}, err
+		}
+
 		clusters = append(clusters, cluster)
 	}
 
@@ -266,45 +310,12 @@ func (p *OcpAccountProvider) GetOcpClusterByAnnotations(annotations map[string]s
 
 var OcpErrNoEnoughAccountsAvailable = errors.New("no enough accounts available")
 
-type OcpAccount struct {
-	Account
-	Name           string            `json:"name"`
-	Kind           string            `json:"kind"` // "OcpSandbox"
-	ServiceUuid    string            `json:"service_uuid"`
-	OcpClusterName string            `json:"ocp_cluster"`
-	OCPApiUrl      string            `json:"api_url"`
-	Annotations    map[string]string `json:"annotations"`
-	Status         string            `json:"status"`
-	CleanupCount   int               `json:"cleanup_count"`
-	Namespace      string            `json:"namespace"`
-}
-
-type OcpAccountWithCreds struct {
-	OcpAccount
-
-	Credentials []any               `json:"credentials"`
-	Provider    *OcpAccountProvider `json:"-"`
-}
-
-// Credential for service account
-type OcpServiceAccount struct {
-	Kind  string `json:"kind"` // "service_account"
-	Name  string `json:"name"`
-	Token string `json:"token"`
-}
-
 func (a *OcpAccount) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
 func (a *OcpAccountWithCreds) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
-}
-
-type OcpAccounts []OcpAccount
-
-type TokenResponse struct {
-	AccessToken string `json:"access_token"`
 }
 
 func (a *OcpAccount) Save(dbpool *pgxpool.Pool) error {
@@ -343,7 +354,15 @@ func (a *OcpAccountWithCreds) Update() error {
              status = $7,
              cleanup_count = $8
 		 WHERE id = $9`,
-		a.Name, a.Kind, a.ServiceUuid, withoutCreds, creds, a.Provider.VaultSecret, a.Status, a.CleanupCount, a.ID,
+		a.Name,
+		a.Kind,
+		a.ServiceUuid,
+		withoutCreds,
+		creds,
+		a.Provider.VaultSecret,
+		a.Status,
+		a.CleanupCount,
+		a.ID,
 	); err != nil {
 		return err
 	}
@@ -511,10 +530,8 @@ func (a *OcpAccountProvider) GetSchedulableClusters(cloud_selector map[string]st
 	// Get resource from 'ocp_clusters' table
 	rows, err := a.DbPool.Query(
 		context.Background(),
-		`SELECT
-		 id, name, api_url, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid
-		 FROM ocp_clusters WHERE annotations @> $2 and valid=true`,
-		a.VaultSecret, cloud_selector,
+		`SELECT name FROM ocp_clusters WHERE annotations @> $1 and valid=true`,
+		cloud_selector,
 	)
 
 	if err != nil {
@@ -528,23 +545,17 @@ func (a *OcpAccountProvider) GetSchedulableClusters(cloud_selector map[string]st
 	}
 
 	for rows.Next() {
-		var cluster OcpCluster
+		var clusterName string
 
-		if err := rows.Scan(
-			&cluster.ID,
-			&cluster.Name,
-			&cluster.ApiUrl,
-			&cluster.Kubeconfig,
-			&cluster.CreatedAt,
-			&cluster.UpdatedAt,
-			&cluster.Annotations,
-			&cluster.Valid,
-		); err != nil {
+		if err := rows.Scan(&clusterName); err != nil {
 			return OcpClusters{}, err
 		}
 
-		cluster.DbPool = a.DbPool
-		cluster.VaultSecret = a.VaultSecret
+		cluster, err := a.GetOcpClusterByName(clusterName)
+		if err != nil {
+			return OcpClusters{}, err
+		}
+
 		clusters = append(clusters, cluster)
 	}
 
@@ -707,7 +718,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 			return
 		}
 
-		rnew.OCPApiUrl = selectedCluster.ApiUrl
+		rnew.OcpApiUrl = selectedCluster.ApiUrl
 		rnew.OcpClusterName = selectedCluster.Name
 
 		if err := rnew.Save(); err != nil {
@@ -970,14 +981,15 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 		r := OcpAccountWithCreds{
 			OcpAccount: OcpAccount{
-				Name:           rnew.Name,
-				Kind:           "OcpAccount",
-				OcpClusterName: selectedCluster.Name,
-				OCPApiUrl:      selectedCluster.ApiUrl,
-				Annotations:    annotations,
-				ServiceUuid:    serviceUuid,
-				Status:         "success",
-				Namespace:      namespaceName,
+				Name:             rnew.Name,
+				Kind:             "OcpAccount",
+				OcpClusterName:   selectedCluster.Name,
+				OcpApiUrl:        selectedCluster.ApiUrl,
+				OcpIngressDomain: selectedCluster.IngressDomain,
+				Annotations:      annotations,
+				ServiceUuid:      serviceUuid,
+				Status:           "success",
+				Namespace:        namespaceName,
 			},
 			Credentials: creds,
 			Provider:    a,
@@ -1133,6 +1145,7 @@ func (account *OcpAccountWithCreds) Delete() error {
 
 	// Get the OCP cluster from the resources.resource_data column
 
+	// TODO: use GetOcpClusterByName
 	err := account.Provider.DbPool.QueryRow(
 		context.Background(),
 		"SELECT api_url, pgp_sym_decrypt(kubeconfig::bytea, $1) FROM ocp_clusters WHERE name = $2",
@@ -1167,6 +1180,7 @@ func (account *OcpAccountWithCreds) Delete() error {
 		return err
 	}
 	// Define the Service Account name
+	// TODO: use the account.Credentials to get the service account name
 	serviceAccountName := "sandbox-" + account.Name
 	serviceAccountName = serviceAccountName[:min(63, len(serviceAccountName))] // truncate to 63
 
