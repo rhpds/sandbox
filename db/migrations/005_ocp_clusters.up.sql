@@ -50,7 +50,7 @@ ALTER TABLE resources DROP CONSTRAINT IF EXISTS resources_placement_id_fkey;
 ALTER TABLE resources ADD CONSTRAINT resources_placement_id_fkey FOREIGN KEY (placement_id) REFERENCES placements(id) ON DELETE CASCADE;
 
 -- Create a type resource_type as enum
-CREATE TYPE resource_type_enum AS ENUM ('AwsAccount', 'OcpAccount');
+CREATE TYPE resource_type_enum AS ENUM ('OcpSandbox');
 
 -- Change the type of the column resource_type to resource_type_enum
 ALTER TABLE resources ALTER COLUMN resource_type TYPE resource_type_enum USING resource_type::resource_type_enum;

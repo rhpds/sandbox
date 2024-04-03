@@ -190,7 +190,7 @@ func (p *OcpCluster) GetAccountCount() (int, error) {
 	var count int
 	if err := p.DbPool.QueryRow(
 		context.Background(),
-		"SELECT count(*) FROM resources WHERE resource_type = 'OcpAccount' AND resource_data->>'ocp_cluster' = $1",
+		"SELECT count(*) FROM resources WHERE resource_type = 'OcpSandbox' AND resource_data->>'ocp_cluster' = $1",
 		p.Name,
 	).Scan(&count); err != nil {
 		return 0, err
@@ -605,7 +605,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 			context.Background(),
 			`SELECT count(*) FROM resources
 			WHERE resource_name = $1
-			AND resource_type = 'OcpAccount'`,
+			AND resource_type = 'OcpSandbox'`,
 			candidateName,
 		).Scan(&rowcount)
 
@@ -624,7 +624,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 	rnew := OcpAccountWithCreds{
 		OcpAccount: OcpAccount{
 			Name:        guid + "-" + serviceUuid,
-			Kind:        "OcpAccount",
+			Kind:        "OcpSandbox",
 			Annotations: annotations,
 			ServiceUuid: serviceUuid,
 			Status:      "initializing",
@@ -982,7 +982,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 		r := OcpAccountWithCreds{
 			OcpAccount: OcpAccount{
 				Name:             rnew.Name,
-				Kind:             "OcpAccount",
+				Kind:             "OcpSandbox",
 				OcpClusterName:   selectedCluster.Name,
 				OcpApiUrl:        selectedCluster.ApiUrl,
 				OcpIngressDomain: selectedCluster.IngressDomain,
@@ -1234,7 +1234,7 @@ func (p *OcpAccountProvider) FetchByName(name string) (OcpAccount, error) {
 		`SELECT
 		 resource_data, id, resource_name, resource_type,
 		 created_at, updated_at, status, cleanup_count
-		 FROM resources WHERE resource_name = $1 and resource_type = 'OcpAccount'`,
+		 FROM resources WHERE resource_name = $1 and resource_type = 'OcpSandbox'`,
 		name,
 	)
 
@@ -1261,7 +1261,7 @@ func (p *OcpAccountProvider) FetchById(id int) (OcpAccount, error) {
 		`SELECT
 		 resource_data, id, resource_name, resource_type,
 		 created_at, updated_at, status, cleanup_count
-		 FROM resources WHERE id = $1 and resource_type = 'OcpAccount'`,
+		 FROM resources WHERE id = $1 and resource_type = 'OcpSandbox'`,
 		id,
 	)
 
