@@ -219,6 +219,7 @@ jsonpath "$.resources" count == 3
 jsonpath "$.resources[0].status" == "success"
 jsonpath "$.resources[0].ingress_domain" split "." count > 2
 jsonpath "$.resources[0].credentials" count >= 1
+jsonpath "$.resources[0].cluster_additional_vars.deployer" exists
 jsonpath "$.resources[0].credentials[0].kind" == "ServiceAccount"
 jsonpath "$.resources[0].credentials[0].token" isString
 jsonpath "$.resources[1].status" == "success"

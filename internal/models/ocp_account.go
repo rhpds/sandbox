@@ -46,16 +46,17 @@ type OcpClusters []OcpCluster
 
 type OcpAccount struct {
 	Account
-	Name             string            `json:"name"`
-	Kind             string            `json:"kind"` // "OcpSandbox"
-	ServiceUuid      string            `json:"service_uuid"`
-	OcpClusterName   string            `json:"ocp_cluster"`
-	OcpIngressDomain string            `json:"ingress_domain"`
-	OcpApiUrl        string            `json:"api_url"`
-	Annotations      map[string]string `json:"annotations"`
-	Status           string            `json:"status"`
-	CleanupCount     int               `json:"cleanup_count"`
-	Namespace        string            `json:"namespace"`
+	Name                  string            `json:"name"`
+	Kind                  string            `json:"kind"` // "OcpSandbox"
+	ServiceUuid           string            `json:"service_uuid"`
+	OcpClusterName        string            `json:"ocp_cluster"`
+	OcpIngressDomain      string            `json:"ingress_domain"`
+	OcpApiUrl             string            `json:"api_url"`
+	Annotations           map[string]string `json:"annotations"`
+	Status                string            `json:"status"`
+	CleanupCount          int               `json:"cleanup_count"`
+	Namespace             string            `json:"namespace"`
+	ClusterAdditionalVars map[string]any    `json:"cluster_additional_vars,omitempty"`
 }
 
 type OcpAccountWithCreds struct {
@@ -442,9 +443,20 @@ func (a *OcpAccountProvider) FetchAllByServiceUuid(serviceUuid string) ([]OcpAcc
 	rows, err := a.DbPool.Query(
 		context.Background(),
 		`SELECT
-		 resource_data, id, resource_name, resource_type,
-		 created_at, updated_at, status, cleanup_count
-		 FROM resources WHERE service_uuid = $1`,
+			r.resource_data,
+			r.id,
+			r.resource_name,
+			r.resource_type,
+			r.created_at,
+			r.updated_at,
+			r.status,
+			r.cleanup_count,
+			COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
+		FROM
+			resources r
+		LEFT JOIN
+			ocp_clusters oc ON oc.name = r.resource_data->>'ocp_cluster'
+		WHERE r.service_uuid = $1`,
 		serviceUuid,
 	)
 
@@ -466,6 +478,7 @@ func (a *OcpAccountProvider) FetchAllByServiceUuid(serviceUuid string) ([]OcpAcc
 			&account.UpdatedAt,
 			&account.Status,
 			&account.CleanupCount,
+			&account.ClusterAdditionalVars,
 		); err != nil {
 			return accounts, err
 		}
@@ -483,10 +496,21 @@ func (a *OcpAccountProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 	rows, err := a.DbPool.Query(
 		context.Background(),
 		`SELECT
-         resource_data, id, resource_name, resource_type,
-         created_at, updated_at, status, cleanup_count,
-         pgp_sym_decrypt(resource_credentials, $2)
-		 FROM resources WHERE service_uuid = $1`,
+			r.resource_data,
+			r.id,
+			r.resource_name,
+			r.resource_type,
+			r.created_at,
+			r.updated_at,
+			r.status,
+			r.cleanup_count,
+			pgp_sym_decrypt(r.resource_credentials, $2),
+			COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
+		FROM
+			resources r
+		LEFT JOIN
+			ocp_clusters oc ON oc.name = r.resource_data->>'ocp_cluster'
+		WHERE r.service_uuid = $1`,
 		serviceUuid, a.VaultSecret,
 	)
 
@@ -510,7 +534,9 @@ func (a *OcpAccountProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 			&account.UpdatedAt,
 			&account.Status,
 			&account.CleanupCount,
-			&creds); err != nil {
+			&creds,
+			&account.ClusterAdditionalVars,
+		); err != nil {
 			return accounts, err
 		}
 		// Unmarshal creds into account.Credentials
@@ -1053,9 +1079,17 @@ func (a *OcpAccountProvider) FetchAll() ([]OcpAccount, error) {
 	rows, err := a.DbPool.Query(
 		context.Background(),
 		`SELECT
-		 resource_data, id, resource_name, resource_type,
-		 created_at, updated_at, status, cleanup_count
-		 FROM resources`,
+		 r.resource_data,
+         r.id,
+		 r.resource_name,
+		 r.resource_type,
+		 r.created_at,
+		 r.updated_at,
+		 r.status,
+		 r.cleanup_count,
+		 COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
+		 FROM resources r
+		 LEFT JOIN ocp_clusters oc ON oc.name = r.resource_data->>'ocp_cluster'`,
 	)
 
 	if err != nil {
@@ -1076,6 +1110,7 @@ func (a *OcpAccountProvider) FetchAll() ([]OcpAccount, error) {
 			&account.UpdatedAt,
 			&account.Status,
 			&account.CleanupCount,
+			&account.ClusterAdditionalVars,
 		); err != nil {
 			return accounts, err
 		}
@@ -1236,9 +1271,18 @@ func (p *OcpAccountProvider) FetchByName(name string) (OcpAccount, error) {
 	row := p.DbPool.QueryRow(
 		context.Background(),
 		`SELECT
-		 resource_data, id, resource_name, resource_type,
-		 created_at, updated_at, status, cleanup_count
-		 FROM resources WHERE resource_name = $1 and resource_type = 'OcpSandbox'`,
+		 r.resource_data,
+         r.id,
+		 r.resource_name,
+		 r.resource_type,
+		 r.created_at,
+		 r.updated_at,
+		 r.status,
+		 r.cleanup_count,
+		 COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
+		 FROM resources r
+		 LEFT JOIN ocp_clusters oc ON oc.name = resource_data->>'ocp_cluster'
+		 WHERE r.resource_name = $1 and r.resource_type = 'OcpSandbox'`,
 		name,
 	)
 
@@ -1252,6 +1296,7 @@ func (p *OcpAccountProvider) FetchByName(name string) (OcpAccount, error) {
 		&account.UpdatedAt,
 		&account.Status,
 		&account.CleanupCount,
+		&account.ClusterAdditionalVars,
 	); err != nil {
 		return OcpAccount{}, err
 	}
@@ -1263,9 +1308,18 @@ func (p *OcpAccountProvider) FetchById(id int) (OcpAccount, error) {
 	row := p.DbPool.QueryRow(
 		context.Background(),
 		`SELECT
-		 resource_data, id, resource_name, resource_type,
-		 created_at, updated_at, status, cleanup_count
-		 FROM resources WHERE id = $1 and resource_type = 'OcpSandbox'`,
+		 r.resource_data,
+         r.id,
+		 r.resource_name,
+		 r.resource_type,
+		 r.created_at,
+		 r.updated_at,
+		 r.status,
+		 r.cleanup_count,
+		 COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
+		 FROM resources r
+		 LEFT JOIN ocp_clusters oc ON oc.name = resource_data->>'ocp_cluster'
+		 WHERE r.id = $1`,
 		id,
 	)
 
@@ -1279,6 +1333,7 @@ func (p *OcpAccountProvider) FetchById(id int) (OcpAccount, error) {
 		&account.UpdatedAt,
 		&account.Status,
 		&account.CleanupCount,
+		&account.ClusterAdditionalVars,
 	); err != nil {
 		return OcpAccount{}, err
 	}
@@ -1300,10 +1355,19 @@ func (a *OcpAccountWithCreds) Reload() error {
 	row := a.Provider.DbPool.QueryRow(
 		context.Background(),
 		`SELECT
-		 resource_data, id, resource_name, resource_type,
-		 created_at, updated_at, status, cleanup_count,
-		 pgp_sym_decrypt(resource_credentials, $2)
-		 FROM resources WHERE id = $1`,
+		 r.resource_data,
+         r.id,
+		 r.resource_name,
+		 r.resource_type,
+		 r.created_at,
+		 r.updated_at,
+		 r.status,
+		 r.cleanup_count,
+		 pgp_sym_decrypt(r.resource_credentials, $2),
+		 COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
+		 FROM resources r
+		 LEFT JOIN ocp_clusters oc ON oc.name = resource_data->>'ocp_cluster'
+		 WHERE r.id = $1`,
 		a.ID, a.Provider.VaultSecret,
 	)
 
@@ -1319,6 +1383,7 @@ func (a *OcpAccountWithCreds) Reload() error {
 		&account.Status,
 		&account.CleanupCount,
 		&creds,
+		&account.ClusterAdditionalVars,
 	); err != nil {
 		return err
 	}
