@@ -37,7 +37,7 @@ func (p *Placement) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider OcpAccountProvider) error {
+func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider) error {
 
 	accounts, err := awsProvider.FetchAllByServiceUuid(p.ServiceUuid)
 
@@ -54,13 +54,13 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 	// AwsAccounts are always ready
 	status := "success"
 
-	ocpAccounts, err := ocpProvider.FetchAllByServiceUuid(p.ServiceUuid)
+	ocpSandboxes, err := ocpProvider.FetchAllByServiceUuid(p.ServiceUuid)
 
 	if err != nil {
 		return err
 	}
 
-	for _, account := range ocpAccounts {
+	for _, account := range ocpSandboxes {
 		p.Resources = append(p.Resources, account)
 		if account.Status != "success" {
 			status = account.Status
@@ -72,7 +72,7 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 	return nil
 }
 
-func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpAccountProvider) error {
+func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider) error {
 
 	accounts, err := awsProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
 
@@ -88,13 +88,13 @@ func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpPr
 	// AwsAccounts are always ready
 	status := "success"
 
-	ocpAccounts, err := ocpProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
+	ocpSandboxes, err := ocpProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
 
 	if err != nil {
 		return err
 	}
 
-	for _, account := range ocpAccounts {
+	for _, account := range ocpSandboxes {
 		p.Resources = append(p.Resources, account)
 		if account.Status != "success" {
 			status = account.Status
@@ -121,7 +121,7 @@ func (p *Placement) LoadActiveResources(accountProvider AwsAccountProvider) erro
 	return nil
 }
 
-func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpAccountProvider) error {
+func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider) error {
 
 	accounts, err := awsProvider.FetchAllActiveByServiceUuidWithCreds(p.ServiceUuid)
 
@@ -137,13 +137,13 @@ func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider,
 	// AwsAccounts are always ready
 	status := "success"
 
-	ocpAccounts, err := ocpProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
+	ocpSandboxes, err := ocpProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
 
 	if err != nil {
 		return err
 	}
 
-	for _, account := range ocpAccounts {
+	for _, account := range ocpSandboxes {
 		p.Resources = append(p.Resources, account)
 		if account.Status != "success" {
 			status = account.Status
@@ -202,7 +202,7 @@ func (p *Placement) Save(dbpool *pgxpool.Pool) error {
 	return nil
 }
 
-func (p *Placement) Delete(dbpool *pgxpool.Pool, accountProvider AwsAccountProvider, ocpProvider OcpAccountProvider) error {
+func (p *Placement) Delete(dbpool *pgxpool.Pool, accountProvider AwsAccountProvider, ocpProvider OcpSandboxProvider) error {
 	if p.ID == 0 {
 		return errors.New("Placement ID is required")
 	}
@@ -355,7 +355,7 @@ func GetPlacementByServiceUuid(dbpool *pgxpool.Pool, serviceUuid string) (*Place
 }
 
 // DeletePlacementByServiceUuid deletes a placement by ServiceUuid
-func DeletePlacementByServiceUuid(dbpool *pgxpool.Pool, awsProvider AwsAccountProvider, ocpProvider OcpAccountProvider, serviceUuid string) error {
+func DeletePlacementByServiceUuid(dbpool *pgxpool.Pool, awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, serviceUuid string) error {
 	placement, err := GetPlacementByServiceUuid(dbpool, serviceUuid)
 	if err != nil {
 		log.Logger.Error("Error GetPlacementByServiceUuid")

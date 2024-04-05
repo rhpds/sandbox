@@ -1668,7 +1668,7 @@ components:
       oneOf:
         - $ref: '#/components/schemas/AwsAccount'
         - $ref: '#/components/schemas/AzureAccount'
-        - $ref: '#/components/schemas/OcpAccount'
+        - $ref: '#/components/schemas/OcpSandbox'
       discriminator:
         propertyName: kind
         mapping:
@@ -1677,12 +1677,12 @@ components:
     AccountWithCreds:
       oneOf:
         - $ref: '#/components/schemas/AwsAccountWithCreds'
-        - $ref: '#/components/schemas/OcpAccountWithCreds'
+        - $ref: '#/components/schemas/OcpSandboxWithCreds'
       discriminator:
         propertyName: kind
         mapping:
           AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
-          OcpSandbox: '#/components/schemas/OcpAccountWithCreds'
+          OcpSandbox: '#/components/schemas/OcpSandboxWithCreds'
 
     Resource:
       type: object
@@ -1715,7 +1715,7 @@ components:
         propertyName: kind
         mapping:
           AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
-          OcpSandbox: '#/components/schemas/OcpAccountWithCreds'
+          OcpSandbox: '#/components/schemas/OcpSandboxWithCreds'
 
     Resources:
       type: array
@@ -1834,7 +1834,7 @@ components:
                 $ref: '#/components/schemas/Credentials'
 
 
-    OcpAccount:
+    OcpSandbox:
       type: object
       required:
         - name
@@ -1878,9 +1878,9 @@ components:
               openshift_cnv_nfs_path: /IBMfoobar/data01
               openshift_cnv_nfs_server: fsf-region.domain.com
 
-    OcpAccountWithCreds:
+    OcpSandboxWithCreds:
       allOf:
-        - $ref: '#/components/schemas/OcpAccount'
+        - $ref: '#/components/schemas/OcpSandbox'
         - type: object
           properties:
             credentials:

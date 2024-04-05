@@ -30,7 +30,7 @@ type BaseHandler struct {
 	doc                *openapi3.T
 	oaRouter           oarouters.Router
 	awsAccountProvider models.AwsAccountProvider
-	OcpAccountProvider models.OcpAccountProvider
+	OcpSandboxProvider models.OcpSandboxProvider
 }
 
 type AdminHandler struct {
@@ -38,14 +38,14 @@ type AdminHandler struct {
 	tokenAuth *jwtauth.JWTAuth
 }
 
-func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider, OcpAccountProvider models.OcpAccountProvider) *BaseHandler {
+func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider models.OcpSandboxProvider) *BaseHandler {
 	return &BaseHandler{
 		svc:                svc,
 		dbpool:             dbpool,
 		doc:                doc,
 		oaRouter:           oaRouter,
 		awsAccountProvider: awsAccountProvider,
-		OcpAccountProvider: OcpAccountProvider,
+		OcpSandboxProvider: OcpSandboxProvider,
 	}
 }
 
@@ -57,7 +57,7 @@ func NewAdminHandler(b *BaseHandler, tokenAuth *jwtauth.JWTAuth) *AdminHandler {
 			doc:                b.doc,
 			oaRouter:           b.oaRouter,
 			awsAccountProvider: b.awsAccountProvider,
-			OcpAccountProvider: b.OcpAccountProvider,
+			OcpSandboxProvider: b.OcpSandboxProvider,
 		},
 		tokenAuth: tokenAuth,
 	}
@@ -157,9 +157,9 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				tocleanup = append(tocleanup, &account)
 				resources = append(resources, account)
 			}
-		case "OcpSandbox", "OcpAccount":
+		case "OcpSandbox":
 			// Create the placement in OCP
-			account, err := h.OcpAccountProvider.Request(
+			account, err := h.OcpSandboxProvider.Request(
 				placementRequest.ServiceUuid,
 				request.CloudSelector,
 				placementRequest.Annotations.Merge(request.Annotations),
@@ -329,7 +329,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 		log.Logger.Error("GetPlacementHandler", "error", err)
 		return
 	}
-	if err := placement.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpAccountProvider); err != nil {
+	if err := placement.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpSandboxProvider); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
 			Err:            err,
@@ -350,7 +350,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Request) {
 	serviceUuid := chi.URLParam(r, "uuid")
 
-	if err := models.DeletePlacementByServiceUuid(h.dbpool, h.awsAccountProvider, h.OcpAccountProvider, serviceUuid); err != nil {
+	if err := models.DeletePlacementByServiceUuid(h.dbpool, h.awsAccountProvider, h.OcpSandboxProvider, serviceUuid); err != nil {
 		if err == pgx.ErrNoRows {
 			w.WriteHeader(http.StatusNotFound)
 

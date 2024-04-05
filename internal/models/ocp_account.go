@@ -22,7 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type OcpAccountProvider struct {
+type OcpSandboxProvider struct {
 	DbPool      *pgxpool.Pool `json:"-"`
 	VaultSecret string        `json:"-"`
 }
@@ -44,7 +44,7 @@ type OcpCluster struct {
 
 type OcpClusters []OcpCluster
 
-type OcpAccount struct {
+type OcpSandbox struct {
 	Account
 	Name                  string            `json:"name"`
 	Kind                  string            `json:"kind"` // "OcpSandbox"
@@ -59,11 +59,11 @@ type OcpAccount struct {
 	ClusterAdditionalVars map[string]any    `json:"cluster_additional_vars,omitempty"`
 }
 
-type OcpAccountWithCreds struct {
-	OcpAccount
+type OcpSandboxWithCreds struct {
+	OcpSandbox
 
 	Credentials []any               `json:"credentials"`
-	Provider    *OcpAccountProvider `json:"-"`
+	Provider    *OcpSandboxProvider `json:"-"`
 }
 
 // Credential for service account
@@ -73,7 +73,7 @@ type OcpServiceAccount struct {
 	Token string `json:"token"`
 }
 
-type OcpAccounts []OcpAccount
+type OcpSandboxes []OcpSandbox
 
 type TokenResponse struct {
 	AccessToken string `json:"access_token"`
@@ -202,7 +202,7 @@ func (p *OcpCluster) GetAccountCount() (int, error) {
 }
 
 // GetOcpClusterByName returns an OcpCluster by name
-func (p *OcpAccountProvider) GetOcpClusterByName(name string) (OcpCluster, error) {
+func (p *OcpSandboxProvider) GetOcpClusterByName(name string) (OcpCluster, error) {
 	// Get resource from above 'ocp_clusters' table
 	row := p.DbPool.QueryRow(
 		context.Background(),
@@ -233,7 +233,7 @@ func (p *OcpAccountProvider) GetOcpClusterByName(name string) (OcpCluster, error
 }
 
 // GetOcpClusters returns the full list of OcpCluster
-func (p *OcpAccountProvider) GetOcpClusters() (OcpClusters, error) {
+func (p *OcpSandboxProvider) GetOcpClusters() (OcpClusters, error) {
 	clusters := []OcpCluster{}
 
 	// Get resource from 'ocp_clusters' table
@@ -279,7 +279,7 @@ func (p *OcpAccountProvider) GetOcpClusters() (OcpClusters, error) {
 }
 
 // GetOcpClusterByAnnotations returns a list of OcpCluster by annotations
-func (p *OcpAccountProvider) GetOcpClusterByAnnotations(annotations map[string]string) ([]OcpCluster, error) {
+func (p *OcpSandboxProvider) GetOcpClusterByAnnotations(annotations map[string]string) ([]OcpCluster, error) {
 	clusters := []OcpCluster{}
 	// Get resource from above 'ocp_clusters' table
 	rows, err := p.DbPool.Query(
@@ -315,15 +315,15 @@ func (p *OcpAccountProvider) GetOcpClusterByAnnotations(annotations map[string]s
 
 var OcpErrNoEnoughAccountsAvailable = errors.New("no enough accounts available")
 
-func (a *OcpAccount) Render(w http.ResponseWriter, r *http.Request) error {
+func (a *OcpSandbox) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (a *OcpAccountWithCreds) Render(w http.ResponseWriter, r *http.Request) error {
+func (a *OcpSandboxWithCreds) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (a *OcpAccount) Save(dbpool *pgxpool.Pool) error {
+func (a *OcpSandbox) Save(dbpool *pgxpool.Pool) error {
 	// Check if resource already exists in the DB
 	if err := dbpool.QueryRow(
 		context.Background(),
@@ -337,7 +337,7 @@ func (a *OcpAccount) Save(dbpool *pgxpool.Pool) error {
 	return nil
 }
 
-func (a *OcpAccountWithCreds) Update() error {
+func (a *OcpSandboxWithCreds) Update() error {
 
 	if a.ID == 0 {
 		return errors.New("id must be > 0")
@@ -374,7 +374,7 @@ func (a *OcpAccountWithCreds) Update() error {
 	return nil
 }
 
-func (a *OcpAccountWithCreds) Save() error {
+func (a *OcpSandboxWithCreds) Save() error {
 	if a.ID != 0 {
 		return a.Update()
 	}
@@ -396,7 +396,7 @@ func (a *OcpAccountWithCreds) Save() error {
 	return nil
 }
 
-func (a *OcpAccountWithCreds) SetStatus(status string) error {
+func (a *OcpSandboxWithCreds) SetStatus(status string) error {
 	_, err := a.Provider.DbPool.Exec(
 		context.Background(),
 		"UPDATE resources SET status = $1 WHERE id = $2",
@@ -406,7 +406,7 @@ func (a *OcpAccountWithCreds) SetStatus(status string) error {
 	return err
 }
 
-func (a *OcpAccountWithCreds) GetStatus() (string, error) {
+func (a *OcpSandboxWithCreds) GetStatus() (string, error) {
 	var status string
 	err := a.Provider.DbPool.QueryRow(
 		context.Background(),
@@ -417,7 +417,7 @@ func (a *OcpAccountWithCreds) GetStatus() (string, error) {
 	return status, err
 }
 
-func (a *OcpAccountWithCreds) MarkForCleanup() error {
+func (a *OcpSandboxWithCreds) MarkForCleanup() error {
 	_, err := a.Provider.DbPool.Exec(
 		context.Background(),
 		"UPDATE resources SET to_cleanup = true WHERE id = $1",
@@ -427,7 +427,7 @@ func (a *OcpAccountWithCreds) MarkForCleanup() error {
 	return err
 }
 
-func (a *OcpAccountWithCreds) IncrementCleanupCount() error {
+func (a *OcpSandboxWithCreds) IncrementCleanupCount() error {
 	a.CleanupCount = a.CleanupCount + 1
 	_, err := a.Provider.DbPool.Exec(
 		context.Background(),
@@ -437,8 +437,8 @@ func (a *OcpAccountWithCreds) IncrementCleanupCount() error {
 
 	return err
 }
-func (a *OcpAccountProvider) FetchAllByServiceUuid(serviceUuid string) ([]OcpAccount, error) {
-	accounts := []OcpAccount{}
+func (a *OcpSandboxProvider) FetchAllByServiceUuid(serviceUuid string) ([]OcpSandbox, error) {
+	accounts := []OcpSandbox{}
 	// Get resource from above 'resources' table
 	rows, err := a.DbPool.Query(
 		context.Background(),
@@ -468,7 +468,7 @@ func (a *OcpAccountProvider) FetchAllByServiceUuid(serviceUuid string) ([]OcpAcc
 	}
 
 	for rows.Next() {
-		var account OcpAccount
+		var account OcpSandbox
 		if err := rows.Scan(
 			&account,
 			&account.ID,
@@ -490,8 +490,8 @@ func (a *OcpAccountProvider) FetchAllByServiceUuid(serviceUuid string) ([]OcpAcc
 	return accounts, nil
 }
 
-func (a *OcpAccountProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) ([]OcpAccountWithCreds, error) {
-	accounts := []OcpAccountWithCreds{}
+func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) ([]OcpSandboxWithCreds, error) {
+	accounts := []OcpSandboxWithCreds{}
 	// Get resource from above 'resources' table
 	rows, err := a.DbPool.Query(
 		context.Background(),
@@ -522,7 +522,7 @@ func (a *OcpAccountProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 	}
 
 	for rows.Next() {
-		var account OcpAccountWithCreds
+		var account OcpSandboxWithCreds
 
 		creds := ""
 		if err := rows.Scan(
@@ -555,7 +555,7 @@ func (a *OcpAccountProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 
 var ErrNoSchedule error = errors.New("No OCP cluster found")
 
-func (a *OcpAccountProvider) GetSchedulableClusters(cloud_selector map[string]string) (OcpClusters, error) {
+func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]string) (OcpClusters, error) {
 	clusters := OcpClusters{}
 	// Get resource from 'ocp_clusters' table
 	rows, err := a.DbPool.Query(
@@ -592,25 +592,25 @@ func (a *OcpAccountProvider) GetSchedulableClusters(cloud_selector map[string]st
 	return clusters, nil
 }
 
-func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string) (OcpAccountWithCreds, error) {
+func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string) (OcpSandboxWithCreds, error) {
 	var rowcount int
 	var minOcpMemoryUsage float64
 	var selectedCluster OcpCluster
 
 	// Ensure annotation has guid
 	if _, exists := annotations["guid"]; !exists {
-		return OcpAccountWithCreds{}, errors.New("guid not found in annotations")
+		return OcpSandboxWithCreds{}, errors.New("guid not found in annotations")
 	}
 
 	// Version with OcpCluster methods
 	candidateClusters, err := a.GetSchedulableClusters(cloud_selector)
 	if err != nil {
 		log.Logger.Error("Error getting schedulable clusters", "error", err)
-		return OcpAccountWithCreds{}, err
+		return OcpSandboxWithCreds{}, err
 	}
 	if len(candidateClusters) == 0 {
 		log.Logger.Error("No OCP cluster found", "cloud_selector", cloud_selector)
-		return OcpAccountWithCreds{}, ErrNoSchedule
+		return OcpSandboxWithCreds{}, ErrNoSchedule
 	}
 
 	// Determine guid, auto increment the guid if there are multiple resources
@@ -621,7 +621,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 	for {
 		if increment > 100 {
 			// something clearly went wrong, shouldn't never happen, but be defensive
-			return OcpAccountWithCreds{}, errors.New("Too many iterations guessing guid")
+			return OcpSandboxWithCreds{}, errors.New("Too many iterations guessing guid")
 		}
 
 		if increment > 0 {
@@ -641,7 +641,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 
 		if err != nil {
 			log.Logger.Error("Error checking resources names", "error", err)
-			return OcpAccountWithCreds{}, err
+			return OcpSandboxWithCreds{}, err
 		}
 
 		if rowcount == 0 {
@@ -651,8 +651,8 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 	}
 
 	// Return the Placement with a status 'initializing'
-	rnew := OcpAccountWithCreds{
-		OcpAccount: OcpAccount{
+	rnew := OcpSandboxWithCreds{
+		OcpSandbox: OcpSandbox{
 			Name:        guid + "-" + serviceUuid,
 			Kind:        "OcpSandbox",
 			Annotations: annotations,
@@ -667,7 +667,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 
 	if err := rnew.Save(); err != nil {
 		log.Logger.Error("Error saving OCP account", "error", err)
-		return OcpAccountWithCreds{}, err
+		return OcpSandboxWithCreds{}, err
 	}
 
 	//--------------------------------------------------
@@ -1009,8 +1009,8 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 				Token: string(saSecret.Data["token"]),
 			},
 		}
-		r := OcpAccountWithCreds{
-			OcpAccount: OcpAccount{
+		r := OcpSandboxWithCreds{
+			OcpSandbox: OcpSandbox{
 				Name:             rnew.Name,
 				Kind:             "OcpSandbox",
 				OcpClusterName:   selectedCluster.Name,
@@ -1042,7 +1042,7 @@ func (a *OcpAccountProvider) Request(serviceUuid string, cloud_selector map[stri
 	return rnew, nil
 }
 
-func (a *OcpAccountProvider) Release(service_uuid string) error {
+func (a *OcpSandboxProvider) Release(service_uuid string) error {
 	accounts, err := a.FetchAllByServiceUuidWithCreds(service_uuid)
 
 	if err != nil {
@@ -1066,15 +1066,15 @@ func (a *OcpAccountProvider) Release(service_uuid string) error {
 	return errorHappened
 }
 
-func NewOcpAccountProvider(dbpool *pgxpool.Pool, vaultSecret string) OcpAccountProvider {
-	return OcpAccountProvider{
+func NewOcpSandboxProvider(dbpool *pgxpool.Pool, vaultSecret string) OcpSandboxProvider {
+	return OcpSandboxProvider{
 		DbPool:      dbpool,
 		VaultSecret: vaultSecret,
 	}
 }
 
-func (a *OcpAccountProvider) FetchAll() ([]OcpAccount, error) {
-	accounts := []OcpAccount{}
+func (a *OcpSandboxProvider) FetchAll() ([]OcpSandbox, error) {
+	accounts := []OcpSandbox{}
 	// Get resource from above 'resources' table
 	rows, err := a.DbPool.Query(
 		context.Background(),
@@ -1100,7 +1100,7 @@ func (a *OcpAccountProvider) FetchAll() ([]OcpAccount, error) {
 	}
 
 	for rows.Next() {
-		var account OcpAccount
+		var account OcpSandbox
 		if err := rows.Scan(
 			&account,
 			&account.ID,
@@ -1121,7 +1121,7 @@ func (a *OcpAccountProvider) FetchAll() ([]OcpAccount, error) {
 	return accounts, nil
 }
 
-func (account *OcpAccountWithCreds) Delete() error {
+func (account *OcpSandboxWithCreds) Delete() error {
 	var api_url string
 	var kubeconfig string
 
@@ -1266,7 +1266,7 @@ func (account *OcpAccountWithCreds) Delete() error {
 	return err
 }
 
-func (p *OcpAccountProvider) FetchByName(name string) (OcpAccount, error) {
+func (p *OcpSandboxProvider) FetchByName(name string) (OcpSandbox, error) {
 	// Get resource from above 'resources' table
 	row := p.DbPool.QueryRow(
 		context.Background(),
@@ -1286,7 +1286,7 @@ func (p *OcpAccountProvider) FetchByName(name string) (OcpAccount, error) {
 		name,
 	)
 
-	var account OcpAccount
+	var account OcpSandbox
 	if err := row.Scan(
 		&account,
 		&account.ID,
@@ -1298,12 +1298,12 @@ func (p *OcpAccountProvider) FetchByName(name string) (OcpAccount, error) {
 		&account.CleanupCount,
 		&account.ClusterAdditionalVars,
 	); err != nil {
-		return OcpAccount{}, err
+		return OcpSandbox{}, err
 	}
 	return account, nil
 }
 
-func (p *OcpAccountProvider) FetchById(id int) (OcpAccount, error) {
+func (p *OcpSandboxProvider) FetchById(id int) (OcpSandbox, error) {
 	// Get resource from above 'resources' table
 	row := p.DbPool.QueryRow(
 		context.Background(),
@@ -1323,7 +1323,7 @@ func (p *OcpAccountProvider) FetchById(id int) (OcpAccount, error) {
 		id,
 	)
 
-	var account OcpAccount
+	var account OcpSandbox
 	if err := row.Scan(
 		&account,
 		&account.ID,
@@ -1335,12 +1335,12 @@ func (p *OcpAccountProvider) FetchById(id int) (OcpAccount, error) {
 		&account.CleanupCount,
 		&account.ClusterAdditionalVars,
 	); err != nil {
-		return OcpAccount{}, err
+		return OcpSandbox{}, err
 	}
 	return account, nil
 }
 
-func (a *OcpAccountWithCreds) Reload() error {
+func (a *OcpSandboxWithCreds) Reload() error {
 	// Ensude ID is set
 	if a.ID == 0 {
 		return errors.New("id must be > 0 to use Reload()")
@@ -1372,7 +1372,7 @@ func (a *OcpAccountWithCreds) Reload() error {
 	)
 
 	var creds string
-	var account OcpAccountWithCreds
+	var account OcpSandboxWithCreds
 	if err := row.Scan(
 		&account,
 		&account.ID,

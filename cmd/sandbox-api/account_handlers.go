@@ -18,13 +18,13 @@ import (
 
 type AccountHandler struct {
 	awsAccountProvider models.AwsAccountProvider
-	OcpAccountProvider models.OcpAccountProvider
+	OcpSandboxProvider models.OcpSandboxProvider
 }
 
-func NewAccountHandler(awsAccountProvider models.AwsAccountProvider, OcpAccountProvider models.OcpAccountProvider) *AccountHandler {
+func NewAccountHandler(awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider models.OcpSandboxProvider) *AccountHandler {
 	return &AccountHandler{
 		awsAccountProvider: awsAccountProvider,
-		OcpAccountProvider: OcpAccountProvider,
+		OcpSandboxProvider: OcpSandboxProvider,
 	}
 }
 
@@ -63,11 +63,11 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 		}
 	case "OcpSandbox", "ocp":
 		var (
-			accounts []models.OcpAccount
+			accounts []models.OcpSandbox
 		)
 		if available != "" && available == "true" {
 			// Account are created on the fly, so this request doesn't make sense
-			// for OcpAccounts
+			// for OcpSandboxes
 			// Return bad request
 			w.WriteHeader(http.StatusBadRequest)
 			enc.Encode(v1.Error{
@@ -78,9 +78,9 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 		}
 		if serviceUuid != "" {
 			// Get the account from DynamoDB
-			accounts, err = h.OcpAccountProvider.FetchAllByServiceUuid(serviceUuid)
+			accounts, err = h.OcpSandboxProvider.FetchAllByServiceUuid(serviceUuid)
 		} else {
-			accounts, err = h.OcpAccountProvider.FetchAll()
+			accounts, err = h.OcpSandboxProvider.FetchAll()
 		}
 
 		accountlist = make([]interface{}, len(accounts))
@@ -153,7 +153,7 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 		return
 	case "OcpSandbox", "ocp":
 		// Get the account from DynamoDB
-		sandbox, err := h.OcpAccountProvider.FetchByName(accountName)
+		sandbox, err := h.OcpSandboxProvider.FetchByName(accountName)
 		if err != nil {
 			if err == models.ErrAccountNotFound {
 				log.Logger.Warn("GET account", "error", err)

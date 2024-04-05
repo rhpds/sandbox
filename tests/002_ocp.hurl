@@ -274,7 +274,7 @@ HTTP 404
 jsonpath "$.message" == "No OCP cluster found"
 
 #################################################################################
-# Ensure there is no OcpAccount matching uuid
+# Ensure there is no OcpSandbox matching uuid
 #################################################################################
 GET {{host}}/api/v1/accounts/OcpSandbox
 Authorization: Bearer {{access_token}}
@@ -353,7 +353,7 @@ Authorization: Bearer {{access_token}}
 HTTP 409
 
 #################################################################################
-# Get all OcpAccounts
+# Get all OcpSandboxes
 #################################################################################
 GET {{host}}/api/v1/accounts/OcpSandbox
 Authorization: Bearer {{access_token}}
@@ -362,7 +362,7 @@ HTTP 200
 jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 1
 
 #################################################################################
-# Get all OcpAccounts using service_uuid query
+# Get all OcpSandboxes using service_uuid query
 #################################################################################
 GET {{host}}/api/v1/accounts/OcpSandbox
 Authorization: Bearer {{access_token}}
@@ -373,7 +373,7 @@ HTTP 200
 jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 1
 
 #################################################################################
-# Get  OcpAccount using name
+# Get  OcpSandbox using name
 #################################################################################
 GET {{host}}/api/v1/accounts/OcpSandbox/{{sandbox_name}}
 Authorization: Bearer {{access_token}}

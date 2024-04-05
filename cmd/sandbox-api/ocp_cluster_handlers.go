@@ -24,8 +24,8 @@ func (h *BaseHandler) CreateOcpClusterHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	ocpCluster.DbPool = h.OcpAccountProvider.DbPool
-	ocpCluster.VaultSecret = h.OcpAccountProvider.VaultSecret
+	ocpCluster.DbPool = h.OcpSandboxProvider.DbPool
+	ocpCluster.VaultSecret = h.OcpSandboxProvider.VaultSecret
 
 	if err := ocpCluster.Save(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -49,7 +49,7 @@ func (h *BaseHandler) DisableOcpClusterHandler(w http.ResponseWriter, r *http.Re
 	name := chi.URLParam(r, "name")
 
 	// Get the OCP cluster from the database
-	ocpCluster, err := h.OcpAccountProvider.GetOcpClusterByName(name)
+	ocpCluster, err := h.OcpSandboxProvider.GetOcpClusterByName(name)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			w.WriteHeader(http.StatusNotFound)
@@ -88,7 +88,7 @@ func (h *BaseHandler) DisableOcpClusterHandler(w http.ResponseWriter, r *http.Re
 
 // GetOcpClustersHandlers returns a list of OCP clusters
 func (h *BaseHandler) GetOcpClustersHandler(w http.ResponseWriter, r *http.Request) {
-	ocpClusters, err := h.OcpAccountProvider.GetOcpClusters()
+	ocpClusters, err := h.OcpSandboxProvider.GetOcpClusters()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
@@ -109,7 +109,7 @@ func (h *BaseHandler) GetOcpClusterHandler(w http.ResponseWriter, r *http.Reques
 	name := chi.URLParam(r, "name")
 
 	// Get the OCP cluster from the database
-	ocpCluster, err := h.OcpAccountProvider.GetOcpClusterByName(name)
+	ocpCluster, err := h.OcpSandboxProvider.GetOcpClusterByName(name)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			w.WriteHeader(http.StatusNotFound)
@@ -139,7 +139,7 @@ func (h *BaseHandler) DeleteOcpClusterHandler(w http.ResponseWriter, r *http.Req
 	name := chi.URLParam(r, "name")
 
 	// Get the OCP cluster from the database
-	ocpCluster, err := h.OcpAccountProvider.GetOcpClusterByName(name)
+	ocpCluster, err := h.OcpSandboxProvider.GetOcpClusterByName(name)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			w.WriteHeader(http.StatusNotFound)

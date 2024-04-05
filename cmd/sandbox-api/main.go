@@ -129,7 +129,7 @@ func main() {
 	// ---------------------------------------------------------------------
 	// Ocp
 	// ---------------------------------------------------------------------
-	OcpAccountProvider := models.NewOcpAccountProvider(dbPool, vaultSecret)
+	OcpSandboxProvider := models.NewOcpSandboxProvider(dbPool, vaultSecret)
 
 	// ---------------------------------------------------------------------
 	// Setup JWT
@@ -151,10 +151,10 @@ func main() {
 	// to the handler maker.
 	// When we need to migrate to Postgresql, we can pass a different "Provider" which will
 	// implement the same interface.
-	accountHandler := NewAccountHandler(awsAccountProvider, OcpAccountProvider)
+	accountHandler := NewAccountHandler(awsAccountProvider, OcpSandboxProvider)
 
 	// Factory for handlers which need connections to both databases
-	baseHandler := NewBaseHandler(awsAccountProvider.Svc, dbPool, doc, oaRouter, awsAccountProvider, OcpAccountProvider)
+	baseHandler := NewBaseHandler(awsAccountProvider.Svc, dbPool, doc, oaRouter, awsAccountProvider, OcpSandboxProvider)
 
 	// Admin handler adds tokenAuth to the baseHandler
 	adminHandler := NewAdminHandler(baseHandler, tokenAuth)
