@@ -772,8 +772,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			return
 		}
 
-		serviceAccountName := "sandbox-" + rnew.Name
-		serviceAccountName = serviceAccountName[:min(63, len(serviceAccountName))] // truncate to 63
+		serviceAccountName := "sandbox"
 		namespaceName := "sandbox-" + rnew.Name
 		namespaceName = namespaceName[:min(63, len(namespaceName))] // truncate to 63
 
@@ -1220,9 +1219,7 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		return err
 	}
 	// Define the Service Account name
-	// TODO: use the account.Credentials to get the service account name
-	serviceAccountName := "sandbox-" + account.Name
-	serviceAccountName = serviceAccountName[:min(63, len(serviceAccountName))] // truncate to 63
+	serviceAccountName := "sandbox"
 
 	// Check if the namespace exists
 	_, err = clientset.CoreV1().Namespaces().Get(context.TODO(), account.Namespace, metav1.GetOptions{})
