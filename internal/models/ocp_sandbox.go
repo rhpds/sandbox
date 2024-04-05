@@ -1270,7 +1270,7 @@ func (p *OcpSandboxProvider) FetchByName(name string) (OcpSandbox, error) {
 		context.Background(),
 		`SELECT
 		 r.resource_data,
-         r.id,
+		 r.id,
 		 r.resource_name,
 		 r.resource_type,
 		 r.created_at,
@@ -1307,7 +1307,7 @@ func (p *OcpSandboxProvider) FetchById(id int) (OcpSandbox, error) {
 		context.Background(),
 		`SELECT
 		 r.resource_data,
-         r.id,
+		 r.id,
 		 r.resource_name,
 		 r.resource_type,
 		 r.created_at,
