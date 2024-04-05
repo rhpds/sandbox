@@ -500,7 +500,7 @@ func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, reservation st
 				#o = :ow,
  				owner_email = :email,
  				#c = :co,
-                annotations = :annotations
+				annotations = :annotations
 				`,
 			),
 			ExpressionAttributeNames: map[string]*string{

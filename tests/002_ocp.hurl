@@ -417,6 +417,8 @@ jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 jsonpath "$.Placement.resources" count == 2
 jsonpath "$.Placement.resources[0].status" == "initializing"
+jsonpath "$.Placement.resources[0].annotations.guid" == "testg-1"
+jsonpath "$.Placement.resources[0].annotations.purpose" == "ocp"
 
 #################################################################################
 # Wait until the placement is succesfull and resources are ready

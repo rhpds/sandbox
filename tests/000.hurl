@@ -66,9 +66,15 @@ Authorization: Bearer {{access_token}}
   "resources": [
     {
       "kind": "AwsSandbox",
-      "count": 1
+      "count": 1,
+      "annotations": {
+        "purpose": "backend"
+      }
     }
-  ]
+  ],
+  "annotations": {
+    "guid": "testg"
+  }
 }
 HTTP 200
 [Captures]
@@ -79,6 +85,8 @@ jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 jsonpath "$.Placement.resources" count == 1
 jsonpath "$.Placement.resources[0].available" == false
 jsonpath "$.Placement.resources[0].reservation" not exists
+jsonpath "$.Placement.resources[0].annotations.guid" == "testg"
+jsonpath "$.Placement.resources[0].annotations.purpose" == "backend"
 
 #################################################################################
 # Stop the account (stop all instances), should return a request id
