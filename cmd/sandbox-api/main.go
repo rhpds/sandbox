@@ -12,6 +12,7 @@ import (
 	"github.com/rhpds/sandbox/internal/config"
 	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"github.com/rhpds/sandbox/internal/log"
+	"github.com/rhpds/sandbox/internal/models"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	gorillamux "github.com/getkin/kin-openapi/routers/gorillamux"
@@ -126,6 +127,11 @@ func main() {
 	awsAccountProvider := sandboxdb.NewAwsAccountDynamoDBProviderWithSecret(vaultSecret)
 
 	// ---------------------------------------------------------------------
+	// Ocp
+	// ---------------------------------------------------------------------
+	OcpSandboxProvider := models.NewOcpSandboxProvider(dbPool, vaultSecret)
+
+	// ---------------------------------------------------------------------
 	// Setup JWT
 	// ---------------------------------------------------------------------
 
@@ -145,10 +151,10 @@ func main() {
 	// to the handler maker.
 	// When we need to migrate to Postgresql, we can pass a different "Provider" which will
 	// implement the same interface.
-	accountHandler := NewAccountHandler(awsAccountProvider)
+	accountHandler := NewAccountHandler(awsAccountProvider, OcpSandboxProvider)
 
 	// Factory for handlers which need connections to both databases
-	baseHandler := NewBaseHandler(awsAccountProvider.Svc, dbPool, doc, oaRouter, awsAccountProvider)
+	baseHandler := NewBaseHandler(awsAccountProvider.Svc, dbPool, doc, oaRouter, awsAccountProvider, OcpSandboxProvider)
 
 	// Admin handler adds tokenAuth to the baseHandler
 	adminHandler := NewAdminHandler(baseHandler, tokenAuth)
@@ -254,6 +260,15 @@ func main() {
 		r.Post("/api/v1/admin/jwt", adminHandler.IssueLoginJWTHandler)
 		r.Get("/api/v1/admin/jwt", baseHandler.GetJWTHandler)
 		r.Put("/api/v1/admin/jwt/{id}/invalidate", baseHandler.InvalidateTokenHandler)
+
+		// ---------------------------------
+		// Ocp
+		// ---------------------------------
+		r.Post("/api/v1/ocp-shared-cluster-configurations", baseHandler.CreateOcpSharedClusterConfigurationHandler)
+		r.Get("/api/v1/ocp-shared-cluster-configurations", baseHandler.GetOcpSharedClusterConfigurationsHandler)
+		r.Get("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.GetOcpSharedClusterConfigurationHandler)
+		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/disable", baseHandler.DisableOcpSharedClusterConfigurationHandler)
+		r.Delete("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.DeleteOcpSharedClusterConfigurationHandler)
 
 		// Reservations
 		r.Post("/api/v1/reservations", baseHandler.CreateReservationHandler)

@@ -2,7 +2,7 @@
 # Get an access token using the login token
 #################################################################################
 
-GET http://{{host}}/api/v1/login
+GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
 HTTP 200
 [Captures]
@@ -15,7 +15,7 @@ jsonpath "$.access_token_exp" isString
 # Get an AWS sandbox
 #################################################################################
 
-GET http://{{host}}/api/v1/accounts/aws/sandbox3192
+GET {{host}}/api/v1/accounts/aws/sandbox3192
 Authorization: Bearer {{access_token}}
 HTTP 200
 [Asserts]
@@ -25,7 +25,7 @@ jsonpath "$.name" == "sandbox3192"
 # Ensure the placement is deleted before starting
 #################################################################################
 
-DELETE http://{{host}}/api/v1/placements/{{uuid}}
+DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
 HTTP *
 
@@ -33,14 +33,14 @@ HTTP *
 # Ensure placement doesn't exist
 #################################################################################
 
-GET http://{{host}}/api/v1/placements/{{uuid}}
+GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
 HTTP 404
 
 #################################################################################
 # Create a placement too big, ensure it results in capacity error
 #################################################################################
-POST http://{{host}}/api/v1/placements
+POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
 {
   "service_uuid": "{{uuid}}",
@@ -59,16 +59,22 @@ jsonpath "$.message" == "Not enough AWS accounts available"
 # Create a new placement
 #################################################################################
 
-POST http://{{host}}/api/v1/placements
+POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
 {
   "service_uuid": "{{uuid}}",
   "resources": [
     {
       "kind": "AwsSandbox",
-      "count": 1
+      "count": 1,
+      "annotations": {
+        "purpose": "backend"
+      }
     }
-  ]
+  ],
+  "annotations": {
+    "guid": "testg"
+  }
 }
 HTTP 200
 [Captures]
@@ -79,12 +85,14 @@ jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 jsonpath "$.Placement.resources" count == 1
 jsonpath "$.Placement.resources[0].available" == false
 jsonpath "$.Placement.resources[0].reservation" not exists
+jsonpath "$.Placement.resources[0].annotations.guid" == "testg"
+jsonpath "$.Placement.resources[0].annotations.purpose" == "backend"
 
 #################################################################################
 # Stop the account (stop all instances), should return a request id
 #################################################################################
 
-PUT http://{{host}}/api/v1/placements/{{uuid}}/stop
+PUT {{host}}/api/v1/placements/{{uuid}}/stop
 Authorization: Bearer {{access_token}}
 HTTP 202
 [Captures]
@@ -96,10 +104,10 @@ jsonpath "$.message" == "stop request created"
 # Wait for the stop request to successfully finish
 #################################################################################
 
-GET http://{{host}}/api/v1/requests/{{r_stop}}/status
+GET {{host}}/api/v1/requests/{{r_stop}}/status
 Authorization: Bearer {{access_token}}
 [Options]
-retry: 50
+retry: 60
 HTTP 200
 [Asserts]
 jsonpath "$.status" == "success"
@@ -108,7 +116,7 @@ jsonpath "$.status" == "success"
 # Create a start request
 #################################################################################
 
-PUT http://{{host}}/api/v1/placements/{{uuid}}/start
+PUT {{host}}/api/v1/placements/{{uuid}}/start
 Authorization: Bearer {{access_token}}
 HTTP 202
 [Captures]
@@ -120,7 +128,7 @@ jsonpath "$.message" == "start request created"
 # Wait for the start request to successfully finish
 #################################################################################
 
-GET http://{{host}}/api/v1/requests/{{r_start}}/status
+GET {{host}}/api/v1/requests/{{r_start}}/status
 Authorization: Bearer {{access_token}}
 [Options]
 retry: 50
@@ -131,7 +139,7 @@ jsonpath "$.status" == "success"
 #################################################################################
 # Get the status, it should return an error
 #################################################################################
-GET http://{{host}}/api/v1/placements/{{uuid}}/status
+GET {{host}}/api/v1/placements/{{uuid}}/status
 Authorization: Bearer {{access_token}}
 HTTP 500
 [Asserts]
@@ -141,7 +149,7 @@ jsonpath "$.message" == "Error getting last jobs"
 # Create a status request
 #################################################################################
 
-PUT http://{{host}}/api/v1/placements/{{uuid}}/status
+PUT {{host}}/api/v1/placements/{{uuid}}/status
 Authorization: Bearer {{access_token}}
 HTTP 202
 [Captures]
@@ -153,7 +161,7 @@ jsonpath "$.message" == "status request created"
 # Wait for the status request to successfully finish
 #################################################################################
 
-GET http://{{host}}/api/v1/requests/{{r_status}}/status
+GET {{host}}/api/v1/requests/{{r_status}}/status
 Authorization: Bearer {{access_token}}
 [Options]
 retry: 50
@@ -165,12 +173,11 @@ jsonpath "$.status" == "success"
 # Now get the status again
 #################################################################################
 
-GET http://{{host}}/api/v1/placements/{{uuid}}/status
+GET {{host}}/api/v1/placements/{{uuid}}/status
 Authorization: Bearer {{access_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.status" count >= 1
-# TODO: instead of getting the first item, use query for the status
 jsonpath "$.status[0].account_name" == "{{account}}"
 jsonpath "$.status[0].account_kind" == "AwsSandbox"
 jsonpath "$.status[0].status" == "success"
@@ -179,7 +186,7 @@ jsonpath "$.status[0].status" == "success"
 # Create a start request right before deleting the placement
 #################################################################################
 
-PUT http://{{host}}/api/v1/placements/{{uuid}}/start
+PUT {{host}}/api/v1/placements/{{uuid}}/start
 Authorization: Bearer {{access_token}}
 HTTP 202
 [Captures]
@@ -191,7 +198,7 @@ jsonpath "$.message" == "start request created"
 # Delete the placement
 #################################################################################
 
-DELETE http://{{host}}/api/v1/placements/{{uuid}}
+DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
 HTTP 200
 
@@ -199,7 +206,7 @@ HTTP 200
 # Ensure start request doesn't exist
 #################################################################################
 
-GET http://{{host}}/api/v1/requests/{{r_start}}/status
+GET {{host}}/api/v1/requests/{{r_start}}/status
 Authorization: Bearer {{access_token}}
 HTTP 404
 
@@ -207,7 +214,7 @@ HTTP 404
 # Ensure stop request doesn't exist
 #################################################################################
 
-GET http://{{host}}/api/v1/requests/{{r_stop}}/status
+GET {{host}}/api/v1/requests/{{r_stop}}/status
 Authorization: Bearer {{access_token}}
 HTTP 404
 
@@ -215,6 +222,6 @@ HTTP 404
 # Ensure placement doesn't exist
 #################################################################################
 
-GET http://{{host}}/api/v1/placements/{{uuid}}
+GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
 HTTP 404

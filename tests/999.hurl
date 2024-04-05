@@ -2,7 +2,7 @@
 # Get an access token using the login token
 #################################################################################
 
-GET http://{{host}}/api/v1/login
+GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
 HTTP 200
 [Captures]
@@ -12,7 +12,7 @@ access_token: jsonpath "$.access_token"
 # Get an Admin access token using the admin login token
 #################################################################################
 
-GET http://{{host}}/api/v1/login
+GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
 HTTP 200
 [Captures]
@@ -25,7 +25,7 @@ jsonpath "$.access_token_exp" isString
 # Delete placement
 #################################################################################
 
-DELETE http://{{host}}/api/v1/placements/{{uuid}}
+DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
 [Options]
 retry: 40
@@ -35,7 +35,7 @@ HTTP 404
 # Delete reservation
 #################################################################################
 
-DELETE http://{{host}}/api/v1/reservations/summit
+DELETE {{host}}/api/v1/reservations/summit
 Authorization: Bearer {{access_token_admin}}
 [Options]
 retry: 40

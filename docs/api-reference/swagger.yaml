@@ -422,6 +422,8 @@ paths:
           enum:
             - aws
             - AwsSandbox
+            - ocp
+            - OcpSandbox
       - name: available
         in: query
         description: Boolean to filter if available or taken.
@@ -469,12 +471,15 @@ paths:
           enum:
             - aws
             - AwsSandbox
+            - ocp
+            - OcpSandbox
       - name: name
         in: path
         required: true
         description: The name of the sandbox
         schema:
           type: string
+
     get:
       tags:
         - account
@@ -562,6 +567,8 @@ paths:
           enum:
             - aws
             - AwsSandbox
+            - ocp
+            - OcpSandbox
       - name: name
         in: path
         required: true
@@ -617,6 +624,8 @@ paths:
           enum:
             - aws
             - AwsSandbox
+            - ocp
+            - OcpSandbox
       - name: name
         in: path
         required: true
@@ -669,6 +678,8 @@ paths:
           enum:
             - aws
             - AwsSandbox
+            - ocp
+            - OcpSandbox
       - name: name
         in: path
         required: true
@@ -721,6 +732,8 @@ paths:
           enum:
             - aws
             - AwsSandbox
+            - ocp
+            - OcpSandbox
       - name: name
         in: path
         required: true
@@ -1310,6 +1323,208 @@ paths:
               example:
                 message: Error invalidating token
                 http_code: 500
+  /ocp-shared-cluster-configurations:
+    post:
+      summary: Create a new OcpSharedClusterConfiguration
+      operationId: createOcpSharedClusterConfiguration
+      tags:
+        - admin
+      requestBody:
+        description: JSON object to specify the OcpSharedClusterConfiguration.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OcpSharedClusterConfiguration"
+            example:
+              name: ocp-cluster-1
+              api_url: https://api.ocp-cluster-1.com:6443
+              ingress_domain: apps.ocp-cluster-1.com
+              kubeconfig: |
+                apiVersion: v1
+                clusters:
+                - cluster:
+                    server: https://api.ocp-cluster-1.com:6443
+                  name: ocp-cluster-1
+                contexts:
+                - context:
+                    cluster: ocp-cluster-1
+                    user: ocp-cluster-1
+                  name: ocp-cluster-1
+                current-context: ocp-cluster-1
+                kind: Config
+                preferences: {}
+                users:
+                - name: ocp-cluster-1
+                  user:
+                    token: <TOKEN>
+              annotations:
+                virt: available
+                cloud: ibm
+                purpose: dev
+      responses:
+        '201':
+          description: OcpSharedClusterConfiguration created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: OCP shared cluster configuration created
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: createOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      summary: Get all OcpSharedClusterConfigurations
+      operationId: getOcpSharedClusterConfigurations
+      tags:
+        - admin
+      responses:
+        '200':
+          description: The list of OcpSharedClusterConfigurations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OcpSharedClusterConfigurations"
+        default:
+          description: getOcpSharedClusterConfigurations unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ocp-shared-cluster-configurations/{name}:
+    get:
+      summary: Get information about an OcpSharedClusterConfiguration
+      operationId: getOcpSharedClusterConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration
+          schema:
+            type: string
+          example: ocp-cluster-1
+      responses:
+        '200':
+          description: The OcpSharedClusterConfiguration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OcpSharedClusterConfiguration"
+        '404':
+          description: getOcpSharedClusterConfiguration OcpSharedClusterConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete an OcpSharedClusterConfiguration
+      operationId: deleteOcpSharedClusterConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration
+          schema:
+            type: string
+          example: ocp-cluster-1
+      responses:
+        '200':
+          description: The OcpSharedClusterConfiguration is deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: OCP shared cluster configuration deleted
+        '404':
+          description: deleteOcpSharedClusterConfiguration OcpSharedClusterConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: |-
+            OcpSharedClusterConfiguration is not deletable. Usually because it has
+            resources attached to it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: deleteOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ocp-shared-cluster-configurations/{name}/disable:
+    put:
+      summary: Disable an OcpSharedClusterConfiguration
+      operationId: disableOcpSharedClusterConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration
+          schema:
+            type: string
+            example: ocp-cluster-1
+          example: ocp-cluster-1
+      responses:
+        '200':
+          description: The OcpSharedClusterConfiguration is disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: OCP shared cluster configuration disabled
+        '404':
+          description: disableOcpSharedClusterConfiguration OcpSharedClusterConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: disableOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+
   /health:
     get:
       summary: Health endpoint
@@ -1358,6 +1573,8 @@ components:
       format: uuid
 
     PlacementRequest:
+      description: |-
+        A placement request is a record of service(uuid) / resources / annotations
       type: object
       required:
         - service_uuid
@@ -1372,7 +1589,6 @@ components:
           type: array
           items:
             type: object
-            additionalProperties: false
             properties:
               kind:
                 $ref: '#/components/schemas/ResourceKind'
@@ -1381,6 +1597,10 @@ components:
                 minimum: 1
                 default: 1
                 example: 1
+              cloud_selector:
+                $ref: "#/components/schemas/Annotations"
+              annotations:
+                $ref: "#/components/schemas/Annotations"
         annotations:
           $ref: "#/components/schemas/Annotations"
       example:
@@ -1413,6 +1633,15 @@ components:
           $ref: "#/components/schemas/UUID"
         resources:
           $ref: "#/components/schemas/Resources"
+        status:
+          type: string
+          enum:
+            - new
+            - initializing
+            - updating
+            - success
+            - error
+            - deleting
         created_at:
           description: The date (UTC and RFC3339 format) the placement was made.
           type: string
@@ -1427,6 +1656,7 @@ components:
           $ref: "#/components/schemas/Annotations"
 
     PlacementWithCreds:
+      description: A placement with credentials
       allOf:
         - $ref: '#/components/schemas/Placement'
         - type: object
@@ -1438,6 +1668,7 @@ components:
       oneOf:
         - $ref: '#/components/schemas/AwsAccount'
         - $ref: '#/components/schemas/AzureAccount'
+        - $ref: '#/components/schemas/OcpSandbox'
       discriminator:
         propertyName: kind
         mapping:
@@ -1446,10 +1677,12 @@ components:
     AccountWithCreds:
       oneOf:
         - $ref: '#/components/schemas/AwsAccountWithCreds'
+        - $ref: '#/components/schemas/OcpSandboxWithCreds'
       discriminator:
         propertyName: kind
         mapping:
           AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
+          OcpSandbox: '#/components/schemas/OcpSandboxWithCreds'
 
     Resource:
       type: object
@@ -1482,6 +1715,7 @@ components:
         propertyName: kind
         mapping:
           AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
+          OcpSandbox: '#/components/schemas/OcpSandboxWithCreds'
 
     Resources:
       type: array
@@ -1492,10 +1726,30 @@ components:
     Credential:
       oneOf:
         - $ref: '#/components/schemas/AwsIamKey'
+        - $ref: '#/components/schemas/OcpServiceAccount'
       discriminator:
         propertyName: kind
         mapping:
           aws_iam_key: '#/components/schemas/AwsIamKey'
+          ServiceAccount: '#/components/schemas/OcpServiceAccount'
+
+    # Credential for OcpSandbox
+    OcpServiceAccount:
+      type: object
+      required:
+        - name
+        - kind
+        - token
+      properties:
+        kind:
+          type: string
+          example: ServiceAccount
+        name:
+          type: string
+          example: guid-uuid
+        token:
+          type: string
+          example: 1234567890abcdefghij
 
     Credentials:
       type: array
@@ -1579,6 +1833,60 @@ components:
               items:
                 $ref: '#/components/schemas/Credentials'
 
+
+    OcpSandbox:
+      type: object
+      required:
+        - name
+        - kind
+        - service_uuid
+        - ocp_cluster
+        - ingress_domain
+        - api_url
+      properties:
+        name:
+          type: string
+          example: sandbox123
+        ocp_cluster:
+          type: string
+          example: ocp-cluster-1
+        kind:
+          type: string
+          example: OcpSandbox
+        service_uuid:
+          $ref: '#/components/schemas/UUID'
+        annotations:
+          $ref: '#/components/schemas/Annotations'
+        api_url:
+          type: string
+          example: https://api.ocp-cluster-1.com:6443
+        ingress_domain:
+          type: string
+          example: apps.ocp-cluster-1.com
+        status:
+          type: string
+          enum:
+            - initializing
+            - electing_cluster
+            - success
+            - error
+            - deleting
+        cluster_additional_vars:
+          type: object
+          example:
+            deployer:
+              openshift_cnv_nfs_path: /IBMfoobar/data01
+              openshift_cnv_nfs_server: fsf-region.domain.com
+
+    OcpSandboxWithCreds:
+      allOf:
+        - $ref: '#/components/schemas/OcpSandbox'
+        - type: object
+          properties:
+            credentials:
+              type: array
+              items:
+                $ref: '#/components/schemas/Credentials'
     Accounts:
       type: array
       items:
@@ -1672,10 +1980,12 @@ components:
       default: AwsSandbox
       enum:
         - AwsSandbox
+        - OcpSandbox
 
     Reservation:
+      description: Reservation record
       type: object
-      #additionalProperties: false
+      # additionalProperties: false
       properties:
         name:
           type: string
@@ -1712,6 +2022,7 @@ components:
 
 
     ReservationResponse:
+      description: The reservation response
       type: object
       properties:
         http_code:
@@ -1725,6 +2036,7 @@ components:
           $ref: "#/components/schemas/Reservation"
 
     ReservationResourcesResponse:
+      description: The list of resources in a reservation
       type: array
       items:
         type: object
@@ -1757,3 +2069,91 @@ components:
               zone: sandbox123.domain.com
               hosted_zone_id: Z019612345AH4C7KTTZJ0
               to_cleanup: false
+
+    OcpSharedClusterConfiguration:
+      description: OcpSharedClusterConfiguration is a record of an OpenShift cluster
+      type: object
+      required:
+        - name
+        - api_url
+        - ingress_domain
+        - kubeconfig
+        - annotations
+      properties:
+        name:
+          type: string
+          description: The name of the cluster, must be alphanumeric or dash
+          example: ocp-cluster-1
+        api_url:
+          type: string
+          description: The API URL of the cluster
+          example: https://api.ocp-cluster-1.com:6443
+        ingress_domain:
+          type: string
+          description: The default ingress domain of the cluster
+          example: apps.ocp-cluster-1.com
+        valid:
+          type: boolean
+          description: true if the cluster is valid
+          example: true
+          default: true
+        kubeconfig:
+          type: string
+          example: |
+            apiVersion: v1
+            clusters:
+            - cluster:
+                server: https://api.ocp-cluster-1.com:6443
+              name: ocp-cluster-1
+            contexts:
+            - context:
+                cluster: ocp-cluster-1
+                user: ocp-cluster-1
+              name: ocp-cluster-1
+            current-context: ocp-cluster-1
+            kind: Config
+            preferences: {}
+            users:
+            - name: ocp-cluster-1
+              user:
+                token: <TOKEN>
+        annotations:
+          $ref: "#/components/schemas/Annotations"
+        additional_vars:
+          type: object
+          description: Additional variables for the cluster
+          example:
+            deployer:
+              openshift_cnv_nfs_path: /IBMfoobar/data01
+              openshift_cnv_nfs_server: fsf-region.domain.com
+      example:
+        name: ocp-cluster-1
+        api_url: https://api.ocp-cluster-1.com:6443
+        ingress_domain: apps.ocp-cluster-1.com
+        kubeconfig: |
+          apiVersion: v1
+          clusters:
+          - cluster:
+              server: https://api.ocp-cluster-1.com:6443
+            name: ocp-cluster-1
+          contexts:
+          - context:
+              cluster: ocp-cluster-1
+              user: ocp-cluster-1
+            name: ocp-cluster-1
+          current-context: ocp-cluster-1
+          kind: Config
+          preferences: {}
+          users:
+          - name: ocp-cluster-1
+            user:
+              token: <TOKEN>
+        annotations:
+          virt: available
+          cloud: ibm
+          purpose: dev
+    OcpSharedClusterConfigurations:
+      description: The list of OcpSharedClusterConfigurations
+      type: array
+      items:
+        $ref: '#/components/schemas/OcpSharedClusterConfiguration'

@@ -15,8 +15,9 @@ type Placement struct {
 	Model
 
 	ServiceUuid string            `json:"service_uuid"`
-	Resources   []any             `json:"resources,omitempty"`
+	Status      string            `json:"status"`
 	Annotations map[string]string `json:"annotations"`
+	Resources   []any             `json:"resources,omitempty"`
 	Request     any               `json:"request"`
 }
 
@@ -36,9 +37,9 @@ func (p *Placement) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (p *Placement) LoadResources(accountProvider AwsAccountProvider) error {
+func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider) error {
 
-	accounts, err := accountProvider.FetchAllByServiceUuid(p.ServiceUuid)
+	accounts, err := awsProvider.FetchAllByServiceUuid(p.ServiceUuid)
 
 	if err != nil {
 		return err
@@ -49,13 +50,31 @@ func (p *Placement) LoadResources(accountProvider AwsAccountProvider) error {
 	for _, account := range accounts {
 		p.Resources = append(p.Resources, account)
 	}
+
+	// AwsAccounts are always ready
+	status := "success"
+
+	ocpSandboxes, err := ocpProvider.FetchAllByServiceUuid(p.ServiceUuid)
+
+	if err != nil {
+		return err
+	}
+
+	for _, account := range ocpSandboxes {
+		p.Resources = append(p.Resources, account)
+		if account.Status != "success" {
+			status = account.Status
+		}
+	}
+
+	p.Status = status
 
 	return nil
 }
 
-func (p *Placement) LoadResourcesWithCreds(accountProvider AwsAccountProvider) error {
+func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider) error {
 
-	accounts, err := accountProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
+	accounts, err := awsProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
 
 	if err != nil {
 		return err
@@ -66,6 +85,22 @@ func (p *Placement) LoadResourcesWithCreds(accountProvider AwsAccountProvider) e
 	for _, account := range accounts {
 		p.Resources = append(p.Resources, account)
 	}
+	// AwsAccounts are always ready
+	status := "success"
+
+	ocpSandboxes, err := ocpProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
+
+	if err != nil {
+		return err
+	}
+
+	for _, account := range ocpSandboxes {
+		p.Resources = append(p.Resources, account)
+		if account.Status != "success" {
+			status = account.Status
+		}
+	}
+	p.Status = status
 
 	return nil
 }
@@ -86,9 +121,9 @@ func (p *Placement) LoadActiveResources(accountProvider AwsAccountProvider) erro
 	return nil
 }
 
-func (p *Placement) LoadActiveResourcesWithCreds(accountProvider AwsAccountProvider) error {
+func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider) error {
 
-	accounts, err := accountProvider.FetchAllActiveByServiceUuidWithCreds(p.ServiceUuid)
+	accounts, err := awsProvider.FetchAllActiveByServiceUuidWithCreds(p.ServiceUuid)
 
 	if err != nil {
 		return err
@@ -99,6 +134,23 @@ func (p *Placement) LoadActiveResourcesWithCreds(accountProvider AwsAccountProvi
 	for _, account := range accounts {
 		p.Resources = append(p.Resources, account)
 	}
+	// AwsAccounts are always ready
+	status := "success"
+
+	ocpSandboxes, err := ocpProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
+
+	if err != nil {
+		return err
+	}
+
+	for _, account := range ocpSandboxes {
+		p.Resources = append(p.Resources, account)
+		if account.Status != "success" {
+			status = account.Status
+		}
+	}
+
+	p.Status = status
 
 	return nil
 }
@@ -124,7 +176,9 @@ func (p *Placement) Save(dbpool *pgxpool.Pool) error {
 		// Insert placement
 		err = dbpool.QueryRow(
 			context.Background(),
-			"INSERT INTO placements (service_uuid, request, annotations) VALUES ($1, $2, $3) RETURNING id",
+			`INSERT INTO placements
+             (service_uuid, request, annotations)
+             VALUES ($1, $2, $3) RETURNING id`,
 			p.ServiceUuid, p.Request, p.Annotations,
 		).Scan(&id)
 
@@ -133,18 +187,33 @@ func (p *Placement) Save(dbpool *pgxpool.Pool) error {
 		}
 
 		p.ID = id
+
+		// Update 'resources' table and set resources.placement_id to placements.id using the matching service UUID
+		if _, err = dbpool.Exec(
+			context.Background(),
+			"UPDATE resources SET placement_id = $1 WHERE service_uuid = $2", p.ID, p.ServiceUuid,
+		); err != nil {
+			return err
+		}
+
 		return nil
 	}
 
 	return nil
 }
 
-func (p *Placement) Delete(dbpool *pgxpool.Pool, accountProvider AwsAccountProvider) error {
+func (p *Placement) Delete(dbpool *pgxpool.Pool, accountProvider AwsAccountProvider, ocpProvider OcpSandboxProvider) error {
 	if p.ID == 0 {
 		return errors.New("Placement ID is required")
 	}
 
 	if err := accountProvider.MarkForCleanupByServiceUuid(p.ServiceUuid); err != nil {
+		log.Logger.Error("Error while releasing AWS sandboxes")
+		return err
+	}
+
+	if err := ocpProvider.Release(p.ServiceUuid); err != nil {
+		log.Logger.Error("Error while releasing OCP sandboxes")
 		return err
 	}
 
@@ -161,7 +230,9 @@ func (p *Placement) Delete(dbpool *pgxpool.Pool, accountProvider AwsAccountProvi
 	// NOTE: This will done automatically by the SQL constraints when we move to Postgresql instead of
 	// dynamodb for the accounts.
 
-	p.LoadResources(accountProvider)
+	if err := p.LoadResources(accountProvider, ocpProvider); err != nil {
+		return err
+	}
 
 	return err
 }
@@ -270,6 +341,7 @@ func GetAllPlacements(dbpool *pgxpool.Pool) (Placements, error) {
 func GetPlacementByServiceUuid(dbpool *pgxpool.Pool, serviceUuid string) (*Placement, error) {
 	var p Placement
 
+	log.Logger.Info("GetPlacementByServiceUuid", "serviceUuid", serviceUuid)
 	err := dbpool.QueryRow(
 		context.Background(),
 		"SELECT id, service_uuid, request, annotations, created_at, updated_at FROM placements WHERE service_uuid = $1", serviceUuid,
@@ -283,10 +355,23 @@ func GetPlacementByServiceUuid(dbpool *pgxpool.Pool, serviceUuid string) (*Place
 }
 
 // DeletePlacementByServiceUuid deletes a placement by ServiceUuid
-func DeletePlacementByServiceUuid(dbpool *pgxpool.Pool, accountProvider AwsAccountProvider, serviceUuid string) error {
+func DeletePlacementByServiceUuid(dbpool *pgxpool.Pool, awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, serviceUuid string) error {
 	placement, err := GetPlacementByServiceUuid(dbpool, serviceUuid)
 	if err != nil {
+		log.Logger.Error("Error GetPlacementByServiceUuid")
 		return err
 	}
-	return placement.Delete(dbpool, accountProvider)
+	return placement.Delete(dbpool, awsProvider, ocpProvider)
+}
+
+// SetLifecycleResourceJobStatus sets the status of a LifecycleResourceJob
+func (p *Placement) SetStatus(dbpool *pgxpool.Pool, status string) error {
+	_, err := dbpool.Exec(
+		context.Background(),
+		"UPDATE placements SET status = $1 WHERE id = $2",
+		status,
+		p.ID,
+	)
+
+	return err
 }

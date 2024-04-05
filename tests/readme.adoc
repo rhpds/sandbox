@@ -7,12 +7,12 @@ See link:https://hurl.dev/[hurl.dev] for upstream documentation.
 ----
 make run-api
 
-uuid=$(uuidgen)
+uuid=$(uuidgen -r)
 
 hurl --test \
   --variable login_token=... \
   --variable login_token_admin=... \
-  --variable host=localhost:8080 \
+  --variable host=http://localhost:8080 \
   --variable uuid=$uuid \
   *.hurl
 ----
@@ -28,6 +28,73 @@ Executed files:  2
 Succeeded files: 2 (100.0%)
 Failed files:    0 (0.0%)
 Duration:        35680 ms
+----
+
+== OCP tests ==
+
+=== requirements ===
+
+* ocp cluster with matching annotations, see below
+* the entry in the `ocp_shared_cluster_configurations` table
+
+=== Create the OcpSharedClusterConfiguration entry ===
+
+Either you're using the DEV database,  or you'll have to setup the OCP shared cluster configuration in your local DB table `ocp_cluster`. That can be done using link:../tools/ocp_shared_cluster_configuration_create.hurl[ocp_shared_cluster_configuration_create.hurl]
+
+
+[source,json]
+.`.dev.kube.json`
+----
+{
+  "name": "cluster-foo",
+  "api_url": "https://api.domain.com:6443",
+  "annotations":
+    {
+      "virt":"no",
+      "cloud":"cnv",
+      "purpose":"dev"
+    },
+  "kubeconfig": "..."
+}
+----
+
+The tricky part is to embed the kubeconfig, that is usually in the YAML format into a JSON string. This can be done with the following command:
+
+----
+jq --raw-input --slurp < KUBECONFIGFILE
+----
+
+For example if you have access to an ocp-cluster bastion, you can do:
+----
+ssh user@bastion cat .kube/config|jq --raw-input --slurp
+----
+
+.Add the entry to the DB
+----
+hurl --variable login_token_admin=$admintoken \
+--file-root . \
+--variable host=http://localhost:8080 \
+--variable ocp_cluster_def=.dev.kube.json \
+./tools/ocp_shared_cluster_configuration_create.hurl
+
+
+# or with curl directly
+curl --header "Authorization: Bearer $admintoken" \
+  --header 'Content-Type: application/json' \
+  --data-binary '@./.dev.kube.json' \
+  'http://localhost:8080/api/v1/ocp-shared-cluster-configurations'
+----
+
+.Run the tests for OcpSandbox
+----
+uuid=$(uuidgen -r)
+cd tests
+
+hurl --variable login_token_admin=$admintoken \
+--variable login_token=$apptoken \
+--variable host=http://localhost:8080 \
+--variable uuid=$uuid \
+002_ocp.hurl --test
 ----
 
 === Troubleshoot ===

@@ -1,10 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"context"
 
 	"github.com/jackc/pgx/v4"
 	"github.com/rhpds/sandbox/internal/api/v1"
@@ -18,38 +18,74 @@ import (
 
 type AccountHandler struct {
 	awsAccountProvider models.AwsAccountProvider
+	OcpSandboxProvider models.OcpSandboxProvider
 }
 
-func NewAccountHandler(awsAccountProvider models.AwsAccountProvider) *AccountHandler {
+func NewAccountHandler(awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider models.OcpSandboxProvider) *AccountHandler {
 	return &AccountHandler{
 		awsAccountProvider: awsAccountProvider,
+		OcpSandboxProvider: OcpSandboxProvider,
 	}
 }
 
-// GetAccountsHandler returns all accounts
-// GET /accounts
+// GetAccountsHandler returns all accounts by kind
+// GET /accounts/{kind}
 func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", " ")
 
+	kind := chi.URLParam(r, "kind")
 	serviceUuid := r.URL.Query().Get("service_uuid")
 
 	// Get available from Query
 	available := r.URL.Query().Get("available")
 
-	var (
-		accounts []models.AwsAccount
-		err      error
-	)
-	if serviceUuid != "" {
-		// Get the account from DynamoDB
-		accounts, err = h.awsAccountProvider.FetchAllByServiceUuid(serviceUuid)
-
-	} else {
-		if available != "" && available == "true" {
-			accounts, err = h.awsAccountProvider.FetchAllAvailable()
+	var err error
+	var accountlist []interface{}
+	switch kind {
+	case "AwsSandbox", "aws":
+		var (
+			accounts []models.AwsAccount
+		)
+		if serviceUuid != "" {
+			// Get the account from DynamoDB
+			accounts, err = h.awsAccountProvider.FetchAllByServiceUuid(serviceUuid)
 		} else {
-			accounts, err = h.awsAccountProvider.FetchAll()
+			if available != "" && available == "true" {
+				accounts, err = h.awsAccountProvider.FetchAllAvailable()
+			} else {
+				accounts, err = h.awsAccountProvider.FetchAll()
+			}
+		}
+		accountlist = make([]interface{}, len(accounts))
+		for i, acc := range accounts {
+			accountlist[i] = acc
+		}
+	case "OcpSandbox", "ocp":
+		var (
+			accounts []models.OcpSandbox
+		)
+		if available != "" && available == "true" {
+			// Account are created on the fly, so this request doesn't make sense
+			// for OcpSandboxes
+			// Return bad request
+			w.WriteHeader(http.StatusBadRequest)
+			enc.Encode(v1.Error{
+				HTTPStatusCode: http.StatusBadRequest,
+				Message:        "Bad request, Ocp Account are created on the fly",
+			})
+			return
+		}
+		if serviceUuid != "" {
+			// Get the account from DynamoDB
+			accounts, err = h.OcpSandboxProvider.FetchAllByServiceUuid(serviceUuid)
+		} else {
+			accounts, err = h.OcpSandboxProvider.FetchAll()
+		}
+
+		accountlist = make([]interface{}, len(accounts))
+		for i, acc := range accounts {
+			accountlist[i] = acc
 		}
 	}
 
@@ -63,15 +99,14 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 		})
 		return
 	}
-
-	if len(accounts) == 0 {
+	if len(accountlist) == 0 {
 		w.WriteHeader(http.StatusNotFound)
 	} else {
 		w.WriteHeader(http.StatusOK)
 	}
 
 	// Print accounts using JSON
-	if err := enc.Encode(accounts); err != nil {
+	if err := enc.Encode(accountlist); err != nil {
 		log.Logger.Error("GET accounts", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		enc.Encode(v1.Error{
@@ -84,47 +119,66 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 // GetAccountHandler returns an account
 // GET /accounts/{kind}/{account}
 func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Request) {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", " ")
-
 	// Grab the parameters from Params
 	accountName := chi.URLParam(r, "account")
+	kind := chi.URLParam(r, "kind")
 
-	// We don't need 'kind' param for now as it is checked and validated
-	// by the swagger openAPI spec.
+	switch kind {
+	case "AwsSandbox", "aws":
 
-	// Get the account from DynamoDB
-	sandbox, err := h.awsAccountProvider.FetchByName(accountName)
-	if err != nil {
-		if err == models.ErrAccountNotFound {
-			log.Logger.Warn("GET account", "error", err)
-			w.WriteHeader(http.StatusNotFound)
-			enc.Encode(v1.Error{
-				HTTPStatusCode: http.StatusNotFound,
-				Message:        "Account not found",
+		// Get the account from DynamoDB
+		sandbox, err := h.awsAccountProvider.FetchByName(accountName)
+		if err != nil {
+			if err == models.ErrAccountNotFound {
+				log.Logger.Warn("GET account", "error", err)
+				w.WriteHeader(http.StatusNotFound)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusNotFound,
+					Message:        "Account not found",
+				})
+				return
+			}
+			log.Logger.Error("GET account", "error", err)
+
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: 500,
+				Message:        "Error reading account",
 			})
 			return
 		}
-		log.Logger.Error("GET account", "error", err)
+		// Print account using JSON
+		w.WriteHeader(http.StatusOK)
+		render.Render(w, r, &sandbox)
+		return
+	case "OcpSandbox", "ocp":
+		// Get the account from DynamoDB
+		sandbox, err := h.OcpSandboxProvider.FetchByName(accountName)
+		if err != nil {
+			if err == models.ErrAccountNotFound {
+				log.Logger.Warn("GET account", "error", err)
+				w.WriteHeader(http.StatusNotFound)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusNotFound,
+					Message:        "Account not found",
+				})
+				return
+			}
+			log.Logger.Error("GET account", "error", err)
 
-		w.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(v1.Error{
-			HTTPStatusCode: 500,
-			Message:        "Error reading account",
-		})
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: 500,
+				Message:        "Error reading account",
+			})
+			return
+		}
+		// Print account using JSON
+		w.WriteHeader(http.StatusOK)
+		render.Render(w, r, &sandbox)
 		return
 	}
-	// Print account using JSON
-	if err := enc.Encode(sandbox); err != nil {
-		log.Logger.Error("GET account", "error", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		enc.Encode(v1.Error{
-			HTTPStatusCode: 500,
-			Message:        "Error reading account",
-		})
-	}
 }
-
 func (h *AccountHandler) CleanupAccountHandler(w http.ResponseWriter, r *http.Request) {
 	// Grab the parameters from Params
 	accountName := chi.URLParam(r, "account")
@@ -355,7 +409,7 @@ func (h *BaseHandler) DeleteAccountHandler(w http.ResponseWriter, r *http.Reques
 			w.WriteHeader(http.StatusConflict)
 			render.Render(w, r, &v1.Error{
 				HTTPStatusCode: http.StatusConflict,
-				Message: "Cleanup must be attempted at least 3 times before deletion",
+				Message:        "Cleanup must be attempted at least 3 times before deletion",
 			})
 			return
 		}
@@ -364,11 +418,10 @@ func (h *BaseHandler) DeleteAccountHandler(w http.ResponseWriter, r *http.Reques
 			w.WriteHeader(http.StatusConflict)
 			render.Render(w, r, &v1.Error{
 				HTTPStatusCode: http.StatusConflict,
-				Message: "Cleanup is in progress",
+				Message:        "Cleanup is in progress",
 			})
 			return
 		}
-
 
 		// Close the AWS account using CloseAccount
 		if err := sandbox.CloseAccount(); err != nil {

@@ -17,7 +17,7 @@ type Resource struct {
 	Available   bool   `json:"available"`
 	ToCleanup   bool   `json:"to_cleanup"`
 
-	Annotations map[string]string `json:"annotations"`
+	Annotations Annotations `json:"annotations"`
 }
 
 type ResourceWithCreds struct {
@@ -41,6 +41,11 @@ func (r Resource) isAvailable() bool {
 }
 func (r Resource) markedForCleanup() bool {
 	return r.ToCleanup
+}
+
+// interface Deletable
+type Deletable interface {
+	Delete() error
 }
 
 // Used return the resources in use
@@ -107,4 +112,17 @@ func FilterByReservation[T AvailabilityMarker](resources []T, reservation string
 	}
 
 	return result
+}
+
+type Annotations map[string]string
+
+func (a Annotations) Merge(b Annotations) Annotations {
+	c := make(Annotations)
+	for k, v := range a {
+		c[k] = v
+	}
+	for k, v := range b {
+		c[k] = v
+	}
+	return c
 }
