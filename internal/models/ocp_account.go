@@ -28,17 +28,18 @@ type OcpAccountProvider struct {
 }
 
 type OcpCluster struct {
-	ID            int               `json:"id"`
-	Name          string            `json:"name"`
-	ApiUrl        string            `json:"api_url"`
-	IngressDomain string            `json:"ingress_domain"`
-	Kubeconfig    string            `json:"kubeconfig"`
-	CreatedAt     time.Time         `json:"created_at"`
-	UpdatedAt     time.Time         `json:"updated_at"`
-	Annotations   map[string]string `json:"annotations"`
-	Valid         bool              `json:"valid"`
-	DbPool        *pgxpool.Pool     `json:"-"`
-	VaultSecret   string            `json:"-"`
+	ID             int               `json:"id"`
+	Name           string            `json:"name"`
+	ApiUrl         string            `json:"api_url"`
+	IngressDomain  string            `json:"ingress_domain"`
+	Kubeconfig     string            `json:"kubeconfig"`
+	CreatedAt      time.Time         `json:"created_at"`
+	UpdatedAt      time.Time         `json:"updated_at"`
+	Annotations    map[string]string `json:"annotations"`
+	Valid          bool              `json:"valid"`
+	AdditionalVars map[string]any    `json:"additional_vars,omitempty"`
+	DbPool         *pgxpool.Pool     `json:"-"`
+	VaultSecret    string            `json:"-"`
 }
 
 type OcpClusters []OcpCluster
@@ -134,9 +135,9 @@ func (p *OcpCluster) Save() error {
 	if err := p.DbPool.QueryRow(
 		context.Background(),
 		`INSERT INTO ocp_clusters
-			(name, api_url, ingress_domain, kubeconfig, annotations, valid)
-			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), $6, $7) RETURNING id`,
-		p.Name, p.ApiUrl, p.IngressDomain, p.Kubeconfig, p.VaultSecret, p.Annotations, p.Valid,
+			(name, api_url, ingress_domain, kubeconfig, annotations, valid, additional_vars)
+			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), $6, $7, $8) RETURNING id`,
+		p.Name, p.ApiUrl, p.IngressDomain, p.Kubeconfig, p.VaultSecret, p.Annotations, p.Valid, p.AdditionalVars,
 	).Scan(&p.ID); err != nil {
 		return err
 	}
@@ -157,9 +158,10 @@ func (p *OcpCluster) Update() error {
              ingress_domain = $3,
 			 kubeconfig = pgp_sym_encrypt($4::text, $5),
 			 annotations = $6,
-			 valid = $7
-		 WHERE id = $8`,
-		p.Name, p.ApiUrl, p.IngressDomain, p.Kubeconfig, p.VaultSecret, p.Annotations, p.Valid, p.ID,
+			 valid = $7,
+			 additional_vars = $8
+		 WHERE id = $9`,
+		p.Name, p.ApiUrl, p.IngressDomain, p.Kubeconfig, p.VaultSecret, p.Annotations, p.Valid, p.AdditionalVars, p.ID,
 	); err != nil {
 		return err
 	}
@@ -204,7 +206,7 @@ func (p *OcpAccountProvider) GetOcpClusterByName(name string) (OcpCluster, error
 	row := p.DbPool.QueryRow(
 		context.Background(),
 		`SELECT
-		 id, name, api_url, ingress_domain, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid
+		 id, name, api_url, ingress_domain, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid, additional_vars
 		 FROM ocp_clusters WHERE name = $2`,
 		p.VaultSecret, name,
 	)
@@ -220,6 +222,7 @@ func (p *OcpAccountProvider) GetOcpClusterByName(name string) (OcpCluster, error
 		&cluster.UpdatedAt,
 		&cluster.Annotations,
 		&cluster.Valid,
+		&cluster.AdditionalVars,
 	); err != nil {
 		return OcpCluster{}, err
 	}
@@ -236,7 +239,7 @@ func (p *OcpAccountProvider) GetOcpClusters() (OcpClusters, error) {
 	rows, err := p.DbPool.Query(
 		context.Background(),
 		`SELECT
-		 id, name, api_url, ingress_domain, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid
+		 id, name, api_url, ingress_domain, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid, additional_vars
 		 FROM ocp_clusters`,
 		p.VaultSecret,
 	)
@@ -261,6 +264,7 @@ func (p *OcpAccountProvider) GetOcpClusters() (OcpClusters, error) {
 			&cluster.UpdatedAt,
 			&cluster.Annotations,
 			&cluster.Valid,
+			&cluster.AdditionalVars,
 		); err != nil {
 			return []OcpCluster{}, err
 		}
