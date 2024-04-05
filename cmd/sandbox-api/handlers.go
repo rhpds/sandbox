@@ -189,7 +189,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 					render.Render(w, r, &v1.Error{
 						Err:            err,
 						HTTPStatusCode: http.StatusNotFound,
-						Message:        "No OCP cluster found",
+						Message:        "No OCP shared cluster configuration found",
 						ErrorMultiline: []string{err.Error()},
 					})
 					return

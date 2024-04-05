@@ -25,9 +25,9 @@ jsonpath "$.access_token" isString
 jsonpath "$.access_token_exp" isString
 
 #################################################################################
-# Add an OCP Cluster
+# Add an OCP shared cluster configuration
 #################################################################################
-POST {{host}}/api/v1/ocp-clusters
+POST {{host}}/api/v1/ocp-shared-cluster-configurations
 Authorization: Bearer {{access_token}}
 {
     "name": "ocp-cluster-test1",
@@ -39,13 +39,13 @@ HTTP 401
 [Asserts]
 jsonpath "$.message" == "Unauthorized"
 
-DELETE {{host}}/api/v1/ocp-clusters/ocp-cluster-test1
+DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
 [Options]
 retry: 2
 HTTP 404
 
-POST {{host}}/api/v1/ocp-clusters
+POST {{host}}/api/v1/ocp-shared-cluster-configurations
 Authorization: Bearer {{access_token_admin}}
 {
     "name": "ocp-cluster-test1",
@@ -57,7 +57,7 @@ HTTP 400
 [Asserts]
 jsonpath "$.message" == "Bad request: payload doesn't pass OpenAPI spec"
 
-POST {{host}}/api/v1/ocp-clusters
+POST {{host}}/api/v1/ocp-shared-cluster-configurations
 Authorization: Bearer {{access_token_admin}}
 {
     "name": "ocp-cluster-test1",
@@ -72,9 +72,9 @@ Authorization: Bearer {{access_token_admin}}
 }
 HTTP 201
 [Asserts]
-jsonpath "$.message" == "OCP cluster created"
+jsonpath "$.message" == "OCP shared cluster configuration created"
 
-POST {{host}}/api/v1/ocp-clusters
+POST {{host}}/api/v1/ocp-shared-cluster-configurations
 Authorization: Bearer {{access_token_admin}}
 {
     "name": "ocp-cluster-test1",
@@ -92,7 +92,7 @@ HTTP 500
 jsonpath "$.error_multiline[0]" contains "duplicate key value violates unique constraint"
 
 
-GET {{host}}/api/v1/ocp-clusters/ocp-cluster-test1
+GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
 HTTP 200
 [Asserts]
@@ -100,13 +100,13 @@ jsonpath "$.name" == "ocp-cluster-test1"
 jsonpath "$.annotations.virt" == "no"
 jsonpath "$.valid" == true
 
-PUT {{host}}/api/v1/ocp-clusters/ocp-cluster-test1/disable
+PUT {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1/disable
 Authorization: Bearer {{access_token_admin}}
 HTTP 200
 [Asserts]
-jsonpath "$.message" == "OCP cluster is disabled"
+jsonpath "$.message" == "OCP shared cluster configuration is disabled"
 
-GET {{host}}/api/v1/ocp-clusters/ocp-cluster-test1
+GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
 HTTP 200
 [Asserts]
@@ -114,7 +114,7 @@ jsonpath "$.name" == "ocp-cluster-test1"
 jsonpath "$.annotations.virt" == "no"
 jsonpath "$.valid" == false
 
-DELETE {{host}}/api/v1/ocp-clusters/ocp-cluster-test1
+DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
 [Options]
 retry: 2
@@ -161,7 +161,7 @@ Authorization: Bearer {{access_token}}
 }
 HTTP 404
 [Asserts]
-jsonpath "$.message" == "No OCP cluster found"
+jsonpath "$.message" == "No OCP shared cluster configuration found"
 
 #################################################################################
 # Create a new placement with a multiple Ocp
@@ -271,7 +271,7 @@ Authorization: Bearer {{access_token}}
 }
 HTTP 404
 [Asserts]
-jsonpath "$.message" == "No OCP cluster found"
+jsonpath "$.message" == "No OCP shared cluster configuration found"
 
 #################################################################################
 # Ensure there is no OcpSandbox matching uuid

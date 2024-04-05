@@ -1323,18 +1323,18 @@ paths:
               example:
                 message: Error invalidating token
                 http_code: 500
-  /ocp-clusters:
+  /ocp-shared-cluster-configurations:
     post:
-      summary: Create a new OcpCluster
-      operationId: createOcpCluster
+      summary: Create a new OcpSharedClusterConfiguration
+      operationId: createOcpSharedClusterConfiguration
       tags:
         - admin
       requestBody:
-        description: JSON object to specify the OcpCluster.
+        description: JSON object to specify the OcpSharedClusterConfiguration.
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/OcpCluster"
+              $ref: "#/components/schemas/OcpSharedClusterConfiguration"
             example:
               name: ocp-cluster-1
               api_url: https://api.ocp-cluster-1.com:6443
@@ -1363,13 +1363,13 @@ paths:
                 purpose: dev
       responses:
         '201':
-          description: OcpCluster created
+          description: OcpSharedClusterConfiguration created
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
               example:
-                message: OCP cluster created
+                message: OCP shared cluster configuration created
         '400':
           description: Wrong request
           content:
@@ -1389,136 +1389,136 @@ paths:
                 message: unauthorized
                 http_code: 401
         default:
-          description: createOcpCluster unexpected error
+          description: createOcpSharedClusterConfiguration unexpected error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
     get:
-      summary: Get all OcpClusters
-      operationId: getOcpClusters
+      summary: Get all OcpSharedClusterConfigurations
+      operationId: getOcpSharedClusterConfigurations
       tags:
         - admin
       responses:
         '200':
-          description: The list of OcpClusters
+          description: The list of OcpSharedClusterConfigurations
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OcpClusters"
+                $ref: "#/components/schemas/OcpSharedClusterConfigurations"
         default:
-          description: getOcpClusters unexpected error
+          description: getOcpSharedClusterConfigurations unexpected error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /ocp-clusters/{name}:
+  /ocp-shared-cluster-configurations/{name}:
     get:
-      summary: Get information about an OcpCluster
-      operationId: getOcpCluster
+      summary: Get information about an OcpSharedClusterConfiguration
+      operationId: getOcpSharedClusterConfiguration
       tags:
         - admin
       parameters:
         - name: name
           in: path
           required: true
-          description: The name of the OcpCluster
+          description: The name of the OcpSharedClusterConfiguration
           schema:
             type: string
           example: ocp-cluster-1
       responses:
         '200':
-          description: The OcpCluster
+          description: The OcpSharedClusterConfiguration
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OcpCluster"
+                $ref: "#/components/schemas/OcpSharedClusterConfiguration"
         '404':
-          description: getOcpCluster OcpCluster not found
+          description: getOcpSharedClusterConfiguration OcpSharedClusterConfiguration not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         default:
-          description: getOcpCluster unexpected error
+          description: getOcpSharedClusterConfiguration unexpected error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
     delete:
-      summary: Delete an OcpCluster
-      operationId: deleteOcpCluster
+      summary: Delete an OcpSharedClusterConfiguration
+      operationId: deleteOcpSharedClusterConfiguration
       tags:
         - admin
       parameters:
         - name: name
           in: path
           required: true
-          description: The name of the OcpCluster
+          description: The name of the OcpSharedClusterConfiguration
           schema:
             type: string
           example: ocp-cluster-1
       responses:
         '200':
-          description: The OcpCluster is deleted
+          description: The OcpSharedClusterConfiguration is deleted
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
               example:
-                message: OCP cluster deleted
+                message: OCP shared cluster configuration deleted
         '404':
-          description: deleteOcpCluster OcpCluster not found
+          description: deleteOcpSharedClusterConfiguration OcpSharedClusterConfiguration not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         '409':
           description: |-
-            OcpCluster is not deletable. Usually because it has
+            OcpSharedClusterConfiguration is not deletable. Usually because it has
             resources attached to it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         default:
-          description: deleteOcpCluster unexpected error
+          description: deleteOcpSharedClusterConfiguration unexpected error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /ocp-clusters/{name}/disable:
+  /ocp-shared-cluster-configurations/{name}/disable:
     put:
-      summary: Disable an OcpCluster
-      operationId: disableOcpCluster
+      summary: Disable an OcpSharedClusterConfiguration
+      operationId: disableOcpSharedClusterConfiguration
       tags:
         - admin
       parameters:
         - name: name
           in: path
           required: true
-          description: The name of the OcpCluster
+          description: The name of the OcpSharedClusterConfiguration
           schema:
             type: string
             example: ocp-cluster-1
           example: ocp-cluster-1
       responses:
         '200':
-          description: The OcpCluster is disabled
+          description: The OcpSharedClusterConfiguration is disabled
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
               example:
-                message: OCP cluster disabled
+                message: OCP shared cluster configuration disabled
         '404':
-          description: disableOcpCluster OcpCluster not found
+          description: disableOcpSharedClusterConfiguration OcpSharedClusterConfiguration not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         default:
-          description: disableOcpCluster unexpected error
+          description: disableOcpSharedClusterConfiguration unexpected error
           content:
             application/json:
               schema:
@@ -2070,8 +2070,8 @@ components:
               hosted_zone_id: Z019612345AH4C7KTTZJ0
               to_cleanup: false
 
-    OcpCluster:
-      description: OcpCluster is a record of an OpenShift cluster
+    OcpSharedClusterConfiguration:
+      description: OcpSharedClusterConfiguration is a record of an OpenShift cluster
       type: object
       required:
         - name
@@ -2152,8 +2152,8 @@ components:
           virt: available
           cloud: ibm
           purpose: dev
-    OcpClusters:
-      description: The list of OcpClusters
+    OcpSharedClusterConfigurations:
+      description: The list of OcpSharedClusterConfigurations
       type: array
       items:
-        $ref: '#/components/schemas/OcpCluster'
+        $ref: '#/components/schemas/OcpSharedClusterConfiguration'

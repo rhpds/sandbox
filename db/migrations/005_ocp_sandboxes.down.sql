@@ -1,7 +1,7 @@
 BEGIN;
 
-DROP TRIGGER IF EXISTS ocp_clusters_updated_at ON ocp_clusters;
-DROP TABLE IF EXISTS ocp_clusters;
+DROP TRIGGER IF EXISTS ocp_shared_cluster_configurations_updated_at ON ocp_shared_cluster_configurations;
+DROP TABLE IF EXISTS ocp_shared_cluster_configurations;
 
 DROP TRIGGER IF EXISTS resource_delete ON resources;
 DROP FUNCTION IF EXISTS resource_del;

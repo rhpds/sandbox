@@ -35,11 +35,11 @@ Duration:        35680 ms
 === requirements ===
 
 * ocp cluster with matching annotations, see below
-* the entry in the `ocp_clusters` table
+* the entry in the `ocp_shared_cluster_configurations` table
 
-=== Create the OcpCluster entry ===
+=== Create the OcpSharedClusterConfiguration entry ===
 
-Either you're using the DEV database,  or you'll have to setup the OCP cluster in your local DB table `ocp_cluster`. That can be done using link:../tools/ocp_cluster_create.hurl[ocp_cluster_create.hurl]
+Either you're using the DEV database,  or you'll have to setup the OCP shared cluster configuration in your local DB table `ocp_cluster`. That can be done using link:../tools/ocp_shared_cluster_configuration_create.hurl[ocp_shared_cluster_configuration_create.hurl]
 
 
 [source,json]
@@ -75,14 +75,14 @@ hurl --variable login_token_admin=$admintoken \
 --file-root . \
 --variable host=http://localhost:8080 \
 --variable ocp_cluster_def=.dev.kube.json \
-./tools/ocp_cluster_create.hurl
+./tools/ocp_shared_cluster_configuration_create.hurl
 
 
 # or with curl directly
 curl --header "Authorization: Bearer $admintoken" \
   --header 'Content-Type: application/json' \
   --data-binary '@./.dev.kube.json' \
-  'http://localhost:8080/api/v1/ocp-clusters'
+  'http://localhost:8080/api/v1/ocp-shared-cluster-configurations'
 ----
 
 .Run the tests for OcpSandbox

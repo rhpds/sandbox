@@ -264,11 +264,11 @@ func main() {
 		// ---------------------------------
 		// Ocp
 		// ---------------------------------
-		r.Post("/api/v1/ocp-clusters", baseHandler.CreateOcpClusterHandler)
-		r.Get("/api/v1/ocp-clusters", baseHandler.GetOcpClustersHandler)
-		r.Get("/api/v1/ocp-clusters/{name}", baseHandler.GetOcpClusterHandler)
-		r.Put("/api/v1/ocp-clusters/{name}/disable", baseHandler.DisableOcpClusterHandler)
-		r.Delete("/api/v1/ocp-clusters/{name}", baseHandler.DeleteOcpClusterHandler)
+		r.Post("/api/v1/ocp-shared-cluster-configurations", baseHandler.CreateOcpSharedClusterConfigurationHandler)
+		r.Get("/api/v1/ocp-shared-cluster-configurations", baseHandler.GetOcpSharedClusterConfigurationsHandler)
+		r.Get("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.GetOcpSharedClusterConfigurationHandler)
+		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/disable", baseHandler.DisableOcpSharedClusterConfigurationHandler)
+		r.Delete("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.DeleteOcpSharedClusterConfigurationHandler)
 
 		// Reservations
 		r.Post("/api/v1/reservations", baseHandler.CreateReservationHandler)

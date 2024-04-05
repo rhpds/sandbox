@@ -1,10 +1,10 @@
--- Create table ocp_clusters
+-- Create table ocp_shared_cluster_configurations
 
 BEGIN;
 -- install the pgcrypto extension if not installed
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-CREATE TABLE ocp_clusters (
+CREATE TABLE ocp_shared_cluster_configurations (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL UNIQUE,
     api_url VARCHAR(255) NOT NULL, -- OCP Api URL
@@ -14,18 +14,18 @@ CREATE TABLE ocp_clusters (
     created_at TIMESTAMP with time zone NOT NULL DEFAULT (now() at time zone 'utc'),
     updated_at TIMESTAMP with time zone NOT NULL DEFAULT (now() at time zone 'utc'),
     annotations JSONB DEFAULT '{}'::jsonb NOT NULL,
-    valid BOOLEAN NOT NULL DEFAULT TRUE -- Used to invalidate ocp_clusters
+    valid BOOLEAN NOT NULL DEFAULT TRUE -- Used to invalidate ocp_shared_cluster_configurations
 );
 
-CREATE TRIGGER ocp_clusters_updated_at
-  BEFORE UPDATE ON ocp_clusters
+CREATE TRIGGER ocp_shared_cluster_configurations_updated_at
+  BEFORE UPDATE ON ocp_shared_cluster_configurations
   FOR EACH ROW
   WHEN (OLD.* IS DISTINCT FROM NEW.*)
   EXECUTE FUNCTION updated_at_column();
 
-CREATE INDEX ON ocp_clusters (api_url);
+CREATE INDEX ON ocp_shared_cluster_configurations (api_url);
 -- Insert a dummy record, encrypt the kubeconfig using pgp_sym_encrypt
--- INSERT INTO ocp_clusters (name, api_url, kubeconfig)
+-- INSERT INTO ocp_shared_cluster_configurations (name, api_url, kubeconfig)
 -- VALUES ('dummy', 'https://dummy', pgp_sym_encrypt('dummy', 'dummy'));
 
 

@@ -27,7 +27,7 @@ type OcpSandboxProvider struct {
 	VaultSecret string        `json:"-"`
 }
 
-type OcpCluster struct {
+type OcpSharedClusterConfiguration struct {
 	ID             int               `json:"id"`
 	Name           string            `json:"name"`
 	ApiUrl         string            `json:"api_url"`
@@ -42,21 +42,21 @@ type OcpCluster struct {
 	VaultSecret    string            `json:"-"`
 }
 
-type OcpClusters []OcpCluster
+type OcpSharedClusterConfigurations []OcpSharedClusterConfiguration
 
 type OcpSandbox struct {
 	Account
-	Name                  string            `json:"name"`
-	Kind                  string            `json:"kind"` // "OcpSandbox"
-	ServiceUuid           string            `json:"service_uuid"`
-	OcpClusterName        string            `json:"ocp_cluster"`
-	OcpIngressDomain      string            `json:"ingress_domain"`
-	OcpApiUrl             string            `json:"api_url"`
-	Annotations           map[string]string `json:"annotations"`
-	Status                string            `json:"status"`
-	CleanupCount          int               `json:"cleanup_count"`
-	Namespace             string            `json:"namespace"`
-	ClusterAdditionalVars map[string]any    `json:"cluster_additional_vars,omitempty"`
+	Name                              string            `json:"name"`
+	Kind                              string            `json:"kind"` // "OcpSandbox"
+	ServiceUuid                       string            `json:"service_uuid"`
+	OcpSharedClusterConfigurationName string            `json:"ocp_cluster"`
+	OcpIngressDomain                  string            `json:"ingress_domain"`
+	OcpApiUrl                         string            `json:"api_url"`
+	Annotations                       map[string]string `json:"annotations"`
+	Status                            string            `json:"status"`
+	CleanupCount                      int               `json:"cleanup_count"`
+	Namespace                         string            `json:"namespace"`
+	ClusterAdditionalVars             map[string]any    `json:"cluster_additional_vars,omitempty"`
 }
 
 type OcpSandboxWithCreds struct {
@@ -82,7 +82,7 @@ type TokenResponse struct {
 var nameRegex = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
 
 // Bind and Render
-func (p *OcpCluster) Bind(r *http.Request) error {
+func (p *OcpSharedClusterConfiguration) Bind(r *http.Request) error {
 	// Ensure the name is not empty
 	if p.Name == "" {
 		return errors.New("name is required")
@@ -118,16 +118,16 @@ func (p *OcpCluster) Bind(r *http.Request) error {
 	return nil
 }
 
-func (p *OcpCluster) Render(w http.ResponseWriter, r *http.Request) error {
+func (p *OcpSharedClusterConfiguration) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// Bind and Render for OcpClusters
-func (p *OcpClusters) Render(w http.ResponseWriter, r *http.Request) error {
+// Bind and Render for OcpSharedClusterConfigurations
+func (p *OcpSharedClusterConfigurations) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (p *OcpCluster) Save() error {
+func (p *OcpSharedClusterConfiguration) Save() error {
 	if p.ID != 0 {
 		return p.Update()
 	}
@@ -135,7 +135,7 @@ func (p *OcpCluster) Save() error {
 	// Insert resource and get Id
 	if err := p.DbPool.QueryRow(
 		context.Background(),
-		`INSERT INTO ocp_clusters
+		`INSERT INTO ocp_shared_cluster_configurations
 			(name, api_url, ingress_domain, kubeconfig, annotations, valid, additional_vars)
 			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), $6, $7, $8) RETURNING id`,
 		p.Name, p.ApiUrl, p.IngressDomain, p.Kubeconfig, p.VaultSecret, p.Annotations, p.Valid, p.AdditionalVars,
@@ -145,7 +145,7 @@ func (p *OcpCluster) Save() error {
 	return nil
 }
 
-func (p *OcpCluster) Update() error {
+func (p *OcpSharedClusterConfiguration) Update() error {
 	if p.ID == 0 {
 		return errors.New("id must be > 0")
 	}
@@ -153,7 +153,7 @@ func (p *OcpCluster) Update() error {
 	// Update resource
 	if _, err := p.DbPool.Exec(
 		context.Background(),
-		`UPDATE ocp_clusters
+		`UPDATE ocp_shared_cluster_configurations
 		 SET name = $1,
 			 api_url = $2,
              ingress_domain = $3,
@@ -169,27 +169,27 @@ func (p *OcpCluster) Update() error {
 	return nil
 }
 
-func (p *OcpCluster) Delete() error {
+func (p *OcpSharedClusterConfiguration) Delete() error {
 	if p.ID == 0 {
 		return errors.New("id must be > 0")
 	}
 
 	_, err := p.DbPool.Exec(
 		context.Background(),
-		"DELETE FROM ocp_clusters WHERE id = $1",
+		"DELETE FROM ocp_shared_cluster_configurations WHERE id = $1",
 		p.ID,
 	)
 	return err
 }
 
-// Disable an OcpCluster
-func (p *OcpCluster) Disable() error {
+// Disable an OcpSharedClusterConfiguration
+func (p *OcpSharedClusterConfiguration) Disable() error {
 	p.Valid = false
 	return p.Update()
 }
 
-// CountAccounts returns the number of accounts for an OcpCluster
-func (p *OcpCluster) GetAccountCount() (int, error) {
+// CountAccounts returns the number of accounts for an OcpSharedClusterConfiguration
+func (p *OcpSharedClusterConfiguration) GetAccountCount() (int, error) {
 	var count int
 	if err := p.DbPool.QueryRow(
 		context.Background(),
@@ -201,18 +201,18 @@ func (p *OcpCluster) GetAccountCount() (int, error) {
 	return count, nil
 }
 
-// GetOcpClusterByName returns an OcpCluster by name
-func (p *OcpSandboxProvider) GetOcpClusterByName(name string) (OcpCluster, error) {
-	// Get resource from above 'ocp_clusters' table
+// GetOcpSharedClusterConfigurationByName returns an OcpSharedClusterConfiguration by name
+func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string) (OcpSharedClusterConfiguration, error) {
+	// Get resource from above 'ocp_shared_cluster_configurations' table
 	row := p.DbPool.QueryRow(
 		context.Background(),
 		`SELECT
 		 id, name, api_url, ingress_domain, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid, additional_vars
-		 FROM ocp_clusters WHERE name = $2`,
+		 FROM ocp_shared_cluster_configurations WHERE name = $2`,
 		p.VaultSecret, name,
 	)
 
-	var cluster OcpCluster
+	var cluster OcpSharedClusterConfiguration
 	if err := row.Scan(
 		&cluster.ID,
 		&cluster.Name,
@@ -225,23 +225,23 @@ func (p *OcpSandboxProvider) GetOcpClusterByName(name string) (OcpCluster, error
 		&cluster.Valid,
 		&cluster.AdditionalVars,
 	); err != nil {
-		return OcpCluster{}, err
+		return OcpSharedClusterConfiguration{}, err
 	}
 	cluster.DbPool = p.DbPool
 	cluster.VaultSecret = p.VaultSecret
 	return cluster, nil
 }
 
-// GetOcpClusters returns the full list of OcpCluster
-func (p *OcpSandboxProvider) GetOcpClusters() (OcpClusters, error) {
-	clusters := []OcpCluster{}
+// GetOcpSharedClusterConfigurations returns the full list of OcpSharedClusterConfiguration
+func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClusterConfigurations, error) {
+	clusters := []OcpSharedClusterConfiguration{}
 
-	// Get resource from 'ocp_clusters' table
+	// Get resource from 'ocp_shared_cluster_configurations' table
 	rows, err := p.DbPool.Query(
 		context.Background(),
 		`SELECT
 		 id, name, api_url, ingress_domain, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid, additional_vars
-		 FROM ocp_clusters`,
+		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
 	)
 
@@ -249,11 +249,11 @@ func (p *OcpSandboxProvider) GetOcpClusters() (OcpClusters, error) {
 		if err == pgx.ErrNoRows {
 			log.Logger.Info("No cluster found")
 		}
-		return []OcpCluster{}, err
+		return []OcpSharedClusterConfiguration{}, err
 	}
 
 	for rows.Next() {
-		var cluster OcpCluster
+		var cluster OcpSharedClusterConfiguration
 
 		if err := rows.Scan(
 			&cluster.ID,
@@ -267,7 +267,7 @@ func (p *OcpSandboxProvider) GetOcpClusters() (OcpClusters, error) {
 			&cluster.Valid,
 			&cluster.AdditionalVars,
 		); err != nil {
-			return []OcpCluster{}, err
+			return []OcpSharedClusterConfiguration{}, err
 		}
 
 		cluster.DbPool = p.DbPool
@@ -278,13 +278,13 @@ func (p *OcpSandboxProvider) GetOcpClusters() (OcpClusters, error) {
 	return clusters, nil
 }
 
-// GetOcpClusterByAnnotations returns a list of OcpCluster by annotations
-func (p *OcpSandboxProvider) GetOcpClusterByAnnotations(annotations map[string]string) ([]OcpCluster, error) {
-	clusters := []OcpCluster{}
-	// Get resource from above 'ocp_clusters' table
+// GetOcpSharedClusterConfigurationByAnnotations returns a list of OcpSharedClusterConfiguration by annotations
+func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByAnnotations(annotations map[string]string) ([]OcpSharedClusterConfiguration, error) {
+	clusters := []OcpSharedClusterConfiguration{}
+	// Get resource from above 'ocp_shared_cluster_configurations' table
 	rows, err := p.DbPool.Query(
 		context.Background(),
-		`SELECT name FROM ocp_clusters WHERE annotations @> $1`,
+		`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1`,
 		annotations,
 	)
 
@@ -292,19 +292,19 @@ func (p *OcpSandboxProvider) GetOcpClusterByAnnotations(annotations map[string]s
 		if err == pgx.ErrNoRows {
 			log.Logger.Info("No cluster found", "annotations", annotations)
 		}
-		return []OcpCluster{}, err
+		return []OcpSharedClusterConfiguration{}, err
 	}
 
 	for rows.Next() {
 		var clusterName string
 
 		if err := rows.Scan(&clusterName); err != nil {
-			return []OcpCluster{}, err
+			return []OcpSharedClusterConfiguration{}, err
 		}
 
-		cluster, err := p.GetOcpClusterByName(clusterName)
+		cluster, err := p.GetOcpSharedClusterConfigurationByName(clusterName)
 		if err != nil {
-			return []OcpCluster{}, err
+			return []OcpSharedClusterConfiguration{}, err
 		}
 
 		clusters = append(clusters, cluster)
@@ -455,7 +455,7 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuid(serviceUuid string) ([]OcpSan
 		FROM
 			resources r
 		LEFT JOIN
-			ocp_clusters oc ON oc.name = r.resource_data->>'ocp_cluster'
+			ocp_shared_cluster_configurations oc ON oc.name = r.resource_data->>'ocp_cluster'
 		WHERE r.service_uuid = $1`,
 		serviceUuid,
 	)
@@ -509,7 +509,7 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 		FROM
 			resources r
 		LEFT JOIN
-			ocp_clusters oc ON oc.name = r.resource_data->>'ocp_cluster'
+			ocp_shared_cluster_configurations oc ON oc.name = r.resource_data->>'ocp_cluster'
 		WHERE r.service_uuid = $1`,
 		serviceUuid, a.VaultSecret,
 	)
@@ -553,37 +553,37 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 	return accounts, nil
 }
 
-var ErrNoSchedule error = errors.New("No OCP cluster found")
+var ErrNoSchedule error = errors.New("No OCP shared cluster configuration found")
 
-func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]string) (OcpClusters, error) {
-	clusters := OcpClusters{}
-	// Get resource from 'ocp_clusters' table
+func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]string) (OcpSharedClusterConfigurations, error) {
+	clusters := OcpSharedClusterConfigurations{}
+	// Get resource from 'ocp_shared_cluster_configurations' table
 	rows, err := a.DbPool.Query(
 		context.Background(),
-		`SELECT name FROM ocp_clusters WHERE annotations @> $1 and valid=true`,
+		`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true`,
 		cloud_selector,
 	)
 
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			log.Logger.Info("No cluster found", "cloud_selector", cloud_selector)
-			return OcpClusters{}, ErrNoSchedule
+			return OcpSharedClusterConfigurations{}, ErrNoSchedule
 		}
 
 		log.Logger.Error("Error querying ocp clusters", "error", err)
-		return OcpClusters{}, err
+		return OcpSharedClusterConfigurations{}, err
 	}
 
 	for rows.Next() {
 		var clusterName string
 
 		if err := rows.Scan(&clusterName); err != nil {
-			return OcpClusters{}, err
+			return OcpSharedClusterConfigurations{}, err
 		}
 
-		cluster, err := a.GetOcpClusterByName(clusterName)
+		cluster, err := a.GetOcpSharedClusterConfigurationByName(clusterName)
 		if err != nil {
-			return OcpClusters{}, err
+			return OcpSharedClusterConfigurations{}, err
 		}
 
 		clusters = append(clusters, cluster)
@@ -595,21 +595,21 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]st
 func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string) (OcpSandboxWithCreds, error) {
 	var rowcount int
 	var minOcpMemoryUsage float64
-	var selectedCluster OcpCluster
+	var selectedCluster OcpSharedClusterConfiguration
 
 	// Ensure annotation has guid
 	if _, exists := annotations["guid"]; !exists {
 		return OcpSandboxWithCreds{}, errors.New("guid not found in annotations")
 	}
 
-	// Version with OcpCluster methods
+	// Version with OcpSharedClusterConfiguration methods
 	candidateClusters, err := a.GetSchedulableClusters(cloud_selector)
 	if err != nil {
 		log.Logger.Error("Error getting schedulable clusters", "error", err)
 		return OcpSandboxWithCreds{}, err
 	}
 	if len(candidateClusters) == 0 {
-		log.Logger.Error("No OCP cluster found", "cloud_selector", cloud_selector)
+		log.Logger.Error("No OCP shared cluster configuration found", "cloud_selector", cloud_selector)
 		return OcpSandboxWithCreds{}, ErrNoSchedule
 	}
 
@@ -749,7 +749,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 
 		rnew.OcpApiUrl = selectedCluster.ApiUrl
-		rnew.OcpClusterName = selectedCluster.Name
+		rnew.OcpSharedClusterConfigurationName = selectedCluster.Name
 
 		if err := rnew.Save(); err != nil {
 			log.Logger.Error("Error saving OCP account", "error", err)
@@ -1011,15 +1011,15 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 		r := OcpSandboxWithCreds{
 			OcpSandbox: OcpSandbox{
-				Name:             rnew.Name,
-				Kind:             "OcpSandbox",
-				OcpClusterName:   selectedCluster.Name,
-				OcpApiUrl:        selectedCluster.ApiUrl,
-				OcpIngressDomain: selectedCluster.IngressDomain,
-				Annotations:      annotations,
-				ServiceUuid:      serviceUuid,
-				Status:           "success",
-				Namespace:        namespaceName,
+				Name:                              rnew.Name,
+				Kind:                              "OcpSandbox",
+				OcpSharedClusterConfigurationName: selectedCluster.Name,
+				OcpApiUrl:                         selectedCluster.ApiUrl,
+				OcpIngressDomain:                  selectedCluster.IngressDomain,
+				Annotations:                       annotations,
+				ServiceUuid:                       serviceUuid,
+				Status:                            "success",
+				Namespace:                         namespaceName,
 			},
 			Credentials: creds,
 			Provider:    a,
@@ -1035,7 +1035,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			}
 		}
 		log.Logger.Info("Ocp sandbox booked", "account", r.Name, "service_uuid", r.ServiceUuid,
-			"cluster", r.OcpClusterName, "namespace", r.Namespace)
+			"cluster", r.OcpSharedClusterConfigurationName, "namespace", r.Namespace)
 	}()
 	//--------------------------------------------------
 
@@ -1089,7 +1089,7 @@ func (a *OcpSandboxProvider) FetchAll() ([]OcpSandbox, error) {
 		 r.cleanup_count,
 		 COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
 		 FROM resources r
-		 LEFT JOIN ocp_clusters oc ON oc.name = r.resource_data->>'ocp_cluster'`,
+		 LEFT JOIN ocp_shared_cluster_configurations oc ON oc.name = r.resource_data->>'ocp_cluster'`,
 	)
 
 	if err != nil {
@@ -1156,13 +1156,13 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		return err
 	}
 
-	if account.OcpClusterName == "" {
-		// Get the OCP cluster name from the resources.resource_data column using ID
+	if account.OcpSharedClusterConfigurationName == "" {
+		// Get the OCP shared cluster configuration name from the resources.resource_data column using ID
 		err := account.Provider.DbPool.QueryRow(
 			context.Background(),
 			"SELECT resource_data->>'ocp_cluster' FROM resources WHERE id = $1",
 			account.ID,
-		).Scan(&account.OcpClusterName)
+		).Scan(&account.OcpSharedClusterConfigurationName)
 
 		if err != nil {
 			if err == pgx.ErrNoRows {
@@ -1182,19 +1182,19 @@ func (account *OcpSandboxWithCreds) Delete() error {
 	account.MarkForCleanup()
 	account.IncrementCleanupCount()
 
-	// Get the OCP cluster from the resources.resource_data column
+	// Get the OCP shared cluster configuration from the resources.resource_data column
 
-	// TODO: use GetOcpClusterByName
+	// TODO: use GetOcpSharedClusterConfigurationByName
 	err := account.Provider.DbPool.QueryRow(
 		context.Background(),
-		"SELECT api_url, pgp_sym_decrypt(kubeconfig::bytea, $1) FROM ocp_clusters WHERE name = $2",
+		"SELECT api_url, pgp_sym_decrypt(kubeconfig::bytea, $1) FROM ocp_shared_cluster_configurations WHERE name = $2",
 		account.Provider.VaultSecret,
-		account.OcpClusterName,
+		account.OcpSharedClusterConfigurationName,
 	).Scan(&api_url, &kubeconfig)
 
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			log.Logger.Error("Ocp cluster doesn't exist for resource", "cluster", account.OcpClusterName, "name", account.Name)
+			log.Logger.Error("Ocp cluster doesn't exist for resource", "cluster", account.OcpSharedClusterConfigurationName, "name", account.Name)
 			account.SetStatus("error")
 			return errors.New("Ocp cluster doesn't exist for resource")
 		} else {
@@ -1281,7 +1281,7 @@ func (p *OcpSandboxProvider) FetchByName(name string) (OcpSandbox, error) {
 		 r.cleanup_count,
 		 COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
 		 FROM resources r
-		 LEFT JOIN ocp_clusters oc ON oc.name = resource_data->>'ocp_cluster'
+		 LEFT JOIN ocp_shared_cluster_configurations oc ON oc.name = resource_data->>'ocp_cluster'
 		 WHERE r.resource_name = $1 and r.resource_type = 'OcpSandbox'`,
 		name,
 	)
@@ -1318,7 +1318,7 @@ func (p *OcpSandboxProvider) FetchById(id int) (OcpSandbox, error) {
 		 r.cleanup_count,
 		 COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
 		 FROM resources r
-		 LEFT JOIN ocp_clusters oc ON oc.name = resource_data->>'ocp_cluster'
+		 LEFT JOIN ocp_shared_cluster_configurations oc ON oc.name = resource_data->>'ocp_cluster'
 		 WHERE r.id = $1`,
 		id,
 	)
@@ -1366,7 +1366,7 @@ func (a *OcpSandboxWithCreds) Reload() error {
 		 pgp_sym_decrypt(r.resource_credentials, $2),
 		 COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
 		 FROM resources r
-		 LEFT JOIN ocp_clusters oc ON oc.name = resource_data->>'ocp_cluster'
+		 LEFT JOIN ocp_shared_cluster_configurations oc ON oc.name = resource_data->>'ocp_cluster'
 		 WHERE r.id = $1`,
 		a.ID, a.Provider.VaultSecret,
 	)
