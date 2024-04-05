@@ -903,38 +903,6 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		// 	return
 		// }
 
-		// // Create RoleBind for the Service Account in the Namespace for NetworkAttachDefinition
-		// _, err = clientset.RbacV1().RoleBindings(namespaceName).Create(context.TODO(), &rbacv1.RoleBinding{
-		// 	ObjectMeta: metav1.ObjectMeta{
-		// 		Name: "nad-" + namespaceName[:min(59, len(namespaceName))],
-		// 		Labels: map[string]string{
-		// 			"serviceUuid": serviceUuid,
-		// 			"guid":        annotations["guid"],
-		// 		},
-		// 	},
-		// 	RoleRef: rbacv1.RoleRef{
-		// 		APIGroup: rbacv1.GroupName,
-		// 		Kind:     "ClusterRole",
-		// 		Name:     "nad-manager",
-		// 	},
-		// 	Subjects: []rbacv1.Subject{
-		// 		{
-		// 			Kind:      "ServiceAccount",
-		// 			Name:      serviceAccountName,
-		// 			Namespace: namespaceName,
-		// 		},
-		// 	},
-		// }, metav1.CreateOptions{})
-
-		// if err != nil {
-		// 	log.Logger.Error("Error creating OCP RoleBind", "error", err)
-		// 	if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
-		// 		log.Logger.Error("Error cleaning up the namespace", "error", err)
-		// 	}
-		// 	rnew.SetStatus("error")
-		// 	return
-		// }
-
 		// Look if namespace 'cnv-images' exists
 		if _, err := clientset.CoreV1().Namespaces().Get(context.TODO(), "cnv-images", metav1.GetOptions{}); err == nil {
 
