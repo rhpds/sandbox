@@ -75,19 +75,26 @@ hurl --variable login_token_admin=$admintoken \
 --file-root . \
 --variable host=http://localhost:8080 \
 --variable ocp_cluster_def=.dev.kube.json \
---variable ocp_cluster_name=cluster-foo \
-../tools/ocp_cluster_create.hurl
+./tools/ocp_cluster_create.hurl
+
+
+# or with curl directly
+curl --header "Authorization: Bearer $admintoken" \
+  --header 'Content-Type: application/json' \
+  --data-binary '@./.dev.kube.json' \
+  'http://localhost:8080/api/v1/ocp-clusters'
 ----
 
-.Run the test
+.Run the tests for OcpSandbox
 ----
 uuid=$(uuidgen -r)
+cd tests
+
 hurl --variable login_token_admin=$admintoken \
 --variable login_token=$apptoken \
 --variable host=http://localhost:8080 \
 --variable uuid=$uuid \
---variable ocp_cluster_def=.dev.kube.json \
---variable ocp_cluster_name=cluster-foo 002_ocp.hurl --test
+002_ocp.hurl --test
 ----
 
 === Troubleshoot ===
