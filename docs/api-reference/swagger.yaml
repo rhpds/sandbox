@@ -1871,6 +1871,12 @@ components:
             - success
             - error
             - deleting
+        cluster_additional_vars:
+          type: object
+          example:
+            deployer:
+              openshift_cnv_nfs_path: /IBMfoobar/data01
+              openshift_cnv_nfs_server: fsf-region.domain.com
 
     OcpAccountWithCreds:
       allOf:
@@ -2113,6 +2119,13 @@ components:
                 token: <TOKEN>
         annotations:
           $ref: "#/components/schemas/Annotations"
+        additional_vars:
+          type: object
+          description: Additional variables for the cluster
+          example:
+            deployer:
+              openshift_cnv_nfs_path: /IBMfoobar/data01
+              openshift_cnv_nfs_server: fsf-region.domain.com
       example:
         name: ocp-cluster-1
         api_url: https://api.ocp-cluster-1.com:6443
