@@ -135,6 +135,9 @@ aws_nuke_filters_default:
   AWSBackupVault:
     - property: Name
       value: aws/efs/automatic-backup-vault
+  AWSBackupVaultAccessPolicy:
+    - property: Name
+      value: aws/efs/automatic-backup-vault
 
 
 ##############################
