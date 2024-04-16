@@ -4,6 +4,7 @@ ORIG="$(cd "$(dirname "$0")" || exit; pwd)"
 
 # Stop after max_retries
 max_retries=${max_retries:-2}
+aws_nuke_retries=${aws_nuke_retries:-0}
 # retry after 48h
 TTL_EVENTLOG=$((3600*24))
 
@@ -224,6 +225,7 @@ sandbox_reset() {
         -e dynamodb_table="${dynamodb_table}" \
         -e dynamodb_region="${dynamodb_region}" \
         -e aws_nuke_binary_path="${aws_nuke_binary_path}" \
+        -e aws_nuke_retries="${aws_nuke_retries}" \
         -e output_dir="${workdir}/output_dir_sandbox" \
         -e vault_file="${vault_file}" \
         -e aws_cli="${AWSCLI}" \
