@@ -15,6 +15,40 @@ if os.path.exists('/tmp/aws_nuke_filters.json'):
     with open('/tmp/aws_nuke_filters.json', 'r') as f:
         aws_nuke_filter.update(json.load(f))
 
+# Delete all app registry applications
+
+client = boto3.client('servicecatalog-appregistry')
+
+try:
+
+    response = client.list_applications()
+
+    for application in response['applications']:
+        # Delete all resources
+        response2 = client.list_associated_resources(
+            application=application['id']
+        )
+
+        for resource in response2['resources']:
+            client.disassociate_resource(
+                application=application['id'],
+                resource=resource['resourceType'],
+                resourceType=resource['resourceType']
+            )
+            print("Disassociated resource: " + resource['resourceType'])
+            changed = True
+
+        # Delete application
+        client.delete_application(
+            application=application['id']
+        )
+        print("Deleted application: " + application['id'])
+        changed = True
+
+
+except botocore.exceptions.ClientError as e:
+    print(e)
+
 # Cleanup AWSBackupRecoveryPoint
 client = boto3.client('backup')
 
