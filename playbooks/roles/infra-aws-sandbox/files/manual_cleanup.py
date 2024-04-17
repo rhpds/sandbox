@@ -15,12 +15,52 @@ if os.path.exists('/tmp/aws_nuke_filters.json'):
     with open('/tmp/aws_nuke_filters.json', 'r') as f:
         aws_nuke_filter.update(json.load(f))
 
+# Delete all Cognito User Pools
+
+client = boto3.client('cognito-idp')
+
+try:
+    response = client.list_user_pools(
+        MaxResults=60
+    )
+
+    for user_pool in response['UserPools']:
+        # Delete all users
+        response2 = client.list_users(
+            UserPoolId=user_pool['Id']
+        )
+
+        for user in response2['Users']:
+            client.admin_delete_user(
+                UserPoolId=user_pool['Id'],
+                Username=user['Username']
+            )
+            print("Deleted user: " + user['Username'])
+            changed = True
+
+        # Disable deletion protection
+        client.update_user_pool(
+            UserPoolId=user_pool['Id'],
+            DeletionProtection='INACTIVE',
+            AutoVerifiedAttributes=[
+                'email'
+            ]
+        )
+        # Delete user pool
+        client.delete_user_pool(
+            UserPoolId=user_pool['Id']
+        )
+        print("Deleted user pool: " + user_pool['Id'])
+        changed = True
+
+except botocore.exceptions.ClientError as e:
+    print(e)
+
 # Delete all app registry applications
 
 client = boto3.client('servicecatalog-appregistry')
 
 try:
-
     response = client.list_applications()
 
     for application in response['applications']:
