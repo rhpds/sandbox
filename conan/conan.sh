@@ -10,6 +10,7 @@ set -u -o pipefail
 threads="${threads:-12}"
 # Number of attempts to run cleanup on a sandbox
 max_retries="${max_retries:-2}"
+aws_nuke_retries=${aws_nuke_retries:-0}
 
 # AWS profile
 aws_profile="${aws_profile:-pool-manager}"
@@ -49,6 +50,9 @@ kerberos_keytab=${kerberos_keytab:-~/secrets/hostadmin.keytab}
 kerberos_user=${kerberos_user:-hostadmin}
 kerberos_password=${kerberos_password:-}
 
+# Pattern to filter the sandboxes to cleanup
+sandbox_filter=${sandbox_filter:-}
+
 if [ -n "${kerberos_password}" ]; then
     unset kerberos_keytab
 fi
@@ -76,11 +80,13 @@ export kerberos_password
 export kerberos_user
 export lock_timeout
 export max_retries
+export aws_nuke_retries
 export noop
 export poll_interval
 export threads
 export vault_file
 export workdir
+export sandbox_filter
 
 ORIG="$(cd "$(dirname "$0")" || exit; pwd)"
 
@@ -144,7 +150,9 @@ while true; do
         export AWS_REGION=${dynamodb_region}
         export dynamodb_table=${dynamodb_table}
         sandbox-list --to-cleanup --no-headers
-    ) | rush --immediate-output -j "${threads}" './wipe_sandbox.sh {1}'
+    ) \
+        | grep -E "${sandbox_filter}" \
+        | rush --immediate-output -j "${threads}" './wipe_sandbox.sh {1}'
 
     sleep "${poll_interval}"
 done

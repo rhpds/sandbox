@@ -17,6 +17,27 @@
     _hostedzoneid: "{{ _route53zone.zone_id }}"
     aws_public_zone: "{{ account_name }}{{subdomain_base}}."
 
+# Get a new token as the current one may have timed out (1h)
+- include_tasks: assume.yml
+
+- loop: "{{ all_regions }}"
+  loop_control:
+    loop_var: _region
+  environment:
+    AWS_REGION: "{{ _region }}"
+    AWS_DEFAULT_REGION: "{{ _region }}"
+    AWS_ACCESS_KEY_ID: "{{ assumed_role.sts_creds.access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ assumed_role.sts_creds.secret_key }}"
+    AWS_SESSION_TOKEN: "{{ assumed_role.sts_creds.session_token }}"
+  ignore_errors: true
+  name: Run files/manual_cleanup.py script
+  script: files/manual_cleanup.py
+  register: r_manual_cleanup
+  # timeout after 2 minutes
+  timeout: 120
+  changed_when: >-
+    'Changes were made' in r_manual_cleanup.stdout
+
 - tags: nuke
   when: nuke_sandbox | bool
   block:
@@ -26,6 +47,18 @@
           Route53HostedZone:
             - "{{ account_name }}{{ subdomain_base }}."
             - /hostedzone/{{ _route53zone.zone_id }} ({{ account_name }}{{ subdomain_base }}.)
+
+    - name: check if /tmp/aws_nuke_filters.json exists
+      stat:
+        path: /tmp/aws_nuke_filters.json
+      register: _stat
+
+    - name: Load /tmp/aws_nuke_filters.json and merge it into aws_nuke_filters
+      when: _stat.stat.exists
+      set_fact:
+        aws_nuke_filters: "{{ aws_nuke_filters | combine(_aws_nuke_filters) }}"
+      vars:
+        _aws_nuke_filters: "{{ lookup('file', '/tmp/aws_nuke_filters.json') | from_json | default({}) }}"
 
     - name: Generate config file for aws-nuke
       template:
@@ -41,13 +74,13 @@
       args:
         stdin: "{{ account_name }}{{ alias_suffix }}"
       register: _awsnuke
-      async: 1800
-      poll: 30
       ignore_errors: true
       retries: "{{ aws_nuke_retries }}"
-      delay: 30
       until: _awsnuke is succeeded
       no_log: true
+      async: 1800
+      poll: 30
+      delay: 30
 
     - debug:
         var: _awsnuke
@@ -74,13 +107,13 @@
           args:
             stdin: "{{ account_name }}{{ alias_suffix }}"
           register: _awsnuke2
-          async: 1800
-          poll: 30
           ignore_errors: true
           retries: 0
-          delay: 30
           until: _awsnuke2 is succeeded
           no_log: true
+          async: 1800
+          poll: 30
+          delay: 30
 
         - debug:
             var: _awsnuke2

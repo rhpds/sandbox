@@ -83,11 +83,12 @@ $ podman run \
     -e AWSCLI=aws \
     -e threads=1 \
     -e NOVENV=true \
-    sandbox-conan:latest
+    -v $PWD:/home/opentlc-mgr/pool_management/sandbox \
+    quay.io/rhpds/sandbox-conan:latest
 
-# For fast iterations, you can pass a volume of your current version of the repo
+# For fast iterations on a specific sandbox, you can pass a pattern
 
-podman run -v $PWD:/home/opentlc-mgr/pool_management/sandbox  ...
+podman run -e sandbox_filter="^sandbox2345 " ...
 
 # Delete the secrets when done
 

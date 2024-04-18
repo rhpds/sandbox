@@ -135,7 +135,13 @@ aws_nuke_filters_default:
   AWSBackupVault:
     - property: Name
       value: aws/efs/automatic-backup-vault
+  AWSBackupVaultAccessPolicy:
+    - aws/efs/automatic-backup-vault
 
+  # Rejected VPC Endpoints cannot be deleted
+  EC2VPCEndpointConnection:
+    - property: State
+      value: rejected
 
 ##############################
 # POOL management
