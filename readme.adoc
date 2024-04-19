@@ -12,6 +12,8 @@ This repository is a consolidated codebase for everything related to sandboxes f
 == Build ==
 
 .Build all binaries
+
+You will need to have 'go' setup on your machine. Please use version 1.21 onwards
 ----
 make
 ----
