@@ -15,6 +15,111 @@ if os.path.exists('/tmp/aws_nuke_filters.json'):
     with open('/tmp/aws_nuke_filters.json', 'r') as f:
         aws_nuke_filter.update(json.load(f))
 
+# Delete all EC2VPC
+
+client = boto3.client('ec2')
+
+try:
+    response = client.describe_vpcs()
+
+    for vpc in response['Vpcs']:
+        # Delete all subnets
+        response2 = client.describe_subnets(
+            Filters=[
+                {
+                    'Name': 'vpc-id',
+                    'Values': [
+                        vpc['VpcId']
+                    ]
+                }
+            ]
+        )
+
+        for subnet in response2['Subnets']:
+            client.delete_subnet(
+                SubnetId=subnet['SubnetId']
+            )
+            print("Deleted subnet: " + subnet['SubnetId'])
+            changed = True
+
+
+        # Get LocalGatewayRouteTableVpcAssociationId
+
+        response3 = client.describe_local_gateway_route_table_vpc_associations(
+            Filters=[
+                {
+                    'Name': 'vpc-id',
+                    'Values': [
+                        vpc['VpcId']
+                    ]
+                }
+            ]
+        )
+
+        for association in response3['LocalGatewayRouteTableVpcAssociations']:
+            client.disassociate_local_gateway_route_table_vpc_association(
+                LocalGatewayRouteTableVpcAssociationId=association['LocalGatewayRouteTableVpcAssociationId']
+            )
+            print("Disassociated LocalGatewayRouteTableVpcAssociation: " + association['LocalGatewayRouteTableVpcAssociationId'])
+            changed = True
+
+        # Delete all carrier gateways
+
+        response4 = client.describe_carrier_gateways(
+            Filters=[
+                {
+                    'Name': 'vpc-id',
+                    'Values': [
+                        vpc['VpcId']
+                    ]
+                }
+            ]
+        )
+
+        for carrier_gateway in response4['CarrierGateways']:
+            client.delete_carrier_gateway(
+                CarrierGatewayId=carrier_gateway['CarrierGatewayId']
+            )
+            print("Deleted carrier gateway: " + carrier_gateway['CarrierGatewayId'])
+            changed = True
+
+        # Diassociate all route tables
+
+        response4 = client.describe_route_tables(
+            Filters=[
+                {
+                    'Name': 'vpc-id',
+                    'Values': [
+                        vpc['VpcId']
+                    ]
+                }
+            ]
+        )
+
+        for route_table in response4['RouteTables']:
+            for association in route_table['Associations']:
+                if not association['Main']:
+                    client.disassociate_route_table(
+                        AssociationId=association['RouteTableAssociationId']
+                    )
+                    print("Disassociated route table: " + association['RouteTableAssociationId'])
+                    changed = True
+
+
+        # Delete VPC
+
+        client.delete_vpc(
+            VpcId=vpc['VpcId']
+        )
+
+        print("Deleted VPC: " + vpc['VpcId'])
+
+        changed = True
+
+except botocore.exceptions.ClientError as e:
+    print(e)
+
+
 # Delete all Cognito User Pools
 
 client = boto3.client('cognito-idp')
