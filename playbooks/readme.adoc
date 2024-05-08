@@ -1,12 +1,24 @@
 == Create new AWS sandboxes ==
 
+This is a manual process and require caution and validation.
+
+WARNING: make sure the range you're creating is available: check the prod DB but also the DEV DB
+----
+# latest sandboxes, prod
+sandbox-list -all --sort name |tail
+
+# latest sandboxes, dev
+(export AWS_PROFILE=dev; export dynamodb_table=accounts-dev;  sandbox-list -all --sort name | tail)
+----
+
 .on admin host
 ----
 [opentlc-mgr@admin (PROD) ~]$ . ~/pool_management/python_virtualenv/bin/activate
 (python_virtualenv) [opentlc-mgr@admin (PROD) ~]$ cd pool_management/sandbox/playbooks
 
 # .create 10 AWS sandbox accounts: sandbox3001 .. sandbox3010
-./create_range.yml -e account_num_start=3001 -e account_count=10
+# You can use 'IPA opentlc.com hostadmin for conan' for the kerberos creds
+./create_range.yml -e account_num_start=3001 -e account_count=10 -e kerberos_user=... -e kerberos_password=...
 
 # Add GOLD IMAGES to the new accounts
 # Generate the list of new sandboxes
@@ -18,4 +30,7 @@ sandbox-list --sort name -all |awk '/^sandbox3001 /{flag=1}flag{print $1 " " $3}
 
 # Go back on admin host, ensure they are all valide
 ./validate.yml -e account_num_start=3001 -e account_num_end=3010
+
+# user sandbox_enable.sh  to enable the new sandboxes
+for i in $(seq 3001 3010); do  sandbox_enable.sh $i; done
 ----
