@@ -139,7 +139,7 @@ func Sort[T Sortable](accounts []T, by string) []T {
 }
 
 // Start method starts all the stopped instances in the account
-func (a AwsAccount) Start(ctx context.Context, creds *ststypes.Credentials) error {
+func (a AwsAccount) Start(ctx context.Context, creds *ststypes.Credentials, job *LifecycleResourceJob) error {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		log.Logger.Error("Error loading config", "error", err)
@@ -219,6 +219,37 @@ func (a AwsAccount) Start(ctx context.Context, creds *ststypes.Credentials) erro
 					"request_id", ctx.Value("RequestID"),
 					"service_uuid", ctx.Value("ServiceUUID"),
 				)
+
+				// save event as json in DB
+				_, err = job.DbPool.Exec(
+					ctx,
+					`INSERT INTO lifecycle_events (event_type, service_uuid, resource_name, resource_type, event_data)
+					 VALUES ($1, $2, $3, $4, $5)`,
+					"start_instance",
+					ctx.Value("ServiceUUID"),
+					a.Name,
+					a.Kind,
+					// Save cloud provider name, instance id, instance type, region
+					struct {
+						AccountName  string `json:"account_name"`
+						AccountID    string `json:"account_id"`
+						InstanceID   string `json:"instance_id"`
+						InstanceType string `json:"instance_type"`
+						Region       string `json:"region"`
+					}{
+						AccountName:  a.Name,
+						AccountID:    a.AccountID,
+						InstanceID:   *instance.InstanceId,
+						InstanceType: string(instance.InstanceType),
+						Region:       *region.RegionName,
+					},
+				)
+
+				if err != nil {
+					log.Logger.Error("Error saving event", "error", err, "event", "start_instance")
+
+				}
+
 			}
 		}
 	}
@@ -227,7 +258,7 @@ func (a AwsAccount) Start(ctx context.Context, creds *ststypes.Credentials) erro
 }
 
 // Stop method stops all the running instances in the account
-func (a AwsAccount) Stop(ctx context.Context, creds *ststypes.Credentials) error {
+func (a AwsAccount) Stop(ctx context.Context, creds *ststypes.Credentials, job *LifecycleResourceJob) error {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		log.Logger.Error("Error loading config", "error", err)
@@ -302,6 +333,35 @@ func (a AwsAccount) Stop(ctx context.Context, creds *ststypes.Credentials) error
 					"request_id", ctx.Value("RequestID"),
 					"service_uuid", ctx.Value("ServiceUUID"),
 				)
+
+				// save event as json in DB
+				_, err = job.DbPool.Exec(
+					ctx,
+					`INSERT INTO lifecycle_events (event_type, service_uuid, resource_name, resource_type, event_data)
+					 VALUES ($1, $2, $3, $4, $5)`,
+					"stop_instance",
+					ctx.Value("ServiceUUID"),
+					a.Name,
+					a.Kind,
+					// Save cloud provider name, instance id, instance type, region
+					struct {
+						AccountName  string `json:"account_name"`
+						AccountID    string `json:"account_id"`
+						InstanceID   string `json:"instance_id"`
+						InstanceType string `json:"instance_type"`
+						Region       string `json:"region"`
+					}{
+						AccountName:  a.Name,
+						AccountID:    a.AccountID,
+						InstanceID:   *instance.InstanceId,
+						InstanceType: string(instance.InstanceType),
+						Region:       *region.RegionName,
+					},
+				)
+
+				if err != nil {
+					log.Logger.Error("Error saving event", "error", err, "event", "stop_instance")
+				}
 			}
 		}
 	}
