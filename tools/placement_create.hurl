@@ -11,11 +11,25 @@ access_token: jsonpath "$.access_token"
 jsonpath "$.access_token" isString
 jsonpath "$.access_token_exp" isString
 
-
 #################################################################################
-# Stop a placement
+# Create a placement
 #################################################################################
 
-PUT {{host}}/api/v1/placements/{{uuid}}/{{action}}
+POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
-HTTP 202
+{
+  "service_uuid": "{{uuid}}",
+  "resources": [
+    {
+      "kind": "AwsSandbox",
+      "count": 1,
+      "annotations": {
+        "purpose": "backend"
+      }
+    }
+  ],
+  "annotations": {
+    "guid": "testg"
+  }
+}
+HTTP 200

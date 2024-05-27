@@ -13,9 +13,9 @@ jsonpath "$.access_token_exp" isString
 
 
 #################################################################################
-# Stop a placement
+# Delete placement
 #################################################################################
 
-PUT {{host}}/api/v1/placements/{{uuid}}/{{action}}
+DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
-HTTP 202
+HTTP 200

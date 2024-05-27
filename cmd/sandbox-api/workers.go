@@ -98,10 +98,10 @@ func (w Worker) Execute(j *models.LifecycleResourceJob) error {
 		switch j.Action {
 		case "start":
 			j.SetStatus("running")
-			return sandbox.Start(ctx, assume.Credentials)
+			return sandbox.Start(ctx, assume.Credentials, j)
 		case "stop":
 			j.SetStatus("running")
-			return sandbox.Stop(ctx, assume.Credentials)
+			return sandbox.Stop(ctx, assume.Credentials, j)
 		case "status":
 			j.SetStatus("running")
 			status, err := sandbox.Status(ctx, assume.Credentials, j)
