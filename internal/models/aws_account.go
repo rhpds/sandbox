@@ -4,8 +4,13 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
 
-	"github.com/jackc/pgx/v4/pgxpool"
+	sconfig "github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -16,12 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	ststypes "github.com/aws/aws-sdk-go-v2/service/sts/types"
-
-	"os"
-	"sort"
-	"strconv"
-	"strings"
-	"time"
+	"github.com/jackc/pgx/v4/pgxpool"
 )
 
 var ErrNoEnoughAccountsAvailable = errors.New("no enough accounts available")
@@ -236,12 +236,14 @@ func (a AwsAccount) Start(ctx context.Context, creds *ststypes.Credentials, job 
 						InstanceID   string `json:"instance_id"`
 						InstanceType string `json:"instance_type"`
 						Region       string `json:"region"`
+						Locality     string `json:"locality"`
 					}{
 						AccountName:  a.Name,
 						AccountID:    a.AccountID,
 						InstanceID:   *instance.InstanceId,
 						InstanceType: string(instance.InstanceType),
 						Region:       *region.RegionName,
+						Locality:     sconfig.LocalityID,
 					},
 				)
 
@@ -350,12 +352,14 @@ func (a AwsAccount) Stop(ctx context.Context, creds *ststypes.Credentials, job *
 						InstanceID   string `json:"instance_id"`
 						InstanceType string `json:"instance_type"`
 						Region       string `json:"region"`
+						Locality     string `json:"locality"`
 					}{
 						AccountName:  a.Name,
 						AccountID:    a.AccountID,
 						InstanceID:   *instance.InstanceId,
 						InstanceType: string(instance.InstanceType),
 						Region:       *region.RegionName,
+						Locality:     sconfig.LocalityID,
 					},
 				)
 
