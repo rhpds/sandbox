@@ -155,7 +155,7 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "guid": "testg-1",
+    "guid": "testg",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -192,7 +192,7 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "guid": "testg-1",
+    "guid": "testg",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -265,7 +265,7 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "guid": "testg-1",
+    "guid": "testg",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -300,7 +300,7 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "guid": "testg-1",
+    "guid": "testg",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -346,7 +346,7 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "guid": "testg-1",
+    "guid": "testg",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -393,6 +393,64 @@ Authorization: Bearer {{access_token}}
 retry: 40
 HTTP 404
 
+#################################################################################
+# Create a new placement With 3 sandboxes with namespace suffix
+#################################################################################
+
+POST {{host}}/api/v1/placements
+Authorization: Bearer {{access_token}}
+{
+  "service_uuid": "{{uuid}}",
+  "resources": [
+    {"kind": "OcpSandbox", "annotations": {"namespace_suffix": "dev"}},
+    {"kind": "OcpSandbox", "annotations": {"namespace_suffix": "test"}},
+    {"kind": "OcpSandbox", "annotations": {"namespace_suffix": "prod"}}
+  ],
+  "annotations": {
+    "guid": "testg",
+    "env_type": "ocp4-cluster-blablablabla"
+  }
+}
+HTTP 200
+[Captures]
+sandbox_name: jsonpath "$.Placement.resources[0].name"
+[Asserts]
+jsonpath "$.message" == "Placement Created"
+jsonpath "$.Placement.service_uuid" == "{{uuid}}"
+jsonpath "$.Placement.resources" count == 3
+jsonpath "$.Placement.resources[0].status" == "initializing"
+
+#################################################################################
+# Wait until the placement is succesfull and resources are ready
+#################################################################################
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 40
+HTTP 200
+[Asserts]
+jsonpath "$.service_uuid" == "{{uuid}}"
+jsonpath "$.status" == "success"
+jsonpath "$.resources" count == 3
+jsonpath "$.resources[0].status" == "success"
+jsonpath "$.resources[0].namespace" == "sandbox-testg-dev"
+jsonpath "$.resources[1].namespace" == "sandbox-testg-2-test"
+jsonpath "$.resources[2].namespace" == "sandbox-testg-3-prod"
+jsonpath "$.resources[0].ingress_domain" split "." count > 2
+jsonpath "$.resources[0].credentials" count >= 1
+jsonpath "$.resources[0].credentials[0].kind" == "ServiceAccount"
+jsonpath "$.resources[0].credentials[0].token" isString
+
+#################################################################################
+# Delete placement
+#################################################################################
+
+DELETE {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 40
+HTTP 404
 
 #################################################################################
 # Create a new placement With AWS + OCP
@@ -407,7 +465,7 @@ Authorization: Bearer {{access_token}}
     {"kind": "AwsSandbox", "annotations":{"purpose":"aws"}}
   ],
   "annotations": {
-    "guid": "testg-1",
+    "guid": "testg",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -417,7 +475,7 @@ jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 jsonpath "$.Placement.resources" count == 2
 jsonpath "$.Placement.resources[0].status" == "initializing"
-jsonpath "$.Placement.resources[0].annotations.guid" == "testg-1"
+jsonpath "$.Placement.resources[0].annotations.guid" == "testg"
 jsonpath "$.Placement.resources[0].annotations.purpose" == "ocp"
 
 #################################################################################

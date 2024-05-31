@@ -593,7 +593,6 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]st
 }
 
 func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string) (OcpSandboxWithCreds, error) {
-	var rowcount int
 	var minOcpMemoryUsage float64
 	var selectedCluster OcpSharedClusterConfiguration
 
@@ -615,41 +614,12 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 
 	// Determine guid, auto increment the guid if there are multiple resources
 	// for a serviceUuid
-	guid := annotations["guid"]
-	increment := 0
-
-	for {
-		if increment > 100 {
-			// something clearly went wrong, shouldn't never happen, but be defensive
-			return OcpSandboxWithCreds{}, errors.New("Too many iterations guessing guid")
-		}
-
-		if increment > 0 {
-			guid = annotations["guid"] + "-" + fmt.Sprintf("%v", increment+1)
-		}
-		// If a sandbox already has the same name for that serviceuuid, increment
-		// If so, increment the guid and try again
-		candidateName := guid + "-" + serviceUuid
-
-		err := a.DbPool.QueryRow(
-			context.Background(),
-			`SELECT count(*) FROM resources
-			WHERE resource_name = $1
-			AND resource_type = 'OcpSandbox'`,
-			candidateName,
-		).Scan(&rowcount)
-
-		if err != nil {
-			log.Logger.Error("Error checking resources names", "error", err)
-			return OcpSandboxWithCreds{}, err
-		}
-
-		if rowcount == 0 {
-			break
-		}
-		increment++
+	guid, err := guessNextGuid(annotations["guid"], serviceUuid, a.DbPool)
+	log.Logger.Info("Guessed guid", "guid", guid)
+	if err != nil {
+		log.Logger.Error("Error guessing guid", "error", err)
+		return OcpSandboxWithCreds{}, err
 	}
-
 	// Return the Placement with a status 'initializing'
 	rnew := OcpSandboxWithCreds{
 		OcpSandbox: OcpSandbox{
@@ -773,7 +743,13 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 
 		serviceAccountName := "sandbox"
-		namespaceName := "sandbox-" + rnew.Name
+		suffix := annotations["namespace_suffix"]
+		if suffix == "" {
+			suffix = serviceUuid
+		}
+
+		// Try with original guid first
+		namespaceName := "sandbox-" + guid + "-" + suffix
 		namespaceName = namespaceName[:min(63, len(namespaceName))] // truncate to 63
 
 		delay := time.Second
@@ -805,6 +781,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 
 					continue
 				}
+
 				rnew.SetStatus("error")
 				return
 			}
@@ -1010,6 +987,44 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 	return rnew, nil
 }
 
+func guessNextGuid(origGuid string, serviceUuid string, dbpool *pgxpool.Pool) (string, error) {
+	var rowcount int
+	guid := origGuid
+	increment := 0
+
+	for {
+		if increment > 100 {
+			return "", errors.New("Too many iterations guessing guid")
+		}
+
+		if increment > 0 {
+			guid = origGuid + "-" + fmt.Sprintf("%v", increment+1)
+		}
+		// If a sandbox already has the same name for that serviceuuid, increment
+		// If so, increment the guid and try again
+		candidateName := guid + "-" + serviceUuid
+
+		err := dbpool.QueryRow(
+			context.Background(),
+			`SELECT count(*) FROM resources
+			WHERE resource_name = $1
+			AND resource_type = 'OcpSandbox'`,
+			candidateName,
+		).Scan(&rowcount)
+
+		if err != nil {
+			return "", err
+		}
+
+		if rowcount == 0 {
+			break
+		}
+		increment++
+	}
+
+	return guid, nil
+}
+
 func (a *OcpSandboxProvider) Release(service_uuid string) error {
 	accounts, err := a.FetchAllByServiceUuidWithCreds(service_uuid)
 
@@ -1161,6 +1176,16 @@ func (account *OcpSandboxWithCreds) Delete() error {
 	// In case anything goes wrong, we'll know it can safely be deleted
 	account.MarkForCleanup()
 	account.IncrementCleanupCount()
+
+	if account.Namespace == "" {
+		log.Logger.Info("Empty namespace, consider deletion a success", "name", account.Name)
+		_, err := account.Provider.DbPool.Exec(
+			context.Background(),
+			"DELETE FROM resources WHERE id = $1",
+			account.ID,
+		)
+		return err
+	}
 
 	// Get the OCP shared cluster configuration from the resources.resource_data column
 
