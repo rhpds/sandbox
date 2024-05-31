@@ -1020,9 +1020,10 @@ func (a *OcpSandboxProvider) Release(service_uuid string) error {
 	var errorHappened error
 
 	for _, account := range accounts {
-		if account.Namespace == "" {
-			log.Logger.Error("Namespace not found for account", "account", account)
+		if account.Namespace == "" && account.Status != "error" {
+			// If the sandbox is not in error and the namespace is empty, throw an error
 			errorHappened = errors.New("Namespace not found for account")
+			log.Logger.Error("Namespace not found for account", "account", account)
 			continue
 		}
 
@@ -1143,6 +1144,17 @@ func (account *OcpSandboxWithCreds) Delete() error {
 			account.SetStatus("error")
 			return err
 		}
+	}
+
+	if account.OcpSharedClusterConfigurationName == "" {
+		// The resource was not created, nothing to delete
+		// that happens when no cluster is elected
+		_, err := account.Provider.DbPool.Exec(
+			context.Background(),
+			"DELETE FROM resources WHERE id = $1",
+			account.ID,
+		)
+		return err
 	}
 
 	account.SetStatus("deleting")
