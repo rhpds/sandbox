@@ -398,7 +398,7 @@ func (a *OcpSandboxWithCreds) Save() error {
 func (a *OcpSandboxWithCreds) SetStatus(status string) error {
 	_, err := a.Provider.DbPool.Exec(
 		context.Background(),
-		"UPDATE resources SET status = $1 WHERE id = $2",
+		"UPDATE resources SET status = $1, resource_data->status = $1 WHERE id = $2",
 		status, a.ID,
 	)
 
@@ -769,8 +769,8 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			}, metav1.CreateOptions{})
 
 			if err != nil {
-				log.Logger.Error("Error creating OCP namespace", "error", err)
 				if strings.Contains(err.Error(), "object is being deleted: namespace") {
+					log.Logger.Warn("Error creating OCP namespace", "error", err)
 					time.Sleep(delay)
 					delay = delay * 2
 					if delay > 60*time.Second {
@@ -781,6 +781,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 					continue
 				}
 
+				log.Logger.Error("Error creating OCP namespace", "error", err)
 				rnew.SetStatus("error")
 				return
 			}
@@ -1038,7 +1039,10 @@ func (a *OcpSandboxProvider) Release(service_uuid string) error {
 	var errorHappened error
 
 	for _, account := range accounts {
-		if account.Namespace == "" && account.Status != "error" {
+		if account.Namespace == "" &&
+			account.Status != "error" &&
+			account.Status != "scheduling" &&
+			account.Status != "initializing" {
 			// If the sandbox is not in error and the namespace is empty, throw an error
 			errorHappened = errors.New("Namespace not found for account")
 			log.Logger.Error("Namespace not found for account", "account", account)
@@ -1126,6 +1130,10 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		}
 		if maxRetries == 0 {
 			log.Logger.Error("Resource is not in a final state", "name", account.Name, "status", status)
+			// Curative and auto-healing action, set status to error
+			if status == "initializing" || status == "scheduling" {
+				account.SetStatus("error")
+			}
 			return errors.New("Resource is not in a final state, cannot delete")
 		}
 
