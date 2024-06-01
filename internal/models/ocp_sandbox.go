@@ -56,6 +56,7 @@ type OcpSandbox struct {
 	CleanupCount                      int               `json:"cleanup_count"`
 	Namespace                         string            `json:"namespace"`
 	ClusterAdditionalVars             map[string]any    `json:"cluster_additional_vars,omitempty"`
+	ToCleanup                         bool              `json:"to_cleanup"`
 }
 
 type OcpSandboxWithCreds struct {
@@ -387,7 +388,7 @@ func (a *OcpSandboxWithCreds) Save() error {
 		`INSERT INTO resources
 			(resource_name, resource_type, service_uuid, to_cleanup, resource_data, resource_credentials, status, cleanup_count)
 			VALUES ($1, $2, $3, $4, $5, pgp_sym_encrypt($6::text, $7), $8, $9) RETURNING id`,
-		a.Name, a.Kind, a.ServiceUuid, false, withoutCreds, creds, a.Provider.VaultSecret, a.Status, a.CleanupCount,
+		a.Name, a.Kind, a.ServiceUuid, a.ToCleanup, withoutCreds, creds, a.Provider.VaultSecret, a.Status, a.CleanupCount,
 	).Scan(&a.ID); err != nil {
 		return err
 	}
@@ -419,7 +420,7 @@ func (a *OcpSandboxWithCreds) GetStatus() (string, error) {
 func (a *OcpSandboxWithCreds) MarkForCleanup() error {
 	_, err := a.Provider.DbPool.Exec(
 		context.Background(),
-		"UPDATE resources SET to_cleanup = true WHERE id = $1",
+		"UPDATE resources SET to_cleanup = true, resource_data->to_cleanup = true WHERE id = $1",
 		a.ID,
 	)
 
@@ -1130,6 +1131,7 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		}
 		if maxRetries == 0 {
 			log.Logger.Error("Resource is not in a final state", "name", account.Name, "status", status)
+
 			// Curative and auto-healing action, set status to error
 			if status == "initializing" || status == "scheduling" {
 				account.SetStatus("error")
