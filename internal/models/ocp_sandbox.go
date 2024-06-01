@@ -399,7 +399,10 @@ func (a *OcpSandboxWithCreds) Save() error {
 func (a *OcpSandboxWithCreds) SetStatus(status string) error {
 	_, err := a.Provider.DbPool.Exec(
 		context.Background(),
-		"UPDATE resources SET status = $1, resource_data->status = $1 WHERE id = $2",
+		fmt.Sprintf(`UPDATE resources
+         SET status = $1,
+             resource_data['status'] = to_jsonb('%s'::text)
+         WHERE id = $2`, status),
 		status, a.ID,
 	)
 
@@ -420,7 +423,7 @@ func (a *OcpSandboxWithCreds) GetStatus() (string, error) {
 func (a *OcpSandboxWithCreds) MarkForCleanup() error {
 	_, err := a.Provider.DbPool.Exec(
 		context.Background(),
-		"UPDATE resources SET to_cleanup = true, resource_data->to_cleanup = true WHERE id = $1",
+		"UPDATE resources SET to_cleanup = true, resource_data['to_cleanup'] = 'true' WHERE id = $1",
 		a.ID,
 	)
 
@@ -1132,7 +1135,12 @@ func (account *OcpSandboxWithCreds) Delete() error {
 
 			// Curative and auto-healing action, set status to error
 			if status == "initializing" || status == "scheduling" {
-				account.SetStatus("error")
+				if err := account.SetStatus("error"); err != nil {
+					log.Logger.Error("Cannot set status", "error", err)
+					return err
+				}
+				maxRetries = 10
+				continue
 			}
 			return errors.New("Resource is not in a final state, cannot delete")
 		}
