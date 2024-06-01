@@ -15,7 +15,6 @@ import (
 	"github.com/rhpds/sandbox/internal/log"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-
 	//	"k8s.io/client-go/rest"
 	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -592,7 +591,7 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]st
 	return clusters, nil
 }
 
-func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string) (OcpSandboxWithCreds, error) {
+func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, multiple bool, ctx context.Context) (OcpSandboxWithCreds, error) {
 	var minOcpMemoryUsage float64
 	var selectedCluster OcpSharedClusterConfiguration
 
@@ -614,7 +613,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 
 	// Determine guid, auto increment the guid if there are multiple resources
 	// for a serviceUuid
-	guid, err := guessNextGuid(annotations["guid"], serviceUuid, a.DbPool)
+	guid, err := guessNextGuid(annotations["guid"], serviceUuid, a.DbPool, multiple, ctx)
 	log.Logger.Info("Guessed guid", "guid", guid)
 	if err != nil {
 		log.Logger.Error("Error guessing guid", "error", err)
@@ -987,10 +986,14 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 	return rnew, nil
 }
 
-func guessNextGuid(origGuid string, serviceUuid string, dbpool *pgxpool.Pool) (string, error) {
+func guessNextGuid(origGuid string, serviceUuid string, dbpool *pgxpool.Pool, multiple bool, ctx context.Context) (string, error) {
 	var rowcount int
 	guid := origGuid
 	increment := 0
+
+	if multiple {
+		guid = origGuid + "-1"
+	}
 
 	for {
 		if increment > 100 {
