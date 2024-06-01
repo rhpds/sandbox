@@ -615,7 +615,6 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 	// Determine guid, auto increment the guid if there are multiple resources
 	// for a serviceUuid
 	guid, err := guessNextGuid(annotations["guid"], serviceUuid, a.DbPool, multiple, ctx)
-	log.Logger.Info("Guessed guid", "guid", guid)
 	if err != nil {
 		log.Logger.Error("Error guessing guid", "error", err)
 		return OcpSandboxWithCreds{}, err
@@ -748,7 +747,6 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			suffix = serviceUuid
 		}
 
-		// Try with original guid first
 		namespaceName := "sandbox-" + guid + "-" + suffix
 		namespaceName = namespaceName[:min(63, len(namespaceName))] // truncate to 63
 
