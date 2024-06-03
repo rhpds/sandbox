@@ -352,12 +352,12 @@ func (a *OcpSandboxWithCreds) Update() error {
 		context.Background(),
 		`UPDATE resources
 		 SET resource_name = $1,
-             resource_type = $2,
-             service_uuid = $3,
-             resource_data = $4,
-             resource_credentials = pgp_sym_encrypt($5::text, $6),
-             status = $7,
-             cleanup_count = $8
+			 resource_type = $2,
+			 service_uuid = $3,
+			 resource_data = $4,
+			 resource_credentials = pgp_sym_encrypt($5::text, $6),
+			 status = $7,
+			 cleanup_count = $8
 		 WHERE id = $9`,
 		a.Name,
 		a.Kind,
@@ -400,9 +400,9 @@ func (a *OcpSandboxWithCreds) SetStatus(status string) error {
 	_, err := a.Provider.DbPool.Exec(
 		context.Background(),
 		fmt.Sprintf(`UPDATE resources
-         SET status = $1,
-             resource_data['status'] = to_jsonb('%s'::text)
-         WHERE id = $2`, status),
+		 SET status = $1,
+			 resource_data['status'] = to_jsonb('%s'::text)
+		 WHERE id = $2`, status),
 		status, a.ID,
 	)
 
@@ -1073,7 +1073,7 @@ func (a *OcpSandboxProvider) FetchAll() ([]OcpSandbox, error) {
 		context.Background(),
 		`SELECT
 		 r.resource_data,
-         r.id,
+		 r.id,
 		 r.resource_name,
 		 r.resource_type,
 		 r.created_at,
@@ -1270,6 +1270,12 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		account.SetStatus("error")
 		return err
 	}
+
+	log.Logger.Info("Namespace deleted",
+		"name", account.Name,
+		"namespace", account.Namespace,
+		"cluster", account.OcpSharedClusterConfigurationName,
+	)
 
 	// Delete the Service Account
 	if err = clientset.CoreV1().

@@ -35,6 +35,8 @@ HTTP *
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+[Options]
+retry: 10
 HTTP 404
 
 #################################################################################
@@ -197,10 +199,38 @@ jsonpath "$.message" == "start request created"
 #################################################################################
 # Delete the placement
 #################################################################################
+# Make sure the placement fails
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+[QueryStringParams]
+failOnDelete: true
+HTTP 202
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 10
 HTTP 200
+[Asserts]
+jsonpath "$.status" == "error"
+
+DELETE {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+HTTP 202
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+HTTP 200
+[Asserts]
+jsonpath "$.status" == "deleting"
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 40
+HTTP 404
 
 #################################################################################
 # Ensure start request doesn't exist
