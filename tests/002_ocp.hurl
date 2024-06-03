@@ -155,7 +155,8 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "guid": "testg-1",
+    "test": "cloud_selector too restrictive",
+    "guid": "testg",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -192,7 +193,8 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "guid": "testg-1",
+    "test": "placement with multiple Ocp",
+    "guid": "testg",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -265,7 +267,8 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "guid": "testg-1",
+    "test": "failed placement with multiple Ocp with one that cannot schedule",
+    "guid": "testg",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -300,7 +303,8 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "guid": "testg-1",
+    "tests": "Simple OcpSandbox placement",
+    "guid": "testg",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -346,7 +350,8 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "guid": "testg-1",
+    "test":"Should not be created as it's 409",
+    "guid": "testg",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -393,6 +398,74 @@ Authorization: Bearer {{access_token}}
 retry: 40
 HTTP 404
 
+#################################################################################
+# Create a new placement With 3 sandboxes with namespace suffix
+#################################################################################
+
+POST {{host}}/api/v1/placements
+Authorization: Bearer {{access_token}}
+{
+  "service_uuid": "{{uuid}}",
+  "resources": [
+    {"kind": "OcpSandbox", "annotations": {"namespace_suffix": "dev"}},
+    {"kind": "OcpSandbox", "annotations": {"namespace_suffix": "test"}},
+    {"kind": "OcpSandbox", "annotations": {"namespace_suffix": "prod"}}
+  ],
+  "annotations": {
+    "test": "Placement with 3 sandboxes with namespace suffix",
+    "guid": "testg",
+    "env_type": "ocp4-cluster-blablablabla"
+  }
+}
+HTTP 200
+[Captures]
+sandbox_name: jsonpath "$.Placement.resources[0].name"
+[Asserts]
+jsonpath "$.message" == "Placement Created"
+jsonpath "$.Placement.service_uuid" == "{{uuid}}"
+jsonpath "$.Placement.resources" count == 3
+jsonpath "$.Placement.resources[0].status" == "initializing"
+
+#################################################################################
+# Wait until the placement is succesfull and resources are ready
+#################################################################################
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 40
+HTTP 200
+[Asserts]
+jsonpath "$.service_uuid" == "{{uuid}}"
+jsonpath "$.status" == "success"
+jsonpath "$.resources" count == 3
+jsonpath "$.resources[0].status" == "success"
+jsonpath "$.resources[1].status" == "success"
+jsonpath "$.resources[2].status" == "success"
+jsonpath "$.resources[?(@.annotations.namespace_suffix == 'dev')].namespace" includes "sandbox-testg-1-dev"
+jsonpath "$.resources[?(@.annotations.namespace_suffix == 'test')].namespace" includes "sandbox-testg-2-test"
+jsonpath "$.resources[?(@.annotations.namespace_suffix == 'prod')].namespace" includes "sandbox-testg-3-prod"
+
+#################################################################################
+# Get all OcpSandboxes using service_uuid query
+#################################################################################
+GET {{host}}/api/v1/accounts/OcpSandbox
+Authorization: Bearer {{access_token}}
+[QueryStringParams]
+service_uuid: {{uuid}}
+HTTP 200
+[Asserts]
+jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 3
+
+#################################################################################
+# Delete placement
+#################################################################################
+
+DELETE {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 40
+HTTP 404
 
 #################################################################################
 # Create a new placement With AWS + OCP
@@ -407,7 +480,8 @@ Authorization: Bearer {{access_token}}
     {"kind": "AwsSandbox", "annotations":{"purpose":"aws"}}
   ],
   "annotations": {
-    "guid": "testg-1",
+    "test": "Placement with both AWS + OCP",
+    "guid": "testg",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -417,7 +491,7 @@ jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 jsonpath "$.Placement.resources" count == 2
 jsonpath "$.Placement.resources[0].status" == "initializing"
-jsonpath "$.Placement.resources[0].annotations.guid" == "testg-1"
+jsonpath "$.Placement.resources[0].annotations.guid" == "testg"
 jsonpath "$.Placement.resources[0].annotations.purpose" == "ocp"
 
 #################################################################################

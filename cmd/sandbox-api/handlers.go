@@ -63,6 +63,19 @@ func NewAdminHandler(b *BaseHandler, tokenAuth *jwtauth.JWTAuth) *AdminHandler {
 	}
 }
 
+func multipleKind(resources []v1.ResourceRequest, kind string) bool {
+	count := 0
+	for _, request := range resources {
+		if request.Kind == kind {
+			count++
+			if count > 1 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Request) {
 	placementRequest := &v1.PlacementRequest{}
 	if err := render.Bind(r, placementRequest); err != nil {
@@ -114,6 +127,8 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 	// useful only if multiple resources are created within a placement
 	tocleanup := []models.Deletable{}
 	resources := []any{}
+	multipleOcp := multipleKind(placementRequest.Resources, "OcpSandbox")
+
 	for _, request := range placementRequest.Resources {
 		switch request.Kind {
 		case "AwsSandbox", "AwsAccount", "aws_account":
@@ -163,6 +178,8 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				placementRequest.ServiceUuid,
 				request.CloudSelector,
 				placementRequest.Annotations.Merge(request.Annotations),
+				multipleOcp,
+				r.Context(),
 			)
 			if err != nil {
 				// Cleanup previous accounts

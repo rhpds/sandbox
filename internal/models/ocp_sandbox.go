@@ -15,7 +15,6 @@ import (
 	"github.com/rhpds/sandbox/internal/log"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-
 	//	"k8s.io/client-go/rest"
 	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -57,6 +56,7 @@ type OcpSandbox struct {
 	CleanupCount                      int               `json:"cleanup_count"`
 	Namespace                         string            `json:"namespace"`
 	ClusterAdditionalVars             map[string]any    `json:"cluster_additional_vars,omitempty"`
+	ToCleanup                         bool              `json:"to_cleanup"`
 }
 
 type OcpSandboxWithCreds struct {
@@ -388,7 +388,7 @@ func (a *OcpSandboxWithCreds) Save() error {
 		`INSERT INTO resources
 			(resource_name, resource_type, service_uuid, to_cleanup, resource_data, resource_credentials, status, cleanup_count)
 			VALUES ($1, $2, $3, $4, $5, pgp_sym_encrypt($6::text, $7), $8, $9) RETURNING id`,
-		a.Name, a.Kind, a.ServiceUuid, false, withoutCreds, creds, a.Provider.VaultSecret, a.Status, a.CleanupCount,
+		a.Name, a.Kind, a.ServiceUuid, a.ToCleanup, withoutCreds, creds, a.Provider.VaultSecret, a.Status, a.CleanupCount,
 	).Scan(&a.ID); err != nil {
 		return err
 	}
@@ -399,7 +399,10 @@ func (a *OcpSandboxWithCreds) Save() error {
 func (a *OcpSandboxWithCreds) SetStatus(status string) error {
 	_, err := a.Provider.DbPool.Exec(
 		context.Background(),
-		"UPDATE resources SET status = $1 WHERE id = $2",
+		fmt.Sprintf(`UPDATE resources
+         SET status = $1,
+             resource_data['status'] = to_jsonb('%s'::text)
+         WHERE id = $2`, status),
 		status, a.ID,
 	)
 
@@ -420,7 +423,7 @@ func (a *OcpSandboxWithCreds) GetStatus() (string, error) {
 func (a *OcpSandboxWithCreds) MarkForCleanup() error {
 	_, err := a.Provider.DbPool.Exec(
 		context.Background(),
-		"UPDATE resources SET to_cleanup = true WHERE id = $1",
+		"UPDATE resources SET to_cleanup = true, resource_data['to_cleanup'] = 'true' WHERE id = $1",
 		a.ID,
 	)
 
@@ -592,8 +595,7 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]st
 	return clusters, nil
 }
 
-func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string) (OcpSandboxWithCreds, error) {
-	var rowcount int
+func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, multiple bool, ctx context.Context) (OcpSandboxWithCreds, error) {
 	var minOcpMemoryUsage float64
 	var selectedCluster OcpSharedClusterConfiguration
 
@@ -615,41 +617,11 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 
 	// Determine guid, auto increment the guid if there are multiple resources
 	// for a serviceUuid
-	guid := annotations["guid"]
-	increment := 0
-
-	for {
-		if increment > 100 {
-			// something clearly went wrong, shouldn't never happen, but be defensive
-			return OcpSandboxWithCreds{}, errors.New("Too many iterations guessing guid")
-		}
-
-		if increment > 0 {
-			guid = annotations["guid"] + "-" + fmt.Sprintf("%v", increment+1)
-		}
-		// If a sandbox already has the same name for that serviceuuid, increment
-		// If so, increment the guid and try again
-		candidateName := guid + "-" + serviceUuid
-
-		err := a.DbPool.QueryRow(
-			context.Background(),
-			`SELECT count(*) FROM resources
-			WHERE resource_name = $1
-			AND resource_type = 'OcpSandbox'`,
-			candidateName,
-		).Scan(&rowcount)
-
-		if err != nil {
-			log.Logger.Error("Error checking resources names", "error", err)
-			return OcpSandboxWithCreds{}, err
-		}
-
-		if rowcount == 0 {
-			break
-		}
-		increment++
+	guid, err := guessNextGuid(annotations["guid"], serviceUuid, a.DbPool, multiple, ctx)
+	if err != nil {
+		log.Logger.Error("Error guessing guid", "error", err)
+		return OcpSandboxWithCreds{}, err
 	}
-
 	// Return the Placement with a status 'initializing'
 	rnew := OcpSandboxWithCreds{
 		OcpSandbox: OcpSandbox{
@@ -773,7 +745,12 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 
 		serviceAccountName := "sandbox"
-		namespaceName := "sandbox-" + rnew.Name
+		suffix := annotations["namespace_suffix"]
+		if suffix == "" {
+			suffix = serviceUuid
+		}
+
+		namespaceName := "sandbox-" + guid + "-" + suffix
 		namespaceName = namespaceName[:min(63, len(namespaceName))] // truncate to 63
 
 		delay := time.Second
@@ -794,8 +771,8 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			}, metav1.CreateOptions{})
 
 			if err != nil {
-				log.Logger.Error("Error creating OCP namespace", "error", err)
 				if strings.Contains(err.Error(), "object is being deleted: namespace") {
+					log.Logger.Warn("Error creating OCP namespace", "error", err)
 					time.Sleep(delay)
 					delay = delay * 2
 					if delay > 60*time.Second {
@@ -805,6 +782,8 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 
 					continue
 				}
+
+				log.Logger.Error("Error creating OCP namespace", "error", err)
 				rnew.SetStatus("error")
 				return
 			}
@@ -1010,6 +989,48 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 	return rnew, nil
 }
 
+func guessNextGuid(origGuid string, serviceUuid string, dbpool *pgxpool.Pool, multiple bool, ctx context.Context) (string, error) {
+	var rowcount int
+	guid := origGuid
+	increment := 0
+
+	if multiple {
+		guid = origGuid + "-1"
+	}
+
+	for {
+		if increment > 100 {
+			return "", errors.New("Too many iterations guessing guid")
+		}
+
+		if increment > 0 {
+			guid = origGuid + "-" + fmt.Sprintf("%v", increment+1)
+		}
+		// If a sandbox already has the same name for that serviceuuid, increment
+		// If so, increment the guid and try again
+		candidateName := guid + "-" + serviceUuid
+
+		err := dbpool.QueryRow(
+			context.Background(),
+			`SELECT count(*) FROM resources
+			WHERE resource_name = $1
+			AND resource_type = 'OcpSandbox'`,
+			candidateName,
+		).Scan(&rowcount)
+
+		if err != nil {
+			return "", err
+		}
+
+		if rowcount == 0 {
+			break
+		}
+		increment++
+	}
+
+	return guid, nil
+}
+
 func (a *OcpSandboxProvider) Release(service_uuid string) error {
 	accounts, err := a.FetchAllByServiceUuidWithCreds(service_uuid)
 
@@ -1020,7 +1041,10 @@ func (a *OcpSandboxProvider) Release(service_uuid string) error {
 	var errorHappened error
 
 	for _, account := range accounts {
-		if account.Namespace == "" && account.Status != "error" {
+		if account.Namespace == "" &&
+			account.Status != "error" &&
+			account.Status != "scheduling" &&
+			account.Status != "initializing" {
 			// If the sandbox is not in error and the namespace is empty, throw an error
 			errorHappened = errors.New("Namespace not found for account")
 			log.Logger.Error("Namespace not found for account", "account", account)
@@ -1108,6 +1132,16 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		}
 		if maxRetries == 0 {
 			log.Logger.Error("Resource is not in a final state", "name", account.Name, "status", status)
+
+			// Curative and auto-healing action, set status to error
+			if status == "initializing" || status == "scheduling" {
+				if err := account.SetStatus("error"); err != nil {
+					log.Logger.Error("Cannot set status", "error", err)
+					return err
+				}
+				maxRetries = 10
+				continue
+			}
 			return errors.New("Resource is not in a final state, cannot delete")
 		}
 
@@ -1161,6 +1195,16 @@ func (account *OcpSandboxWithCreds) Delete() error {
 	// In case anything goes wrong, we'll know it can safely be deleted
 	account.MarkForCleanup()
 	account.IncrementCleanupCount()
+
+	if account.Namespace == "" {
+		log.Logger.Info("Empty namespace, consider deletion a success", "name", account.Name)
+		_, err := account.Provider.DbPool.Exec(
+			context.Background(),
+			"DELETE FROM resources WHERE id = $1",
+			account.ID,
+		)
+		return err
+	}
 
 	// Get the OCP shared cluster configuration from the resources.resource_data column
 
