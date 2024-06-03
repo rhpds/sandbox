@@ -123,7 +123,6 @@ HTTP 404
 #################################################################################
 # Ensure the placement is deleted before starting
 #################################################################################
-
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
 [Options]
@@ -239,6 +238,17 @@ jsonpath "$.resources[2].credentials[0].token" isString
 #################################################################################
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+HTTP 202
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+HTTP 200
+[Asserts]
+jsonpath "$.status" == "deleting"
+
+GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
 [Options]
 retry: 40
@@ -394,6 +404,10 @@ jsonpath "$.service_uuid" == "{{uuid}}"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+HTTP 202
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
 [Options]
 retry: 40
 HTTP 404
@@ -463,6 +477,10 @@ jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 3
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+HTTP 202
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
 [Options]
 retry: 40
 HTTP 404
@@ -517,8 +535,18 @@ jsonpath "$.resources[?(@.annotations.purpose == 'aws')].kind" includes "AwsSand
 #################################################################################
 # Delete placement
 #################################################################################
-
 DELETE {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+HTTP 202
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+HTTP 200
+[Asserts]
+jsonpath "$.status" == "deleting"
+
+GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
 [Options]
 retry: 40
