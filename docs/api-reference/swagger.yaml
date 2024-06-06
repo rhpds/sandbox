@@ -1847,6 +1847,9 @@ components:
         name:
           type: string
           example: sandbox123
+        namespace:
+          type: string
+          example: sandbox-GUID-UUID
         ocp_cluster:
           type: string
           example: ocp-cluster-1
@@ -1867,7 +1870,7 @@ components:
           type: string
           enum:
             - initializing
-            - electing_cluster
+            - scheduling
             - success
             - error
             - deleting
