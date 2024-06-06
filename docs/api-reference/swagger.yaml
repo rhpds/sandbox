@@ -209,14 +209,14 @@ paths:
 
         This action will cascade cleanup for all the accounts associated with the placement.
       responses:
-        '200':
+        '202':
           description: The placement assigned to this uuid is deleted. The resources associated with this placement are marked for cleanup.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
               example:
-                message: Placement successfuly deleted
+                message: Placement marked for deletion
 
         '404':
           description: deletePlacement Placement not found
