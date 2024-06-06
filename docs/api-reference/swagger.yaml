@@ -2080,7 +2080,6 @@ components:
         - name
         - api_url
         - ingress_domain
-        - kubeconfig
         - annotations
       properties:
         name:
@@ -2120,6 +2119,8 @@ components:
             - name: ocp-cluster-1
               user:
                 token: <TOKEN>
+        token:
+          type: string
         annotations:
           $ref: "#/components/schemas/Annotations"
         additional_vars:
