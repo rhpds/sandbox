@@ -1,4 +1,5 @@
 = Sandbox =
+:toc:
 
 This repository is a consolidated codebase for everything related to sandboxes for the Red Hat Demo Platform. It contains:
 
