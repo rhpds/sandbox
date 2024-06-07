@@ -577,7 +577,7 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]st
 	// Get resource from 'ocp_shared_cluster_configurations' table
 	rows, err := a.DbPool.Query(
 		context.Background(),
-		`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true`,
+		`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true ORDER BY random()`,
 		cloud_selector,
 	)
 
