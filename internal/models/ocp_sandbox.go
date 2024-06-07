@@ -13,12 +13,12 @@ import (
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/rhpds/sandbox/internal/log"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
-	//	"k8s.io/client-go/rest"
 	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 type OcpSandboxProvider struct {
@@ -32,6 +32,7 @@ type OcpSharedClusterConfiguration struct {
 	ApiUrl         string            `json:"api_url"`
 	IngressDomain  string            `json:"ingress_domain"`
 	Kubeconfig     string            `json:"kubeconfig"`
+	Token          string            `json:"token"`
 	CreatedAt      time.Time         `json:"created_at"`
 	UpdatedAt      time.Time         `json:"updated_at"`
 	Annotations    map[string]string `json:"annotations"`
@@ -99,8 +100,8 @@ func (p *OcpSharedClusterConfiguration) Bind(r *http.Request) error {
 	}
 
 	// Ensure the kubeconfig is not empty
-	if p.Kubeconfig == "" {
-		return errors.New("kubeconfig is required")
+	if p.Kubeconfig == "" && p.Token == "" {
+		return errors.New("kubeconfig or token is required")
 	}
 
 	// Ensure IngressDomain is provided
@@ -136,9 +137,9 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 	if err := p.DbPool.QueryRow(
 		context.Background(),
 		`INSERT INTO ocp_shared_cluster_configurations
-			(name, api_url, ingress_domain, kubeconfig, annotations, valid, additional_vars)
-			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), $6, $7, $8) RETURNING id`,
-		p.Name, p.ApiUrl, p.IngressDomain, p.Kubeconfig, p.VaultSecret, p.Annotations, p.Valid, p.AdditionalVars,
+			(name, api_url, ingress_domain, kubeconfig, token, annotations, valid, additional_vars)
+			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9) RETURNING id`,
+		p.Name, p.ApiUrl, p.IngressDomain, p.Kubeconfig, p.VaultSecret, p.Token, p.Annotations, p.Valid, p.AdditionalVars,
 	).Scan(&p.ID); err != nil {
 		return err
 	}
@@ -158,11 +159,12 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 			 api_url = $2,
              ingress_domain = $3,
 			 kubeconfig = pgp_sym_encrypt($4::text, $5),
-			 annotations = $6,
-			 valid = $7,
-			 additional_vars = $8
-		 WHERE id = $9`,
-		p.Name, p.ApiUrl, p.IngressDomain, p.Kubeconfig, p.VaultSecret, p.Annotations, p.Valid, p.AdditionalVars, p.ID,
+			 token = pgp_sym_encrypt($6::text, $5),
+			 annotations = $7,
+			 valid = $8,
+			 additional_vars = $9
+		 WHERE id = $10`,
+		p.Name, p.ApiUrl, p.IngressDomain, p.Kubeconfig, p.VaultSecret, p.Token, p.Annotations, p.Valid, p.AdditionalVars, p.ID,
 	); err != nil {
 		return err
 	}
@@ -207,7 +209,17 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 	row := p.DbPool.QueryRow(
 		context.Background(),
 		`SELECT
-		 id, name, api_url, ingress_domain, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid, additional_vars
+			id,
+			name,
+			api_url,
+			ingress_domain,
+			pgp_sym_decrypt(kubeconfig::bytea, $1),
+			pgp_sym_decrypt(token::bytea, $1),
+			created_at,
+			updated_at,
+			annotations,
+			valid,
+			additional_vars
 		 FROM ocp_shared_cluster_configurations WHERE name = $2`,
 		p.VaultSecret, name,
 	)
@@ -219,6 +231,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 		&cluster.ApiUrl,
 		&cluster.IngressDomain,
 		&cluster.Kubeconfig,
+		&cluster.Token,
 		&cluster.CreatedAt,
 		&cluster.UpdatedAt,
 		&cluster.Annotations,
@@ -240,7 +253,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 	rows, err := p.DbPool.Query(
 		context.Background(),
 		`SELECT
-		 id, name, api_url, ingress_domain, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid, additional_vars
+		 id, name, api_url, ingress_domain, pgp_sym_decrypt(kubeconfig::bytea, $1), pgp_sym_decrypt(token::bytea, $1), created_at, updated_at, annotations, valid, additional_vars
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
 	)
@@ -261,6 +274,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			&cluster.ApiUrl,
 			&cluster.IngressDomain,
 			&cluster.Kubeconfig,
+			&cluster.Token,
 			&cluster.CreatedAt,
 			&cluster.UpdatedAt,
 			&cluster.Annotations,
@@ -563,7 +577,7 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]st
 	// Get resource from 'ocp_shared_cluster_configurations' table
 	rows, err := a.DbPool.Query(
 		context.Background(),
-		`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true`,
+		`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true ORDER BY random()`,
 		cloud_selector,
 	)
 
@@ -593,6 +607,20 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]st
 	}
 
 	return clusters, nil
+}
+
+func (a *OcpSharedClusterConfiguration) CreateRestConfig() (*rest.Config, error) {
+	if a.Token != "" {
+		return &rest.Config{
+			Host:        a.ApiUrl,
+			BearerToken: a.Token,
+			TLSClientConfig: rest.TLSClientConfig{
+				Insecure: true,
+			},
+		}, nil
+	}
+
+	return clientcmd.RESTConfigFromKubeConfig([]byte(a.Kubeconfig))
 }
 
 func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, multiple bool, ctx context.Context) (OcpSandboxWithCreds, error) {
@@ -653,7 +681,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				"name", cluster.Name,
 				"ApiUrl", cluster.ApiUrl)
 
-			config, err := clientcmd.RESTConfigFromKubeConfig([]byte(cluster.Kubeconfig))
+			config, err := cluster.CreateRestConfig()
 			if err != nil {
 				log.Logger.Error("Error creating OCP config", "error", err)
 				rnew.SetStatus("error")
@@ -729,7 +757,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			return
 		}
 
-		config, err := clientcmd.RESTConfigFromKubeConfig([]byte(selectedCluster.Kubeconfig))
+		config, err := selectedCluster.CreateRestConfig()
 		if err != nil {
 			log.Logger.Error("Error creating OCP config", "error", err)
 			rnew.SetStatus("error")
@@ -1115,8 +1143,6 @@ func (a *OcpSandboxProvider) FetchAll() ([]OcpSandbox, error) {
 }
 
 func (account *OcpSandboxWithCreds) Delete() error {
-	var api_url string
-	var kubeconfig string
 
 	if account.ID == 0 {
 		return errors.New("resource ID must be > 0")
@@ -1208,27 +1234,14 @@ func (account *OcpSandboxWithCreds) Delete() error {
 
 	// Get the OCP shared cluster configuration from the resources.resource_data column
 
-	// TODO: use GetOcpSharedClusterConfigurationByName
-	err := account.Provider.DbPool.QueryRow(
-		context.Background(),
-		"SELECT api_url, pgp_sym_decrypt(kubeconfig::bytea, $1) FROM ocp_shared_cluster_configurations WHERE name = $2",
-		account.Provider.VaultSecret,
-		account.OcpSharedClusterConfigurationName,
-	).Scan(&api_url, &kubeconfig)
-
+	cluster, err := account.Provider.GetOcpSharedClusterConfigurationByName(account.OcpSharedClusterConfigurationName)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			log.Logger.Error("Ocp cluster doesn't exist for resource", "cluster", account.OcpSharedClusterConfigurationName, "name", account.Name)
-			account.SetStatus("error")
-			return errors.New("Ocp cluster doesn't exist for resource")
-		} else {
-			log.Logger.Error("Ocp cluster query error", "err", err)
-			account.SetStatus("error")
-			return err
-		}
+		log.Logger.Error("Error getting OCP shared cluster configuration", "error", err)
+		account.SetStatus("error")
+		return err
 	}
 
-	config, err := clientcmd.RESTConfigFromKubeConfig([]byte(kubeconfig))
+	config, err := cluster.CreateRestConfig()
 	if err != nil {
 		log.Logger.Error("Error creating OCP config", "error", err, "name", account.Name)
 		account.SetStatus("error")
