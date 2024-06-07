@@ -269,10 +269,11 @@ hurl --variable login_token_admin=$admintoken \
 
 
 # or with curl directly
+accesstoken=$(curl -s --header "Authorization: Bearer $admintoken"     --header 'Content-Type: application/json'     'https://SANDBOX_API_ADDRESS/api/v1/login'|jq -r .access_token)
 
-curl --header "Authorization: Bearer $admintoken" \
+curl --header "Authorization: Bearer $accesstoken" \
   --header 'Content-Type: application/json' \
   --data-binary '@./clustername.json' \
-  'http://SANDBOX_API_ADDRESS/api/v1/ocp-shared-cluster-configurations'
+  'https://SANDBOX_API_ADDRESS/api/v1/ocp-shared-cluster-configurations'
 ----
 <1> Replace SANDBOX_API_ADDRESS with the address of the Sandbox API
