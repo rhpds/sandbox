@@ -206,3 +206,72 @@ Use link:playbooks[ansible playbooks].
 == Conan - Sandbox Cleanup Daemon ==
 
 See link:conan[conan].
+
+
+== Add a new OCP shared cluster for OcpSandbox
+
+In order for the sandbox API to be able to talk to the OCP shared cluster, you need to create a new OcpSharedClusterConfiguration.
+
+That configuration holds the information needed to authenticate to the cluster and the additional variables that will be passed to the deployer when a sandbox is scheduled on that cluster.
+
+There is 2 ways to authenticate to the cluster:
+. Using a service Bearer Token
+. Using a kubeconfig file
+
+Here we'll be describing the first method.
+
+On the cluster, create an admin service account
+
+----
+oc create serviceaccount sandbox-api-admin -n kube-system
+oc create clusterrolebinding sandbox-api-admin -n kube-system --clusterrole=cluster-admin --serviceaccount=kube-system:sandbox-api-admin
+oc create token sandbox-api-admin -n kube-system
+----
+
+
+Then create a JSON file describing the OcpSharedClusterConfiguration. For example:
+
+
+[source,text]
+.`clustername.json`
+----
+{
+    "name": "clustername", <1>
+    "api_url": "https://api...:6443", <2>
+    "ingress_domain": "apps...",
+    "additional_vars": {
+        ... <3>
+    },
+    "annotations":
+    {
+        "virt":"no",
+        "cloud":"aws",
+        "purpose":"dev"
+    }, <4>
+    "token":"..."  <5>
+}
+----
+<1> The name of the cluster as it will be saved in the database
+<2> The API URL of the cluster
+<3> Additional variables that will be passed to the deployer if that cluster is elected when scheduling a sandbox
+<4> Annotations are used to filter the clusters when ordering. For example, if you want to deploy a sandbox on a cluster that is not in production, you can use the purpose annotation to filter out the production clusters. That is done in agnosticV using the `__meta__.sandboxes[].cloud_selector` key
+<5> The token is the token created in the previous step. It is used to authenticate the Sandbox API to the cluster.
+
+Then use hurl and `./tools/ocp_shared_cluster_configuration_create.hurl`
+
+----
+hurl --variable login_token_admin=$admintoken \
+--file-root . \
+--variable host=SANDBOX_API_ADRESS \  <1>
+--variable ocp_cluster_def=clustername.json \
+./tools/ocp_shared_cluster_configuration_create.hurl
+
+
+# or with curl directly
+
+curl --header "Authorization: Bearer $admintoken" \
+  --header 'Content-Type: application/json' \
+  --data-binary '@./clustername.json' \
+  'http://SANDBOX_API_ADDRESS/api/v1/ocp-shared-cluster-configurations'
+----
+<1> Replace SANDBOX_API_ADDRESS with the address of the Sandbox API
