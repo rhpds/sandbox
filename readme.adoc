@@ -226,7 +226,7 @@ On the cluster, create an admin service account
 ----
 oc create serviceaccount sandbox-api-admin -n kube-system
 oc create clusterrolebinding sandbox-api-admin -n kube-system --clusterrole=cluster-admin --serviceaccount=kube-system:sandbox-api-admin
-oc create token sandbox-api-admin -n kube-system
+oc create token sandbox-api-admin -n kube-system --duration=4294967296s
 ----
 
 
