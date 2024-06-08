@@ -132,7 +132,9 @@ func main() {
 
 	if _, err = dbPool.Exec(
 		context.Background(),
-		"UPDATE ocp_shared_cluster_configurations SET kubeconfig = pgp_sym_encrypt( pgp_sym_decrypt(kubeconfig::bytea, $1), $2)",
+		`UPDATE ocp_shared_cluster_configurations
+			SET kubeconfig = pgp_sym_encrypt( pgp_sym_decrypt(kubeconfig::bytea, $1), $2),
+				token = pgp_sym_encrypt( pgp_sym_decrypt(token::bytea, $1), $2)`,
 		old, new); err != nil {
 
 		log.Logger.Error("Error updating kubeconfig", "error", err)
