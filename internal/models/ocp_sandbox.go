@@ -938,13 +938,15 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 
 			_, err = clientset.RbacV1().RoleBindings("cnv-images").Create(context.TODO(), rb, metav1.CreateOptions{})
 			if err != nil {
-				log.Logger.Error("Error creating rolebinding on cnv-images", "error", err)
+				if !strings.Contains(err.Error(), "already exists") {
+					log.Logger.Error("Error creating rolebinding on cnv-images", "error", err)
 
-				if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
-					log.Logger.Error("Error cleaning up the namespace", "error", err)
+					if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+						log.Logger.Error("Error cleaning up the namespace", "error", err)
+					}
+					rnew.SetStatus("error")
+					return
 				}
-				rnew.SetStatus("error")
-				return
 			}
 		}
 
@@ -1297,6 +1299,16 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		log.Logger.Error("Error deleting OCP service account", "error", err)
 		account.SetStatus("error")
 		return err
+	}
+
+	rbName := "allow-clone-" + account.Namespace[:min(51, len(account.Namespace))]
+	// Delete the role binding from the cnv-images namespace
+	if _, err := clientset.RbacV1().RoleBindings("cnv-images").Get(context.TODO(), rbName, metav1.GetOptions{}); err == nil {
+		if err := clientset.RbacV1().RoleBindings("cnv-images").Delete(context.TODO(), rbName, metav1.DeleteOptions{}); err != nil {
+			log.Logger.Error("Error deleting rolebinding on cnv-images", "error", err)
+			account.SetStatus("error")
+			return err
+		}
 	}
 
 	_, err = account.Provider.DbPool.Exec(
