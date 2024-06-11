@@ -21,15 +21,27 @@ Authorization: Bearer {{access_token}}
   "service_uuid": "{{uuid}}",
   "resources": [
     {
-      "kind": "AwsSandbox",
-      "count": 1,
-      "annotations": {
-        "purpose": "backend"
-      }
+      "kind": "OcpSandbox"
     }
   ],
   "annotations": {
-    "guid": "testg"
+    "guid": "testgc"
   }
 }
 HTTP 200
+
+
+#################################################################################
+# Wait until the placement is succesfull and resources are ready
+#################################################################################
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 40
+HTTP 200
+[Asserts]
+jsonpath "$.status" == "success"
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
