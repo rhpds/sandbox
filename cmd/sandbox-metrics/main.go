@@ -55,6 +55,14 @@ func createMetrics(dbPool *pgxpool.Pool) {
 		[]string{"resource_type", "region", "instance_type", "event_type"},
 	)
 
+	gaugeOcpSandboxStats := promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "sandbox_ocp_sandbox_stats",
+			Help: "OCP Sandbox stats",
+		},
+		[]string{"resource_type", "cluster_name", "to_cleanup", "status"},
+	)
+
 	used := promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "aws_sandbox_total_used",
 		Help: "Total accounts in use",
@@ -104,7 +112,11 @@ func createMetrics(dbPool *pgxpool.Pool) {
 					toCleanup = "true"
 				}
 
-				gaugeVec.WithLabelValues(sandbox.Name, status, toCleanup, sandbox.Reservation).Set(value)
+				gaugeVec.WithLabelValues(
+					sandbox.Name,
+					status,
+					toCleanup,
+					sandbox.Reservation).Set(value)
 			}
 			time.Sleep(interval)
 		}
@@ -130,6 +142,30 @@ func createMetrics(dbPool *pgxpool.Pool) {
 					event.EventType,
 				).Set(float64(event.Count))
 			}
+
+			ocpStats, err := GetOcpSandboxStats(dbPool)
+			if err != nil {
+				log.Err.Println(err)
+				time.Sleep(interval)
+				continue
+			}
+
+			for _, stat := range ocpStats {
+				var toCleanup string
+				if stat.ToCleanup {
+					toCleanup = "true"
+				} else {
+					toCleanup = "false"
+				}
+
+				gaugeOcpSandboxStats.WithLabelValues(
+					stat.ResourceType,
+					stat.ClusterName,
+					toCleanup,
+					stat.Status,
+				).Set(float64(stat.Count))
+			}
+
 			time.Sleep(interval)
 		}
 	}()
@@ -171,6 +207,55 @@ func GetLifecycleInstanceEvents(dbpool *pgxpool.Pool) ([]LifecycleEvent, error) 
 	}
 
 	return events, nil
+}
+
+type OcpSandboxStats struct {
+	ResourceType string
+	ClusterName  string
+	ToCleanup    bool
+	Status       string
+	CleanupCount int
+	Count        int
+}
+
+func GetOcpSandboxStats(dbPool *pgxpool.Pool) ([]OcpSandboxStats, error) {
+	rows, err := dbPool.Query(
+		context.Background(),
+		`SELECT
+			resource_type,
+			resource_data->>'ocp_cluster' as cluster_name,
+			to_cleanup,
+			status,
+			count(*)
+		FROM resources
+		WHERE resource_type = 'OcpSandbox'
+			AND resource_data ? 'ocp_cluster'
+		GROUP BY resource_type, cluster_name, to_cleanup, status;`,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	stats := []OcpSandboxStats{}
+
+	for rows.Next() {
+		var stat OcpSandboxStats
+		err := rows.Scan(
+			&stat.ResourceType,
+			&stat.ClusterName,
+			&stat.ToCleanup,
+			&stat.Status,
+			&stat.Count)
+		if err != nil {
+			return nil, err
+		}
+		stats = append(stats, stat)
+	}
+
+	return stats, nil
 }
 
 // Build info
