@@ -1,6 +1,8 @@
 module github.com/rhpds/sandbox
 
-go 1.21
+go 1.22.0
+
+toolchain go1.22.4
 
 require (
 	github.com/aws/aws-lambda-go v1.46.0
@@ -22,9 +24,10 @@ require (
 	github.com/prometheus/client_golang v1.19.0
 	github.com/sosedoff/ansible-vault-go v0.2.0
 	golang.org/x/term v0.18.0
-	k8s.io/api v0.29.2
-	k8s.io/apimachinery v0.29.2
-	k8s.io/client-go v0.29.2
+	k8s.io/api v0.30.2
+	k8s.io/apimachinery v0.30.2
+	k8s.io/client-go v0.30.2
+	k8s.io/metrics v0.30.2
 )
 
 require (
@@ -84,7 +87,7 @@ require (
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	golang.org/x/crypto v0.21.0 // indirect
-	golang.org/x/net v0.22.0 // indirect
+	golang.org/x/net v0.23.0 // indirect
 	golang.org/x/oauth2 v0.18.0 // indirect
 	golang.org/x/sys v0.18.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
