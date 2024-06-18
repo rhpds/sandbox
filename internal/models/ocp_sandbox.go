@@ -693,6 +693,23 @@ func (a *OcpSharedClusterConfiguration) CreateRestConfig() (*rest.Config, error)
 	return clientcmd.RESTConfigFromKubeConfig([]byte(a.Kubeconfig))
 }
 
+func includeNodeInUsageCalculation(conditions []v1.NodeCondition) bool {
+	nodeReady := false
+	for _, condition := range conditions {
+		if condition.Type == v1.NodeReady && condition.Status == v1.ConditionTrue {
+			nodeReady = true
+			break
+		}
+
+		// If a condition is not memorypressure and is true, return false
+		if condition.Type != v1.NodeMemoryPressure && condition.Status == v1.ConditionTrue {
+			return false
+		}
+	}
+
+	return nodeReady
+}
+
 func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, multiple bool, ctx context.Context) (OcpSandboxWithCreds, error) {
 	var selectedCluster OcpSharedClusterConfiguration
 
@@ -782,6 +799,17 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			var totalUsageCpu, totalUsageMemory int64
 
 			for _, node := range nodes.Items {
+
+				if !includeNodeInUsageCalculation(node.Status.Conditions) {
+					log.Logger.Info("Node not included in calculation",
+						"node",
+						node.Name,
+						"conditions",
+						node.Status.Conditions,
+					)
+					continue
+				}
+
 				allocatableCpu := node.Status.Allocatable.Cpu().MilliValue()
 				allocatableMemory := node.Status.Allocatable.Memory().Value()
 
