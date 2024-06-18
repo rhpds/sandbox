@@ -2130,6 +2130,16 @@ components:
             deployer:
               openshift_cnv_nfs_path: /IBMfoobar/data01
               openshift_cnv_nfs_server: fsf-region.domain.com
+        max_memory_usage_percentage:
+          type: integer
+          description: The maximum memory usage percentage for a cluster to be considered healthy
+          example: 80
+          default: 90
+        max_cpu_usage_percentage:
+          type: integer
+          description: The maximum CPU usage percentage for a cluster to be considered healthy
+          example: 80
+          default: 100
       example:
         name: ocp-cluster-1
         api_url: https://api.ocp-cluster-1.com:6443

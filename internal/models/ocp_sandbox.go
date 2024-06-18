@@ -19,6 +19,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
 type OcpSandboxProvider struct {
@@ -27,19 +28,21 @@ type OcpSandboxProvider struct {
 }
 
 type OcpSharedClusterConfiguration struct {
-	ID             int               `json:"id"`
-	Name           string            `json:"name"`
-	ApiUrl         string            `json:"api_url"`
-	IngressDomain  string            `json:"ingress_domain"`
-	Kubeconfig     string            `json:"kubeconfig"`
-	Token          string            `json:"token"`
-	CreatedAt      time.Time         `json:"created_at"`
-	UpdatedAt      time.Time         `json:"updated_at"`
-	Annotations    map[string]string `json:"annotations"`
-	Valid          bool              `json:"valid"`
-	AdditionalVars map[string]any    `json:"additional_vars,omitempty"`
-	DbPool         *pgxpool.Pool     `json:"-"`
-	VaultSecret    string            `json:"-"`
+	ID                       int               `json:"id"`
+	Name                     string            `json:"name"`
+	ApiUrl                   string            `json:"api_url"`
+	IngressDomain            string            `json:"ingress_domain"`
+	Kubeconfig               string            `json:"kubeconfig"`
+	Token                    string            `json:"token"`
+	CreatedAt                time.Time         `json:"created_at"`
+	UpdatedAt                time.Time         `json:"updated_at"`
+	Annotations              map[string]string `json:"annotations"`
+	Valid                    bool              `json:"valid"`
+	AdditionalVars           map[string]any    `json:"additional_vars,omitempty"`
+	MaxMemoryUsagePercentage float64           `json:"max_memory_usage_percentage"`
+	MaxCpuUsagePercentage    float64           `json:"max_cpu_usage_percentage"`
+	DbPool                   *pgxpool.Pool     `json:"-"`
+	VaultSecret              string            `json:"-"`
 }
 
 type OcpSharedClusterConfigurations []OcpSharedClusterConfiguration
@@ -114,6 +117,22 @@ func (p *OcpSharedClusterConfiguration) Bind(r *http.Request) error {
 		return errors.New("annotations is required")
 	}
 
+	if p.MaxMemoryUsagePercentage < 0 || p.MaxMemoryUsagePercentage > 100 {
+		return errors.New("max_memory_usage_percentage must be between 0 and 100")
+	}
+	if p.MaxCpuUsagePercentage < 0 || p.MaxCpuUsagePercentage > 100 {
+		return errors.New("max_cpu_usage_percentage must be between 0 and 100")
+	}
+
+	// Set default values for CPU and Memory usage
+	if p.MaxMemoryUsagePercentage == 0 {
+		p.MaxMemoryUsagePercentage = 90
+	}
+
+	if p.MaxCpuUsagePercentage == 0 {
+		p.MaxCpuUsagePercentage = 100
+	}
+
 	p.Valid = true
 
 	return nil
@@ -137,9 +156,29 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 	if err := p.DbPool.QueryRow(
 		context.Background(),
 		`INSERT INTO ocp_shared_cluster_configurations
-			(name, api_url, ingress_domain, kubeconfig, token, annotations, valid, additional_vars)
-			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9) RETURNING id`,
-		p.Name, p.ApiUrl, p.IngressDomain, p.Kubeconfig, p.VaultSecret, p.Token, p.Annotations, p.Valid, p.AdditionalVars,
+			(name,
+			api_url,
+			ingress_domain,
+			kubeconfig,
+			token,
+			annotations,
+			valid,
+			additional_vars,
+			max_memory_usage_percentage,
+			max_cpu_usage_percentage)
+			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11)
+			RETURNING id`,
+		p.Name,
+		p.ApiUrl,
+		p.IngressDomain,
+		p.Kubeconfig,
+		p.VaultSecret,
+		p.Token,
+		p.Annotations,
+		p.Valid,
+		p.AdditionalVars,
+		p.MaxMemoryUsagePercentage,
+		p.MaxCpuUsagePercentage,
 	).Scan(&p.ID); err != nil {
 		return err
 	}
@@ -162,9 +201,22 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 			 token = pgp_sym_encrypt($6::text, $5),
 			 annotations = $7,
 			 valid = $8,
-			 additional_vars = $9
+			 additional_vars = $9,
+			 max_memory_usage_percentage = $11,
+			 max_cpu_usage_percentage = $12
 		 WHERE id = $10`,
-		p.Name, p.ApiUrl, p.IngressDomain, p.Kubeconfig, p.VaultSecret, p.Token, p.Annotations, p.Valid, p.AdditionalVars, p.ID,
+		p.Name,
+		p.ApiUrl,
+		p.IngressDomain,
+		p.Kubeconfig,
+		p.VaultSecret,
+		p.Token,
+		p.Annotations,
+		p.Valid,
+		p.AdditionalVars,
+		p.ID,
+		p.MaxMemoryUsagePercentage,
+		p.MaxCpuUsagePercentage,
 	); err != nil {
 		return err
 	}
@@ -219,7 +271,9 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 			updated_at,
 			annotations,
 			valid,
-			additional_vars
+			additional_vars,
+			max_memory_usage_percentage,
+			max_cpu_usage_percentage
 		 FROM ocp_shared_cluster_configurations WHERE name = $2`,
 		p.VaultSecret, name,
 	)
@@ -237,6 +291,8 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 		&cluster.Annotations,
 		&cluster.Valid,
 		&cluster.AdditionalVars,
+		&cluster.MaxMemoryUsagePercentage,
+		&cluster.MaxCpuUsagePercentage,
 	); err != nil {
 		return OcpSharedClusterConfiguration{}, err
 	}
@@ -253,7 +309,19 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 	rows, err := p.DbPool.Query(
 		context.Background(),
 		`SELECT
-		 id, name, api_url, ingress_domain, pgp_sym_decrypt(kubeconfig::bytea, $1), pgp_sym_decrypt(token::bytea, $1), created_at, updated_at, annotations, valid, additional_vars
+			id,
+			name,
+			api_url,
+			ingress_domain,
+			pgp_sym_decrypt(kubeconfig::bytea, $1),
+			pgp_sym_decrypt(token::bytea, $1),
+			created_at,
+			updated_at,
+			annotations,
+			valid,
+			additional_vars,
+			max_memory_usage_percentage,
+			max_cpu_usage_percentage
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
 	)
@@ -280,6 +348,8 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			&cluster.Annotations,
 			&cluster.Valid,
 			&cluster.AdditionalVars,
+			&cluster.MaxMemoryUsagePercentage,
+			&cluster.MaxCpuUsagePercentage,
 		); err != nil {
 			return []OcpSharedClusterConfiguration{}, err
 		}
@@ -623,8 +693,24 @@ func (a *OcpSharedClusterConfiguration) CreateRestConfig() (*rest.Config, error)
 	return clientcmd.RESTConfigFromKubeConfig([]byte(a.Kubeconfig))
 }
 
+func includeNodeInUsageCalculation(conditions []v1.NodeCondition) bool {
+	nodeReady := false
+	for _, condition := range conditions {
+		if condition.Type == v1.NodeReady && condition.Status == v1.ConditionTrue {
+			nodeReady = true
+			break
+		}
+
+		// If a condition is not memorypressure and is true, return false
+		if condition.Type != v1.NodeMemoryPressure && condition.Status == v1.ConditionTrue {
+			return false
+		}
+	}
+
+	return nodeReady
+}
+
 func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, multiple bool, ctx context.Context) (OcpSandboxWithCreds, error) {
-	var minOcpMemoryUsage float64
 	var selectedCluster OcpSharedClusterConfiguration
 
 	// Ensure annotation has guid
@@ -695,6 +781,13 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				continue providerLoop
 			}
 
+			clientsetMetrics, err := metricsv.NewForConfig(config)
+			if err != nil {
+				log.Logger.Error("Error creating OCP metrics client", "error", err)
+				rnew.SetStatus("error")
+				continue providerLoop
+			}
+
 			nodes, err := clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/worker="})
 			if err != nil {
 				log.Logger.Error("Error listing OCP nodes", "error", err)
@@ -703,47 +796,64 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			}
 
 			var totalAllocatableCpu, totalAllocatableMemory int64
-			var totalRequestedCpu, totalRequestedMemory int64
+			var totalUsageCpu, totalUsageMemory int64
 
 			for _, node := range nodes.Items {
+
+				if !includeNodeInUsageCalculation(node.Status.Conditions) {
+					log.Logger.Info("Node not included in calculation",
+						"node",
+						node.Name,
+						"conditions",
+						node.Status.Conditions,
+					)
+					continue
+				}
+
 				allocatableCpu := node.Status.Allocatable.Cpu().MilliValue()
 				allocatableMemory := node.Status.Allocatable.Memory().Value()
 
-				podList, err := clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{FieldSelector: "spec.nodeName=" + node.Name})
+				totalAllocatableCpu += allocatableCpu
+				totalAllocatableMemory += allocatableMemory
+
+				nodeMetric, err := clientsetMetrics.MetricsV1beta1().
+					NodeMetricses().
+					Get(context.Background(), node.Name, metav1.GetOptions{})
+
 				if err != nil {
-					log.Logger.Error("Error listing OCP pods", "error", err)
+					log.Logger.Error("Error Get OCP node metrics v1beta1", "error", err)
 					rnew.SetStatus("error")
 					continue providerLoop
 				}
 
-				totalRequestedCpuForNode := int64(0)
-				totalRequestedMemoryForNode := int64(0)
-				for _, pod := range podList.Items {
-					totalRequestedCpuForNode += pod.Spec.Containers[0].Resources.Requests.Cpu().MilliValue()
-					totalRequestedMemoryForNode += pod.Spec.Containers[0].Resources.Requests.Memory().Value()
-				}
+				mem, _ := nodeMetric.Usage.Memory().AsInt64()
+				cpu := nodeMetric.Usage.Cpu().MilliValue()
 
-				totalAllocatableCpu += allocatableCpu
-				totalAllocatableMemory += allocatableMemory
-				totalRequestedCpu += totalRequestedCpuForNode
-				totalRequestedMemory += totalRequestedMemoryForNode
+				totalUsageCpu += cpu
+				totalUsageMemory += mem
 			}
 
 			// Calculate total usage for the cluster
-			cpuUsage := (float64(totalRequestedCpu) / float64(totalAllocatableCpu)) * 100
-			memoryUsage := (float64(totalRequestedMemory) / float64(totalAllocatableMemory)) * 100
-			if minOcpMemoryUsage == 0 || memoryUsage < minOcpMemoryUsage {
+			clusterCpuUsage := (float64(totalUsageCpu) / float64(totalAllocatableCpu)) * 100
+			clusterMemoryUsage := (float64(totalUsageMemory) / float64(totalAllocatableMemory)) * 100
+			log.Logger.Info(
+				"Cluster Usage",
+				"Cluster", cluster.Name,
+				"CPU% Usage", clusterCpuUsage,
+				"Memory% Usage", clusterMemoryUsage,
+			)
+			if clusterMemoryUsage < cluster.MaxMemoryUsagePercentage && clusterCpuUsage < cluster.MaxCpuUsagePercentage {
 				selectedCluster = cluster
-				minOcpMemoryUsage = memoryUsage
+				log.Logger.Info("selectedCluster", "cluster", selectedCluster.Name)
+				break providerLoop
 			}
-			log.Logger.Info("Cluster Usage",
-				"CPU Usage (Requests)", cpuUsage,
-				"Memory Usage (Requests)", memoryUsage)
 		}
-		log.Logger.Info("selectedCluster", "cluster", selectedCluster.Name)
 
 		if selectedCluster.Name == "" {
-			log.Logger.Error("Error electing cluster", "name", rnew.Name)
+			log.Logger.Error("Error electing cluster",
+				"name", rnew.Name,
+				"serviceUuid", rnew.ServiceUuid,
+				"reason", "no cluster available")
 			rnew.SetStatus("error")
 			return
 		}
