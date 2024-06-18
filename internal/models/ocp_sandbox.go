@@ -693,7 +693,11 @@ func (a *OcpSharedClusterConfiguration) CreateRestConfig() (*rest.Config, error)
 	return clientcmd.RESTConfigFromKubeConfig([]byte(a.Kubeconfig))
 }
 
-func includeNodeInUsageCalculation(conditions []v1.NodeCondition) bool {
+func includeNodeInUsageCalculation(node v1.Node) bool {
+	if node.Spec.Unschedulable {
+		return false
+	}
+	conditions := node.Status.Conditions
 	nodeReady := false
 	for _, condition := range conditions {
 		if condition.Type == v1.NodeReady && condition.Status == v1.ConditionTrue {
@@ -800,7 +804,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 
 			for _, node := range nodes.Items {
 
-				if !includeNodeInUsageCalculation(node.Status.Conditions) {
+				if !includeNodeInUsageCalculation(node) {
 					log.Logger.Info("Node not included in calculation",
 						"node",
 						node.Name,
@@ -821,9 +825,11 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 					Get(context.Background(), node.Name, metav1.GetOptions{})
 
 				if err != nil {
-					log.Logger.Error("Error Get OCP node metrics v1beta1", "error", err)
-					rnew.SetStatus("error")
-					continue providerLoop
+					log.Logger.Error(
+						"Error Get OCP node metrics v1beta1, ignore the node",
+						"node", node.Name,
+						"error", err)
+					continue
 				}
 
 				mem, _ := nodeMetric.Usage.Memory().AsInt64()
