@@ -808,6 +808,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 					log.Logger.Info("Node not included in calculation",
 						"node",
 						node.Name,
+						"unschedulable", node.Spec.Unschedulable,
 						"conditions",
 						node.Status.Conditions,
 					)

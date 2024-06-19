@@ -143,6 +143,7 @@ func createMetrics(dbPool *pgxpool.Pool) {
 				).Set(float64(event.Count))
 			}
 
+			gaugeOcpSandboxStats.Reset()
 			ocpStats, err := GetOcpSandboxStats(dbPool)
 			if err != nil {
 				log.Err.Println(err)
