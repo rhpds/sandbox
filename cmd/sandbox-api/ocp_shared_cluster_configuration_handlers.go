@@ -86,6 +86,48 @@ func (h *BaseHandler) DisableOcpSharedClusterConfigurationHandler(w http.Respons
 	})
 }
 
+func (h *BaseHandler) EnableOcpSharedClusterConfigurationHandler(w http.ResponseWriter, r *http.Request) {
+	// Get the name of the OCP shared cluster configuration from the URL
+	name := chi.URLParam(r, "name")
+
+	// Get the OCP shared cluster configuration from the database
+	ocpSharedClusterConfiguration, err := h.OcpSandboxProvider.GetOcpSharedClusterConfigurationByName(name)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "OCP shared cluster configuration not found",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to get OCP shared cluster configuration",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	// Enable the OCP shared cluster configuration
+	if err := ocpSharedClusterConfiguration.Enable(); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to enable OCP shared cluster configuration",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &v1.SimpleMessage{
+		Message: "OCP shared cluster configuration is enabled",
+	})
+}
+
 // GetOcpSharedClusterConfigurationsHandlers returns a list of OCP shared cluster configurations
 func (h *BaseHandler) GetOcpSharedClusterConfigurationsHandler(w http.ResponseWriter, r *http.Request) {
 	ocpSharedClusterConfigurations, err := h.OcpSandboxProvider.GetOcpSharedClusterConfigurations()

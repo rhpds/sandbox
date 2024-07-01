@@ -114,6 +114,21 @@ jsonpath "$.name" == "ocp-cluster-test1"
 jsonpath "$.annotations.virt" == "no"
 jsonpath "$.valid" == false
 
+# Enable cluster
+PUT {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1/enable
+Authorization: Bearer {{ access_token_admin }}
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "OCP shared cluster configuration is enabled"
+
+GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
+Authorization: Bearer {{access_token_admin}}
+HTTP 200
+[Asserts]
+jsonpath "$.name" == "ocp-cluster-test1"
+jsonpath "$.valid" == true
+
+
 DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
 [Options]

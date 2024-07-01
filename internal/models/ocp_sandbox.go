@@ -242,6 +242,12 @@ func (p *OcpSharedClusterConfiguration) Disable() error {
 	return p.Update()
 }
 
+// Enable an OcpSharedClusterConfiguration
+func (p *OcpSharedClusterConfiguration) Enable() error {
+	p.Valid = true
+	return p.Update()
+}
+
 // CountAccounts returns the number of accounts for an OcpSharedClusterConfiguration
 func (p *OcpSharedClusterConfiguration) GetAccountCount() (int, error) {
 	var count int

@@ -1487,6 +1487,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /ocp-shared-cluster-configurations/{name}/enable:
+    put:
+      summary: Enable an OcpSharedClusterConfiguration
+      operationId: enableOcpSharedClusterConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration
+          schema:
+            type: string
+          example: ocp-cluster-1
+      responses:
+        '200':
+          description: The OcpSharedClusterConfiguration is enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: OCP shared cluster configuration enabled
+        '404':
+          description: enableOcpSharedClusterConfiguration OcpSharedClusterConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: enableOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /ocp-shared-cluster-configurations/{name}/disable:
     put:
       summary: Disable an OcpSharedClusterConfiguration
