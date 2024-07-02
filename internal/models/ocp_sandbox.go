@@ -720,6 +720,15 @@ func includeNodeInUsageCalculation(node v1.Node) bool {
 	return nodeReady
 }
 
+func anySchedulableNodes(nodes []v1.Node) bool {
+	for _, node := range nodes {
+		if includeNodeInUsageCalculation(node) {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, multiple bool, ctx context.Context) (OcpSandboxWithCreds, error) {
 	var selectedCluster OcpSharedClusterConfiguration
 
@@ -807,6 +816,14 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 
 			var totalAllocatableCpu, totalAllocatableMemory int64
 			var totalUsageCpu, totalUsageMemory int64
+
+			if !anySchedulableNodes(nodes.Items) {
+				log.Logger.Info("No schedulable/ready nodes found",
+					"cluster", cluster.Name,
+					"serviceUuid", rnew.ServiceUuid,
+				)
+				continue providerLoop
+			}
 
 			for _, node := range nodes.Items {
 
