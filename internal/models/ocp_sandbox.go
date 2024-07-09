@@ -703,6 +703,14 @@ func includeNodeInUsageCalculation(node v1.Node) bool {
 	if node.Spec.Unschedulable {
 		return false
 	}
+
+	// if node is a master node, return false
+	for _, taint := range node.Spec.Taints {
+		if taint.Key == "node-role.kubernetes.io/master" && taint.Effect == v1.TaintEffectNoSchedule {
+			return false
+		}
+	}
+
 	conditions := node.Status.Conditions
 	nodeReady := false
 	for _, condition := range conditions {
