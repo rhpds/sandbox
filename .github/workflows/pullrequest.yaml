@@ -62,7 +62,7 @@ jobs:
 
     - name: Linting Swagger file
       run: |
-        go run github.com/daveshanley/vacuum@latest lint docs/api-reference/swagger.yaml
+        go run github.com/daveshanley/vacuum@latest lint -d docs/api-reference/swagger.yaml
 
   build-and-push-api:
     concurrency:
