@@ -8,8 +8,6 @@ on:
 
 jobs:
   pull_request:
-    env:
-      IMAGE_NAME: aws-sandbox-metrics
     runs-on: ubuntu-latest
     steps:
     - name: Checkout source
@@ -28,6 +26,13 @@ jobs:
       run: |
         make test
 
+  build-and-push-metrics:
+    needs:
+      - pull_request
+    env:
+      IMAGE_NAME: aws-sandbox-metrics
+    runs-on: ubuntu-latest
+    steps:
     - name: Prepare
       id: prep
       run: |
