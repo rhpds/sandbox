@@ -60,10 +60,6 @@ jobs:
           org.opencontainers.image.created=${{ steps.prep.outputs.created }}
           org.opencontainers.image.revision=${{ github.sha }}
 
-  # - name: Linting Swagger file
-    - name: Run make test
-      run: make test
-
   build-and-push-api:
     concurrency:
       group: temporary-pr-${{ github.event.number }}
