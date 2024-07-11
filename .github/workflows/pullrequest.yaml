@@ -15,9 +15,17 @@ jobs:
     - name: Checkout source
       uses: actions/checkout@v2
 
-    - name: Run Makefile linting and tests
+    - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+
+    - name: Build
       run: |
         make
+
+    - name: Run Makefile linting and tests
+      run: |
         make test
 
     - name: Prepare
