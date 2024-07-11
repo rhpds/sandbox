@@ -6,7 +6,7 @@ info:
   license:
     name: MIT
 servers:
-  - url: /api/v2
+  - url: /api/v1
 tags:
   - name: placement
     description: Anything related to Placements. Ex, booking or releasing sandboxes
@@ -21,7 +21,7 @@ tags:
 paths:
   /login:
     parameters:
-      - in: header
+    - in: h    eader   
         name: Authorization
         description: Login JTW Token
         required: true
