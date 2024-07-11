@@ -60,9 +60,9 @@ jobs:
           org.opencontainers.image.created=${{ steps.prep.outputs.created }}
           org.opencontainers.image.revision=${{ github.sha }}
 
-    - name: Linting Swagger file
-      run: |
-        go run github.com/daveshanley/vacuum@latest lint -d docs/api-reference/swagger.yaml
+  # - name: Linting Swagger file
+    - name: Run make test
+      run: make test
 
   build-and-push-api:
     concurrency:
