@@ -15,8 +15,6 @@ test:
 	@echo "Running tests..."
 	@echo "VERSION: $(VERSION)"
 	@go test -v ./...
-
-lint:
 	@echo "Validating swagger.yaml..."
 	@go run github.com/daveshanley/vacuum@latest lint -d docs/api-reference/swagger.yaml
 

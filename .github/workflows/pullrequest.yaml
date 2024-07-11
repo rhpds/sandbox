@@ -15,6 +15,11 @@ jobs:
     - name: Checkout source
       uses: actions/checkout@v2
 
+    - name: Run Makefile linting and tests
+      run: |
+        make
+        make test
+
     - name: Prepare
       id: prep
       run: |
@@ -60,11 +65,6 @@ jobs:
           org.opencontainers.image.created=${{ steps.prep.outputs.created }}
           org.opencontainers.image.revision=${{ github.sha }}
 
-    - name: Run Makefile linting and tests
-      run: |
-        make lint
-        make test
-  
   build-and-push-api:
     concurrency:
       group: temporary-pr-${{ github.event.number }}
