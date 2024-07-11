@@ -74,6 +74,8 @@ jobs:
           org.opencontainers.image.revision=${{ github.sha }}
 
   build-and-push-api:
+    needs:
+      - pull_request
     concurrency:
       group: temporary-pr-${{ github.event.number }}
       cancel-in-progress: true
@@ -91,6 +93,8 @@ jobs:
         org.opencontainers.image.revision=${{ github.sha }}
 
   build-and-push-admin:
+    needs:
+      - pull_request
     concurrency:
       group: temporary-pr-${{ github.event.number }}-admin
       cancel-in-progress: true
@@ -108,6 +112,8 @@ jobs:
         org.opencontainers.image.revision=${{ github.sha }}
 
   build-and-push-conan:
+    needs:
+      - pull_request
     concurrency:
       group: temporary-pr-${{ github.event.number }}-conan
       cancel-in-progress: true
