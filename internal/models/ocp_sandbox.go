@@ -699,15 +699,15 @@ func (a *OcpSharedClusterConfiguration) CreateRestConfig() (*rest.Config, error)
 	return clientcmd.RESTConfigFromKubeConfig([]byte(a.Kubeconfig))
 }
 
-func includeNodeInUsageCalculation(node v1.Node) bool {
+func includeNodeInUsageCalculation(node v1.Node) (bool, string) {
 	if node.Spec.Unschedulable {
-		return false
+		return false, "unschedulable"
 	}
 
 	// if node is a master node, return false
 	for _, taint := range node.Spec.Taints {
 		if taint.Key == "node-role.kubernetes.io/master" && taint.Effect == v1.TaintEffectNoSchedule {
-			return false
+			return false, "master"
 		}
 	}
 
@@ -721,16 +721,19 @@ func includeNodeInUsageCalculation(node v1.Node) bool {
 
 		// If a condition is not memorypressure and is true, return false
 		if condition.Type != v1.NodeMemoryPressure && condition.Status == v1.ConditionTrue {
-			return false
+			return false, "MemoryPressure"
 		}
 	}
 
-	return nodeReady
+	if !nodeReady {
+		return false, "NodeNotReady"
+	}
+	return nodeReady, ""
 }
 
 func anySchedulableNodes(nodes []v1.Node) bool {
 	for _, node := range nodes {
-		if includeNodeInUsageCalculation(node) {
+		if in, _ := includeNodeInUsageCalculation(node); in {
 			return true
 		}
 	}
@@ -835,13 +838,11 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 
 			for _, node := range nodes.Items {
 
-				if !includeNodeInUsageCalculation(node) {
+				if include, reason := includeNodeInUsageCalculation(node); !include {
 					log.Logger.Info("Node not included in calculation",
 						"node",
 						node.Name,
-						"unschedulable", node.Spec.Unschedulable,
-						"conditions",
-						node.Status.Conditions,
+						"reason", reason,
 					)
 					continue
 				}
