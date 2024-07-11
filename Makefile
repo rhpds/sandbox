@@ -16,8 +16,7 @@ test:
 	@echo "VERSION: $(VERSION)"
 	@go test -v ./...
 	@echo "Validating swagger.yaml..."
-	@npx @daveshanley/vacuum lint -d docs/api-reference/swagger.yaml
-
+	@go run github.com/daveshanley/vacuum@latest lint docs/api-reference/swagger.yaml
 
 run-api: cmd/sandbox-api/assets/swagger.yaml .dev.pgenv .dev.jwtauth_env #migrate
 	. ./.dev.pgenv && . ./.dev.jwtauth_env && cd cmd/sandbox-api && CGO_ENABLED=0 go run .
