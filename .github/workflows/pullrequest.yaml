@@ -61,7 +61,9 @@ jobs:
           org.opencontainers.image.revision=${{ github.sha }}
 
     - name: Run Makefile linting and tests
-      run: make lint test
+      run: |
+        make lint
+        make test
   
   build-and-push-api:
     concurrency:
