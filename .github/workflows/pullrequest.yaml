@@ -33,6 +33,9 @@ jobs:
       IMAGE_NAME: aws-sandbox-metrics
     runs-on: ubuntu-latest
     steps:
+    - name: Checkout source
+      uses: actions/checkout@v2
+
     - name: Prepare
       id: prep
       run: |
