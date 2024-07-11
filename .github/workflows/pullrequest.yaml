@@ -59,8 +59,10 @@ jobs:
           org.opencontainers.image.source=${{ github.event.repository.html_url }}
           org.opencontainers.image.created=${{ steps.prep.outputs.created }}
           org.opencontainers.image.revision=${{ github.sha }}
-  
 
+    - name: Run Makefile linting and tests
+      run: make lint test
+  
   build-and-push-api:
     concurrency:
       group: temporary-pr-${{ github.event.number }}
