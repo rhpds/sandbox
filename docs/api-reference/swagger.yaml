@@ -6,7 +6,7 @@ info:
   license:
     name: MIT
 servers:
-  - url: /api/v1
+  - url: /api/v2
 tags:
   - name: placement
     description: Anything related to Placements. Ex, booking or releasing sandboxes
