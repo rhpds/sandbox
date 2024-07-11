@@ -21,7 +21,7 @@ tags:
 paths:
   /login:
     parameters:
-    - in: h    eader   
+      - in: header
         name: Authorization
         description: Login JTW Token
         required: true
