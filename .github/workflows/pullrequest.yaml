@@ -60,6 +60,11 @@ jobs:
           org.opencontainers.image.created=${{ steps.prep.outputs.created }}
           org.opencontainers.image.revision=${{ github.sha }}
 
+    - name: Linting Swagger file
+      run: |
+        npm install -g @daveshanley/vacuum
+        vacuum lint -d docs/api-reference/swagger.yaml
+
   build-and-push-api:
     concurrency:
       group: temporary-pr-${{ github.event.number }}
