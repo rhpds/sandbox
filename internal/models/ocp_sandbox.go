@@ -13,13 +13,13 @@ import (
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/rhpds/sandbox/internal/log"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
-
-	//	"k8s.io/client-go/rest"
 	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
 type OcpSandboxProvider struct {
@@ -28,18 +28,21 @@ type OcpSandboxProvider struct {
 }
 
 type OcpSharedClusterConfiguration struct {
-	ID             int               `json:"id"`
-	Name           string            `json:"name"`
-	ApiUrl         string            `json:"api_url"`
-	IngressDomain  string            `json:"ingress_domain"`
-	Kubeconfig     string            `json:"kubeconfig"`
-	CreatedAt      time.Time         `json:"created_at"`
-	UpdatedAt      time.Time         `json:"updated_at"`
-	Annotations    map[string]string `json:"annotations"`
-	Valid          bool              `json:"valid"`
-	AdditionalVars map[string]any    `json:"additional_vars,omitempty"`
-	DbPool         *pgxpool.Pool     `json:"-"`
-	VaultSecret    string            `json:"-"`
+	ID                       int               `json:"id"`
+	Name                     string            `json:"name"`
+	ApiUrl                   string            `json:"api_url"`
+	IngressDomain            string            `json:"ingress_domain"`
+	Kubeconfig               string            `json:"kubeconfig"`
+	Token                    string            `json:"token"`
+	CreatedAt                time.Time         `json:"created_at"`
+	UpdatedAt                time.Time         `json:"updated_at"`
+	Annotations              map[string]string `json:"annotations"`
+	Valid                    bool              `json:"valid"`
+	AdditionalVars           map[string]any    `json:"additional_vars,omitempty"`
+	MaxMemoryUsagePercentage float64           `json:"max_memory_usage_percentage"`
+	MaxCpuUsagePercentage    float64           `json:"max_cpu_usage_percentage"`
+	DbPool                   *pgxpool.Pool     `json:"-"`
+	VaultSecret              string            `json:"-"`
 }
 
 type OcpSharedClusterConfigurations []OcpSharedClusterConfiguration
@@ -57,6 +60,7 @@ type OcpSandbox struct {
 	CleanupCount                      int               `json:"cleanup_count"`
 	Namespace                         string            `json:"namespace"`
 	ClusterAdditionalVars             map[string]any    `json:"cluster_additional_vars,omitempty"`
+	ToCleanup                         bool              `json:"to_cleanup"`
 }
 
 type OcpSandboxWithCreds struct {
@@ -99,8 +103,8 @@ func (p *OcpSharedClusterConfiguration) Bind(r *http.Request) error {
 	}
 
 	// Ensure the kubeconfig is not empty
-	if p.Kubeconfig == "" {
-		return errors.New("kubeconfig is required")
+	if p.Kubeconfig == "" && p.Token == "" {
+		return errors.New("kubeconfig or token is required")
 	}
 
 	// Ensure IngressDomain is provided
@@ -111,6 +115,22 @@ func (p *OcpSharedClusterConfiguration) Bind(r *http.Request) error {
 	// Ensure Annotations is provided
 	if len(p.Annotations) == 0 {
 		return errors.New("annotations is required")
+	}
+
+	if p.MaxMemoryUsagePercentage < 0 || p.MaxMemoryUsagePercentage > 100 {
+		return errors.New("max_memory_usage_percentage must be between 0 and 100")
+	}
+	if p.MaxCpuUsagePercentage < 0 || p.MaxCpuUsagePercentage > 100 {
+		return errors.New("max_cpu_usage_percentage must be between 0 and 100")
+	}
+
+	// Set default values for CPU and Memory usage
+	if p.MaxMemoryUsagePercentage == 0 {
+		p.MaxMemoryUsagePercentage = 90
+	}
+
+	if p.MaxCpuUsagePercentage == 0 {
+		p.MaxCpuUsagePercentage = 100
 	}
 
 	p.Valid = true
@@ -136,9 +156,29 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 	if err := p.DbPool.QueryRow(
 		context.Background(),
 		`INSERT INTO ocp_shared_cluster_configurations
-			(name, api_url, ingress_domain, kubeconfig, annotations, valid, additional_vars)
-			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), $6, $7, $8) RETURNING id`,
-		p.Name, p.ApiUrl, p.IngressDomain, p.Kubeconfig, p.VaultSecret, p.Annotations, p.Valid, p.AdditionalVars,
+			(name,
+			api_url,
+			ingress_domain,
+			kubeconfig,
+			token,
+			annotations,
+			valid,
+			additional_vars,
+			max_memory_usage_percentage,
+			max_cpu_usage_percentage)
+			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11)
+			RETURNING id`,
+		p.Name,
+		p.ApiUrl,
+		p.IngressDomain,
+		p.Kubeconfig,
+		p.VaultSecret,
+		p.Token,
+		p.Annotations,
+		p.Valid,
+		p.AdditionalVars,
+		p.MaxMemoryUsagePercentage,
+		p.MaxCpuUsagePercentage,
 	).Scan(&p.ID); err != nil {
 		return err
 	}
@@ -158,11 +198,25 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 			 api_url = $2,
              ingress_domain = $3,
 			 kubeconfig = pgp_sym_encrypt($4::text, $5),
-			 annotations = $6,
-			 valid = $7,
-			 additional_vars = $8
-		 WHERE id = $9`,
-		p.Name, p.ApiUrl, p.IngressDomain, p.Kubeconfig, p.VaultSecret, p.Annotations, p.Valid, p.AdditionalVars, p.ID,
+			 token = pgp_sym_encrypt($6::text, $5),
+			 annotations = $7,
+			 valid = $8,
+			 additional_vars = $9,
+			 max_memory_usage_percentage = $11,
+			 max_cpu_usage_percentage = $12
+		 WHERE id = $10`,
+		p.Name,
+		p.ApiUrl,
+		p.IngressDomain,
+		p.Kubeconfig,
+		p.VaultSecret,
+		p.Token,
+		p.Annotations,
+		p.Valid,
+		p.AdditionalVars,
+		p.ID,
+		p.MaxMemoryUsagePercentage,
+		p.MaxCpuUsagePercentage,
 	); err != nil {
 		return err
 	}
@@ -188,6 +242,12 @@ func (p *OcpSharedClusterConfiguration) Disable() error {
 	return p.Update()
 }
 
+// Enable an OcpSharedClusterConfiguration
+func (p *OcpSharedClusterConfiguration) Enable() error {
+	p.Valid = true
+	return p.Update()
+}
+
 // CountAccounts returns the number of accounts for an OcpSharedClusterConfiguration
 func (p *OcpSharedClusterConfiguration) GetAccountCount() (int, error) {
 	var count int
@@ -207,7 +267,19 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 	row := p.DbPool.QueryRow(
 		context.Background(),
 		`SELECT
-		 id, name, api_url, ingress_domain, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid, additional_vars
+			id,
+			name,
+			api_url,
+			ingress_domain,
+			pgp_sym_decrypt(kubeconfig::bytea, $1),
+			pgp_sym_decrypt(token::bytea, $1),
+			created_at,
+			updated_at,
+			annotations,
+			valid,
+			additional_vars,
+			max_memory_usage_percentage,
+			max_cpu_usage_percentage
 		 FROM ocp_shared_cluster_configurations WHERE name = $2`,
 		p.VaultSecret, name,
 	)
@@ -219,11 +291,14 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 		&cluster.ApiUrl,
 		&cluster.IngressDomain,
 		&cluster.Kubeconfig,
+		&cluster.Token,
 		&cluster.CreatedAt,
 		&cluster.UpdatedAt,
 		&cluster.Annotations,
 		&cluster.Valid,
 		&cluster.AdditionalVars,
+		&cluster.MaxMemoryUsagePercentage,
+		&cluster.MaxCpuUsagePercentage,
 	); err != nil {
 		return OcpSharedClusterConfiguration{}, err
 	}
@@ -240,7 +315,19 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 	rows, err := p.DbPool.Query(
 		context.Background(),
 		`SELECT
-		 id, name, api_url, ingress_domain, pgp_sym_decrypt(kubeconfig::bytea, $1), created_at, updated_at, annotations, valid, additional_vars
+			id,
+			name,
+			api_url,
+			ingress_domain,
+			pgp_sym_decrypt(kubeconfig::bytea, $1),
+			pgp_sym_decrypt(token::bytea, $1),
+			created_at,
+			updated_at,
+			annotations,
+			valid,
+			additional_vars,
+			max_memory_usage_percentage,
+			max_cpu_usage_percentage
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
 	)
@@ -261,11 +348,14 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			&cluster.ApiUrl,
 			&cluster.IngressDomain,
 			&cluster.Kubeconfig,
+			&cluster.Token,
 			&cluster.CreatedAt,
 			&cluster.UpdatedAt,
 			&cluster.Annotations,
 			&cluster.Valid,
 			&cluster.AdditionalVars,
+			&cluster.MaxMemoryUsagePercentage,
+			&cluster.MaxCpuUsagePercentage,
 		); err != nil {
 			return []OcpSharedClusterConfiguration{}, err
 		}
@@ -352,12 +442,12 @@ func (a *OcpSandboxWithCreds) Update() error {
 		context.Background(),
 		`UPDATE resources
 		 SET resource_name = $1,
-             resource_type = $2,
-             service_uuid = $3,
-             resource_data = $4,
-             resource_credentials = pgp_sym_encrypt($5::text, $6),
-             status = $7,
-             cleanup_count = $8
+			 resource_type = $2,
+			 service_uuid = $3,
+			 resource_data = $4,
+			 resource_credentials = pgp_sym_encrypt($5::text, $6),
+			 status = $7,
+			 cleanup_count = $8
 		 WHERE id = $9`,
 		a.Name,
 		a.Kind,
@@ -388,7 +478,7 @@ func (a *OcpSandboxWithCreds) Save() error {
 		`INSERT INTO resources
 			(resource_name, resource_type, service_uuid, to_cleanup, resource_data, resource_credentials, status, cleanup_count)
 			VALUES ($1, $2, $3, $4, $5, pgp_sym_encrypt($6::text, $7), $8, $9) RETURNING id`,
-		a.Name, a.Kind, a.ServiceUuid, false, withoutCreds, creds, a.Provider.VaultSecret, a.Status, a.CleanupCount,
+		a.Name, a.Kind, a.ServiceUuid, a.ToCleanup, withoutCreds, creds, a.Provider.VaultSecret, a.Status, a.CleanupCount,
 	).Scan(&a.ID); err != nil {
 		return err
 	}
@@ -399,7 +489,10 @@ func (a *OcpSandboxWithCreds) Save() error {
 func (a *OcpSandboxWithCreds) SetStatus(status string) error {
 	_, err := a.Provider.DbPool.Exec(
 		context.Background(),
-		"UPDATE resources SET status = $1 WHERE id = $2",
+		fmt.Sprintf(`UPDATE resources
+		 SET status = $1,
+			 resource_data['status'] = to_jsonb('%s'::text)
+		 WHERE id = $2`, status),
 		status, a.ID,
 	)
 
@@ -420,7 +513,7 @@ func (a *OcpSandboxWithCreds) GetStatus() (string, error) {
 func (a *OcpSandboxWithCreds) MarkForCleanup() error {
 	_, err := a.Provider.DbPool.Exec(
 		context.Background(),
-		"UPDATE resources SET to_cleanup = true WHERE id = $1",
+		"UPDATE resources SET to_cleanup = true, resource_data['to_cleanup'] = 'true' WHERE id = $1",
 		a.ID,
 	)
 
@@ -560,7 +653,7 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]st
 	// Get resource from 'ocp_shared_cluster_configurations' table
 	rows, err := a.DbPool.Query(
 		context.Background(),
-		`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true`,
+		`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true ORDER BY random()`,
 		cloud_selector,
 	)
 
@@ -592,9 +685,62 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]st
 	return clusters, nil
 }
 
-func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string) (OcpSandboxWithCreds, error) {
-	var rowcount int
-	var minOcpMemoryUsage float64
+func (a *OcpSharedClusterConfiguration) CreateRestConfig() (*rest.Config, error) {
+	if a.Token != "" {
+		return &rest.Config{
+			Host:        a.ApiUrl,
+			BearerToken: a.Token,
+			TLSClientConfig: rest.TLSClientConfig{
+				Insecure: true,
+			},
+		}, nil
+	}
+
+	return clientcmd.RESTConfigFromKubeConfig([]byte(a.Kubeconfig))
+}
+
+func includeNodeInUsageCalculation(node v1.Node) (bool, string) {
+	if node.Spec.Unschedulable {
+		return false, "unschedulable"
+	}
+
+	// if node is a master node, return false
+	for _, taint := range node.Spec.Taints {
+		if taint.Key == "node-role.kubernetes.io/master" && taint.Effect == v1.TaintEffectNoSchedule {
+			return false, "master"
+		}
+	}
+
+	conditions := node.Status.Conditions
+	nodeReady := false
+	for _, condition := range conditions {
+		if condition.Type == v1.NodeReady && condition.Status == v1.ConditionTrue {
+			nodeReady = true
+			break
+		}
+
+		// If a condition is not memorypressure and is true, return false
+		if condition.Type != v1.NodeMemoryPressure && condition.Status == v1.ConditionTrue {
+			return false, "MemoryPressure"
+		}
+	}
+
+	if !nodeReady {
+		return false, "NodeNotReady"
+	}
+	return nodeReady, ""
+}
+
+func anySchedulableNodes(nodes []v1.Node) bool {
+	for _, node := range nodes {
+		if in, _ := includeNodeInUsageCalculation(node); in {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, multiple bool, ctx context.Context) (OcpSandboxWithCreds, error) {
 	var selectedCluster OcpSharedClusterConfiguration
 
 	// Ensure annotation has guid
@@ -615,41 +761,11 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 
 	// Determine guid, auto increment the guid if there are multiple resources
 	// for a serviceUuid
-	guid := annotations["guid"]
-	increment := 0
-
-	for {
-		if increment > 100 {
-			// something clearly went wrong, shouldn't never happen, but be defensive
-			return OcpSandboxWithCreds{}, errors.New("Too many iterations guessing guid")
-		}
-
-		if increment > 0 {
-			guid = annotations["guid"] + "-" + fmt.Sprintf("%v", increment+1)
-		}
-		// If a sandbox already has the same name for that serviceuuid, increment
-		// If so, increment the guid and try again
-		candidateName := guid + "-" + serviceUuid
-
-		err := a.DbPool.QueryRow(
-			context.Background(),
-			`SELECT count(*) FROM resources
-			WHERE resource_name = $1
-			AND resource_type = 'OcpSandbox'`,
-			candidateName,
-		).Scan(&rowcount)
-
-		if err != nil {
-			log.Logger.Error("Error checking resources names", "error", err)
-			return OcpSandboxWithCreds{}, err
-		}
-
-		if rowcount == 0 {
-			break
-		}
-		increment++
+	guid, err := guessNextGuid(annotations["guid"], serviceUuid, a.DbPool, multiple, ctx)
+	if err != nil {
+		log.Logger.Error("Error guessing guid", "error", err)
+		return OcpSandboxWithCreds{}, err
 	}
-
 	// Return the Placement with a status 'initializing'
 	rnew := OcpSandboxWithCreds{
 		OcpSandbox: OcpSandbox{
@@ -681,7 +797,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				"name", cluster.Name,
 				"ApiUrl", cluster.ApiUrl)
 
-			config, err := clientcmd.RESTConfigFromKubeConfig([]byte(cluster.Kubeconfig))
+			config, err := cluster.CreateRestConfig()
 			if err != nil {
 				log.Logger.Error("Error creating OCP config", "error", err)
 				rnew.SetStatus("error")
@@ -695,6 +811,13 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				continue providerLoop
 			}
 
+			clientsetMetrics, err := metricsv.NewForConfig(config)
+			if err != nil {
+				log.Logger.Error("Error creating OCP metrics client", "error", err)
+				rnew.SetStatus("error")
+				continue providerLoop
+			}
+
 			nodes, err := clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/worker="})
 			if err != nil {
 				log.Logger.Error("Error listing OCP nodes", "error", err)
@@ -703,47 +826,73 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			}
 
 			var totalAllocatableCpu, totalAllocatableMemory int64
-			var totalRequestedCpu, totalRequestedMemory int64
+			var totalUsageCpu, totalUsageMemory int64
+
+			if !anySchedulableNodes(nodes.Items) {
+				log.Logger.Info("No schedulable/ready nodes found",
+					"cluster", cluster.Name,
+					"serviceUuid", rnew.ServiceUuid,
+				)
+				continue providerLoop
+			}
 
 			for _, node := range nodes.Items {
+
+				if include, reason := includeNodeInUsageCalculation(node); !include {
+					log.Logger.Info("Node not included in calculation",
+						"node",
+						node.Name,
+						"reason", reason,
+					)
+					continue
+				}
+
 				allocatableCpu := node.Status.Allocatable.Cpu().MilliValue()
 				allocatableMemory := node.Status.Allocatable.Memory().Value()
 
-				podList, err := clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{FieldSelector: "spec.nodeName=" + node.Name})
-				if err != nil {
-					log.Logger.Error("Error listing OCP pods", "error", err)
-					rnew.SetStatus("error")
-					continue providerLoop
-				}
-
-				totalRequestedCpuForNode := int64(0)
-				totalRequestedMemoryForNode := int64(0)
-				for _, pod := range podList.Items {
-					totalRequestedCpuForNode += pod.Spec.Containers[0].Resources.Requests.Cpu().MilliValue()
-					totalRequestedMemoryForNode += pod.Spec.Containers[0].Resources.Requests.Memory().Value()
-				}
-
 				totalAllocatableCpu += allocatableCpu
 				totalAllocatableMemory += allocatableMemory
-				totalRequestedCpu += totalRequestedCpuForNode
-				totalRequestedMemory += totalRequestedMemoryForNode
+
+				nodeMetric, err := clientsetMetrics.MetricsV1beta1().
+					NodeMetricses().
+					Get(context.Background(), node.Name, metav1.GetOptions{})
+
+				if err != nil {
+					log.Logger.Error(
+						"Error Get OCP node metrics v1beta1, ignore the node",
+						"node", node.Name,
+						"error", err)
+					continue
+				}
+
+				mem, _ := nodeMetric.Usage.Memory().AsInt64()
+				cpu := nodeMetric.Usage.Cpu().MilliValue()
+
+				totalUsageCpu += cpu
+				totalUsageMemory += mem
 			}
 
 			// Calculate total usage for the cluster
-			cpuUsage := (float64(totalRequestedCpu) / float64(totalAllocatableCpu)) * 100
-			memoryUsage := (float64(totalRequestedMemory) / float64(totalAllocatableMemory)) * 100
-			if minOcpMemoryUsage == 0 || memoryUsage < minOcpMemoryUsage {
+			clusterCpuUsage := (float64(totalUsageCpu) / float64(totalAllocatableCpu)) * 100
+			clusterMemoryUsage := (float64(totalUsageMemory) / float64(totalAllocatableMemory)) * 100
+			log.Logger.Info(
+				"Cluster Usage",
+				"Cluster", cluster.Name,
+				"CPU% Usage", clusterCpuUsage,
+				"Memory% Usage", clusterMemoryUsage,
+			)
+			if clusterMemoryUsage < cluster.MaxMemoryUsagePercentage && clusterCpuUsage < cluster.MaxCpuUsagePercentage {
 				selectedCluster = cluster
-				minOcpMemoryUsage = memoryUsage
+				log.Logger.Info("selectedCluster", "cluster", selectedCluster.Name)
+				break providerLoop
 			}
-			log.Logger.Info("Cluster Usage",
-				"CPU Usage (Requests)", cpuUsage,
-				"Memory Usage (Requests)", memoryUsage)
 		}
-		log.Logger.Info("selectedCluster", "cluster", selectedCluster.Name)
 
 		if selectedCluster.Name == "" {
-			log.Logger.Error("Error electing cluster", "name", rnew.Name)
+			log.Logger.Error("Error electing cluster",
+				"name", rnew.Name,
+				"serviceUuid", rnew.ServiceUuid,
+				"reason", "no cluster available")
 			rnew.SetStatus("error")
 			return
 		}
@@ -757,7 +906,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			return
 		}
 
-		config, err := clientcmd.RESTConfigFromKubeConfig([]byte(selectedCluster.Kubeconfig))
+		config, err := selectedCluster.CreateRestConfig()
 		if err != nil {
 			log.Logger.Error("Error creating OCP config", "error", err)
 			rnew.SetStatus("error")
@@ -773,7 +922,12 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 
 		serviceAccountName := "sandbox"
-		namespaceName := "sandbox-" + rnew.Name
+		suffix := annotations["namespace_suffix"]
+		if suffix == "" {
+			suffix = serviceUuid
+		}
+
+		namespaceName := "sandbox-" + guid + "-" + suffix
 		namespaceName = namespaceName[:min(63, len(namespaceName))] // truncate to 63
 
 		delay := time.Second
@@ -794,8 +948,8 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			}, metav1.CreateOptions{})
 
 			if err != nil {
-				log.Logger.Error("Error creating OCP namespace", "error", err)
 				if strings.Contains(err.Error(), "object is being deleted: namespace") {
+					log.Logger.Warn("Error creating OCP namespace", "error", err)
 					time.Sleep(delay)
 					delay = delay * 2
 					if delay > 60*time.Second {
@@ -805,6 +959,8 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 
 					continue
 				}
+
+				log.Logger.Error("Error creating OCP namespace", "error", err)
 				rnew.SetStatus("error")
 				return
 			}
@@ -931,13 +1087,15 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 
 			_, err = clientset.RbacV1().RoleBindings("cnv-images").Create(context.TODO(), rb, metav1.CreateOptions{})
 			if err != nil {
-				log.Logger.Error("Error creating rolebinding on cnv-images", "error", err)
+				if !strings.Contains(err.Error(), "already exists") {
+					log.Logger.Error("Error creating rolebinding on cnv-images", "error", err)
 
-				if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
-					log.Logger.Error("Error cleaning up the namespace", "error", err)
+					if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+						log.Logger.Error("Error cleaning up the namespace", "error", err)
+					}
+					rnew.SetStatus("error")
+					return
 				}
-				rnew.SetStatus("error")
-				return
 			}
 		}
 
@@ -1010,6 +1168,48 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 	return rnew, nil
 }
 
+func guessNextGuid(origGuid string, serviceUuid string, dbpool *pgxpool.Pool, multiple bool, ctx context.Context) (string, error) {
+	var rowcount int
+	guid := origGuid
+	increment := 0
+
+	if multiple {
+		guid = origGuid + "-1"
+	}
+
+	for {
+		if increment > 100 {
+			return "", errors.New("Too many iterations guessing guid")
+		}
+
+		if increment > 0 {
+			guid = origGuid + "-" + fmt.Sprintf("%v", increment+1)
+		}
+		// If a sandbox already has the same name for that serviceuuid, increment
+		// If so, increment the guid and try again
+		candidateName := guid + "-" + serviceUuid
+
+		err := dbpool.QueryRow(
+			context.Background(),
+			`SELECT count(*) FROM resources
+			WHERE resource_name = $1
+			AND resource_type = 'OcpSandbox'`,
+			candidateName,
+		).Scan(&rowcount)
+
+		if err != nil {
+			return "", err
+		}
+
+		if rowcount == 0 {
+			break
+		}
+		increment++
+	}
+
+	return guid, nil
+}
+
 func (a *OcpSandboxProvider) Release(service_uuid string) error {
 	accounts, err := a.FetchAllByServiceUuidWithCreds(service_uuid)
 
@@ -1020,9 +1220,13 @@ func (a *OcpSandboxProvider) Release(service_uuid string) error {
 	var errorHappened error
 
 	for _, account := range accounts {
-		if account.Namespace == "" {
-			log.Logger.Error("Namespace not found for account", "account", account)
+		if account.Namespace == "" &&
+			account.Status != "error" &&
+			account.Status != "scheduling" &&
+			account.Status != "initializing" {
+			// If the sandbox is not in error and the namespace is empty, throw an error
 			errorHappened = errors.New("Namespace not found for account")
+			log.Logger.Error("Namespace not found for account", "account", account)
 			continue
 		}
 
@@ -1048,7 +1252,7 @@ func (a *OcpSandboxProvider) FetchAll() ([]OcpSandbox, error) {
 		context.Background(),
 		`SELECT
 		 r.resource_data,
-         r.id,
+		 r.id,
 		 r.resource_name,
 		 r.resource_type,
 		 r.created_at,
@@ -1090,8 +1294,6 @@ func (a *OcpSandboxProvider) FetchAll() ([]OcpSandbox, error) {
 }
 
 func (account *OcpSandboxWithCreds) Delete() error {
-	var api_url string
-	var kubeconfig string
 
 	if account.ID == 0 {
 		return errors.New("resource ID must be > 0")
@@ -1107,6 +1309,16 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		}
 		if maxRetries == 0 {
 			log.Logger.Error("Resource is not in a final state", "name", account.Name, "status", status)
+
+			// Curative and auto-healing action, set status to error
+			if status == "initializing" || status == "scheduling" {
+				if err := account.SetStatus("error"); err != nil {
+					log.Logger.Error("Cannot set status", "error", err)
+					return err
+				}
+				maxRetries = 10
+				continue
+			}
 			return errors.New("Resource is not in a final state, cannot delete")
 		}
 
@@ -1145,34 +1357,42 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		}
 	}
 
+	if account.OcpSharedClusterConfigurationName == "" {
+		// The resource was not created, nothing to delete
+		// that happens when no cluster is elected
+		_, err := account.Provider.DbPool.Exec(
+			context.Background(),
+			"DELETE FROM resources WHERE id = $1",
+			account.ID,
+		)
+		return err
+	}
+
 	account.SetStatus("deleting")
 	// In case anything goes wrong, we'll know it can safely be deleted
 	account.MarkForCleanup()
 	account.IncrementCleanupCount()
 
-	// Get the OCP shared cluster configuration from the resources.resource_data column
-
-	// TODO: use GetOcpSharedClusterConfigurationByName
-	err := account.Provider.DbPool.QueryRow(
-		context.Background(),
-		"SELECT api_url, pgp_sym_decrypt(kubeconfig::bytea, $1) FROM ocp_shared_cluster_configurations WHERE name = $2",
-		account.Provider.VaultSecret,
-		account.OcpSharedClusterConfigurationName,
-	).Scan(&api_url, &kubeconfig)
-
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			log.Logger.Error("Ocp cluster doesn't exist for resource", "cluster", account.OcpSharedClusterConfigurationName, "name", account.Name)
-			account.SetStatus("error")
-			return errors.New("Ocp cluster doesn't exist for resource")
-		} else {
-			log.Logger.Error("Ocp cluster query error", "err", err)
-			account.SetStatus("error")
-			return err
-		}
+	if account.Namespace == "" {
+		log.Logger.Info("Empty namespace, consider deletion a success", "name", account.Name)
+		_, err := account.Provider.DbPool.Exec(
+			context.Background(),
+			"DELETE FROM resources WHERE id = $1",
+			account.ID,
+		)
+		return err
 	}
 
-	config, err := clientcmd.RESTConfigFromKubeConfig([]byte(kubeconfig))
+	// Get the OCP shared cluster configuration from the resources.resource_data column
+
+	cluster, err := account.Provider.GetOcpSharedClusterConfigurationByName(account.OcpSharedClusterConfigurationName)
+	if err != nil {
+		log.Logger.Error("Error getting OCP shared cluster configuration", "error", err)
+		account.SetStatus("error")
+		return err
+	}
+
+	config, err := cluster.CreateRestConfig()
 	if err != nil {
 		log.Logger.Error("Error creating OCP config", "error", err, "name", account.Name)
 		account.SetStatus("error")
@@ -1215,6 +1435,12 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		return err
 	}
 
+	log.Logger.Info("Namespace deleted",
+		"name", account.Name,
+		"namespace", account.Namespace,
+		"cluster", account.OcpSharedClusterConfigurationName,
+	)
+
 	// Delete the Service Account
 	if err = clientset.CoreV1().
 		ServiceAccounts(account.Namespace).
@@ -1222,6 +1448,16 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		log.Logger.Error("Error deleting OCP service account", "error", err)
 		account.SetStatus("error")
 		return err
+	}
+
+	rbName := "allow-clone-" + account.Namespace[:min(51, len(account.Namespace))]
+	// Delete the role binding from the cnv-images namespace
+	if _, err := clientset.RbacV1().RoleBindings("cnv-images").Get(context.TODO(), rbName, metav1.GetOptions{}); err == nil {
+		if err := clientset.RbacV1().RoleBindings("cnv-images").Delete(context.TODO(), rbName, metav1.DeleteOptions{}); err != nil {
+			log.Logger.Error("Error deleting rolebinding on cnv-images", "error", err)
+			account.SetStatus("error")
+			return err
+		}
 	}
 
 	_, err = account.Provider.DbPool.Exec(

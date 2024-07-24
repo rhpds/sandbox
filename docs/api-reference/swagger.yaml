@@ -209,14 +209,14 @@ paths:
 
         This action will cascade cleanup for all the accounts associated with the placement.
       responses:
-        '200':
+        '202':
           description: The placement assigned to this uuid is deleted. The resources associated with this placement are marked for cleanup.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
               example:
-                message: Placement successfuly deleted
+                message: Placement marked for deletion
 
         '404':
           description: deletePlacement Placement not found
@@ -1487,6 +1487,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /ocp-shared-cluster-configurations/{name}/enable:
+    put:
+      summary: Enable an OcpSharedClusterConfiguration
+      operationId: enableOcpSharedClusterConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration
+          schema:
+            type: string
+          example: ocp-cluster-1
+      responses:
+        '200':
+          description: The OcpSharedClusterConfiguration is enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: OCP shared cluster configuration enabled
+        '404':
+          description: enableOcpSharedClusterConfiguration OcpSharedClusterConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: enableOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /ocp-shared-cluster-configurations/{name}/disable:
     put:
       summary: Disable an OcpSharedClusterConfiguration
@@ -1847,6 +1882,9 @@ components:
         name:
           type: string
           example: sandbox123
+        namespace:
+          type: string
+          example: sandbox-GUID-UUID
         ocp_cluster:
           type: string
           example: ocp-cluster-1
@@ -1867,7 +1905,7 @@ components:
           type: string
           enum:
             - initializing
-            - electing_cluster
+            - scheduling
             - success
             - error
             - deleting
@@ -2077,7 +2115,6 @@ components:
         - name
         - api_url
         - ingress_domain
-        - kubeconfig
         - annotations
       properties:
         name:
@@ -2117,6 +2154,8 @@ components:
             - name: ocp-cluster-1
               user:
                 token: <TOKEN>
+        token:
+          type: string
         annotations:
           $ref: "#/components/schemas/Annotations"
         additional_vars:
@@ -2126,6 +2165,16 @@ components:
             deployer:
               openshift_cnv_nfs_path: /IBMfoobar/data01
               openshift_cnv_nfs_server: fsf-region.domain.com
+        max_memory_usage_percentage:
+          type: integer
+          description: The maximum memory usage percentage for a cluster to be considered healthy
+          example: 80
+          default: 90
+        max_cpu_usage_percentage:
+          type: integer
+          description: The maximum CPU usage percentage for a cluster to be considered healthy
+          example: 80
+          default: 100
       example:
         name: ocp-cluster-1
         api_url: https://api.ocp-cluster-1.com:6443

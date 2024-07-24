@@ -14,11 +14,14 @@ import (
 type Placement struct {
 	Model
 
-	ServiceUuid string            `json:"service_uuid"`
-	Status      string            `json:"status"`
-	Annotations map[string]string `json:"annotations"`
-	Resources   []any             `json:"resources,omitempty"`
-	Request     any               `json:"request"`
+	ServiceUuid  string            `json:"service_uuid"`
+	Status       string            `json:"status"`
+	ToCleanup    bool              `json:"to_cleanup"`
+	Annotations  map[string]string `json:"annotations"`
+	Resources    []any             `json:"resources,omitempty"`
+	Request      any               `json:"request"`
+	DbPool       *pgxpool.Pool     `json:"-"`
+	FailOnDelete bool              `json:"-"` // plumbing for testing
 }
 
 type PlacementWithCreds struct {
@@ -63,11 +66,21 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 	for _, account := range ocpSandboxes {
 		p.Resources = append(p.Resources, account)
 		if account.Status != "success" {
-			status = account.Status
+			// update final status only if it's not already an error
+			// propagate the status of the first error
+			if status != "error" {
+				status = account.Status
+			}
 		}
 	}
 
-	p.Status = status
+	// If the placement is already an error, don't update the status
+	// If the placement is deleting, don't update the status here neither
+	if p.Status != "error" && p.Status != "deleting" {
+		if err := p.SetStatus(status); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -97,16 +110,27 @@ func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpPr
 	for _, account := range ocpSandboxes {
 		p.Resources = append(p.Resources, account)
 		if account.Status != "success" {
-			status = account.Status
+			// update final status only if it's not already an error
+			// propagate the status of the first error
+			if status != "error" {
+				status = account.Status
+			}
 		}
 	}
-	p.Status = status
+
+	// If the placement is already an error, don't update the status
+	// If the placement is deleting, don't update the status here neither
+	if p.Status != "error" && p.Status != "deleting" {
+		if err := p.SetStatus(status); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
 
-func (p *Placement) LoadActiveResources(accountProvider AwsAccountProvider) error {
-	accounts, err := accountProvider.FetchAllActiveByServiceUuid(p.ServiceUuid)
+func (p *Placement) LoadActiveResources(awsProvider AwsAccountProvider) error {
+	accounts, err := awsProvider.FetchAllActiveByServiceUuid(p.ServiceUuid)
 
 	if err != nil {
 		return err
@@ -117,6 +141,8 @@ func (p *Placement) LoadActiveResources(accountProvider AwsAccountProvider) erro
 	for _, account := range accounts {
 		p.Resources = append(p.Resources, account)
 	}
+
+	// TODO: Implement OCP
 
 	return nil
 }
@@ -146,19 +172,28 @@ func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider,
 	for _, account := range ocpSandboxes {
 		p.Resources = append(p.Resources, account)
 		if account.Status != "success" {
-			status = account.Status
+			// update final status only if it's not already an error
+			// propagate the status of the first error
+			if status != "error" {
+				status = account.Status
+			}
 		}
 	}
 
-	p.Status = status
-
+	// If the placement is already an error, don't update the status
+	// If the placement is deleting, don't update the status here neither
+	if p.Status != "error" && p.Status != "deleting" {
+		if err := p.SetStatus(status); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-func (p *Placement) Save(dbpool *pgxpool.Pool) error {
+func (p *Placement) Create() error {
 	var id int
 	// Check if placement already exists in the DB
-	err := dbpool.QueryRow(
+	err := p.DbPool.QueryRow(
 		context.Background(),
 		"SELECT id FROM placements WHERE service_uuid = $1", p.ServiceUuid,
 	).Scan(&id)
@@ -174,11 +209,11 @@ func (p *Placement) Save(dbpool *pgxpool.Pool) error {
 
 	if err == pgx.ErrNoRows {
 		// Insert placement
-		err = dbpool.QueryRow(
+		err = p.DbPool.QueryRow(
 			context.Background(),
 			`INSERT INTO placements
-             (service_uuid, request, annotations)
-             VALUES ($1, $2, $3) RETURNING id`,
+			 (service_uuid, request, annotations)
+			 VALUES ($1, $2, $3) RETURNING id`,
 			p.ServiceUuid, p.Request, p.Annotations,
 		).Scan(&id)
 
@@ -189,7 +224,7 @@ func (p *Placement) Save(dbpool *pgxpool.Pool) error {
 		p.ID = id
 
 		// Update 'resources' table and set resources.placement_id to placements.id using the matching service UUID
-		if _, err = dbpool.Exec(
+		if _, err = p.DbPool.Exec(
 			context.Background(),
 			"UPDATE resources SET placement_id = $1 WHERE service_uuid = $2", p.ID, p.ServiceUuid,
 		); err != nil {
@@ -202,28 +237,42 @@ func (p *Placement) Save(dbpool *pgxpool.Pool) error {
 	return nil
 }
 
-func (p *Placement) Delete(dbpool *pgxpool.Pool, accountProvider AwsAccountProvider, ocpProvider OcpSandboxProvider) error {
-	if p.ID == 0 {
-		return errors.New("Placement ID is required")
+// Delete deletes a placement
+func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider OcpSandboxProvider) {
+	if err := p.SetStatus("deleting"); err != nil {
+		log.Logger.Error("error setting status for placement",
+			"serviceUuid", p.ServiceUuid,
+			"error", err,
+		)
+		return
+	}
+
+	if p.FailOnDelete {
+		log.Logger.Error("Failing on delete", "serviceUuid", p.ServiceUuid)
+		p.SetStatus("error")
+		return
 	}
 
 	if err := accountProvider.MarkForCleanupByServiceUuid(p.ServiceUuid); err != nil {
 		log.Logger.Error("Error while releasing AWS sandboxes")
-		return err
+		p.SetStatus("error")
+		return
 	}
 
 	if err := ocpProvider.Release(p.ServiceUuid); err != nil {
 		log.Logger.Error("Error while releasing OCP sandboxes")
-		return err
+		p.SetStatus("error")
+		return
 	}
 
-	_, err := dbpool.Exec(
+	_, err := p.DbPool.Exec(
 		context.Background(),
 		"DELETE FROM placements WHERE id = $1", p.ID,
 	)
 
 	if err != nil {
-		return err
+		p.SetStatus("error")
+		return
 	}
 
 	// Mark all resources associated with this placement for cleanup
@@ -231,21 +280,24 @@ func (p *Placement) Delete(dbpool *pgxpool.Pool, accountProvider AwsAccountProvi
 	// dynamodb for the accounts.
 
 	if err := p.LoadResources(accountProvider, ocpProvider); err != nil {
-		return err
+		log.Logger.Error("Error loading resources",
+			"serviceUuid", p.ServiceUuid,
+			"error", err,
+		)
+		p.SetStatus("error")
+		return
 	}
-
-	return err
 }
 
-func (p *Placement) GetLastStatus(dbpool *pgxpool.Pool) ([]*LifecycleResourceJob, error) {
+func (p *Placement) GetLastStatus() ([]*LifecycleResourceJob, error) {
 	var id int
-	err := dbpool.QueryRow(
+	err := p.DbPool.QueryRow(
 		context.TODO(),
 		`SELECT id FROM lifecycle_placement_jobs
-         WHERE lifecycle_action = 'status'
-         AND status = 'successfully_dispatched'
-         AND placement_id = $1
-         ORDER BY updated_at DESC LIMIT 1`,
+		 WHERE lifecycle_action = 'status'
+		 AND status = 'successfully_dispatched'
+		 AND placement_id = $1
+		 ORDER BY updated_at DESC LIMIT 1`,
 		p.ID,
 	).Scan(&id)
 
@@ -253,12 +305,12 @@ func (p *Placement) GetLastStatus(dbpool *pgxpool.Pool) ([]*LifecycleResourceJob
 		return nil, err
 	}
 
-	rows, err := dbpool.Query(
+	rows, err := p.DbPool.Query(
 		context.TODO(),
 		`SELECT id FROM lifecycle_resource_jobs
-         WHERE lifecycle_action = 'status'
-         AND parent_id = $1
-         ORDER BY updated_at`,
+		 WHERE lifecycle_action = 'status'
+		 AND parent_id = $1
+		 ORDER BY updated_at`,
 		id,
 	)
 
@@ -277,7 +329,7 @@ func (p *Placement) GetLastStatus(dbpool *pgxpool.Pool) ([]*LifecycleResourceJob
 			return nil, err
 		}
 
-		job, err := GetLifecycleResourceJob(dbpool, idR)
+		job, err := GetLifecycleResourceJob(p.DbPool, idR)
 
 		if err != nil {
 			return result, err
@@ -299,12 +351,32 @@ func GetPlacement(dbpool *pgxpool.Pool, id int) (*Placement, error) {
 
 	err := dbpool.QueryRow(
 		context.Background(),
-		"SELECT id, service_uuid, request, annotations, created_at, updated_at FROM placements WHERE id = $1", id,
-	).Scan(&p.ID, &p.ServiceUuid, &p.Request, &p.Annotations, &p.CreatedAt, &p.UpdatedAt)
+		`SELECT
+			id,
+			service_uuid,
+			request,
+			annotations,
+			status,
+			to_cleanup,
+			created_at,
+			updated_at
+		FROM placements WHERE id = $1`,
+		id,
+	).Scan(
+		&p.ID,
+		&p.ServiceUuid,
+		&p.Request,
+		&p.Annotations,
+		&p.Status,
+		&p.ToCleanup,
+		&p.CreatedAt,
+		&p.UpdatedAt)
 
 	if err != nil {
 		return nil, err
 	}
+
+	p.DbPool = dbpool
 
 	return &p, nil
 }
@@ -314,7 +386,16 @@ func GetPlacement(dbpool *pgxpool.Pool, id int) (*Placement, error) {
 func GetAllPlacements(dbpool *pgxpool.Pool) (Placements, error) {
 	rows, err := dbpool.Query(
 		context.Background(),
-		"SELECT id, service_uuid, request, annotations, created_at, updated_at FROM placements",
+		`SELECT
+			id,
+			service_uuid,
+			request,
+			annotations,
+			status,
+			to_cleanup,
+			created_at,
+			updated_at
+		FROM placements`,
 	)
 
 	if err != nil {
@@ -327,10 +408,19 @@ func GetAllPlacements(dbpool *pgxpool.Pool) (Placements, error) {
 
 	for rows.Next() {
 		var p Placement
-		err := rows.Scan(&p.ID, &p.ServiceUuid, &p.Request, &p.Annotations, &p.CreatedAt, &p.UpdatedAt)
+		err := rows.Scan(
+			&p.ID,
+			&p.ServiceUuid,
+			&p.Request,
+			&p.Annotations,
+			&p.Status,
+			&p.ToCleanup,
+			&p.CreatedAt,
+			&p.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
+		p.DbPool = dbpool
 		placements = append(placements, p)
 	}
 
@@ -344,13 +434,34 @@ func GetPlacementByServiceUuid(dbpool *pgxpool.Pool, serviceUuid string) (*Place
 	log.Logger.Info("GetPlacementByServiceUuid", "serviceUuid", serviceUuid)
 	err := dbpool.QueryRow(
 		context.Background(),
-		"SELECT id, service_uuid, request, annotations, created_at, updated_at FROM placements WHERE service_uuid = $1", serviceUuid,
-	).Scan(&p.ID, &p.ServiceUuid, &p.Request, &p.Annotations, &p.CreatedAt, &p.UpdatedAt)
+		`SELECT
+			id,
+			service_uuid,
+			request,
+			annotations,
+			status,
+			to_cleanup,
+			created_at,
+			updated_at
+		FROM
+		placements
+		WHERE service_uuid = $1`,
+		serviceUuid,
+	).Scan(
+		&p.ID,
+		&p.ServiceUuid,
+		&p.Request,
+		&p.Annotations,
+		&p.Status,
+		&p.ToCleanup,
+		&p.CreatedAt,
+		&p.UpdatedAt)
 
 	if err != nil {
 		return nil, err
 	}
 
+	p.DbPool = dbpool
 	return &p, nil
 }
 
@@ -358,20 +469,49 @@ func GetPlacementByServiceUuid(dbpool *pgxpool.Pool, serviceUuid string) (*Place
 func DeletePlacementByServiceUuid(dbpool *pgxpool.Pool, awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, serviceUuid string) error {
 	placement, err := GetPlacementByServiceUuid(dbpool, serviceUuid)
 	if err != nil {
-		log.Logger.Error("Error GetPlacementByServiceUuid")
 		return err
 	}
-	return placement.Delete(dbpool, awsProvider, ocpProvider)
+	if placement.ID == 0 {
+		return errors.New("Placement ID is required")
+	}
+
+	if err := placement.MarkForCleanup(); err != nil {
+		return err
+	}
+
+	go placement.Delete(awsProvider, ocpProvider)
+	return nil
 }
 
-// SetLifecycleResourceJobStatus sets the status of a LifecycleResourceJob
-func (p *Placement) SetStatus(dbpool *pgxpool.Pool, status string) error {
-	_, err := dbpool.Exec(
+// SetStatus sets the status of a placement
+func (p *Placement) SetStatus(status string) error {
+	_, err := p.DbPool.Exec(
 		context.Background(),
 		"UPDATE placements SET status = $1 WHERE id = $2",
 		status,
 		p.ID,
 	)
 
-	return err
+	if err != nil {
+		log.Logger.Error("Error setting status", "error", err)
+		return err
+	}
+
+	p.Status = status
+
+	return nil
+}
+
+func (p *Placement) MarkForCleanup() error {
+	_, err := p.DbPool.Exec(
+		context.Background(),
+		"UPDATE placements SET to_cleanup = true WHERE id = $1",
+		p.ID,
+	)
+
+	if err != nil {
+		return err
+	}
+	p.ToCleanup = true
+	return nil
 }

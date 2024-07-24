@@ -8,6 +8,27 @@ on:
 
 jobs:
   pull_request:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout source
+      uses: actions/checkout@v2
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22.x'
+
+    - name: Build all projects
+      run: |
+        make
+
+    - name: Run Makefile linting and tests
+      run: |
+        make test
+
+  build-and-push-metrics:
+    needs:
+      - pull_request
     env:
       IMAGE_NAME: aws-sandbox-metrics
     runs-on: ubuntu-latest
@@ -61,6 +82,8 @@ jobs:
           org.opencontainers.image.revision=${{ github.sha }}
 
   build-and-push-api:
+    needs:
+      - pull_request
     concurrency:
       group: temporary-pr-${{ github.event.number }}
       cancel-in-progress: true
@@ -78,6 +101,8 @@ jobs:
         org.opencontainers.image.revision=${{ github.sha }}
 
   build-and-push-admin:
+    needs:
+      - pull_request
     concurrency:
       group: temporary-pr-${{ github.event.number }}-admin
       cancel-in-progress: true
@@ -95,6 +120,8 @@ jobs:
         org.opencontainers.image.revision=${{ github.sha }}
 
   build-and-push-conan:
+    needs:
+      - pull_request
     concurrency:
       group: temporary-pr-${{ github.event.number }}-conan
       cancel-in-progress: true

@@ -63,6 +63,19 @@ func NewAdminHandler(b *BaseHandler, tokenAuth *jwtauth.JWTAuth) *AdminHandler {
 	}
 }
 
+func multipleKind(resources []v1.ResourceRequest, kind string) bool {
+	count := 0
+	for _, request := range resources {
+		if request.Kind == kind {
+			count++
+			if count > 1 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Request) {
 	placementRequest := &v1.PlacementRequest{}
 	if err := render.Bind(r, placementRequest); err != nil {
@@ -114,6 +127,8 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 	// useful only if multiple resources are created within a placement
 	tocleanup := []models.Deletable{}
 	resources := []any{}
+	multipleOcp := multipleKind(placementRequest.Resources, "OcpSandbox")
+
 	for _, request := range placementRequest.Resources {
 		switch request.Kind {
 		case "AwsSandbox", "AwsAccount", "aws_account":
@@ -163,6 +178,8 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				placementRequest.ServiceUuid,
 				request.CloudSelector,
 				placementRequest.Annotations.Merge(request.Annotations),
+				multipleOcp,
+				r.Context(),
 			)
 			if err != nil {
 				// Cleanup previous accounts
@@ -224,11 +241,12 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			Annotations: placementRequest.Annotations,
 			Request:     placementRequest,
 			Resources:   resources,
+			DbPool:      h.dbpool,
 		},
 	}
 	placement.Resources = resources
 
-	if err := placement.Save(h.dbpool); err != nil {
+	if err := placement.Create(); err != nil {
 		log.Logger.Error("Error saving placement", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
@@ -350,7 +368,8 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Request) {
 	serviceUuid := chi.URLParam(r, "uuid")
 
-	if err := models.DeletePlacementByServiceUuid(h.dbpool, h.awsAccountProvider, h.OcpSandboxProvider, serviceUuid); err != nil {
+	placement, err := models.GetPlacementByServiceUuid(h.dbpool, serviceUuid)
+	if err != nil {
 		if err == pgx.ErrNoRows {
 			w.WriteHeader(http.StatusNotFound)
 
@@ -366,13 +385,31 @@ func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Requ
 			HTTPStatusCode: http.StatusInternalServerError,
 			Message:        "Error deleting placement",
 		})
-		log.Logger.Error("DeletePlacementHandler", "error", err)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	if err := placement.MarkForCleanup(); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error marking placement for cleanup",
+		})
+		return
+	}
+
+	// Plumbing for jests
+	if r.URL.Query().Get("failOnDelete") == "true" {
+		log.Logger.Info("FailOnDelete set to true")
+		placement.FailOnDelete = true
+	}
+
+	placement.SetStatus("deleting")
+	go placement.Delete(h.awsAccountProvider, h.OcpSandboxProvider)
+
+	w.WriteHeader(http.StatusAccepted)
 	render.Render(w, r, &v1.SimpleMessage{
-		Message: "Placement deleted",
+		Message: "Placement marked for deletion",
 	})
 }
 
@@ -494,7 +531,7 @@ func (h *BaseHandler) GetStatusPlacementHandler(w http.ResponseWriter, r *http.R
 
 	if err == nil {
 
-		rjobs, err := placement.GetLastStatus(h.dbpool)
+		rjobs, err := placement.GetLastStatus()
 		if err != nil {
 			log.Logger.Error("Error getting last jobs", "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
