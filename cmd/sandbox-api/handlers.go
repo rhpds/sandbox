@@ -18,19 +18,20 @@ import (
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 
-	"github.com/rhpds/sandbox/internal/api/v1"
+	v1 "github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
 )
 
 type BaseHandler struct {
-	dbpool             *pgxpool.Pool
-	svc                *dynamodb.DynamoDB
-	doc                *openapi3.T
-	oaRouter           oarouters.Router
-	awsAccountProvider models.AwsAccountProvider
-	OcpSandboxProvider models.OcpSandboxProvider
+	dbpool               *pgxpool.Pool
+	svc                  *dynamodb.DynamoDB
+	doc                  *openapi3.T
+	oaRouter             oarouters.Router
+	awsAccountProvider   models.AwsAccountProvider
+	OcpSandboxProvider   models.OcpSandboxProvider
+	azureSandboxProvider models.AzureSandboxProvider
 }
 
 type AdminHandler struct {
@@ -38,14 +39,23 @@ type AdminHandler struct {
 	tokenAuth *jwtauth.JWTAuth
 }
 
-func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider models.OcpSandboxProvider) *BaseHandler {
+func NewBaseHandler(
+	svc *dynamodb.DynamoDB,
+	dbpool *pgxpool.Pool,
+	doc *openapi3.T,
+	oaRouter oarouters.Router,
+	awsAccountProvider models.AwsAccountProvider,
+	OcpSandboxProvider models.OcpSandboxProvider,
+	azureSandboxProvider models.AzureSandboxProvider,
+) *BaseHandler {
 	return &BaseHandler{
-		svc:                svc,
-		dbpool:             dbpool,
-		doc:                doc,
-		oaRouter:           oaRouter,
-		awsAccountProvider: awsAccountProvider,
-		OcpSandboxProvider: OcpSandboxProvider,
+		svc:                  svc,
+		dbpool:               dbpool,
+		doc:                  doc,
+		oaRouter:             oaRouter,
+		awsAccountProvider:   awsAccountProvider,
+		OcpSandboxProvider:   OcpSandboxProvider,
+		azureSandboxProvider: azureSandboxProvider,
 	}
 }
 
@@ -223,6 +233,38 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			}
 			tocleanup = append(tocleanup, &account)
 			resources = append(resources, account)
+
+		case "AzureSandbox":
+			azureSandboxes, err := h.azureSandboxProvider.Request(
+				placementRequest.ServiceUuid,
+				request.Count,
+				placementRequest.Annotations.Merge(request.Annotations),
+			)
+
+			if err != nil {
+				// Cleanup previous Azure sandboxes
+				go func() {
+					for _, sandbox := range tocleanup {
+						if err := sandbox.Delete(); err != nil {
+							log.Logger.Error("Error deleting account", "error", err)
+						}
+					}
+				}()
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					Err:            err,
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error creating placement in Azure",
+				})
+				log.Logger.Error("CreatePlacementHandler", "error", err)
+				return
+			}
+
+			for _, sandbox := range azureSandboxes {
+				log.Logger.Info("Azure sandbox created", "SubscriptionID", sandbox.SubscriptionId, "service_uuid", placementRequest.ServiceUuid)
+				tocleanup = append(tocleanup, &sandbox)
+				resources = append(resources, sandbox)
+			}
 
 		default:
 			w.WriteHeader(http.StatusBadRequest)
