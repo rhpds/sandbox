@@ -389,6 +389,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 		log.Logger.Error("GetPlacementHandler", "error", err)
 		return
 	}
+	// TODO: Azure implementation
 	if err := placement.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpSandboxProvider); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
@@ -447,6 +448,7 @@ func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	placement.SetStatus("deleting")
+	// TODO: Azure implementation
 	go placement.Delete(h.awsAccountProvider, h.OcpSandboxProvider)
 
 	w.WriteHeader(http.StatusAccepted)
