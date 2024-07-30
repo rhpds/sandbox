@@ -331,7 +331,6 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
 	)
-
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			log.Logger.Info("No cluster found")
@@ -377,7 +376,6 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByAnnotations(annot
 		`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1`,
 		annotations,
 	)
-
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			log.Logger.Info("No cluster found", "annotations", annotations)
@@ -428,7 +426,6 @@ func (a *OcpSandbox) Save(dbpool *pgxpool.Pool) error {
 }
 
 func (a *OcpSandboxWithCreds) Update() error {
-
 	if a.ID == 0 {
 		return errors.New("id must be > 0")
 	}
@@ -530,6 +527,7 @@ func (a *OcpSandboxWithCreds) IncrementCleanupCount() error {
 
 	return err
 }
+
 func (a *OcpSandboxProvider) FetchAllByServiceUuid(serviceUuid string) ([]OcpSandbox, error) {
 	accounts := []OcpSandbox{}
 	// Get resource from above 'resources' table
@@ -552,7 +550,6 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuid(serviceUuid string) ([]OcpSan
 		WHERE r.service_uuid = $1`,
 		serviceUuid,
 	)
-
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			log.Logger.Info("No account found", "service_uuid", serviceUuid)
@@ -603,10 +600,9 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 			resources r
 		LEFT JOIN
 			ocp_shared_cluster_configurations oc ON oc.name = r.resource_data->>'ocp_cluster'
-		WHERE r.service_uuid = $1`,
+		WHERE r.service_uuid = $1 AND r.resource_type = 'OcpSandbox'`,
 		serviceUuid, a.VaultSecret,
 	)
-
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			log.Logger.Info("No account found", "service_uuid", serviceUuid)
@@ -656,7 +652,6 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]st
 		`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true ORDER BY random()`,
 		cloud_selector,
 	)
-
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			log.Logger.Info("No cluster found", "cloud_selector", cloud_selector)
@@ -856,7 +851,6 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				nodeMetric, err := clientsetMetrics.MetricsV1beta1().
 					NodeMetricses().
 					Get(context.Background(), node.Name, metav1.GetOptions{})
-
 				if err != nil {
 					log.Logger.Error(
 						"Error Get OCP node metrics v1beta1, ignore the node",
@@ -946,7 +940,6 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 					},
 				},
 			}, metav1.CreateOptions{})
-
 			if err != nil {
 				if strings.Contains(err.Error(), "object is being deleted: namespace") {
 					log.Logger.Warn("Error creating OCP namespace", "error", err)
@@ -983,7 +976,6 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				},
 			},
 		}, metav1.CreateOptions{})
-
 		if err != nil {
 			log.Logger.Error("Error creating OCP service account", "error", err)
 			// Delete the namespace
@@ -1016,7 +1008,6 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				},
 			},
 		}, metav1.CreateOptions{})
-
 		if err != nil {
 			log.Logger.Error("Error creating OCP RoleBind", "error", err)
 			if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
@@ -1100,7 +1091,6 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 
 		secrets, err := clientset.CoreV1().Secrets(namespaceName).List(context.TODO(), metav1.ListOptions{})
-
 		if err != nil {
 			log.Logger.Error("Error listing OCP secrets", "error", err)
 			// Delete the namespace
@@ -1196,7 +1186,6 @@ func guessNextGuid(origGuid string, serviceUuid string, dbpool *pgxpool.Pool, mu
 			AND resource_type = 'OcpSandbox'`,
 			candidateName,
 		).Scan(&rowcount)
-
 		if err != nil {
 			return "", err
 		}
@@ -1212,7 +1201,6 @@ func guessNextGuid(origGuid string, serviceUuid string, dbpool *pgxpool.Pool, mu
 
 func (a *OcpSandboxProvider) Release(service_uuid string) error {
 	accounts, err := a.FetchAllByServiceUuidWithCreds(service_uuid)
-
 	if err != nil {
 		return err
 	}
@@ -1263,7 +1251,6 @@ func (a *OcpSandboxProvider) FetchAll() ([]OcpSandbox, error) {
 		 FROM resources r
 		 LEFT JOIN ocp_shared_cluster_configurations oc ON oc.name = r.resource_data->>'ocp_cluster'`,
 	)
-
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			log.Logger.Info("No account found")
@@ -1294,7 +1281,6 @@ func (a *OcpSandboxProvider) FetchAll() ([]OcpSandbox, error) {
 }
 
 func (account *OcpSandboxWithCreds) Delete() error {
-
 	if account.ID == 0 {
 		return errors.New("resource ID must be > 0")
 	}
@@ -1343,7 +1329,6 @@ func (account *OcpSandboxWithCreds) Delete() error {
 			"SELECT resource_data->>'ocp_cluster' FROM resources WHERE id = $1",
 			account.ID,
 		).Scan(&account.OcpSharedClusterConfigurationName)
-
 		if err != nil {
 			if err == pgx.ErrNoRows {
 				log.Logger.Error("Ocp cluster doesn't exist for resource", "name", account.Name)
