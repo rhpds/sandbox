@@ -18,4 +18,3 @@ jsonpath "$.access_token_exp" isString
 
 PUT {{host}}/api/v1/placements/{{uuid}}/{{action}}
 Authorization: Bearer {{access_token}}
-HTTP 202
