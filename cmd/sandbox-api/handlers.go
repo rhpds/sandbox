@@ -383,7 +383,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 		log.Logger.Error("GetPlacementHandler", "error", err)
 		return
 	}
-	// TODO: Azure implementation
+	// TODO: Add Azure provider
 	if err := placement.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpSandboxProvider); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{

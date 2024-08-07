@@ -14,7 +14,7 @@ type poolClient struct {
 }
 
 // initPoolClient initializes a new Subscription Pool management API client.
-func initPoolClient(projectTag string, poolId string, poolAPISecret string) *poolClient {
+func InitPoolClient(projectTag string, poolId string, poolAPISecret string) *poolClient {
 	return &poolClient{
 		projectTag:    projectTag,
 		poolID:        poolId,
@@ -23,7 +23,7 @@ func initPoolClient(projectTag string, poolId string, poolAPISecret string) *poo
 }
 
 // allocatePool requests a new Subscription from the pool.
-func (pc *poolClient) allocatePool() (string, error) {
+func (pc *poolClient) AllocatePool() (string, error) {
 	restClient := &http.Client{
 		Timeout: 10 * time.Second,
 	}
@@ -55,7 +55,7 @@ func (pc *poolClient) allocatePool() (string, error) {
 }
 
 // releasePool releases allocated Subscription back to pool.
-func (pc *poolClient) releasePool() error {
+func (pc *poolClient) ReleasePool() error {
 	restClient := &http.Client{
 		Timeout: 10 * time.Second,
 	}

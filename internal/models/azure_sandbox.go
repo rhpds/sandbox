@@ -7,10 +7,11 @@ import (
 
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/rhpds/sandbox/internal/api/azure"
 	"github.com/rhpds/sandbox/internal/log"
 )
 
-// TODO: Check if sturct's fields are used
+// TODO: Check if struct's fields are used
 type AzureSandboxProvider struct {
 	DbPool      *pgxpool.Pool
 	VaultSecret string
@@ -51,12 +52,12 @@ func (a *AzureSandboxProvider) Request(
 ) (AzureSandboxWithCreds, error) {
 	azureSandbox := AzureSandboxWithCreds{
 		AzureSandbox: AzureSandbox{
-			SubscriptionId: "pool-00-31",
-			Name:           "sandbox",
-			Kind:           "AzureSandbox",
-			ServiceUuid:    serviceUuid,
-			Annotations:    annotations,
-			Status:         "initializing",
+			//			SubscriptionId: "pool-00-31",
+			Name:        "sandbox",
+			Kind:        "AzureSandbox",
+			ServiceUuid: serviceUuid,
+			Annotations: annotations,
+			Status:      "initializing",
 		},
 		Provider: a,
 	}
@@ -67,15 +68,17 @@ func (a *AzureSandboxProvider) Request(
 		return AzureSandboxWithCreds{}, err
 	}
 
+	go azureSandbox.Create()
+
 	// TODO: Do provisioning....
 	//
 
-	azureSandbox.Status = "success"
-	err = azureSandbox.Save()
-	if err != nil {
-		log.Logger.Error("Can't update Azure Sandbox status", "error", err)
-		return AzureSandboxWithCreds{}, err
-	}
+	// azureSandbox.Status = "success"
+	// err = azureSandbox.Save()
+	// if err != nil {
+	// 	log.Logger.Error("Can't update Azure Sandbox status", "error", err)
+	// 	return AzureSandboxWithCreds{}, err
+	// }
 
 	return azureSandbox, nil
 }
@@ -144,15 +147,15 @@ func (a *AzureSandboxProvider) Release(serviceUuid string) error {
 	var errorHappened error
 
 	for _, sandbox := range sandboxes {
-		//		if sandbox.Status != "error" &&
-		//			sandbox.Status != "scheduling" &&
-		//			sandbox.Status != "initializing" {
-		//			// If the sandbox is not in error and the namespace is empty, throw an error
-		//			errorHappened = fmt.Errorf("azure sandbox state is not valid for delete")
-		//			log.Logger.Error("Azure Sandbox state is not valid for delete", "error", sandbox)
-		//			continue
-		//		}
-		//
+		if sandbox.Status == "error" ||
+			sandbox.Status == "scheduling" ||
+			sandbox.Status == "initializing" {
+			// If the sandbox is not in error and the namespace is empty, throw an error
+			errorHappened = fmt.Errorf("azure sandbox state is not valid for delete")
+			log.Logger.Error("Azure Sandbox state is not valid for delete", "error", sandbox)
+			continue
+		}
+
 		sandbox.Provider = a
 		if err := sandbox.Delete(); err != nil {
 			errorHappened = err
@@ -236,18 +239,54 @@ func (sb *AzureSandboxWithCreds) Save() error {
 	return nil
 }
 
+func (sb *AzureSandboxWithCreds) Create() {
+	// TODO: Implement provisioning here
+	poolClient := azure.InitPoolClient(
+		projectTagPrefix+"test",
+		azurePoolId,
+		azurePoolApiSecret,
+	)
+
+	var err error
+	sb.SubscriptionId, err = poolClient.AllocatePool()
+	if err != nil {
+		log.Logger.Error("Error allocating Azure sandbox", "error", err)
+		return
+	}
+
+	fmt.Print("\n\nPool Name: ", sb.SubscriptionId, "\n\n")
+
+	sb.Status = "success"
+	err = sb.Save()
+	if err != nil {
+		log.Logger.Error("Can't update Azure Sandbox status", "error", err)
+		return
+	}
+}
+
 // models.Deletable interface implementation
 func (sb *AzureSandboxWithCreds) Delete() error {
 	fmt.Printf("\n\nSandbox: %s (%d) for deletion!\n\n", sb.Name, sb.Id)
 
 	// TODO: Implement cleanup here
-	_, err := sb.Provider.DbPool.Exec(
+	poolClient := azure.InitPoolClient(
+		projectTagPrefix+"test",
+		azurePoolId,
+		azurePoolApiSecret,
+	)
+
+	err := poolClient.ReleasePool()
+	if err != nil {
+		log.Logger.Error("Error releasing Azure sandbox", "error", err)
+	}
+
+	_, err = sb.Provider.DbPool.Exec(
 		context.Background(),
 		`DELETE FROM resources WHERE id = $1`,
 		sb.Id,
 	)
 	if err != nil {
-		return fmt.Errorf("faild to remove resource: %w", err)
+		return fmt.Errorf("failed to remove resource: %w", err)
 	}
 
 	return nil
