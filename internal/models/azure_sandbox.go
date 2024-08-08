@@ -68,17 +68,8 @@ func (a *AzureSandboxProvider) Request(
 		return AzureSandboxWithCreds{}, err
 	}
 
+	// Create the sandbox asynchronously
 	go azureSandbox.Create()
-
-	// TODO: Do provisioning....
-	//
-
-	// azureSandbox.Status = "success"
-	// err = azureSandbox.Save()
-	// if err != nil {
-	// 	log.Logger.Error("Can't update Azure Sandbox status", "error", err)
-	// 	return AzureSandboxWithCreds{}, err
-	// }
 
 	return azureSandbox, nil
 }
@@ -242,7 +233,7 @@ func (sb *AzureSandboxWithCreds) Save() error {
 func (sb *AzureSandboxWithCreds) Create() {
 	// TODO: Implement provisioning here
 	poolClient := azure.InitPoolClient(
-		projectTagPrefix+"test",
+		projectTagPrefix+"test", // TODO: Proper project tag
 		azurePoolId,
 		azurePoolApiSecret,
 	)
@@ -251,10 +242,44 @@ func (sb *AzureSandboxWithCreds) Create() {
 	sb.SubscriptionId, err = poolClient.AllocatePool()
 	if err != nil {
 		log.Logger.Error("Error allocating Azure sandbox", "error", err)
-		return
+		return // TODO: Set error status
 	}
 
-	fmt.Print("\n\nPool Name: ", sb.SubscriptionId, "\n\n")
+	sandboxClient := azure.InitSandboxClient(
+		azure.AzureCredentials{
+			TenantID: azureTenantId,
+			ClientID: azureClientId,
+			Secret:   azureSecret,
+		},
+	)
+
+	sandboxInfo, err := sandboxClient.CreateSandboxEnvironment(
+		sb.SubscriptionId,
+		azureRequesterEmail,
+		sb.Annotations["guid"],
+		azureCostCenter,
+	)
+	if err != nil {
+		log.Logger.Error("Error creating Azure sandbox", "error", err)
+		return // TODO: Set error status
+	}
+
+	// Summary
+	fmt.Printf("\n\n"+
+		"Sandbox Info:\n"+
+		"\tSubscription Name: %s\n"+
+		"\tSubscription ID: %s\n"+
+		"\tResource Group Name: %s\n"+
+		"\tApp ID: %s\n"+
+		"\tDisplay Name: %s\n"+
+		"\tPassword: %s\n\n",
+		sandboxInfo.SubscriptionName,
+		sandboxInfo.SubscriptionId,
+		sandboxInfo.ResourceGroupName,
+		sandboxInfo.AppID,
+		sandboxInfo.DisplayName,
+		sandboxInfo.Password,
+	)
 
 	sb.Status = "success"
 	err = sb.Save()
@@ -269,13 +294,33 @@ func (sb *AzureSandboxWithCreds) Delete() error {
 	fmt.Printf("\n\nSandbox: %s (%d) for deletion!\n\n", sb.Name, sb.Id)
 
 	// TODO: Implement cleanup here
+	// Sandbox cleanup can take time, so probably we should run it asynchronously
+	// at least yielding control and check for delete process complete periodically
+	// if it possible via API
+
+	sandboxClient := azure.InitSandboxClient(
+		azure.AzureCredentials{
+			TenantID: azureTenantId,
+			ClientID: azureClientId,
+			Secret:   azureSecret,
+		},
+	)
+
+	err := sandboxClient.CleanupSandboxEnvironment(
+		sb.SubscriptionId,
+		sb.Annotations["guid"],
+	)
+	if err != nil {
+		log.Logger.Error("Error cleaning up Azure sandbox", "error", err)
+	}
+
 	poolClient := azure.InitPoolClient(
 		projectTagPrefix+"test",
 		azurePoolId,
 		azurePoolApiSecret,
 	)
 
-	err := poolClient.ReleasePool()
+	err = poolClient.ReleasePool()
 	if err != nil {
 		log.Logger.Error("Error releasing Azure sandbox", "error", err)
 	}
