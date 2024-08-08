@@ -1,3 +1,4 @@
 build/sandbox-*
 deploy/lambda/*.zip
 .dev.*
+.vscode
