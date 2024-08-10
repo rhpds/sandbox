@@ -32,22 +32,24 @@ Authorization: Bearer {{access_token}}
   "resources": [
     {
       "kind": "AzureSandbox",
-      "count": 1,
       "annotations": {
-        "purpose": "backend"
+        "purpose": "backend",
+        "requester": "{{requester}}",
+        "cost_center": "{{cost_center}}",
+        "domain": "{{domain}}"
       }
     }
   ],
   "annotations": {
-    "guid": "testg"
+    "guid": "st6zn"
   }
 }
 HTTP 200
 [Captures]
-account: jsonpath "$.Placement.resources[0].subscription_id"
+account: jsonpath "$.Placement.resources[0].subscription_name"
 [Asserts]
 jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 jsonpath "$.Placement.resources" count == 1
-jsonpath "$.Placement.resources[0].annotations.guid" == "testg"
+jsonpath "$.Placement.resources[0].annotations.guid" == "st6zn"
 jsonpath "$.Placement.resources[0].annotations.purpose" == "backend"

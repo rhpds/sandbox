@@ -1,13 +1,11 @@
 package azure
 
 const (
-	sandboxRoleName   = "Custom-Owner (Block Billing and Subscription deletion)"
-	rgNamePrefix      = "openenv-"
-	rgDefaultLocation = "eastus"
-	// TODO: Set the default domain (if needed)
-	dnsZoneDefaultDomain = ""
-	dnsDefaultLocation   = "Global"
-	defaultAppPrefix     = "api://openenv-"
+	sandboxRoleName    = "Custom-Owner (Block Billing and Subscription deletion)"
+	rgNamePrefix       = "openenv-"
+	rgDefaultLocation  = "eastus"
+	dnsDefaultLocation = "Global"
+	defaultAppPrefix   = "api://openenv-"
 )
 
 type AzureCredentials struct {
@@ -54,6 +52,7 @@ func (sc *SandboxClient) CreateSandboxEnvironment(
 	requestorEmail string,
 	guid string,
 	costCenter string,
+	zoneDomain string,
 ) (*SandboxInfo, error) {
 	adUser, err := sc.graphClient.getUser(requestorEmail)
 	if err != nil {
@@ -80,7 +79,7 @@ func (sc *SandboxClient) CreateSandboxEnvironment(
 		return nil, err
 	}
 
-	err = sc.createDNSZone(subscription.SubscriptionId, guid, rgName)
+	err = sc.createDNSZone(subscription.SubscriptionId, guid, rgName, zoneDomain)
 	if err != nil {
 		return nil, err
 	}
@@ -243,13 +242,13 @@ func (sc *SandboxClient) deleteResourceGroups(subscriptionId string) error {
 	return nil
 }
 
-func (sc *SandboxClient) createDNSZone(subscriptionId string, guid string, rgName string) error {
+func (sc *SandboxClient) createDNSZone(subscriptionId string, guid string, rgName string, zoneDomain string) error {
 	dnsTags := make(map[string]string)
 	dnsTags["GUID"] = guid
 	dnsZoneParams := dnsZoneParameters{
 		SubscriptionID:    subscriptionId,
 		ResourceGroupName: rgName,
-		ZoneName:          guid + dnsZoneDefaultDomain,
+		ZoneName:          guid + "." + zoneDomain,
 		Location:          dnsDefaultLocation,
 		Tags:              dnsTags,
 	}

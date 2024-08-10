@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -11,10 +12,19 @@ import (
 	"github.com/rhpds/sandbox/internal/log"
 )
 
-// TODO: Check if struct's fields are used
+const (
+	projectTagPrefix = "sandbox-"
+	azurePoolId      = "01"
+)
+
 type AzureSandboxProvider struct {
 	DbPool      *pgxpool.Pool
 	VaultSecret string
+
+	azureTenantId      string
+	azureClientId      string
+	azureSecret        string
+	azurePoolApiSecret string
 }
 
 type AzureSandboxWithCreds struct {
@@ -25,25 +35,47 @@ type AzureSandboxWithCreds struct {
 }
 
 type AzureSandbox struct {
-	Id             int         `json:"id,omitempty"`
-	Name           string      `json:"name"`
-	Kind           string      `json:"kind"` // AzureSandbox
-	ServiceUuid    string      `json:"service_uuid"`
-	Status         string      `json:"status"`
-	CleanupCount   int         `json:"cleanup_count"`
-	SubscriptionId string      `json:"subscription_id"`
-	Annotations    Annotations `json:"annotations"`
-	ToCleanup      bool        `json:"to_cleanup"`
+	Id                int         `json:"id,omitempty"`
+	Name              string      `json:"name"`
+	Kind              string      `json:"kind"` // AzureSandbox
+	ServiceUuid       string      `json:"service_uuid"`
+	Status            string      `json:"status"`
+	CleanupCount      int         `json:"cleanup_count"`
+	Annotations       Annotations `json:"annotations"`
+	ToCleanup         bool        `json:"to_cleanup"`
+	SubscriptionName  string      `json:"subscription_name"`
+	SubscriptionId    string      `json:"subscription_id"`
+	ResourceGroupName string      `json:"resource_group_name"`
+	AppID             string      `json:"app_id"`
+	DisplayName       string      `json:"display_name"`
 }
 
 func NewAzureSandboxProvider(
 	dbPool *pgxpool.Pool,
 	vaultSecret string,
-) AzureSandboxProvider {
-	return AzureSandboxProvider{
+) (AzureSandboxProvider, error) {
+	provider := AzureSandboxProvider{
 		DbPool:      dbPool,
 		VaultSecret: vaultSecret,
 	}
+
+	if provider.azureTenantId = os.Getenv("AZURE_TENANT_ID"); provider.azureTenantId == "" {
+		return AzureSandboxProvider{}, fmt.Errorf("AZURE_TENANT_ID is not set")
+	}
+
+	if provider.azureClientId = os.Getenv("AZURE_CLIENT_ID"); provider.azureClientId == "" {
+		return AzureSandboxProvider{}, fmt.Errorf("AZURE_CLIENT_ID is not set")
+	}
+
+	if provider.azureSecret = os.Getenv("AZURE_SECRET"); provider.azureSecret == "" {
+		return AzureSandboxProvider{}, fmt.Errorf("AZURE_SECRET is not set")
+	}
+
+	if provider.azurePoolApiSecret = os.Getenv("AZURE_POOL_API_SECRET"); provider.azurePoolApiSecret == "" {
+		return AzureSandboxProvider{}, fmt.Errorf("AZURE_POOL_API_SECRET is not set")
+	}
+
+	return provider, nil
 }
 
 func (a *AzureSandboxProvider) Request(
@@ -129,6 +161,8 @@ func (a *AzureSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string
 	return sandboxes, nil
 }
 
+// TODO: Fix indefenite loop when error during deletion happend
+// TODO: Run it in async way
 func (a *AzureSandboxProvider) Release(serviceUuid string) error {
 	sandboxes, err := a.FetchAllByServiceUuidWithCreds(serviceUuid)
 	if err != nil {
@@ -235,11 +269,11 @@ func (sb *AzureSandboxWithCreds) Create() {
 	poolClient := azure.InitPoolClient(
 		projectTagPrefix+"test", // TODO: Proper project tag
 		azurePoolId,
-		azurePoolApiSecret,
+		sb.Provider.azurePoolApiSecret,
 	)
 
 	var err error
-	sb.SubscriptionId, err = poolClient.AllocatePool()
+	sb.SubscriptionName, err = poolClient.AllocatePool()
 	if err != nil {
 		log.Logger.Error("Error allocating Azure sandbox", "error", err)
 		return // TODO: Set error status
@@ -247,17 +281,18 @@ func (sb *AzureSandboxWithCreds) Create() {
 
 	sandboxClient := azure.InitSandboxClient(
 		azure.AzureCredentials{
-			TenantID: azureTenantId,
-			ClientID: azureClientId,
-			Secret:   azureSecret,
+			TenantID: sb.Provider.azureTenantId,
+			ClientID: sb.Provider.azureClientId,
+			Secret:   sb.Provider.azureSecret,
 		},
 	)
 
 	sandboxInfo, err := sandboxClient.CreateSandboxEnvironment(
-		sb.SubscriptionId,
-		azureRequesterEmail,
+		sb.SubscriptionName,
+		sb.Annotations["requester"],
 		sb.Annotations["guid"],
-		azureCostCenter,
+		sb.Annotations["cost_center"],
+		sb.Annotations["domain"],
 	)
 	if err != nil {
 		log.Logger.Error("Error creating Azure sandbox", "error", err)
@@ -281,6 +316,16 @@ func (sb *AzureSandboxWithCreds) Create() {
 		sandboxInfo.Password,
 	)
 
+	sb.SubscriptionId = sandboxInfo.SubscriptionId
+	sb.ResourceGroupName = sandboxInfo.ResourceGroupName
+	sb.AppID = sandboxInfo.AppID
+	sb.DisplayName = sandboxInfo.DisplayName
+	sb.Credentials = []any{
+		map[string]string{
+			"password": sandboxInfo.Password,
+		},
+	}
+
 	sb.Status = "success"
 	err = sb.Save()
 	if err != nil {
@@ -300,14 +345,14 @@ func (sb *AzureSandboxWithCreds) Delete() error {
 
 	sandboxClient := azure.InitSandboxClient(
 		azure.AzureCredentials{
-			TenantID: azureTenantId,
-			ClientID: azureClientId,
-			Secret:   azureSecret,
+			TenantID: sb.Provider.azureTenantId,
+			ClientID: sb.Provider.azureClientId,
+			Secret:   sb.Provider.azureSecret,
 		},
 	)
 
 	err := sandboxClient.CleanupSandboxEnvironment(
-		sb.SubscriptionId,
+		sb.SubscriptionName,
 		sb.Annotations["guid"],
 	)
 	if err != nil {
@@ -317,7 +362,7 @@ func (sb *AzureSandboxWithCreds) Delete() error {
 	poolClient := azure.InitPoolClient(
 		projectTagPrefix+"test",
 		azurePoolId,
-		azurePoolApiSecret,
+		sb.Provider.azurePoolApiSecret,
 	)
 
 	err = poolClient.ReleasePool()

@@ -134,7 +134,11 @@ func main() {
 	// ---------------------------------------------------------------------
 	// Azure
 	// ---------------------------------------------------------------------
-	azureSandboxProvider := models.NewAzureSandboxProvider(dbPool, vaultSecret)
+	azureSandboxProvider, err := models.NewAzureSandboxProvider(dbPool, vaultSecret)
+	if err != nil {
+		log.Logger.Error("Error creating AzureSandboxProvider", "error", err)
+		os.Exit(1)
+	}
 
 	// ---------------------------------------------------------------------
 	// Setup JWT
