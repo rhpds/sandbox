@@ -52,9 +52,12 @@ func main() {
 	}
 
 	pw := strings.Trim(string(bytepw), "\r\n\t ")
-	fmt.Println("Enter Claims in the JSON format:")
-	fmt.Println(`for example: {"kind": "login", "name": "gucore", "role": "admin"}`)
-	fmt.Println(`Finish with [Ctrl+D]`)
+	// Print help only if stdin is a terminal
+	if term.IsTerminal(int(syscall.Stdin)) {
+		fmt.Println("Enter Claims in the JSON format:")
+		fmt.Println(`for example: {"kind": "login", "name": "gucore", "role": "admin"}`)
+		fmt.Println(`Finish with [Ctrl+D]`)
+	}
 	claims, err := io.ReadAll(os.Stdin)
 
 	// json unmarshal claims
@@ -84,5 +87,9 @@ func main() {
 
 	tokenAuth := jwtauth.New("HS256", []byte(pw), nil)
 	_, tokenString, _ := tokenAuth.Encode(claimsMap)
-	fmt.Printf("token:\n%s\n", tokenString)
+	if term.IsTerminal(int(syscall.Stdin)) {
+		fmt.Printf("token:\n%s\n", tokenString)
+	} else {
+		fmt.Printf("%s\n", tokenString)
+	}
 }

@@ -12,7 +12,7 @@ import (
 )
 
 func (h *BaseHandler) CreateOcpSharedClusterConfigurationHandler(w http.ResponseWriter, r *http.Request) {
-	ocpSharedClusterConfiguration := &models.OcpSharedClusterConfiguration{}
+	ocpSharedClusterConfiguration := models.MakeOcpSharedClusterConfiguration()
 
 	if err := render.Bind(r, ocpSharedClusterConfiguration); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -235,5 +235,90 @@ func (h *BaseHandler) DeleteOcpSharedClusterConfigurationHandler(w http.Response
 	w.WriteHeader(http.StatusOK)
 	render.Render(w, r, &v1.SimpleMessage{
 		Message: "OCP shared cluster configuration deleted",
+	})
+}
+
+func (h *BaseHandler) UpdateOcpSharedClusterConfigurationHandler(w http.ResponseWriter, r *http.Request) {
+	// Get the name of the OCP shared cluster configuration from the URL
+	name := chi.URLParam(r, "name")
+
+	// Get the OCP shared cluster configuration from the database
+	ocpSharedClusterConfiguration, err := h.OcpSandboxProvider.GetOcpSharedClusterConfigurationByName(name)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "OCP shared cluster configuration not found",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to get OCP shared cluster configuration",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	// unmarshal the request body
+	input := v1.UpdateOcpSharedConfigurationRequest{}
+	if err := render.Bind(r, &input); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid request payload",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	if input.DefaultSandboxQuota != nil {
+		ocpSharedClusterConfiguration.DefaultSandboxQuota = *&input.DefaultSandboxQuota
+	}
+
+	if input.QuotaRequired != nil {
+		ocpSharedClusterConfiguration.QuotaRequired = *input.QuotaRequired
+	}
+
+	if input.StrictDefaultSandboxQuota != nil {
+		ocpSharedClusterConfiguration.StrictDefaultSandboxQuota = *input.StrictDefaultSandboxQuota
+	}
+
+	if input.Annotations != nil {
+		ocpSharedClusterConfiguration.Annotations = *input.Annotations
+	}
+
+	if input.Token != nil {
+		ocpSharedClusterConfiguration.Token = *input.Token
+	}
+
+	if input.AdditionalVars != nil {
+		ocpSharedClusterConfiguration.AdditionalVars = input.AdditionalVars
+	}
+
+	if input.MaxMemoryUsagePercentage != nil {
+		ocpSharedClusterConfiguration.MaxMemoryUsagePercentage = *input.MaxMemoryUsagePercentage
+	}
+
+	if input.MaxCpuUsagePercentage != nil {
+		ocpSharedClusterConfiguration.MaxCpuUsagePercentage = *input.MaxCpuUsagePercentage
+	}
+
+	if err := ocpSharedClusterConfiguration.Save(); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to update OCP shared cluster configuration",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &v1.SimpleMessage{
+		Message: "OCP shared cluster configuration updated",
 	})
 }

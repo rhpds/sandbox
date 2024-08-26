@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rhpds/sandbox/internal/models"
+	v1 "k8s.io/api/core/v1"
 )
 
 type Error struct {
@@ -102,10 +103,12 @@ func (p *PlacementResponse) Render(w http.ResponseWriter, r *http.Request) error
 }
 
 type ResourceRequest struct {
-	Kind          string             `json:"kind"`
-	Count         int                `json:"count"`
-	Annotations   models.Annotations `json:"annotations,omitempty"`
-	CloudSelector models.Annotations `json:"cloud_selector,omitempty"`
+	Kind           string             `json:"kind"`
+	Count          int                `json:"count"`
+	Annotations    models.Annotations `json:"annotations,omitempty"`
+	CloudSelector  models.Annotations `json:"cloud_selector,omitempty"`
+	Quota          *v1.ResourceList   `json:"quota,omitempty"`
+	RequestedQuota *v1.ResourceQuota  `json:"-"` // plumbing
 }
 
 type ReservationResponse struct {
@@ -126,12 +129,15 @@ func (p *PlacementRequest) Bind(r *http.Request) error {
 	if len(p.Resources) == 0 {
 		return errors.New("no resources specified")
 	}
-	for i := range p.Resources {
+	for i, _ := range p.Resources {
 		if p.Resources[i].Annotations == nil {
 			p.Resources[i].Annotations = make(models.Annotations)
 		}
 		if p.Resources[i].CloudSelector == nil {
 			p.Resources[i].CloudSelector = make(models.Annotations)
+		}
+		if p.Resources[i].Quota == nil {
+			p.Resources[i].Quota = &v1.ResourceList{}
 		}
 	}
 
@@ -155,5 +161,20 @@ func (t *TokenResponse) Render(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (p *ReservationResponse) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
+type UpdateOcpSharedConfigurationRequest struct {
+	DefaultSandboxQuota       *v1.ResourceQuota   `json:"default_sandbox_quota,omitempty"`
+	QuotaRequired             *bool               `json:"quota_required"`
+	StrictDefaultSandboxQuota *bool               `json:"strict_default_sandbox_quota"`
+	Annotations               *models.Annotations `json:"annotations,omitempty"`
+	Token                     *string             `json:"token,omitempty"`
+	AdditionalVars            map[string]any      `json:"additional_vars,omitempty"`
+	MaxMemoryUsagePercentage  *float64            `json:"max_memory_usage_percentage,omitempty"`
+	MaxCpuUsagePercentage     *float64            `json:"max_cpu_usage_percentage,omitempty"`
+}
+
+func (j *UpdateOcpSharedConfigurationRequest) Bind(r *http.Request) error {
 	return nil
 }
