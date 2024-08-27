@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 
 	"github.com/jackc/pgx/v4"
@@ -15,6 +16,9 @@ import (
 const (
 	projectTagPrefix = "sandbox-"
 	azurePoolId      = "01"
+
+	poolPrefix = "pool-01-"
+	poolSize   = 10
 )
 
 type AzureSandboxProvider struct {
@@ -82,10 +86,14 @@ func (a *AzureSandboxProvider) Request(
 	serviceUuid string,
 	annotations Annotations,
 ) (AzureSandboxWithCreds, error) {
+
+	// TODO: What name should be created for the sanbox?
+	sandboxName := fmt.Sprintf("%04d", rand.Intn(900))
+
 	azureSandbox := AzureSandboxWithCreds{
 		AzureSandbox: AzureSandbox{
 			//			SubscriptionId: "pool-00-31",
-			Name:        "sandbox",
+			Name:        sandboxName,
 			Kind:        "AzureSandbox",
 			ServiceUuid: serviceUuid,
 			Annotations: annotations,
@@ -161,8 +169,7 @@ func (a *AzureSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string
 	return sandboxes, nil
 }
 
-// TODO: Fix indefenite loop when error during deletion happend
-// TODO: Run it in async way
+// TODO: Are we removing sandboxes in "error" state?
 func (a *AzureSandboxProvider) Release(serviceUuid string) error {
 	sandboxes, err := a.FetchAllByServiceUuidWithCreds(serviceUuid)
 	if err != nil {
@@ -172,15 +179,6 @@ func (a *AzureSandboxProvider) Release(serviceUuid string) error {
 	var errorHappened error
 
 	for _, sandbox := range sandboxes {
-		if sandbox.Status == "error" ||
-			sandbox.Status == "scheduling" ||
-			sandbox.Status == "initializing" {
-			// If the sandbox is not in error and the namespace is empty, throw an error
-			errorHappened = fmt.Errorf("azure sandbox state is not valid for delete")
-			log.Logger.Error("Azure Sandbox state is not valid for delete", "error", sandbox)
-			continue
-		}
-
 		sandbox.Provider = a
 		if err := sandbox.Delete(); err != nil {
 			errorHappened = err
@@ -264,39 +262,215 @@ func (sb *AzureSandboxWithCreds) Save() error {
 	return nil
 }
 
-func (sb *AzureSandboxWithCreds) Create() {
-	// TODO: Implement provisioning here
-	poolClient := azure.InitPoolClient(
-		projectTagPrefix+"test", // TODO: Proper project tag
-		azurePoolId,
-		sb.Provider.azurePoolApiSecret,
+func (sb *AzureSandboxWithCreds) setStatus(status string) error {
+	_, err := sb.Provider.DbPool.Exec(
+		context.Background(),
+		fmt.Sprintf(`UPDATE resources
+			SET status = $1,
+			resource_data['status'] = to_jsonb('%s'::text)
+			WHERE id = $2`, status),
+		status, sb.Id,
 	)
 
-	var err error
-	sb.SubscriptionName, err = poolClient.AllocatePool()
-	if err != nil {
-		log.Logger.Error("Error allocating Azure sandbox", "error", err)
-		return // TODO: Set error status
+	return err
+}
+
+// TODO: I think this function should be part of the sb provider
+func (sb *AzureSandboxWithCreds) allocatePool() error {
+	pool := map[string]bool{}
+
+	// TODO: These names are hard codded and should be stored somewhere
+	// at the config file. So, the pool variable should be initialized using
+	// configuration, not generate on the fly.
+	for i := 1; i <= poolSize; i++ {
+		pool[fmt.Sprintf("%s%03d", poolPrefix, i)] = false
 	}
 
-	sandboxClient := azure.InitSandboxClient(
-		azure.AzureCredentials{
-			TenantID: sb.Provider.azureTenantId,
-			ClientID: sb.Provider.azureClientId,
-			Secret:   sb.Provider.azureSecret,
-		},
-	)
+	// TODO: Mutex is required here to properly alocate pool
+	// sb.mu.Lock()
+	// defer sb.mu.Unlock()
 
-	sandboxInfo, err := sandboxClient.CreateSandboxEnvironment(
-		sb.SubscriptionName,
-		sb.Annotations["requester"],
-		sb.Annotations["guid"],
-		sb.Annotations["cost_center"],
-		sb.Annotations["domain"],
-	)
+	rows, err := sb.Provider.DbPool.Query(
+		context.Background(),
+		`SELECT resource_data ->> 'subscription_name' FROM resources WHERE status = 'success'`)
 	if err != nil {
-		log.Logger.Error("Error creating Azure sandbox", "error", err)
-		return // TODO: Set error status
+		return fmt.Errorf("can't get retrieve about allocated pools")
+	}
+	defer rows.Close()
+
+	allocatedPools := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return fmt.Errorf("illegal pool name retrieved: %w", err)
+		}
+		allocatedPools = append(allocatedPools, name)
+	}
+	if err = rows.Err(); err != nil {
+		return fmt.Errorf("can't get allocated pool names: %w", err)
+	}
+
+	for _, name := range allocatedPools {
+		if _, exists := pool[name]; exists {
+			pool[name] = true
+		} else {
+			log.Logger.Warn("Incorrect pool name found", "warning", name)
+			continue
+		}
+	}
+
+	poolName := make([]string, 0, len(pool))
+	for k, v := range pool {
+		if !v {
+			poolName = append(poolName, k)
+		}
+	}
+
+	if len(poolName) == 0 {
+		return fmt.Errorf("no available pools")
+	}
+
+	sb.SubscriptionName = poolName[rand.Intn(len(poolName))]
+	return sb.Save()
+}
+
+// func (sb *AzureSandboxWithCreds) Create() {
+// 	// TODO: Implement provisioning here
+// 	poolClient := azure.InitPoolClient(
+// 		projectTagPrefix+"test", // TODO: Proper project tag
+// 		azurePoolId,
+// 		sb.Provider.azurePoolApiSecret,
+// 	)
+
+// 	var err error
+// 	sb.SubscriptionName, err = poolClient.AllocatePool()
+// 	if err != nil {
+// 		log.Logger.Error("Error allocating Azure sandbox", "error", err)
+// 		return // TODO: Set error status
+// 	}
+
+// 	sandboxClient := azure.InitSandboxClient(
+// 		azure.AzureCredentials{
+// 			TenantID: sb.Provider.azureTenantId,
+// 			ClientID: sb.Provider.azureClientId,
+// 			Secret:   sb.Provider.azureSecret,
+// 		},
+// 	)
+
+// 	sandboxInfo, err := sandboxClient.CreateSandboxEnvironment(
+// 		sb.SubscriptionName,
+// 		sb.Annotations["requester"],
+// 		sb.Annotations["guid"],
+// 		sb.Annotations["cost_center"],
+// 		sb.Annotations["domain"],
+// 	)
+// 	if err != nil {
+// 		log.Logger.Error("Error creating Azure sandbox", "error", err)
+// 		return // TODO: Set error status
+// 	}
+
+// 	// Summary
+// 	fmt.Printf("\n\n"+
+// 		"Sandbox Info:\n"+
+// 		"\tSubscription Name: %s\n"+
+// 		"\tSubscription ID: %s\n"+
+// 		"\tResource Group Name: %s\n"+
+// 		"\tApp ID: %s\n"+
+// 		"\tDisplay Name: %s\n"+
+// 		"\tPassword: %s\n\n",
+// 		sandboxInfo.SubscriptionName,
+// 		sandboxInfo.SubscriptionId,
+// 		sandboxInfo.ResourceGroupName,
+// 		sandboxInfo.AppID,
+// 		sandboxInfo.DisplayName,
+// 		sandboxInfo.Password,
+// 	)
+
+// 	sb.SubscriptionId = sandboxInfo.SubscriptionId
+// 	sb.ResourceGroupName = sandboxInfo.ResourceGroupName
+// 	sb.AppID = sandboxInfo.AppID
+// 	sb.DisplayName = sandboxInfo.DisplayName
+// 	sb.Credentials = []any{
+// 		map[string]string{
+// 			"password": sandboxInfo.Password,
+// 		},
+// 	}
+
+// 	sb.Status = "success"
+// 	err = sb.Save()
+// 	if err != nil {
+// 		log.Logger.Error("Can't update Azure Sandbox status", "error", err)
+// 		return
+// 	}
+// }
+
+// // models.Deletable interface implementation
+// func (sb *AzureSandboxWithCreds) Delete() error {
+// 	fmt.Printf("\n\nSandbox: %s (%d) for deletion!\n\n", sb.Name, sb.Id)
+
+// 	// TODO: Implement cleanup here
+// 	// Sandbox cleanup can take time, so probably we should run it asynchronously
+// 	// at least yielding control and check for delete process complete periodically
+// 	// if it possible via API
+
+// 	sandboxClient := azure.InitSandboxClient(
+// 		azure.AzureCredentials{
+// 			TenantID: sb.Provider.azureTenantId,
+// 			ClientID: sb.Provider.azureClientId,
+// 			Secret:   sb.Provider.azureSecret,
+// 		},
+// 	)
+
+// 	err := sandboxClient.CleanupSandboxEnvironment(
+// 		sb.SubscriptionName,
+// 		sb.Annotations["guid"],
+// 	)
+// 	if err != nil {
+// 		log.Logger.Error("Error cleaning up Azure sandbox", "error", err)
+// 	}
+
+// 	poolClient := azure.InitPoolClient(
+// 		projectTagPrefix+"test",
+// 		azurePoolId,
+// 		sb.Provider.azurePoolApiSecret,
+// 	)
+
+// 	err = poolClient.ReleasePool()
+// 	if err != nil {
+// 		log.Logger.Error("Error releasing Azure sandbox", "error", err)
+// 	}
+
+// 	_, err = sb.Provider.DbPool.Exec(
+// 		context.Background(),
+// 		`DELETE FROM resources WHERE id = $1`,
+// 		sb.Id,
+// 	)
+// 	if err != nil {
+// 		return fmt.Errorf("failed to remove resource: %w", err)
+// 	}
+
+// 	return nil
+// }
+
+// ////////////////////// MOCKUPS ////////////////////////
+// TODO: this mockup code shoul be deleted
+func (sb *AzureSandboxWithCreds) Create() {
+	err := sb.allocatePool()
+	if err != nil {
+		log.Logger.Error("Can't allocate pool for new Azure Sandbox", "error", err)
+		sb.setStatus("error")
+		return
+	}
+
+	// This is a just mockup, normally it should be filled
+	// by the code whichi really create sandbox
+	sandboxInfo := azure.SandboxInfo{
+		SubscriptionName:  sb.SubscriptionName,
+		SubscriptionId:    "test-subscription-id",
+		ResourceGroupName: "test-resource-group-name",
+		AppID:             "test-app-id",
+		DisplayName:       "test-display-name",
+		Password:          "test-password",
 	}
 
 	// Summary
@@ -343,34 +517,7 @@ func (sb *AzureSandboxWithCreds) Delete() error {
 	// at least yielding control and check for delete process complete periodically
 	// if it possible via API
 
-	sandboxClient := azure.InitSandboxClient(
-		azure.AzureCredentials{
-			TenantID: sb.Provider.azureTenantId,
-			ClientID: sb.Provider.azureClientId,
-			Secret:   sb.Provider.azureSecret,
-		},
-	)
-
-	err := sandboxClient.CleanupSandboxEnvironment(
-		sb.SubscriptionName,
-		sb.Annotations["guid"],
-	)
-	if err != nil {
-		log.Logger.Error("Error cleaning up Azure sandbox", "error", err)
-	}
-
-	poolClient := azure.InitPoolClient(
-		projectTagPrefix+"test",
-		azurePoolId,
-		sb.Provider.azurePoolApiSecret,
-	)
-
-	err = poolClient.ReleasePool()
-	if err != nil {
-		log.Logger.Error("Error releasing Azure sandbox", "error", err)
-	}
-
-	_, err = sb.Provider.DbPool.Exec(
+	_, err := sb.Provider.DbPool.Exec(
 		context.Background(),
 		`DELETE FROM resources WHERE id = $1`,
 		sb.Id,
@@ -381,3 +528,32 @@ func (sb *AzureSandboxWithCreds) Delete() error {
 
 	return nil
 }
+
+//////////////////////// MOCKUPS ////////////////////////
+
+// - Create simple "pool" function that return random poolID between pool-01-001 - pool-01-010
+// - Create mockups function that will return BS date to store at the database.
+//   The important part here is to get poolID from the the "pool" function created above.
+// - Update the "pool" function to get existed pools from the database.
+// - Update the "pool" function to return only free pools
+// - Update the "pool" function to make it single treaded. This probably will require some global
+//   items like locks or workgroups.
+
+// We have two places that we need to block:
+// - allocate pool and save it to the database
+// - release pool and remove it from the database
+
+// My thoughts are:
+
+// Create two functions
+// - AllocatePool. Get pointer to sandbox structure as parameter, check for "free"
+//   sandbox in the database, assign it or return error and save sandbox info to database.
+// - ReleasePool. Also getting sandbox structure as a parameter, set sandbox as nil and
+//   save it to database.
+
+// Get list of subscription names from the database with: select resource_data ->> 'subscription_name' as subscription_name from resources;
+// poolSize := 10
+
+// for i := 1; i <= poolSize; i++ {
+// 	fmt.Printf("%03d\n", i)
+//}
