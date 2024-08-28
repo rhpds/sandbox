@@ -31,7 +31,7 @@ type BaseHandler struct {
 	oaRouter             oarouters.Router
 	awsAccountProvider   models.AwsAccountProvider
 	OcpSandboxProvider   models.OcpSandboxProvider
-	azureSandboxProvider models.AzureSandboxProvider
+	azureSandboxProvider *models.AzureSandboxProvider
 }
 
 type AdminHandler struct {
@@ -46,7 +46,7 @@ func NewBaseHandler(
 	oaRouter oarouters.Router,
 	awsAccountProvider models.AwsAccountProvider,
 	OcpSandboxProvider models.OcpSandboxProvider,
-	azureSandboxProvider models.AzureSandboxProvider,
+	azureSandboxProvider *models.AzureSandboxProvider,
 ) *BaseHandler {
 	return &BaseHandler{
 		svc:                  svc,

@@ -22,8 +22,8 @@ const (
 )
 
 type AzureSandboxProvider struct {
-	DbPool      *pgxpool.Pool
-	VaultSecret string
+	dbPool      *pgxpool.Pool
+	vaultSecret string
 
 	azureTenantId      string
 	azureClientId      string
@@ -57,26 +57,26 @@ type AzureSandbox struct {
 func NewAzureSandboxProvider(
 	dbPool *pgxpool.Pool,
 	vaultSecret string,
-) (AzureSandboxProvider, error) {
-	provider := AzureSandboxProvider{
-		DbPool:      dbPool,
-		VaultSecret: vaultSecret,
+) (*AzureSandboxProvider, error) {
+	provider := &AzureSandboxProvider{
+		dbPool:      dbPool,
+		vaultSecret: vaultSecret,
 	}
 
 	if provider.azureTenantId = os.Getenv("AZURE_TENANT_ID"); provider.azureTenantId == "" {
-		return AzureSandboxProvider{}, fmt.Errorf("AZURE_TENANT_ID is not set")
+		return nil, fmt.Errorf("AZURE_TENANT_ID is not set")
 	}
 
 	if provider.azureClientId = os.Getenv("AZURE_CLIENT_ID"); provider.azureClientId == "" {
-		return AzureSandboxProvider{}, fmt.Errorf("AZURE_CLIENT_ID is not set")
+		return nil, fmt.Errorf("AZURE_CLIENT_ID is not set")
 	}
 
 	if provider.azureSecret = os.Getenv("AZURE_SECRET"); provider.azureSecret == "" {
-		return AzureSandboxProvider{}, fmt.Errorf("AZURE_SECRET is not set")
+		return nil, fmt.Errorf("AZURE_SECRET is not set")
 	}
 
 	if provider.azurePoolApiSecret = os.Getenv("AZURE_POOL_API_SECRET"); provider.azurePoolApiSecret == "" {
-		return AzureSandboxProvider{}, fmt.Errorf("AZURE_POOL_API_SECRET is not set")
+		return nil, fmt.Errorf("AZURE_POOL_API_SECRET is not set")
 	}
 
 	return provider, nil
@@ -117,7 +117,7 @@ func (a *AzureSandboxProvider) Request(
 func (a *AzureSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) ([]AzureSandboxWithCreds, error) {
 	sandboxes := []AzureSandboxWithCreds{}
 	// Get resource from above 'resources' table
-	rows, err := a.DbPool.Query(
+	rows, err := a.dbPool.Query(
 		context.Background(),
 		`SELECT
 			resource_data,
@@ -130,7 +130,7 @@ func (a *AzureSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string
 		FROM
 			resources
 		WHERE service_uuid = $1 AND resource_type = 'AzureSandbox'`,
-		serviceUuid, a.VaultSecret,
+		serviceUuid, a.vaultSecret,
 	)
 	if err != nil {
 		fmt.Printf("\n\nSQL error: %s\n\n", err)
@@ -200,7 +200,7 @@ func (sb *AzureSandboxWithCreds) Update() error {
 
 	sb.Credentials = []any{}
 
-	_, err = sb.Provider.DbPool.Exec(
+	_, err = sb.Provider.dbPool.Exec(
 		context.Background(),
 		`UPDATE resources
 		SET resource_name = $1,
@@ -216,7 +216,7 @@ func (sb *AzureSandboxWithCreds) Update() error {
 		sb.ServiceUuid,
 		sb,
 		credentials,
-		sb.Provider.VaultSecret,
+		sb.Provider.vaultSecret,
 		sb.Status,
 		sb.CleanupCount,
 		sb.Id,
@@ -240,7 +240,7 @@ func (sb *AzureSandboxWithCreds) Save() error {
 
 	sb.Credentials = []any{}
 
-	err = sb.Provider.DbPool.QueryRow(
+	err = sb.Provider.dbPool.QueryRow(
 		context.Background(),
 		`INSERT INTO resources
 		(resource_name, resource_type, service_uuid, to_cleanup, resource_data, resource_credentials, status, cleanup_count)
@@ -251,7 +251,7 @@ func (sb *AzureSandboxWithCreds) Save() error {
 		sb.ToCleanup,
 		sb,
 		credentials,
-		sb.Provider.VaultSecret,
+		sb.Provider.vaultSecret,
 		sb.Status,
 		sb.CleanupCount,
 	).Scan(&sb.Id)
@@ -263,7 +263,7 @@ func (sb *AzureSandboxWithCreds) Save() error {
 }
 
 func (sb *AzureSandboxWithCreds) setStatus(status string) error {
-	_, err := sb.Provider.DbPool.Exec(
+	_, err := sb.Provider.dbPool.Exec(
 		context.Background(),
 		fmt.Sprintf(`UPDATE resources
 			SET status = $1,
@@ -290,7 +290,7 @@ func (sb *AzureSandboxWithCreds) allocatePool() error {
 	// sb.mu.Lock()
 	// defer sb.mu.Unlock()
 
-	rows, err := sb.Provider.DbPool.Query(
+	rows, err := sb.Provider.dbPool.Query(
 		context.Background(),
 		`SELECT resource_data ->> 'subscription_name' FROM resources WHERE status = 'success'`)
 	if err != nil {
@@ -517,7 +517,7 @@ func (sb *AzureSandboxWithCreds) Delete() error {
 	// at least yielding control and check for delete process complete periodically
 	// if it possible via API
 
-	_, err := sb.Provider.DbPool.Exec(
+	_, err := sb.Provider.dbPool.Exec(
 		context.Background(),
 		`DELETE FROM resources WHERE id = $1`,
 		sb.Id,
