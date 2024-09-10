@@ -38,4 +38,8 @@ ALTER TABLE ocp_shared_cluster_configurations
 ALTER TABLE ocp_shared_cluster_configurations
   ADD COLUMN quota_required boolean NOT NULL DEFAULT false;
 
+-- Add a skip_quota boolean column to the ocp_shared_cluster_configurations table
+ALTER TABLE ocp_shared_cluster_configurations
+  ADD COLUMN skip_quota boolean NOT NULL DEFAULT false;
+
 COMMIT;

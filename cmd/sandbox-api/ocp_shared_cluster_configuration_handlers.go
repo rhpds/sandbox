@@ -307,6 +307,10 @@ func (h *BaseHandler) UpdateOcpSharedClusterConfigurationHandler(w http.Response
 		ocpSharedClusterConfiguration.MaxCpuUsagePercentage = *input.MaxCpuUsagePercentage
 	}
 
+	if input.SkipQuota != nil {
+		ocpSharedClusterConfiguration.SkipQuota = *input.SkipQuota
+	}
+
 	if err := ocpSharedClusterConfiguration.Save(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{

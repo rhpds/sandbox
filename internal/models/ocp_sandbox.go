@@ -64,6 +64,13 @@ type OcpSharedClusterConfiguration struct {
 	// If set to false, a quota will be created based on the default sandbox quota.
 	// By default it's false.
 	QuotaRequired bool `json:"quota_required"`
+
+	// SkipQuota is a flag to control if the sandbox quota should be disabled.
+	// if set to true, the sandbox quota will not be created
+	// if set to false, the sandbox quota will be created, depending on the value of QuotaRequired, DefaultSandboxQuota and StrictDefaultSandboxQuota
+	// By default it's true.
+	// TODO: change the default value to false
+	SkipQuota bool `json:"skip_quota"`
 }
 
 type OcpSharedClusterConfigurations []OcpSharedClusterConfiguration
@@ -144,6 +151,7 @@ func MakeOcpSharedClusterConfiguration() *OcpSharedClusterConfiguration {
 	}
 	p.StrictDefaultSandboxQuota = false
 	p.QuotaRequired = false
+	p.SkipQuota = true
 
 	return p
 }
@@ -220,8 +228,9 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 			max_cpu_usage_percentage,
 			default_sandbox_quota,
 			strict_default_sandbox_quota,
-			quota_required)
-			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14)
+			quota_required,
+			skip_quota)
+			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15)
 			RETURNING id`,
 		p.Name,
 		p.ApiUrl,
@@ -237,6 +246,7 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 		p.DefaultSandboxQuota,
 		p.StrictDefaultSandboxQuota,
 		p.QuotaRequired,
+		p.SkipQuota,
 	).Scan(&p.ID); err != nil {
 		return err
 	}
@@ -264,7 +274,8 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 			 max_cpu_usage_percentage = $12,
 			 default_sandbox_quota = $13,
 			 strict_default_sandbox_quota = $14,
-			 quota_required = $15
+			 quota_required = $15,
+			 skip_quota = $16
 		 WHERE id = $10`,
 		p.Name,
 		p.ApiUrl,
@@ -281,6 +292,7 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 		p.DefaultSandboxQuota,
 		p.StrictDefaultSandboxQuota,
 		p.QuotaRequired,
+		p.SkipQuota,
 	); err != nil {
 		return err
 	}
@@ -346,7 +358,8 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 			max_cpu_usage_percentage,
 			default_sandbox_quota,
 			strict_default_sandbox_quota,
-			quota_required
+			quota_required,
+			skip_quota
 		 FROM ocp_shared_cluster_configurations WHERE name = $2`,
 		p.VaultSecret, name,
 	)
@@ -369,6 +382,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 		&cluster.DefaultSandboxQuota,
 		&cluster.StrictDefaultSandboxQuota,
 		&cluster.QuotaRequired,
+		&cluster.SkipQuota,
 	); err != nil {
 		return OcpSharedClusterConfiguration{}, err
 	}
@@ -400,7 +414,8 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			max_cpu_usage_percentage,
 			default_sandbox_quota,
 			strict_default_sandbox_quota,
-			quota_required
+			quota_required,
+            skip_quota
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
 	)
@@ -432,6 +447,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			&cluster.DefaultSandboxQuota,
 			&cluster.StrictDefaultSandboxQuota,
 			&cluster.QuotaRequired,
+			&cluster.SkipQuota,
 		); err != nil {
 			return []OcpSharedClusterConfiguration{}, err
 		}
@@ -1052,56 +1068,58 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			break
 		}
 
-		// Create Quota for the Namespace
-		// First calculate the quota using the requested_quota from the PlacementRequest and
-		// the options from the OcpSharedClusterConfiguration
-		requested := &v1.ResourceQuota{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "sandbox-requested-quota",
-			},
-			Spec: v1.ResourceQuotaSpec{
-				Hard: *requestedQuota,
-			},
-		}
+		if !selectedCluster.SkipQuota {
+			// Create Quota for the Namespace
+			// First calculate the quota using the requested_quota from the PlacementRequest and
+			// the options from the OcpSharedClusterConfiguration
+			requested := &v1.ResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "sandbox-requested-quota",
+				},
+				Spec: v1.ResourceQuotaSpec{
+					Hard: *requestedQuota,
+				},
+			}
 
-		if selectedCluster.QuotaRequired {
-			// Check if the requested quota is provided and not empty
-			if requestedQuota == nil || len(*requestedQuota) == 0 {
-				log.Logger.Error("Error creating OCP quota", "error", "requested quota is required")
-				rnew.ErrorMessage = "Quota is required for this cluster and should be specified in the request"
-				if err := rnew.Save(); err != nil {
-					log.Logger.Error("Error saving OCP account", "error", err)
+			if selectedCluster.QuotaRequired {
+				// Check if the requested quota is provided and not empty
+				if requestedQuota == nil || len(*requestedQuota) == 0 {
+					log.Logger.Error("Error creating OCP quota", "error", "requested quota is required")
+					rnew.ErrorMessage = "Quota is required for this cluster and should be specified in the request"
+					if err := rnew.Save(); err != nil {
+						log.Logger.Error("Error saving OCP account", "error", err)
+					}
+					rnew.SetStatus("error")
+					return
+				}
+			}
+
+			quota := ApplyQuota(requested,
+				selectedCluster.DefaultSandboxQuota,
+				selectedCluster.StrictDefaultSandboxQuota,
+			)
+
+			rnew.Quota = quota.Spec.Hard
+
+			// Troubleshooting output the quota
+			log.Logger.Debug("Quota", "quota", quota, "selectedCluster", selectedCluster,
+				"requestedQuota", requestedQuota)
+
+			if err := rnew.Save(); err != nil {
+				log.Logger.Error("Error saving OCP account", "error", err)
+				rnew.SetStatus("error")
+				return
+			}
+
+			_, err = clientset.CoreV1().ResourceQuotas(namespaceName).Create(context.TODO(), quota, metav1.CreateOptions{})
+			if err != nil {
+				log.Logger.Error("Error creating OCP quota", "error", err)
+				if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+					log.Logger.Error("Error cleaning up the namespace", "error", err)
 				}
 				rnew.SetStatus("error")
 				return
 			}
-		}
-
-		quota := ApplyQuota(requested,
-			selectedCluster.DefaultSandboxQuota,
-			selectedCluster.StrictDefaultSandboxQuota,
-		)
-
-		rnew.Quota = quota.Spec.Hard
-
-		// Troubleshooting output the quota
-		log.Logger.Debug("Quota", "quota", quota, "selectedCluster", selectedCluster,
-			"requestedQuota", requestedQuota)
-
-		if err := rnew.Save(); err != nil {
-			log.Logger.Error("Error saving OCP account", "error", err)
-			rnew.SetStatus("error")
-			return
-		}
-
-		_, err = clientset.CoreV1().ResourceQuotas(namespaceName).Create(context.TODO(), quota, metav1.CreateOptions{})
-		if err != nil {
-			log.Logger.Error("Error creating OCP quota", "error", err)
-			if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
-				log.Logger.Error("Error cleaning up the namespace", "error", err)
-			}
-			rnew.SetStatus("error")
-			return
 		}
 
 		_, err = clientset.CoreV1().ServiceAccounts(namespaceName).Create(context.TODO(), &v1.ServiceAccount{

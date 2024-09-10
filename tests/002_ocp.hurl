@@ -64,6 +64,7 @@ Authorization: Bearer {{access_token_admin}}
     "api_url": "https://api.ocp-cluster-1.com:6443",
     "ingress_domain": "apps.ocp-cluster-1.com",
     "kubeconfig": "apiVersion: v1 ...",
+    "skip_quota": true,
     "annotations": {
         "virt": "no",
         "cloud": "ibm",
@@ -103,6 +104,7 @@ jsonpath "$.default_sandbox_quota.metadata.name" == "sandbox-quota"
 jsonpath "$.default_sandbox_quota.spec.hard['requests.memory']" == "20Gi"
 jsonpath "$.strict_default_sandbox_quota" == false
 jsonpath "$.quota_required" == false
+jsonpath "$.skip_quota" == true
 
 PUT {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1/disable
 Authorization: Bearer {{access_token_admin}}
@@ -138,8 +140,8 @@ Authorization: Bearer {{ access_token_admin }}
 {
   "quota_required": true,
   "strict_default_sandbox_quota": true,
-  "max_memory_usage_percentage": 60
-
+  "max_memory_usage_percentage": 60,
+  "skip_quota": false
 }
 HTTP 200
 [Asserts]
@@ -152,6 +154,7 @@ HTTP 200
 jsonpath "$.strict_default_sandbox_quota" == true
 jsonpath "$.quota_required" == true
 jsonpath "$.max_memory_usage_percentage" == 60
+jsonpath "$.skip_quota" == false
 
 DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
@@ -428,8 +431,6 @@ jsonpath "$.resources[0].ingress_domain" split "." count > 2
 jsonpath "$.resources[0].credentials" count >= 1
 jsonpath "$.resources[0].credentials[0].kind" == "ServiceAccount"
 jsonpath "$.resources[0].credentials[0].token" isString
-# Default quota should be applied
-jsonpath "$.resources[0].quota['requests.memory']" == "20Gi"
 
 #################################################################################
 # Create the same placement should return 409 conflict
@@ -481,7 +482,6 @@ HTTP 200
 [Asserts]
 jsonpath "$.name" == "{{sandbox_name}}"
 jsonpath "$.service_uuid" == "{{uuid}}"
-
 
 #################################################################################
 # Delete placement

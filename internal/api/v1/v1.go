@@ -168,6 +168,7 @@ type UpdateOcpSharedConfigurationRequest struct {
 	DefaultSandboxQuota       *v1.ResourceQuota   `json:"default_sandbox_quota,omitempty"`
 	QuotaRequired             *bool               `json:"quota_required"`
 	StrictDefaultSandboxQuota *bool               `json:"strict_default_sandbox_quota"`
+	SkipQuota                 *bool               `json:"skip_quota,omitempty"`
 	Annotations               *models.Annotations `json:"annotations,omitempty"`
 	Token                     *string             `json:"token,omitempty"`
 	AdditionalVars            map[string]any      `json:"additional_vars,omitempty"`
