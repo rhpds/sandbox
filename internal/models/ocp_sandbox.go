@@ -2,6 +2,8 @@ package models
 
 import (
 	"context"
+  "crypto/rand"
+  "encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +22,9 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 )
 
 type OcpSandboxProvider struct {
@@ -84,6 +89,16 @@ type TokenResponse struct {
 }
 
 var nameRegex = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
+
+// GenerateRandomPassword generates a random password of specified length.
+func generateRandomPassword(length int) (string, error) {
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(bytes), nil
+}
+
 
 // Bind and Render
 func (p *OcpSharedClusterConfiguration) Bind(r *http.Request) error {
@@ -921,6 +936,14 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			return
 		}
 
+		// Create an dynamic OpenShift client for non regular objects
+    dynclientset, err := dynamic.NewForConfig(config)
+    if err != nil {
+      log.Logger.Error("Error creating OCP client", "error", err)
+      rnew.SetStatus("error")
+      return
+    }
+
 		serviceAccountName := "sandbox"
 		suffix := annotations["namespace_suffix"]
 		if suffix == "" {
@@ -1025,6 +1048,62 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			rnew.SetStatus("error")
 			return
 		}
+    // Create an user if the keycloak option was enabled
+    if value, exists := cloud_selector["keycloak"]; exists && (value == "yes" || value == "true") {
+      // Generate a random password for the Keycloak user
+	    userAccountName := "sandbox-" + guid
+      password, err := generateRandomPassword(16)
+      if err != nil {
+				log.Logger.Error("Error generating password", "error", err)
+      }
+
+      // Define the KeycloakUser GroupVersionResource
+      keycloakUserGVR := schema.GroupVersionResource{
+        Group:    "keycloak.org",
+        Version:  "v1alpha1",
+        Resource: "keycloakusers",
+      }
+
+      // Create the KeycloakUser object as an unstructured object
+      keycloakUser := &unstructured.Unstructured{
+        Object: map[string]interface{}{
+          "apiVersion": "keycloak.org/v1alpha1",
+          "kind":       "KeycloakUser",
+          "metadata": map[string]interface{}{
+            "name":      userAccountName,
+            "namespace": "rhsso", // The namespace where Keycloak is installed
+          },
+          "spec": map[string]interface{}{
+            "user": map[string]interface{}{
+              "username": userAccountName,
+              "enabled":  true,
+              "credentials": []interface{}{
+                map[string]interface{}{
+                  "type":      "password",
+                  "value":     password,
+                  "temporary": false,
+                },
+              },
+            },
+            "realmSelector": map[string]interface{}{
+              "matchLabels": map[string]interface{}{
+                "app": "sso", // The label selector for the Keycloak realm
+              },
+            },
+          },
+        },
+      }
+
+      // Create the KeycloakUser resource in the specified namespace
+      namespace := "rhsso"
+      _, err = dynclientset.Resource(keycloakUserGVR).Namespace(namespace).Create(context.TODO(), keycloakUser, metav1.CreateOptions{})
+      if err != nil {
+        log.Logger.Error("Error creating KeycloakUser", "error", err)
+      }
+
+      fmt.Println("KeycloakUser created successfully")
+
+    }
 
     // Assign ClusterRole sandbox-hcp (created with gitops) to the SA if hcp option was selected
     if value, exists := cloud_selector["hcp"]; exists && (value == "yes" || value == "true") {
@@ -1442,6 +1521,16 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		account.SetStatus("error")
 		return err
 	}
+
+  // Create an dynamic OpenShift client for non regular objects
+  dynclientset, err := dynamic.NewForConfig(config)
+  if err != nil {
+    log.Logger.Error("Error creating OCP client", "error", err, "name", account.Name)
+    account.SetStatus("error")
+    return err
+  }
+
+
 	// Define the Service Account name
 	serviceAccountName := "sandbox"
 
@@ -1495,6 +1584,24 @@ func (account *OcpSandboxWithCreds) Delete() error {
 			return err
 		}
 	}
+
+	// Delete the User 
+	userAccountName := "sandbox-" + account.Annotations["guid"]
+  // Define the KeycloakUser GroupVersionResource
+  keycloakUserGVR := schema.GroupVersionResource{
+    Group:    "keycloak.org",
+    Version:  "v1alpha1",
+    Resource: "keycloakusers",
+  }
+
+  namespace := "rhsso"
+  err = dynclientset.Resource(keycloakUserGVR).Namespace(namespace).Delete(context.TODO(), userAccountName, metav1.DeleteOptions{})
+	if err != nil {
+		log.Logger.Error("Error deleting OCP namespace", "error", err, "name", account.Name)
+		account.SetStatus("error")
+		return err
+	}
+
 
 	_, err = account.Provider.DbPool.Exec(
 		context.Background(),
