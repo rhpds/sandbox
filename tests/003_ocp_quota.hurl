@@ -25,6 +25,67 @@ jsonpath "$.access_token" isString
 jsonpath "$.access_token_exp" isString
 
 #################################################################################
+# Update default quota of an OcpSharedClusterConfiguration
+#################################################################################
+
+DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
+Authorization: Bearer {{access_token_admin}}
+[Options]
+retry: 2
+HTTP 404
+
+POST {{host}}/api/v1/ocp-shared-cluster-configurations
+Authorization: Bearer {{access_token_admin}}
+{
+    "name": "ocp-cluster-test1",
+    "api_url": "https://api.ocp-cluster-1.com:6443",
+    "ingress_domain": "apps.ocp-cluster-1.com",
+    "kubeconfig": "apiVersion: v1 ...",
+    "skip_quota": true,
+    "annotations": {
+        "virt": "no",
+        "cloud": "ibm",
+        "purpose": "dev"
+    }
+}
+HTTP 201
+[Asserts]
+jsonpath "$.message" == "OCP shared cluster configuration created"
+
+GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
+Authorization: Bearer {{access_token_admin}}
+HTTP 200
+[Asserts]
+jsonpath "$.default_sandbox_quota.spec.hard['requests.memory']" == "20Gi"
+
+PUT {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1/update
+Authorization: Bearer {{ access_token_admin }}
+{
+  "default_sandbox_quota": {
+    "spec": {
+      "hard": {
+        "requests.memory": "700Gi"
+      }
+    }
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "OCP shared cluster configuration updated"
+
+GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
+Authorization: Bearer {{access_token_admin}}
+HTTP 200
+[Asserts]
+jsonpath "$.default_sandbox_quota.spec.hard['requests.memory']" == "700Gi"
+
+DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
+Authorization: Bearer {{access_token_admin}}
+[Options]
+retry: 2
+HTTP 404
+
+#################################################################################
 # Ensure error when quota quantity doesn't match the k8s regex
 #################################################################################
 POST {{host}}/api/v1/placements
