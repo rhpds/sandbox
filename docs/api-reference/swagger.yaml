@@ -1558,8 +1558,101 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
-
+  /ocp-shared-cluster-configurations/{name}/update:
+    put:
+      summary: Update quota conf for an OcpSharedClusterConfiguration
+      operationId: updateOcpSharedClusterConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration changes
+          schema:
+            type: string
+            example: ocp-cluster-1
+      requestBody:
+        description: JSON object to specify the OcpSharedClusterConfiguration.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                strict_default_sandbox_quota:
+                  type: boolean
+                  description: |-
+                    StrictDefaultSandboxQuota is a flag to determine if the default sandbox quota should be strictly enforced. If set to true, the default sandbox quota will be enforced as a hard limit. Requested quota not be allowed to exceed the default. By default it's false.
+                quota_required:
+                  type: boolean
+                  description: |-
+                    QuotaRequired is a flag to determine if a quota is required in any request for an OcpSandbox. If set to true, a quota must be provided in the request. If set to false, a quota will be created based on the default sandbox quota. By default it's false.
+                default_sandbox_quota:
+                  type: object
+                  description: |
+                    Quota to be applied to the namespace of the OcpSandbox
+                    The way quota is applied depends on the OcpSharedClusterConfiguration.
+                    By default, if a quota value is missing, the default quota of the shared cluster is applied instead.
+                skip_quota:
+                  type: boolean
+                  description: |-
+                    SkipQuota is a flag to control if the sandbox quota should be disabled.
+                    If set to true, the sandbox quota will not be created.
+                    If set to false, the sandbox quota will be created, depending on the value of quota_required, default_sandbox_quota and strict_default_sandbox_quota.
+                    By default it's true.
+                max_memory_usage_percentage:
+                  type: number
+                  format: float
+                max_cpu_usage_percentage:
+                  type: number
+                  format: float
+                token:
+                  type: string
+                annotations:
+                  $ref: "#/components/schemas/Annotations"
+                additional_vars:
+                  type: object
+            example:
+              strict_default_sandbox_quota: true
+              quota_required: true
+              skip_quota: false
+              max_memory_usage_percentage: 70
+              max_cpu_usage_percentage: 80
+              token: '...'
+              additional_vars:
+                fordeployer: '...'
+              annotations:
+                virt: available
+                cloud: ibm
+                purpose: dev
+              default_sandbox_quota:
+                pods: "12"
+                requests.memory: "20Gi"
+                limits.memory: "20Gi"
+                secrets: "2"
+                requests.ephemeral-storage: "100Gi"
+      responses:
+        '200':
+          description: The OcpSharedClusterConfiguration is updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: OCP shared cluster configuration updated
+        '404':
+          description: updateOcpSharedClusterConfiguration OcpSharedClusterConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: updateOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /health:
     get:
       summary: Health endpoint
@@ -1636,6 +1729,26 @@ components:
                 $ref: "#/components/schemas/Annotations"
               annotations:
                 $ref: "#/components/schemas/Annotations"
+              quota:
+                type: object
+                description: |
+                  Quota to be applied to the namespace of the OcpSandbox
+                  The way quota is applied depends on the OcpSharedClusterConfiguration.
+                  By default, if a quota value is missing, the default quota of the shared cluster is applied instead.
+
+                  StrictDefaultSandboxQuota is a flag to determine if the default sandbox quota should be strictly enforced. If set to true, the default sandbox quota will be enforced as a hard limit. Requested quota not be allowed to exceed the default. By default it's false.
+
+                  If set to false, the default sandbox will be updated to the requested quota.
+                  QuotaRequired is a flag to determine if a quota is required in any request for an OcpSandbox.
+                  If set to true, a quota must be provided in the request.
+                  If set to false, a quota will be created based on the default sandbox quota.
+                  By default it's false.
+                example:
+                  pods: "12"
+                  requests.memory: "20Gi"
+                  limits.memory: "20Gi"
+                  secrets: "2"
+                  requests.ephemeral-storage: "100Gi"
         annotations:
           $ref: "#/components/schemas/Annotations"
       example:
@@ -1653,6 +1766,7 @@ components:
       example:
         guid: abcde
         env_type: ocp4-cluster
+        hcp: "yes"
 
     Placement:
       type: object
@@ -2116,6 +2230,7 @@ components:
         - api_url
         - ingress_domain
         - annotations
+      additionalProperties: false
       properties:
         name:
           type: string
@@ -2175,6 +2290,61 @@ components:
           description: The maximum CPU usage percentage for a cluster to be considered healthy
           example: 80
           default: 100
+        default_sandbox_quota:
+          type: object
+          description: |-
+            The default quota for namespaces for sandboxes in the cluster
+            type is ResourceQuota from k8s.io/api/core/v1
+          default:
+            apiVersion: v1
+            kind: ResourceQuota
+            metadata:
+              name: sandbox-quota
+            spec:
+              hard:
+                pods: "10"
+                limits.cpu: "10"
+                limits.memory: "20Gi"
+                requests.cpu: "10"
+                requests.memory: "20Gi"
+                requests.storage: "50Gi"
+                requests.ephemeral-storage: "50Gi"
+                limits.ephemeral-storage: "50Gi"
+                persistentvolumeclaims: "10"
+                services: "10"
+                services.loadbalancers: "10"
+                services.nodeports: "10"
+                secrets: "10"
+                configmaps: "10"
+                replicationcontrollers: "10"
+                resourcequotas: "10"
+        strict_default_sandbox_quota:
+          type: boolean
+          description: |-
+            StrictDefaultSandboxQuota is a flag to determine if the default sandbox quota
+            should be strictly enforced. If set to true, the default sandbox quota will be
+            enforced as a hard limit. Requested quota not be allowed to exceed the default.
+            If set to false, the default sandbox will be updated
+            to the requested quota.
+          default: false
+        quota_required:
+          type: boolean
+          description: |-
+            QuotaRequired is a flag to determine if a quota is required for
+            a shared Cluster.
+            If set to true, a quota will be required in the request for a
+            Sandbox, usually set in agnosticV.
+            If set to false, a quota will not be required and the default quota
+            will apply.
+          default: false
+        skip_quota:
+          type: boolean
+          description: |-
+            SkipQuota is a flag to control if the sandbox quota should be disabled.
+            If set to true, the sandbox quota will not be created.
+            If set to false, the sandbox quota will be created, depending on the value of
+            quota_required, default_sandbox_quota and strict_default_sandbox_quota.
+          default: true
       example:
         name: ocp-cluster-1
         api_url: https://api.ocp-cluster-1.com:6443
