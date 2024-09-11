@@ -1221,27 +1221,27 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 
 			// Create the KeycloakUser object as an unstructured object
 			keycloakUser := &unstructured.Unstructured{
-				Object: map[string]interface{}{
+				Object: map[string]any{
 					"apiVersion": "keycloak.org/v1alpha1",
 					"kind":       "KeycloakUser",
-					"metadata": map[string]interface{}{
+					"metadata": map[string]any{
 						"name":      userAccountName,
 						"namespace": "rhsso", // The namespace where Keycloak is installed
 					},
-					"spec": map[string]interface{}{
-						"user": map[string]interface{}{
+					"spec": map[string]any{
+						"user": map[string]any{
 							"username": userAccountName,
 							"enabled":  true,
-							"credentials": []interface{}{
-								map[string]interface{}{
+							"credentials": []any{
+								map[string]any{
 									"type":      "password",
 									"value":     password,
 									"temporary": false,
 								},
 							},
 						},
-						"realmSelector": map[string]interface{}{
-							"matchLabels": map[string]interface{}{
+						"realmSelector": map[string]any{
+							"matchLabels": map[string]any{
 								"app": "sso", // The label selector for the Keycloak realm
 							},
 						},
@@ -1731,7 +1731,7 @@ func (account *OcpSandboxWithCreds) Delete() error {
 
 	usernames := []string{}
 	for _, cred := range account.Credentials {
-		if m, ok := cred.(map[string]interface{}); ok {
+		if m, ok := cred.(map[string]any); ok {
 			if m["kind"] == "KeycloakUser" {
 				if username, ok := m["username"].(string); ok {
 					usernames = append(usernames, username)
