@@ -129,7 +129,7 @@ func (p *PlacementRequest) Bind(r *http.Request) error {
 	if len(p.Resources) == 0 {
 		return errors.New("no resources specified")
 	}
-	for i, _ := range p.Resources {
+	for i, resourceRequest := range p.Resources {
 		if p.Resources[i].Annotations == nil {
 			p.Resources[i].Annotations = make(models.Annotations)
 		}
@@ -138,6 +138,20 @@ func (p *PlacementRequest) Bind(r *http.Request) error {
 		}
 		if p.Resources[i].Quota == nil {
 			p.Resources[i].Quota = &v1.ResourceList{}
+		}
+		if resourceRequest.CloudSelector != nil {
+			for k, v := range resourceRequest.CloudSelector {
+				// We work with string and not bool
+				// This is a convention to automatically convert "yes" and "no"
+				// instead of "true" and "false"
+				// That will help match clusters that have 'yes' when the client sends the cloud.selector to 'true'
+				if v == "true" {
+					resourceRequest.CloudSelector[k] = "yes"
+				}
+				if v == "false" {
+					resourceRequest.CloudSelector[k] = "no"
+				}
+			}
 		}
 	}
 

@@ -112,6 +112,13 @@ type OcpServiceAccount struct {
 	Token string `json:"token"`
 }
 
+// Credential for keycloak account
+type KeycloakCredential struct {
+	Kind     string `json:"kind"` // "KeycloakCredential"
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
 type OcpSandboxes []OcpSandbox
 
 type TokenResponse struct {
@@ -1195,6 +1202,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			rnew.SetStatus("error")
 			return
 		}
+		creds := []any{}
 		// Create an user if the keycloak option was enabled
 		if value, exists := cloud_selector["keycloak"]; exists && (value == "yes" || value == "true") {
 			// Generate a random password for the Keycloak user
@@ -1248,8 +1256,13 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				log.Logger.Error("Error creating KeycloakUser", "error", err)
 			}
 
-			fmt.Println("KeycloakUser created successfully")
+			log.Logger.Debug("KeycloakUser created successfully")
 
+			creds = append(creds, KeycloakCredential{
+				Kind:     "KeycloakUser",
+				Username: userAccountName,
+				Password: password,
+			})
 		}
 
 		// Assign ClusterRole sandbox-hcp (created with gitops) to the SA if hcp option was selected
@@ -1390,13 +1403,12 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				break
 			}
 		}
-		creds := []any{
+		creds = append(creds,
 			OcpServiceAccount{
 				Kind:  "ServiceAccount",
 				Name:  serviceAccountName,
 				Token: string(saSecret.Data["token"]),
-			},
-		}
+			})
 		rnew.Credentials = creds
 		rnew.Status = "success"
 
