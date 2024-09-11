@@ -2,8 +2,8 @@ package models
 
 import (
 	"context"
-  "crypto/rand"
-  "encoding/base64"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,13 +19,13 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic"
 )
 
 type OcpSandboxProvider struct {
@@ -1029,12 +1029,12 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 
 		// Create an dynamic OpenShift client for non regular objects
-    dynclientset, err := dynamic.NewForConfig(config)
-    if err != nil {
-      log.Logger.Error("Error creating OCP client", "error", err)
-      rnew.SetStatus("error")
-      return
-    }
+		dynclientset, err := dynamic.NewForConfig(config)
+		if err != nil {
+			log.Logger.Error("Error creating OCP client", "error", err)
+			rnew.SetStatus("error")
+			return
+		}
 
 		serviceAccountName := "sandbox"
 		suffix := annotations["namespace_suffix"]
@@ -1195,96 +1195,96 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			rnew.SetStatus("error")
 			return
 		}
-    // Create an user if the keycloak option was enabled
-    if value, exists := cloud_selector["keycloak"]; exists && (value == "yes" || value == "true") {
-      // Generate a random password for the Keycloak user
-	    userAccountName := "sandbox-" + guid
-      password, err := generateRandomPassword(16)
-      if err != nil {
+		// Create an user if the keycloak option was enabled
+		if value, exists := cloud_selector["keycloak"]; exists && (value == "yes" || value == "true") {
+			// Generate a random password for the Keycloak user
+			userAccountName := "sandbox-" + guid
+			password, err := generateRandomPassword(16)
+			if err != nil {
 				log.Logger.Error("Error generating password", "error", err)
-      }
+			}
 
-      // Define the KeycloakUser GroupVersionResource
-      keycloakUserGVR := schema.GroupVersionResource{
-        Group:    "keycloak.org",
-        Version:  "v1alpha1",
-        Resource: "keycloakusers",
-      }
+			// Define the KeycloakUser GroupVersionResource
+			keycloakUserGVR := schema.GroupVersionResource{
+				Group:    "keycloak.org",
+				Version:  "v1alpha1",
+				Resource: "keycloakusers",
+			}
 
-      // Create the KeycloakUser object as an unstructured object
-      keycloakUser := &unstructured.Unstructured{
-        Object: map[string]interface{}{
-          "apiVersion": "keycloak.org/v1alpha1",
-          "kind":       "KeycloakUser",
-          "metadata": map[string]interface{}{
-            "name":      userAccountName,
-            "namespace": "rhsso", // The namespace where Keycloak is installed
-          },
-          "spec": map[string]interface{}{
-            "user": map[string]interface{}{
-              "username": userAccountName,
-              "enabled":  true,
-              "credentials": []interface{}{
-                map[string]interface{}{
-                  "type":      "password",
-                  "value":     password,
-                  "temporary": false,
-                },
-              },
-            },
-            "realmSelector": map[string]interface{}{
-              "matchLabels": map[string]interface{}{
-                "app": "sso", // The label selector for the Keycloak realm
-              },
-            },
-          },
-        },
-      }
+			// Create the KeycloakUser object as an unstructured object
+			keycloakUser := &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"apiVersion": "keycloak.org/v1alpha1",
+					"kind":       "KeycloakUser",
+					"metadata": map[string]interface{}{
+						"name":      userAccountName,
+						"namespace": "rhsso", // The namespace where Keycloak is installed
+					},
+					"spec": map[string]interface{}{
+						"user": map[string]interface{}{
+							"username": userAccountName,
+							"enabled":  true,
+							"credentials": []interface{}{
+								map[string]interface{}{
+									"type":      "password",
+									"value":     password,
+									"temporary": false,
+								},
+							},
+						},
+						"realmSelector": map[string]interface{}{
+							"matchLabels": map[string]interface{}{
+								"app": "sso", // The label selector for the Keycloak realm
+							},
+						},
+					},
+				},
+			}
 
-      // Create the KeycloakUser resource in the specified namespace
-      namespace := "rhsso"
-      _, err = dynclientset.Resource(keycloakUserGVR).Namespace(namespace).Create(context.TODO(), keycloakUser, metav1.CreateOptions{})
-      if err != nil {
-        log.Logger.Error("Error creating KeycloakUser", "error", err)
-      }
+			// Create the KeycloakUser resource in the specified namespace
+			namespace := "rhsso"
+			_, err = dynclientset.Resource(keycloakUserGVR).Namespace(namespace).Create(context.TODO(), keycloakUser, metav1.CreateOptions{})
+			if err != nil {
+				log.Logger.Error("Error creating KeycloakUser", "error", err)
+			}
 
-      fmt.Println("KeycloakUser created successfully")
+			fmt.Println("KeycloakUser created successfully")
 
-    }
+		}
 
-    // Assign ClusterRole sandbox-hcp (created with gitops) to the SA if hcp option was selected
-    if value, exists := cloud_selector["hcp"]; exists && (value == "yes" || value == "true") {
-      _, err = clientset.RbacV1().RoleBindings(namespaceName).Create(context.TODO(), &rbacv1.RoleBinding{
-        ObjectMeta: metav1.ObjectMeta{
-          Name: serviceAccountName + "-hcp",
-          Labels: map[string]string{
-            "serviceUuid": serviceUuid,
-            "guid":        annotations["guid"],
-          },
-        },
-        RoleRef: rbacv1.RoleRef{
-          APIGroup: rbacv1.GroupName,
-          Kind:     "ClusterRole",
-          Name:     serviceAccountName + "-hcp",
-        },
-        Subjects: []rbacv1.Subject{
-          {
-            Kind:      "ServiceAccount",
-            Name:      serviceAccountName,
-            Namespace: namespaceName,
-          },
-        },
-      }, metav1.CreateOptions{})
+		// Assign ClusterRole sandbox-hcp (created with gitops) to the SA if hcp option was selected
+		if value, exists := cloud_selector["hcp"]; exists && (value == "yes" || value == "true") {
+			_, err = clientset.RbacV1().RoleBindings(namespaceName).Create(context.TODO(), &rbacv1.RoleBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: serviceAccountName + "-hcp",
+					Labels: map[string]string{
+						"serviceUuid": serviceUuid,
+						"guid":        annotations["guid"],
+					},
+				},
+				RoleRef: rbacv1.RoleRef{
+					APIGroup: rbacv1.GroupName,
+					Kind:     "ClusterRole",
+					Name:     serviceAccountName + "-hcp",
+				},
+				Subjects: []rbacv1.Subject{
+					{
+						Kind:      "ServiceAccount",
+						Name:      serviceAccountName,
+						Namespace: namespaceName,
+					},
+				},
+			}, metav1.CreateOptions{})
 
-      if err != nil {
-        log.Logger.Error("Error creating OCP RoleBind", "error", err)
-        if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
-          log.Logger.Error("Error cleaning up the namespace", "error", err)
-        }
-        rnew.SetStatus("error")
-        return
-      }
-    }
+			if err != nil {
+				log.Logger.Error("Error creating OCP RoleBind", "error", err)
+				if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+					log.Logger.Error("Error cleaning up the namespace", "error", err)
+				}
+				rnew.SetStatus("error")
+				return
+			}
+		}
 
 		// TODO: parameterize this, or detect when to execute it, otherwise it'll fail
 		// // Create RoleBind for the Service Account in the Namespace for kubevirt
@@ -1319,48 +1319,48 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		// 	return
 		// }
 
-    // if cloud_selector has enabled the virt flag, then we give permission to cnv-images namespace
-    if value, exists := cloud_selector["virt"]; exists && (value == "yes" || value == "true") {
-      // Look if namespace 'cnv-images' exists
-      if _, err := clientset.CoreV1().Namespaces().Get(context.TODO(), "cnv-images", metav1.GetOptions{}); err == nil {
+		// if cloud_selector has enabled the virt flag, then we give permission to cnv-images namespace
+		if value, exists := cloud_selector["virt"]; exists && (value == "yes" || value == "true") {
+			// Look if namespace 'cnv-images' exists
+			if _, err := clientset.CoreV1().Namespaces().Get(context.TODO(), "cnv-images", metav1.GetOptions{}); err == nil {
 
-        rb := &rbacv1.RoleBinding{
-          ObjectMeta: metav1.ObjectMeta{
-            Name:      "allow-clone-" + namespaceName[:min(51, len(namespaceName))],
-            Namespace: "cnv-images",
-            Labels: map[string]string{
-              "serviceUuid": serviceUuid,
-              "guid":        annotations["guid"],
-            },
-          },
-          Subjects: []rbacv1.Subject{
-            {
-              Kind:      "ServiceAccount",
-              Name:      "default",
-              Namespace: namespaceName,
-            },
-          },
-          RoleRef: rbacv1.RoleRef{
-            Kind:     "ClusterRole",
-            Name:     "datavolume-cloner",
-            APIGroup: "rbac.authorization.k8s.io",
-          },
-        }
+				rb := &rbacv1.RoleBinding{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "allow-clone-" + namespaceName[:min(51, len(namespaceName))],
+						Namespace: "cnv-images",
+						Labels: map[string]string{
+							"serviceUuid": serviceUuid,
+							"guid":        annotations["guid"],
+						},
+					},
+					Subjects: []rbacv1.Subject{
+						{
+							Kind:      "ServiceAccount",
+							Name:      "default",
+							Namespace: namespaceName,
+						},
+					},
+					RoleRef: rbacv1.RoleRef{
+						Kind:     "ClusterRole",
+						Name:     "datavolume-cloner",
+						APIGroup: "rbac.authorization.k8s.io",
+					},
+				}
 
-        _, err = clientset.RbacV1().RoleBindings("cnv-images").Create(context.TODO(), rb, metav1.CreateOptions{})
-        if err != nil {
-          if !strings.Contains(err.Error(), "already exists") {
-            log.Logger.Error("Error creating rolebinding on cnv-images", "error", err)
+				_, err = clientset.RbacV1().RoleBindings("cnv-images").Create(context.TODO(), rb, metav1.CreateOptions{})
+				if err != nil {
+					if !strings.Contains(err.Error(), "already exists") {
+						log.Logger.Error("Error creating rolebinding on cnv-images", "error", err)
 
-            if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
-              log.Logger.Error("Error cleaning up the namespace", "error", err)
-            }
-            rnew.SetStatus("error")
-            return
-          }
-        }
-      }
-    }
+						if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+							log.Logger.Error("Error cleaning up the namespace", "error", err)
+						}
+						rnew.SetStatus("error")
+						return
+					}
+				}
+			}
+		}
 		secrets, err := clientset.CoreV1().Secrets(namespaceName).List(context.TODO(), metav1.ListOptions{})
 
 		if err != nil {
@@ -1659,14 +1659,13 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		return err
 	}
 
-  // Create an dynamic OpenShift client for non regular objects
-  dynclientset, err := dynamic.NewForConfig(config)
-  if err != nil {
-    log.Logger.Error("Error creating OCP client", "error", err, "name", account.Name)
-    account.SetStatus("error")
-    return err
-  }
-
+	// Create an dynamic OpenShift client for non regular objects
+	dynclientset, err := dynamic.NewForConfig(config)
+	if err != nil {
+		log.Logger.Error("Error creating OCP client", "error", err, "name", account.Name)
+		account.SetStatus("error")
+		return err
+	}
 
 	// Define the Service Account name
 	serviceAccountName := "sandbox"
@@ -1713,23 +1712,22 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		}
 	}
 
-	// Delete the User 
+	// Delete the User
 	userAccountName := "sandbox-" + account.Annotations["guid"]
-  // Define the KeycloakUser GroupVersionResource
-  keycloakUserGVR := schema.GroupVersionResource{
-    Group:    "keycloak.org",
-    Version:  "v1alpha1",
-    Resource: "keycloakusers",
-  }
+	// Define the KeycloakUser GroupVersionResource
+	keycloakUserGVR := schema.GroupVersionResource{
+		Group:    "keycloak.org",
+		Version:  "v1alpha1",
+		Resource: "keycloakusers",
+	}
 
-  namespace := "rhsso"
-  err = dynclientset.Resource(keycloakUserGVR).Namespace(namespace).Delete(context.TODO(), userAccountName, metav1.DeleteOptions{})
+	namespace := "rhsso"
+	err = dynclientset.Resource(keycloakUserGVR).Namespace(namespace).Delete(context.TODO(), userAccountName, metav1.DeleteOptions{})
 	if err != nil {
 		log.Logger.Error("Error deleting OCP namespace", "error", err, "name", account.Name)
 		account.SetStatus("error")
 		return err
 	}
-
 
 	_, err = account.Provider.DbPool.Exec(
 		context.Background(),
