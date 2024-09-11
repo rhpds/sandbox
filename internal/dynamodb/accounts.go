@@ -124,7 +124,7 @@ func makeAccount(account AwsAccountDynamoDB) models.AwsAccount {
 
 	ti, err := strconv.ParseInt(strconv.FormatFloat(account.UpdateTime, 'f', 0, 64), 10, 64)
 	if err != nil {
-		log.Logger.Error("Got error parsing update time:", err)
+		log.Logger.Error("Got error parsing update time:", "error", err)
 	}
 
 	a.UpdatedAt = time.Unix(ti, 0)
@@ -240,7 +240,7 @@ func GetAccount(svc *dynamodb.DynamoDB, name string) (AwsAccountDynamoDB, error)
 			log.Logger.Error(errget.Error())
 		}
 
-		log.Logger.Error("errget", errget)
+		log.Logger.Error("error", "error", errget)
 		return AwsAccountDynamoDB{}, errget
 	}
 

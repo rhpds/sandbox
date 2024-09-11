@@ -15,6 +15,7 @@ import (
 	"github.com/rhpds/sandbox/internal/log"
 	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -43,6 +44,33 @@ type OcpSharedClusterConfiguration struct {
 	MaxCpuUsagePercentage    float64           `json:"max_cpu_usage_percentage"`
 	DbPool                   *pgxpool.Pool     `json:"-"`
 	VaultSecret              string            `json:"-"`
+	// For any new project (openshift namespace) created by the sandbox API
+	// for an OcpSandbox, a default ResourceQuota will be set.
+	// This quota is designed to be large enough to accommodate general needs.
+	// Additionally, content developers can specify custom quotas in agnosticV
+	// based on the requirements of specific Labs/Demos.
+	DefaultSandboxQuota *v1.ResourceQuota `json:"default_sandbox_quota"`
+
+	// StrictDefaultSandboxQuota is a flag to determine if the default sandbox quota
+	// should be strictly enforced. If set to true, the default sandbox quota will be
+	// enforced as a hard limit. Requested quota not be allowed to exceed the default.
+	// If set to false, the default sandbox will be updated
+	// to the requested quota.
+	StrictDefaultSandboxQuota bool `json:"strict_default_sandbox_quota"`
+
+	// QuotaRequired is a flag to determine if a quota is required in any request
+	// for an OcpSandbox.
+	// If set to true, a quota must be provided in the request.
+	// If set to false, a quota will be created based on the default sandbox quota.
+	// By default it's false.
+	QuotaRequired bool `json:"quota_required"`
+
+	// SkipQuota is a flag to control if the sandbox quota should be disabled.
+	// if set to true, the sandbox quota will not be created
+	// if set to false, the sandbox quota will be created, depending on the value of QuotaRequired, DefaultSandboxQuota and StrictDefaultSandboxQuota
+	// By default it's true.
+	// TODO: change the default value to false
+	SkipQuota bool `json:"skip_quota"`
 }
 
 type OcpSharedClusterConfigurations []OcpSharedClusterConfiguration
@@ -57,10 +85,12 @@ type OcpSandbox struct {
 	OcpApiUrl                         string            `json:"api_url"`
 	Annotations                       map[string]string `json:"annotations"`
 	Status                            string            `json:"status"`
+	ErrorMessage                      string            `json:"error_message,omitempty"`
 	CleanupCount                      int               `json:"cleanup_count"`
 	Namespace                         string            `json:"namespace"`
 	ClusterAdditionalVars             map[string]any    `json:"cluster_additional_vars,omitempty"`
 	ToCleanup                         bool              `json:"to_cleanup"`
+	Quota                             v1.ResourceList   `json:"quota,omitempty"`
 }
 
 type OcpSandboxWithCreds struct {
@@ -84,6 +114,47 @@ type TokenResponse struct {
 }
 
 var nameRegex = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
+
+// MakeOcpSharedClusterConfiguration creates a new OcpSharedClusterConfiguration
+// with default values
+func MakeOcpSharedClusterConfiguration() *OcpSharedClusterConfiguration {
+	p := &OcpSharedClusterConfiguration{}
+
+	p.Valid = true
+	p.MaxMemoryUsagePercentage = 80
+	p.MaxCpuUsagePercentage = 100
+	p.DefaultSandboxQuota = &v1.ResourceQuota{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "sandbox-quota",
+		},
+		Spec: v1.ResourceQuotaSpec{
+			Hard: v1.ResourceList{
+				v1.ResourcePods:                     resource.MustParse("10"),
+				v1.ResourceLimitsCPU:                resource.MustParse("10"),
+				v1.ResourceLimitsMemory:             resource.MustParse("20Gi"),
+				v1.ResourceRequestsCPU:              resource.MustParse("10"),
+				v1.ResourceRequestsMemory:           resource.MustParse("20Gi"),
+				v1.ResourceRequestsStorage:          resource.MustParse("50Gi"),
+				v1.ResourceEphemeralStorage:         resource.MustParse("50Gi"),
+				v1.ResourceRequestsEphemeralStorage: resource.MustParse("50Gi"),
+				v1.ResourceLimitsEphemeralStorage:   resource.MustParse("50Gi"),
+				v1.ResourcePersistentVolumeClaims:   resource.MustParse("10"),
+				v1.ResourceServices:                 resource.MustParse("10"),
+				v1.ResourceServicesLoadBalancers:    resource.MustParse("10"),
+				v1.ResourceServicesNodePorts:        resource.MustParse("10"),
+				v1.ResourceSecrets:                  resource.MustParse("10"),
+				v1.ResourceConfigMaps:               resource.MustParse("10"),
+				v1.ResourceReplicationControllers:   resource.MustParse("10"),
+				v1.ResourceQuotas:                   resource.MustParse("10"),
+			},
+		},
+	}
+	p.StrictDefaultSandboxQuota = false
+	p.QuotaRequired = false
+	p.SkipQuota = true
+
+	return p
+}
 
 // Bind and Render
 func (p *OcpSharedClusterConfiguration) Bind(r *http.Request) error {
@@ -124,17 +195,6 @@ func (p *OcpSharedClusterConfiguration) Bind(r *http.Request) error {
 		return errors.New("max_cpu_usage_percentage must be between 0 and 100")
 	}
 
-	// Set default values for CPU and Memory usage
-	if p.MaxMemoryUsagePercentage == 0 {
-		p.MaxMemoryUsagePercentage = 90
-	}
-
-	if p.MaxCpuUsagePercentage == 0 {
-		p.MaxCpuUsagePercentage = 100
-	}
-
-	p.Valid = true
-
 	return nil
 }
 
@@ -165,8 +225,12 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 			valid,
 			additional_vars,
 			max_memory_usage_percentage,
-			max_cpu_usage_percentage)
-			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11)
+			max_cpu_usage_percentage,
+			default_sandbox_quota,
+			strict_default_sandbox_quota,
+			quota_required,
+			skip_quota)
+			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15)
 			RETURNING id`,
 		p.Name,
 		p.ApiUrl,
@@ -179,6 +243,10 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 		p.AdditionalVars,
 		p.MaxMemoryUsagePercentage,
 		p.MaxCpuUsagePercentage,
+		p.DefaultSandboxQuota,
+		p.StrictDefaultSandboxQuota,
+		p.QuotaRequired,
+		p.SkipQuota,
 	).Scan(&p.ID); err != nil {
 		return err
 	}
@@ -203,7 +271,11 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 			 valid = $8,
 			 additional_vars = $9,
 			 max_memory_usage_percentage = $11,
-			 max_cpu_usage_percentage = $12
+			 max_cpu_usage_percentage = $12,
+			 default_sandbox_quota = $13,
+			 strict_default_sandbox_quota = $14,
+			 quota_required = $15,
+			 skip_quota = $16
 		 WHERE id = $10`,
 		p.Name,
 		p.ApiUrl,
@@ -217,6 +289,10 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 		p.ID,
 		p.MaxMemoryUsagePercentage,
 		p.MaxCpuUsagePercentage,
+		p.DefaultSandboxQuota,
+		p.StrictDefaultSandboxQuota,
+		p.QuotaRequired,
+		p.SkipQuota,
 	); err != nil {
 		return err
 	}
@@ -279,7 +355,11 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 			valid,
 			additional_vars,
 			max_memory_usage_percentage,
-			max_cpu_usage_percentage
+			max_cpu_usage_percentage,
+			default_sandbox_quota,
+			strict_default_sandbox_quota,
+			quota_required,
+			skip_quota
 		 FROM ocp_shared_cluster_configurations WHERE name = $2`,
 		p.VaultSecret, name,
 	)
@@ -299,6 +379,10 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 		&cluster.AdditionalVars,
 		&cluster.MaxMemoryUsagePercentage,
 		&cluster.MaxCpuUsagePercentage,
+		&cluster.DefaultSandboxQuota,
+		&cluster.StrictDefaultSandboxQuota,
+		&cluster.QuotaRequired,
+		&cluster.SkipQuota,
 	); err != nil {
 		return OcpSharedClusterConfiguration{}, err
 	}
@@ -327,7 +411,11 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			valid,
 			additional_vars,
 			max_memory_usage_percentage,
-			max_cpu_usage_percentage
+			max_cpu_usage_percentage,
+			default_sandbox_quota,
+			strict_default_sandbox_quota,
+			quota_required,
+            skip_quota
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
 	)
@@ -356,6 +444,10 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			&cluster.AdditionalVars,
 			&cluster.MaxMemoryUsagePercentage,
 			&cluster.MaxCpuUsagePercentage,
+			&cluster.DefaultSandboxQuota,
+			&cluster.StrictDefaultSandboxQuota,
+			&cluster.QuotaRequired,
+			&cluster.SkipQuota,
 		); err != nil {
 			return []OcpSharedClusterConfiguration{}, err
 		}
@@ -740,7 +832,7 @@ func anySchedulableNodes(nodes []v1.Node) bool {
 	return false
 }
 
-func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, multiple bool, ctx context.Context) (OcpSandboxWithCreds, error) {
+func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, requestedQuota *v1.ResourceList, multiple bool, ctx context.Context) (OcpSandboxWithCreds, error) {
 	var selectedCluster OcpSharedClusterConfiguration
 
 	// Ensure annotation has guid
@@ -899,6 +991,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 
 		rnew.OcpApiUrl = selectedCluster.ApiUrl
 		rnew.OcpSharedClusterConfigurationName = selectedCluster.Name
+		rnew.OcpIngressDomain = selectedCluster.IngressDomain
 
 		if err := rnew.Save(); err != nil {
 			log.Logger.Error("Error saving OCP account", "error", err)
@@ -931,6 +1024,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		namespaceName = namespaceName[:min(63, len(namespaceName))] // truncate to 63
 
 		delay := time.Second
+		// Loop to wait for the namespace to be deleted
 		for {
 			// Create the Namespace
 			// Add serviceUuid as label to the namespace
@@ -972,6 +1066,60 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				return
 			}
 			break
+		}
+
+		if !selectedCluster.SkipQuota {
+			// Create Quota for the Namespace
+			// First calculate the quota using the requested_quota from the PlacementRequest and
+			// the options from the OcpSharedClusterConfiguration
+			requested := &v1.ResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "sandbox-requested-quota",
+				},
+				Spec: v1.ResourceQuotaSpec{
+					Hard: *requestedQuota,
+				},
+			}
+
+			if selectedCluster.QuotaRequired {
+				// Check if the requested quota is provided and not empty
+				if requestedQuota == nil || len(*requestedQuota) == 0 {
+					log.Logger.Error("Error creating OCP quota", "error", "requested quota is required")
+					rnew.ErrorMessage = "Quota is required for this cluster and should be specified in the request"
+					if err := rnew.Save(); err != nil {
+						log.Logger.Error("Error saving OCP account", "error", err)
+					}
+					rnew.SetStatus("error")
+					return
+				}
+			}
+
+			quota := ApplyQuota(requested,
+				selectedCluster.DefaultSandboxQuota,
+				selectedCluster.StrictDefaultSandboxQuota,
+			)
+
+			rnew.Quota = quota.Spec.Hard
+
+			// Troubleshooting output the quota
+			log.Logger.Debug("Quota", "quota", quota, "selectedCluster", selectedCluster,
+				"requestedQuota", requestedQuota)
+
+			if err := rnew.Save(); err != nil {
+				log.Logger.Error("Error saving OCP account", "error", err)
+				rnew.SetStatus("error")
+				return
+			}
+
+			_, err = clientset.CoreV1().ResourceQuotas(namespaceName).Create(context.TODO(), quota, metav1.CreateOptions{})
+			if err != nil {
+				log.Logger.Error("Error creating OCP quota", "error", err)
+				if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+					log.Logger.Error("Error cleaning up the namespace", "error", err)
+				}
+				rnew.SetStatus("error")
+				return
+			}
 		}
 
 		_, err = clientset.CoreV1().ServiceAccounts(namespaceName).Create(context.TODO(), &v1.ServiceAccount{
@@ -1171,33 +1319,18 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				Token: string(saSecret.Data["token"]),
 			},
 		}
-		r := OcpSandboxWithCreds{
-			OcpSandbox: OcpSandbox{
-				Name:                              rnew.Name,
-				Kind:                              "OcpSandbox",
-				OcpSharedClusterConfigurationName: selectedCluster.Name,
-				OcpApiUrl:                         selectedCluster.ApiUrl,
-				OcpIngressDomain:                  selectedCluster.IngressDomain,
-				Annotations:                       annotations,
-				ServiceUuid:                       serviceUuid,
-				Status:                            "success",
-				Namespace:                         namespaceName,
-			},
-			Credentials: creds,
-			Provider:    a,
-		}
+		rnew.Credentials = creds
+		rnew.Status = "success"
 
-		r.ID = rnew.ID
-
-		if err := r.Save(); err != nil {
+		if err := rnew.Save(); err != nil {
 			log.Logger.Error("Error saving OCP account", "error", err)
 			log.Logger.Info("Trying to cleanup OCP account")
-			if err := r.Delete(); err != nil {
+			if err := rnew.Delete(); err != nil {
 				log.Logger.Error("Error cleaning up OCP account", "error", err)
 			}
 		}
-		log.Logger.Info("Ocp sandbox booked", "account", r.Name, "service_uuid", r.ServiceUuid,
-			"cluster", r.OcpSharedClusterConfigurationName, "namespace", r.Namespace)
+		log.Logger.Info("Ocp sandbox booked", "account", rnew.Name, "service_uuid", rnew.ServiceUuid,
+			"cluster", rnew.OcpSharedClusterConfigurationName, "namespace", rnew.Namespace)
 	}()
 	//--------------------------------------------------
 
@@ -1340,6 +1473,11 @@ func (account *OcpSandboxWithCreds) Delete() error {
 	for {
 		status, err := account.GetStatus()
 		if err != nil {
+			// if norow, the resource was not created, nothing to delete
+			if err == pgx.ErrNoRows {
+				log.Logger.Info("Resource not found", "name", account.Name)
+				return nil
+			}
 			log.Logger.Error("cannot get status of resource", "error", err, "name", account.Name)
 			break
 		}
@@ -1442,8 +1580,6 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		account.SetStatus("error")
 		return err
 	}
-	// Define the Service Account name
-	serviceAccountName := "sandbox"
 
 	// Check if the namespace exists
 	_, err = clientset.CoreV1().Namespaces().Get(context.TODO(), account.Namespace, metav1.GetOptions{})
@@ -1476,15 +1612,6 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		"namespace", account.Namespace,
 		"cluster", account.OcpSharedClusterConfigurationName,
 	)
-
-	// Delete the Service Account
-	if err = clientset.CoreV1().
-		ServiceAccounts(account.Namespace).
-		Delete(context.TODO(), serviceAccountName, metav1.DeleteOptions{}); err != nil {
-		log.Logger.Error("Error deleting OCP service account", "error", err)
-		account.SetStatus("error")
-		return err
-	}
 
 	rbName := "allow-clone-" + account.Namespace[:min(51, len(account.Namespace))]
 	// Delete the role binding from the cnv-images namespace
@@ -1636,4 +1763,85 @@ func (a *OcpSandboxWithCreds) Reload() error {
 	}
 
 	return nil
+}
+
+func ApplyQuota(requestedQuotaOrig *v1.ResourceQuota, defaultQuota *v1.ResourceQuota, strictDefaultSandboxQuota bool) *v1.ResourceQuota {
+	var resultQuota *v1.ResourceQuota
+
+	if requestedQuotaOrig == nil {
+		return defaultQuota
+	}
+	// deepcopy the default quota
+	resultQuota = defaultQuota.DeepCopy()
+	requestedQuota := requestedQuotaOrig.DeepCopy()
+
+	// If strictDefaultSandboxQuota is true, the default quota cannot be exceeded.
+	// lower values are updated though
+
+	// first, iterate over the requested quota to check for new keys like:
+	// <storage-class-name>.storageclass.storage.k8s.io/requests.storage
+	// or the aliases:  cpu / memory / storage / ephemeral-storage
+	// which should translate to:
+	// requests.cpu / requests.memory / requests.storage / requests.ephemeral-storage
+	for key, item := range requestedQuota.Spec.Hard {
+		if _, exists := defaultQuota.Spec.Hard[key]; !exists {
+			// if the key is one of 'cpu', 'memory', 'ephemeral-storage'
+			// add it as 'requests.<key>'
+			switch key {
+			case "cpu":
+				// check if the key 'requests.cpu' already exists in the requested quota (duplicate)
+				// if it does, take the minimum
+				if requested, exists := requestedQuota.Spec.Hard[v1.ResourceRequestsCPU]; exists {
+					if item.Cmp(requested) < 0 {
+						requestedQuota.Spec.Hard[v1.ResourceRequestsCPU] = item.DeepCopy()
+					}
+				} else {
+					requestedQuota.Spec.Hard[v1.ResourceRequestsCPU] = item.DeepCopy()
+				}
+
+				delete(requestedQuota.Spec.Hard, key)
+			case "memory":
+				// check if the key 'requests.memory' already exists in the requested quota (duplicate)
+				// if it does, take the minimum
+				if requested, exists := requestedQuota.Spec.Hard[v1.ResourceRequestsMemory]; exists {
+					if item.Cmp(requested) < 0 {
+						requestedQuota.Spec.Hard[v1.ResourceRequestsMemory] = item.DeepCopy()
+					}
+				} else {
+					requestedQuota.Spec.Hard[v1.ResourceRequestsMemory] = item.DeepCopy()
+				}
+
+				delete(requestedQuota.Spec.Hard, key)
+			case "ephemeral-storage":
+				// check if the key 'requests.ephemeral-storage' already exists in the requested quota (duplicate)
+				// if it does, take the minimum
+				if requested, exists := requestedQuota.Spec.Hard[v1.ResourceRequestsEphemeralStorage]; exists {
+					if item.Cmp(requested) < 0 {
+						requestedQuota.Spec.Hard[v1.ResourceRequestsEphemeralStorage] = item.DeepCopy()
+					}
+				} else {
+					requestedQuota.Spec.Hard[v1.ResourceRequestsEphemeralStorage] = item.DeepCopy()
+				}
+				delete(requestedQuota.Spec.Hard, key)
+			default:
+				// The key doesn't exist in the default quota, add it to the result
+				resultQuota.Spec.Hard[key] = item.DeepCopy()
+			}
+		}
+	}
+
+	// Now iterate over the main keys
+	for key, item := range resultQuota.Spec.Hard {
+		if requested, exists := requestedQuota.Spec.Hard[key]; exists {
+			if item.Cmp(requested) < 0 {
+				if !strictDefaultSandboxQuota {
+					resultQuota.Spec.Hard[key] = requested.DeepCopy()
+				}
+			} else {
+				resultQuota.Spec.Hard[key] = requested.DeepCopy()
+			}
+		}
+	}
+
+	return resultQuota
 }

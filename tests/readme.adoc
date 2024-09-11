@@ -5,15 +5,19 @@ See link:https://hurl.dev/[hurl.dev] for upstream documentation.
 
 .Run local tests
 ----
-make run-api
-
+# The API must be running in another terminal
+make tokens
+. .dev.tokens_env
 uuid=$(uuidgen -r)
 
+cd tests/
+
 hurl --test \
-  --variable login_token=... \
-  --variable login_token_admin=... \
+  --variable login_token=$apptoken \
+  --variable login_token_admin=$admintoken \
   --variable host=http://localhost:8080 \
   --variable uuid=$uuid \
+  --jobs 1 \
   *.hurl
 ----
 
@@ -52,6 +56,7 @@ Either you're using the DEV database,  or you'll have to setup the OCP shared cl
     {
       "virt":"no",
       "cloud":"cnv",
+      "name": "cluster-foo",
       "purpose":"dev"
     },
   "kubeconfig": "..."
