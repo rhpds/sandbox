@@ -64,6 +64,7 @@ Authorization: Bearer {{access_token_admin}}
     "api_url": "https://api.ocp-cluster-1.com:6443",
     "ingress_domain": "apps.ocp-cluster-1.com",
     "kubeconfig": "apiVersion: v1 ...",
+    "skip_quota": true,
     "annotations": {
         "virt": "no",
         "cloud": "ibm",
@@ -99,6 +100,11 @@ HTTP 200
 jsonpath "$.name" == "ocp-cluster-test1"
 jsonpath "$.annotations.virt" == "no"
 jsonpath "$.valid" == true
+jsonpath "$.default_sandbox_quota.metadata.name" == "sandbox-quota"
+jsonpath "$.default_sandbox_quota.spec.hard['requests.memory']" == "20Gi"
+jsonpath "$.strict_default_sandbox_quota" == false
+jsonpath "$.quota_required" == false
+jsonpath "$.skip_quota" == true
 
 PUT {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1/disable
 Authorization: Bearer {{access_token_admin}}
@@ -128,6 +134,71 @@ HTTP 200
 jsonpath "$.name" == "ocp-cluster-test1"
 jsonpath "$.valid" == true
 
+# Update a bunch of parameters
+PUT {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1/update
+Authorization: Bearer {{ access_token_admin }}
+{
+  "quota_required": true,
+  "strict_default_sandbox_quota": true,
+  "max_memory_usage_percentage": 60,
+  "skip_quota": false
+}
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "OCP shared cluster configuration updated"
+
+GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
+Authorization: Bearer {{access_token_admin}}
+HTTP 200
+[Asserts]
+jsonpath "$.strict_default_sandbox_quota" == true
+jsonpath "$.quota_required" == true
+jsonpath "$.max_memory_usage_percentage" == 60
+jsonpath "$.skip_quota" == false
+
+DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
+Authorization: Bearer {{access_token_admin}}
+[Options]
+retry: 2
+HTTP 404
+
+POST {{host}}/api/v1/ocp-shared-cluster-configurations
+Authorization: Bearer {{access_token_admin}}
+{
+    "name": "ocp-cluster-test1",
+    "api_url": "https://api.ocp-cluster-1.com:6443",
+    "ingress_domain": "apps.ocp-cluster-1.com",
+    "kubeconfig": "apiVersion: v1 ...",
+    "annotations": {
+        "virt": "no",
+        "cloud": "ibm",
+        "purpose": "dev"
+    },
+    "strict_default_sandbox_quota": true,
+    "quota_required": true,
+    "default_sandbox_quota": {
+        "metadata": {
+            "name": "sandbox-quota"
+        },
+        "spec": {
+            "hard": {
+                "requests.memory": "30Gi"
+            }
+        }
+    }
+}
+HTTP 201
+[Asserts]
+jsonpath "$.message" == "OCP shared cluster configuration created"
+
+GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
+Authorization: Bearer {{access_token_admin}}
+HTTP 200
+[Asserts]
+jsonpath "$.name" == "ocp-cluster-test1"
+jsonpath "$.strict_default_sandbox_quota" == true
+jsonpath "$.quota_required" == true
+jsonpath "$.default_sandbox_quota.spec.hard['requests.memory']" == "30Gi"
 
 DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
@@ -411,7 +482,6 @@ HTTP 200
 [Asserts]
 jsonpath "$.name" == "{{sandbox_name}}"
 jsonpath "$.service_uuid" == "{{uuid}}"
-
 
 #################################################################################
 # Delete placement

@@ -260,7 +260,7 @@ func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider OcpSa
 	}
 
 	if err := ocpProvider.Release(p.ServiceUuid); err != nil {
-		log.Logger.Error("Error while releasing OCP sandboxes")
+		log.Logger.Error("Error while releasing OCP sandboxes", "error", err)
 		p.SetStatus("error")
 		return
 	}

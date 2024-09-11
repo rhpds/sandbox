@@ -13,9 +13,10 @@ type Model struct {
 type Resource struct {
 	Model
 
-	ServiceUuid string `json:"service_uuid"`
-	Available   bool   `json:"available"`
-	ToCleanup   bool   `json:"to_cleanup"`
+	ServiceUuid  string `json:"service_uuid"`
+	Available    bool   `json:"available"`
+	ToCleanup    bool   `json:"to_cleanup"`
+	ErrorMessage string `json:"error_message,omitempty"`
 
 	Annotations Annotations `json:"annotations"`
 }
