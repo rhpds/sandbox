@@ -94,6 +94,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			Err:            err,
 			HTTPStatusCode: http.StatusBadRequest,
 			Message:        "Error decoding request body",
+			ErrorMultiline: []string{err.Error()},
 		})
 		log.Logger.Error("CreatePlacementHandler", "error", err)
 
@@ -188,6 +189,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				placementRequest.ServiceUuid,
 				request.CloudSelector,
 				placementRequest.Annotations.Merge(request.Annotations),
+				request.Quota,
 				multipleOcp,
 				r.Context(),
 			)
@@ -978,6 +980,7 @@ func (h *BaseHandler) CreateReservationHandler(w http.ResponseWriter, r *http.Re
 			Err:            err,
 			HTTPStatusCode: http.StatusBadRequest,
 			Message:        "Error decoding request body",
+			ErrorMultiline: []string{err.Error()},
 		})
 		log.Logger.Error("CreateReservationHandler", "error", err)
 
@@ -1155,6 +1158,7 @@ func (h *BaseHandler) UpdateReservationHandler(w http.ResponseWriter, r *http.Re
 			Err:            err,
 			HTTPStatusCode: http.StatusBadRequest,
 			Message:        "Error decoding request body",
+			ErrorMultiline: []string{err.Error()},
 		})
 		log.Logger.Error("UpdateReservationHandler", "error", err)
 		return
