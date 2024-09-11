@@ -1667,9 +1667,6 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		return err
 	}
 
-	// Define the Service Account name
-	serviceAccountName := "sandbox"
-
 	// Check if the namespace exists
 	_, err = clientset.CoreV1().Namespaces().Get(context.TODO(), account.Namespace, metav1.GetOptions{})
 	if err != nil {
@@ -1724,9 +1721,13 @@ func (account *OcpSandboxWithCreds) Delete() error {
 	namespace := "rhsso"
 	err = dynclientset.Resource(keycloakUserGVR).Namespace(namespace).Delete(context.TODO(), userAccountName, metav1.DeleteOptions{})
 	if err != nil {
-		log.Logger.Error("Error deleting OCP namespace", "error", err, "name", account.Name)
-		account.SetStatus("error")
-		return err
+		if strings.Contains(err.Error(), "not found") {
+			log.Logger.Info("Keycloak not found, move on", "name", account.Name)
+		} else {
+			log.Logger.Error("Error deleting OCP namespace", "error", err, "name", account.Name)
+			account.SetStatus("error")
+			return err
+		}
 	}
 
 	_, err = account.Provider.DbPool.Exec(
