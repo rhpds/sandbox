@@ -1299,40 +1299,6 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			}
 		}
 
-		// Assign ClusterRole sandbox-hcp (created with gitops) to the SA if hcp option was selected
-		if value, exists := cloud_selector["hcp"]; exists && (value == "yes" || value == "true") {
-			_, err = clientset.RbacV1().RoleBindings(namespaceName).Create(context.TODO(), &rbacv1.RoleBinding{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: serviceAccountName + "-hcp",
-					Labels: map[string]string{
-						"serviceUuid": serviceUuid,
-						"guid":        annotations["guid"],
-					},
-				},
-				RoleRef: rbacv1.RoleRef{
-					APIGroup: rbacv1.GroupName,
-					Kind:     "ClusterRole",
-					Name:     serviceAccountName + "-hcp",
-				},
-				Subjects: []rbacv1.Subject{
-					{
-						Kind:      "ServiceAccount",
-						Name:      serviceAccountName,
-						Namespace: namespaceName,
-					},
-				},
-			}, metav1.CreateOptions{})
-
-			if err != nil {
-				log.Logger.Error("Error creating OCP RoleBind", "error", err)
-				if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
-					log.Logger.Error("Error cleaning up the namespace", "error", err)
-				}
-				rnew.SetStatus("error")
-				return
-			}
-		}
-
 		// if cloud_selector has enabled the virt flag, then we give permission to cnv-images namespace
 		if value, exists := cloud_selector["virt"]; exists && (value == "yes" || value == "true") {
 			// Look if namespace 'cnv-images' exists
