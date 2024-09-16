@@ -18,8 +18,8 @@ const (
 	projectTagPrefix = "sandbox-"
 	azurePoolId      = "01"
 
-	poolPrefix = "pool-01-"
-	poolSize   = 10
+	subscriptionNamePrefix = "pool-01-"
+	subscriptionCount      = 10
 )
 
 type AzureSandboxProvider struct {
@@ -88,11 +88,11 @@ func NewAzureSandboxProvider(
 func (a *AzureSandboxProvider) allocateSubscription() (string, error) {
 	SubscriptionNames := map[string]bool{}
 
-	// TODO: These names are hard codded and should be stored somewhere
-	// at the config file. So, the pool variable should be initialized using
-	// configuration, not generate on the fly.
-	for i := 1; i <= poolSize; i++ {
-		SubscriptionNames[fmt.Sprintf("%s%03d", poolPrefix, i)] = false
+	// Subscription names are not defined but used to get Subscription ID
+	// using Azure API calls. For simplicity we are using the subscriptionCount
+	// subscriptions starting from pool-01-001.
+	for i := 1; i <= subscriptionCount; i++ {
+		SubscriptionNames[fmt.Sprintf("%s%03d", subscriptionNamePrefix, i)] = false
 	}
 
 	rows, err := a.dbPool.Query(
@@ -147,6 +147,9 @@ func (a *AzureSandboxProvider) getNewSandboxName(guid string, serviceUuid string
 }
 
 func (a *AzureSandboxProvider) initNewAzureSandbox(serviceUuid string, annotations Annotations) (*AzureSandboxWithCreds, error) {
+	// Multiple Azure sandboxes can be initialize concurently
+	// and we should be sure that we are getting correct values
+	// for the new AzureSandboxWithCreds structure
 	a.poolMutex.Lock()
 	defer a.poolMutex.Unlock()
 
