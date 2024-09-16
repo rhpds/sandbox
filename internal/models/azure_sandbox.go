@@ -138,17 +138,21 @@ func (a *AzureSandboxProvider) allocateSubscription() (string, error) {
 	return availableSubscriptions[rand.Intn(len(availableSubscriptions))], nil
 }
 
-func (a *AzureSandboxProvider) Request(
-	serviceUuid string,
-	annotations Annotations,
-) (AzureSandboxWithCreds, error) {
+func (a *AzureSandboxProvider) getNewSandboxName(guid string, serviceUuid string) (string, error) {
+	if guid == "" || serviceUuid == "" {
+		return "", fmt.Errorf("guid or serviceUuid is invalid")
+	}
 
-	// TODO: What name should be created for the sanbox?
-	sandboxName := fmt.Sprintf("%04d", rand.Intn(900))
+	return fmt.Sprintf("%s-1-%s", guid, serviceUuid), nil
+}
+
+func (a *AzureSandboxProvider) initNewAzureSandbox(serviceUuid string, annotations Annotations) (*AzureSandboxWithCreds, error) {
+	a.poolMutex.Lock()
+	defer a.poolMutex.Unlock()
 
 	azureSandbox := AzureSandboxWithCreds{
 		AzureSandbox: AzureSandbox{
-			Name:        sandboxName,
+			Name:        "noname",
 			Kind:        "AzureSandbox",
 			ServiceUuid: serviceUuid,
 			Annotations: annotations,
@@ -157,32 +161,44 @@ func (a *AzureSandboxProvider) Request(
 		Provider: a,
 	}
 
-	a.poolMutex.Lock()
+	sandboxName, err := a.getNewSandboxName(
+		annotations["guid"],
+		serviceUuid,
+	)
+	if err != nil {
+		return nil, err
+	}
+	azureSandbox.AzureSandbox.Name = sandboxName
 
 	subscriptionName, err := a.allocateSubscription()
 	if err != nil {
-		a.poolMutex.Unlock()
-
-		log.Logger.Error("Error crating Azure sandbox", "error", err)
-		return AzureSandboxWithCreds{}, err // TODO: Or should we save it with error state?
+		return nil, err
 	}
 
 	azureSandbox.SubscriptionName = subscriptionName
 
 	err = azureSandbox.Save()
 	if err != nil {
-		a.poolMutex.Unlock()
-
-		log.Logger.Error("Error saving Azure sandbox", "error", err)
-		return AzureSandboxWithCreds{}, err
+		return nil, err
 	}
 
-	a.poolMutex.Unlock()
+	return &azureSandbox, nil
+}
+
+func (a *AzureSandboxProvider) Request(
+	serviceUuid string,
+	annotations Annotations,
+) (AzureSandboxWithCreds, error) {
+	azureSandbox, err := a.initNewAzureSandbox(serviceUuid, annotations)
+	if err != nil {
+		log.Logger.Error("Can't init new Azure sandbox", "error", err)
+		return AzureSandboxWithCreds{}, err
+	}
 
 	// Create the sandbox asynchronously
 	go azureSandbox.Create()
 
-	return azureSandbox, nil
+	return *azureSandbox, nil
 }
 
 func (a *AzureSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) ([]AzureSandboxWithCreds, error) {
@@ -240,13 +256,12 @@ func (a *AzureSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string
 	return sandboxes, nil
 }
 
-// TODO: Are we removing sandboxes in "error" state?
+// TODO: Are we removing sandboxes in "error" or "initializing" state?
 func (a *AzureSandboxProvider) Release(serviceUuid string) error {
 	sandboxes, err := a.FetchAllByServiceUuidWithCreds(serviceUuid)
 	if err != nil {
 		return err
 	}
-
 	var errorHappened error
 
 	for _, sandbox := range sandboxes {
@@ -347,9 +362,8 @@ func (sb *AzureSandboxWithCreds) setStatus(status string) error {
 }
 
 // func (sb *AzureSandboxWithCreds) Create() {
-// 	// TODO: Implement provisioning here
 // 	poolClient := azure.InitPoolClient(
-// 		projectTagPrefix+"test", // TODO: Proper project tag
+// 		projectTagPrefix+"test",
 // 		azurePoolId,
 // 		sb.Provider.azurePoolApiSecret,
 // 	)
@@ -420,7 +434,6 @@ func (sb *AzureSandboxWithCreds) setStatus(status string) error {
 // func (sb *AzureSandboxWithCreds) Delete() error {
 // 	fmt.Printf("\n\nSandbox: %s (%d) for deletion!\n\n", sb.Name, sb.Id)
 
-// 	// TODO: Implement cleanup here
 // 	// Sandbox cleanup can take time, so probably we should run it asynchronously
 // 	// at least yielding control and check for delete process complete periodically
 // 	// if it possible via API
@@ -467,7 +480,6 @@ func (sb *AzureSandboxWithCreds) setStatus(status string) error {
 // ////////////////////// MOCKUPS ////////////////////////
 // TODO: this mockup code shoul be deleted
 func (sb *AzureSandboxWithCreds) Create() {
-
 	// This is a just mockup, normally it should be filled
 	// by the code whichi really create sandbox
 	sandboxInfo := azure.SandboxInfo{
@@ -518,11 +530,6 @@ func (sb *AzureSandboxWithCreds) Create() {
 func (sb *AzureSandboxWithCreds) Delete() error {
 	fmt.Printf("\n\nSandbox: %s (%d) for deletion!\n\n", sb.Name, sb.Id)
 
-	// TODO: Implement cleanup here
-	// Sandbox cleanup can take time, so probably we should run it asynchronously
-	// at least yielding control and check for delete process complete periodically
-	// if it possible via API
-
 	_, err := sb.Provider.dbPool.Exec(
 		context.Background(),
 		`DELETE FROM resources WHERE id = $1`,
@@ -536,3 +543,5 @@ func (sb *AzureSandboxWithCreds) Delete() error {
 }
 
 //////////////////////// MOCKUPS ////////////////////////
+
+// TODO: How to clean up sandboxes in error state if we need them for the investigation? Do we need to implement another endpoint?
