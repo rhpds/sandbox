@@ -199,11 +199,6 @@ Authorization: Bearer {{access_token}}
     {
       "kind": "OcpSandbox",
       "limit_range": {
-        "apiVersion": "v1",
-        "kind": "LimitRange",
-        "metadata": {
-          "name": "sandbox-limit-range"
-        },
         "spec": {
           "limits": [
             {
