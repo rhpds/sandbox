@@ -1613,6 +1613,26 @@ paths:
                   $ref: "#/components/schemas/Annotations"
                 additional_vars:
                   type: object
+                limit_range:
+                  description: |-
+                    Limit Range for the sandbox
+                    This allows to set the default limit and request for pods
+                    see https://kubernetes.io/docs/concepts/policy/limit-range/
+                  type: object
+                  example:
+                    apiVersion: v1
+                    kind: LimitRange
+                    metadata:
+                      name: sandbox-limit-range
+                    spec:
+                      limits:
+                        - default:
+                            cpu: "1"
+                            memory: 2Gi
+                          defaultRequest:
+                            cpu: "0.5"
+                            memory: 1Gi
+                          type: Container
             example:
               strict_default_sandbox_quota: true
               quota_required: true
@@ -1632,6 +1652,20 @@ paths:
                 limits.memory: "20Gi"
                 secrets: "2"
                 requests.ephemeral-storage: "100Gi"
+              limit_range:
+                apiVersion: v1
+                kind: LimitRange
+                metadata:
+                  name: sandbox-limit-range
+                spec:
+                  limits:
+                    - default:
+                        cpu: "1"
+                        memory: 2Gi
+                      defaultRequest:
+                        cpu: "0.5"
+                        memory: 1Gi
+                      type: Container
       responses:
         '200':
           description: The OcpSharedClusterConfiguration is updated
@@ -1749,6 +1783,22 @@ components:
                   limits.memory: "20Gi"
                   secrets: "2"
                   requests.ephemeral-storage: "100Gi"
+              limit_range:
+                type: object
+                description: |-
+                  Limit Range for the sandbox
+                  This allows to set the default limit and request for pods
+                  see https://kubernetes.io/docs/concepts/policy/limit-range/
+                example:
+                  spec:
+                    limits:
+                      - default:
+                          cpu: "1"
+                          memory: 2Gi
+                        defaultRequest:
+                          cpu: "0.5"
+                          memory: 1Gi
+                        type: Container
         annotations:
           $ref: "#/components/schemas/Annotations"
       example:
@@ -2346,6 +2396,27 @@ components:
             If set to false, the sandbox quota will be created, depending on the value of
             quota_required, default_sandbox_quota and strict_default_sandbox_quota.
           default: true
+        limit_range:
+          type: object
+          description: |-
+            Limit Range for the sandbox
+            This allows to set the default limit and request for pods
+            see https://kubernetes.io/docs/concepts/policy/limit-range/
+          default:
+            apiVersion: v1
+            kind: LimitRange
+            metadata:
+              name: sandbox-limit-range
+            spec:
+              limits:
+                - default:
+                    cpu: "1"
+                    memory: 2Gi
+                  defaultRequest:
+                    cpu: "0.5"
+                    memory: 1Gi
+                  type: Container
+
       example:
         name: ocp-cluster-1
         api_url: https://api.ocp-cluster-1.com:6443

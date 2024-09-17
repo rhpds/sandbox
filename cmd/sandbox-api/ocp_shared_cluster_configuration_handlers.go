@@ -311,6 +311,10 @@ func (h *BaseHandler) UpdateOcpSharedClusterConfigurationHandler(w http.Response
 		ocpSharedClusterConfiguration.SkipQuota = *input.SkipQuota
 	}
 
+	if input.LimitRange != nil {
+		ocpSharedClusterConfiguration.LimitRange = input.LimitRange
+	}
+
 	if err := ocpSharedClusterConfiguration.Save(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
