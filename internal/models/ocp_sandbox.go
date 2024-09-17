@@ -71,6 +71,11 @@ type OcpSharedClusterConfiguration struct {
 	// By default it's true.
 	// TODO: change the default value to false
 	SkipQuota bool `json:"skip_quota"`
+
+	// Limit Range for the sandbox
+	// This allows to set the default limit and request for pods
+	// see https://kubernetes.io/docs/concepts/policy/limit-range/
+	LimitRange *v1.LimitRange `json:"limit_range,omitempty"`
 }
 
 type OcpSharedClusterConfigurations []OcpSharedClusterConfiguration
@@ -91,6 +96,7 @@ type OcpSandbox struct {
 	ClusterAdditionalVars             map[string]any    `json:"cluster_additional_vars,omitempty"`
 	ToCleanup                         bool              `json:"to_cleanup"`
 	Quota                             v1.ResourceList   `json:"quota,omitempty"`
+	LimitRange                        *v1.LimitRange    `json:"limit_range,omitempty"`
 }
 
 type OcpSandboxWithCreds struct {
@@ -152,6 +158,42 @@ func MakeOcpSharedClusterConfiguration() *OcpSharedClusterConfiguration {
 	p.StrictDefaultSandboxQuota = false
 	p.QuotaRequired = false
 	p.SkipQuota = true
+
+	// Default Limit Range for new OcpSharedClusterConfiguration
+	// ---
+	// apiVersion: v1
+	// kind: LimitRange
+	// metadata:
+	//   name: sandbox-limit-range
+	// spec:
+	//   limits:
+	//   - default:
+	//       cpu: "1"
+	//       memory: 2Gi
+	//     defaultRequest:
+	//       cpu: "0.5"
+	//       memory: 1Gi
+	//     type: Container
+	p.LimitRange = &v1.LimitRange{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "sandbox-limit-range",
+		},
+		Spec: v1.LimitRangeSpec{
+			Limits: []v1.LimitRangeItem{
+				{
+					Type: "Container",
+					Default: v1.ResourceList{
+						"cpu":    resource.MustParse("1"),
+						"memory": resource.MustParse("2Gi"),
+					},
+					DefaultRequest: v1.ResourceList{
+						"cpu":    resource.MustParse("0.5"),
+						"memory": resource.MustParse("1Gi"),
+					},
+				},
+			},
+		},
+	}
 
 	return p
 }
@@ -229,8 +271,9 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 			default_sandbox_quota,
 			strict_default_sandbox_quota,
 			quota_required,
-			skip_quota)
-			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			skip_quota,
+			limit_range)
+			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 			RETURNING id`,
 		p.Name,
 		p.ApiUrl,
@@ -247,6 +290,7 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 		p.StrictDefaultSandboxQuota,
 		p.QuotaRequired,
 		p.SkipQuota,
+		p.LimitRange,
 	).Scan(&p.ID); err != nil {
 		return err
 	}
@@ -275,7 +319,8 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 			 default_sandbox_quota = $13,
 			 strict_default_sandbox_quota = $14,
 			 quota_required = $15,
-			 skip_quota = $16
+			 skip_quota = $16,
+			 limit_range = $17
 		 WHERE id = $10`,
 		p.Name,
 		p.ApiUrl,
@@ -293,6 +338,7 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 		p.StrictDefaultSandboxQuota,
 		p.QuotaRequired,
 		p.SkipQuota,
+		p.LimitRange,
 	); err != nil {
 		return err
 	}
@@ -359,7 +405,8 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 			default_sandbox_quota,
 			strict_default_sandbox_quota,
 			quota_required,
-			skip_quota
+			skip_quota,
+			limit_range
 		 FROM ocp_shared_cluster_configurations WHERE name = $2`,
 		p.VaultSecret, name,
 	)
@@ -383,6 +430,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 		&cluster.StrictDefaultSandboxQuota,
 		&cluster.QuotaRequired,
 		&cluster.SkipQuota,
+		&cluster.LimitRange,
 	); err != nil {
 		return OcpSharedClusterConfiguration{}, err
 	}
@@ -415,7 +463,8 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			default_sandbox_quota,
 			strict_default_sandbox_quota,
 			quota_required,
-            skip_quota
+            skip_quota,
+			limit_range
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
 	)
@@ -448,6 +497,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			&cluster.StrictDefaultSandboxQuota,
 			&cluster.QuotaRequired,
 			&cluster.SkipQuota,
+			&cluster.LimitRange,
 		); err != nil {
 			return []OcpSharedClusterConfiguration{}, err
 		}
@@ -1119,6 +1169,26 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				}
 				rnew.SetStatus("error")
 				return
+			}
+
+			// Create the limit range
+			if selectedCluster.LimitRange.Name != "" {
+				_, err = clientset.CoreV1().LimitRanges(namespaceName).Create(context.TODO(), selectedCluster.LimitRange, metav1.CreateOptions{})
+				if err != nil {
+					log.Logger.Error("Error creating OCP limit range", "error", err)
+					if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+						log.Logger.Error("Error cleaning up the namespace", "error", err)
+					}
+					rnew.SetStatus("error")
+					return
+				}
+
+				rnew.LimitRange = selectedCluster.LimitRange
+				if err := rnew.Save(); err != nil {
+					log.Logger.Error("Error saving OCP account", "error", err)
+					rnew.SetStatus("error")
+					return
+				}
 			}
 		}
 
