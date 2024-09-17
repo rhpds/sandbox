@@ -882,7 +882,7 @@ func anySchedulableNodes(nodes []v1.Node) bool {
 	return false
 }
 
-func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, requestedQuota *v1.ResourceList, multiple bool, ctx context.Context) (OcpSandboxWithCreds, error) {
+func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, requestedQuota *v1.ResourceList, requestedLimitRange *v1.LimitRange, multiple bool, ctx context.Context) (OcpSandboxWithCreds, error) {
 	var selectedCluster OcpSharedClusterConfiguration
 
 	// Ensure annotation has guid
@@ -1171,11 +1171,20 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				return
 			}
 
+			limitRange := &v1.LimitRange{}
+			if requestedLimitRange != nil {
+				limitRange = requestedLimitRange
+			} else {
+				limitRange = selectedCluster.LimitRange
+			}
+
 			// Create the limit range
-			if selectedCluster.LimitRange.Name != "" {
-				_, err = clientset.CoreV1().LimitRanges(namespaceName).Create(context.TODO(), selectedCluster.LimitRange, metav1.CreateOptions{})
+			if limitRange.Name != "" {
+				_, err = clientset.CoreV1().LimitRanges(namespaceName).Create(context.TODO(), limitRange, metav1.CreateOptions{})
 				if err != nil {
-					log.Logger.Error("Error creating OCP limit range", "error", err)
+					log.Logger.Error("Error creating OCP limit range",
+						"error", err,
+						"limit range", limitRange)
 					if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
 						log.Logger.Error("Error cleaning up the namespace", "error", err)
 					}
@@ -1183,7 +1192,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 					return
 				}
 
-				rnew.LimitRange = selectedCluster.LimitRange
+				rnew.LimitRange = limitRange
 				if err := rnew.Save(); err != nil {
 					log.Logger.Error("Error saving OCP account", "error", err)
 					rnew.SetStatus("error")

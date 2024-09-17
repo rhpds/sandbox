@@ -108,6 +108,7 @@ type ResourceRequest struct {
 	Annotations    models.Annotations `json:"annotations,omitempty"`
 	CloudSelector  models.Annotations `json:"cloud_selector,omitempty"`
 	Quota          *v1.ResourceList   `json:"quota,omitempty"`
+	LimitRange     *v1.LimitRange     `json:"limit_range,omitempty"`
 	RequestedQuota *v1.ResourceQuota  `json:"-"` // plumbing
 }
 
@@ -152,6 +153,11 @@ func (p *PlacementRequest) Bind(r *http.Request) error {
 					resourceRequest.CloudSelector[k] = "no"
 				}
 			}
+		}
+
+		if resourceRequest.LimitRange != nil {
+			// Automatically set the name of the limit range
+			resourceRequest.LimitRange.Name = "sandbox-limit-range"
 		}
 	}
 

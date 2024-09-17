@@ -180,6 +180,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				request.CloudSelector,
 				placementRequest.Annotations.Merge(request.Annotations),
 				request.Quota,
+				request.LimitRange,
 				multipleOcp,
 				r.Context(),
 			)

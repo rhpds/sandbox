@@ -1783,6 +1783,26 @@ components:
                   limits.memory: "20Gi"
                   secrets: "2"
                   requests.ephemeral-storage: "100Gi"
+              limit_range:
+                type: object
+                description: |-
+                  Limit Range for the sandbox
+                  This allows to set the default limit and request for pods
+                  see https://kubernetes.io/docs/concepts/policy/limit-range/
+                example:
+                  apiVersion: v1
+                  kind: LimitRange
+                  metadata:
+                    name: sandbox-limit-range
+                  spec:
+                    limits:
+                      - default:
+                          cpu: "1"
+                          memory: 2Gi
+                        defaultRequest:
+                          cpu: "0.5"
+                          memory: 1Gi
+                        type: Container
         annotations:
           $ref: "#/components/schemas/Annotations"
       example:
