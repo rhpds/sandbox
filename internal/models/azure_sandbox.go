@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -20,6 +21,13 @@ const (
 
 	subscriptionNamePrefix = "pool-01-"
 	subscriptionCount      = 10
+
+	// Sand box can be in state when deletion is not possible
+	// (e.g initializating). Those two constants controls
+	// how long delay process will last until error occurs
+	// up to deleteMaxRetries * deleteRetryDelay seconds
+	deleteMaxRetries = 10
+	deleteRetryDelay = 5
 )
 
 type AzureSandboxProvider struct {
@@ -259,7 +267,6 @@ func (a *AzureSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string
 	return sandboxes, nil
 }
 
-// TODO: Are we removing sandboxes in "error" or "initializing" state?
 func (a *AzureSandboxProvider) Release(serviceUuid string) error {
 	sandboxes, err := a.FetchAllByServiceUuidWithCreds(serviceUuid)
 	if err != nil {
@@ -359,6 +366,27 @@ func (sb *AzureSandboxWithCreds) setStatus(status string) error {
 			resource_data['status'] = to_jsonb('%s'::text)
 			WHERE id = $2`, status),
 		status, sb.Id,
+	)
+
+	return err
+}
+
+func (sb *AzureSandboxWithCreds) getStatus() (string, error) {
+	var status string
+	err := sb.Provider.dbPool.QueryRow(
+		context.Background(),
+		"SELECT status FROM resources WHERE id = $1",
+		sb.Id,
+	).Scan(&status)
+
+	return status, err
+}
+
+func (sb *AzureSandboxWithCreds) markForCleanup() error {
+	_, err := sb.Provider.dbPool.Exec(
+		context.Background(),
+		"UPDATE resources SET to_cleanup = true, resource_data['to_cleanup'] = 'true' where id = $1",
+		sb.Id,
 	)
 
 	return err
@@ -480,60 +508,89 @@ func (sb *AzureSandboxWithCreds) setStatus(status string) error {
 // 	return nil
 // }
 
-// ////////////////////// MOCKUPS ////////////////////////
-// TODO: this mockup code shoul be deleted
 func (sb *AzureSandboxWithCreds) Create() {
-	// This is a just mockup, normally it should be filled
-	// by the code whichi really create sandbox
-	sandboxInfo := azure.SandboxInfo{
-		SubscriptionName:  sb.SubscriptionName,
-		SubscriptionId:    "test-subscription-id",
-		ResourceGroupName: "test-resource-group-name",
-		AppID:             "test-app-id",
-		DisplayName:       "test-display-name",
-		Password:          "test-password",
+	sandboxInfo, err := createAzureSandbox(*sb)
+	if err == nil {
+		// TODO: delete this temp output
+		fmt.Printf("\n\n"+
+			"Sandbox Info:\n"+
+			"\tSubscription Name: %s\n"+
+			"\tSubscription ID: %s\n"+
+			"\tResource Group Name: %s\n"+
+			"\tApp ID: %s\n"+
+			"\tDisplay Name: %s\n"+
+			"\tPassword: %s\n\n",
+			sandboxInfo.SubscriptionName,
+			sandboxInfo.SubscriptionId,
+			sandboxInfo.ResourceGroupName,
+			sandboxInfo.AppID,
+			sandboxInfo.DisplayName,
+			sandboxInfo.Password,
+		)
+
+		sb.SubscriptionId = sandboxInfo.SubscriptionId
+		sb.ResourceGroupName = sandboxInfo.ResourceGroupName
+		sb.AppID = sandboxInfo.AppID
+		sb.DisplayName = sandboxInfo.DisplayName
+		sb.Credentials = []any{
+			map[string]string{
+				"password": sandboxInfo.Password,
+			},
+		}
+
+		sb.Status = "success"
+	} else {
+		log.Logger.Error("can't create Azure sandbox", "error", err, "name", sb.Name)
+		sb.Status = "error"
+		return
 	}
 
-	// Summary
-	fmt.Printf("\n\n"+
-		"Sandbox Info:\n"+
-		"\tSubscription Name: %s\n"+
-		"\tSubscription ID: %s\n"+
-		"\tResource Group Name: %s\n"+
-		"\tApp ID: %s\n"+
-		"\tDisplay Name: %s\n"+
-		"\tPassword: %s\n\n",
-		sandboxInfo.SubscriptionName,
-		sandboxInfo.SubscriptionId,
-		sandboxInfo.ResourceGroupName,
-		sandboxInfo.AppID,
-		sandboxInfo.DisplayName,
-		sandboxInfo.Password,
-	)
-
-	sb.SubscriptionId = sandboxInfo.SubscriptionId
-	sb.ResourceGroupName = sandboxInfo.ResourceGroupName
-	sb.AppID = sandboxInfo.AppID
-	sb.DisplayName = sandboxInfo.DisplayName
-	sb.Credentials = []any{
-		map[string]string{
-			"password": sandboxInfo.Password,
-		},
-	}
-
-	sb.Status = "success"
-	err := sb.Save()
+	err = sb.Save()
 	if err != nil {
-		log.Logger.Error("Can't update Azure Sandbox status", "error", err)
+		log.Logger.Error("can't update Azure Sandbox status", "error", err)
 		return
 	}
 }
 
 // models.Deletable interface implementation
 func (sb *AzureSandboxWithCreds) Delete() error {
-	fmt.Printf("\n\nSandbox: %s (%d) for deletion!\n\n", sb.Name, sb.Id)
+	retryCount := deleteMaxRetries
+	for {
+		if retryCount == 0 {
+			err := fmt.Errorf("timeout error")
+			log.Logger.Error("can't delete resource", "error", err)
+			return err
+		}
 
-	_, err := sb.Provider.dbPool.Exec(
+		sandboxStatus, err := sb.getStatus()
+		if err != nil {
+			log.Logger.Error("can't get status of resource", "error", err, "name", sb.Name)
+			return err
+		}
+
+		if sandboxStatus == "deleting" {
+			return nil
+		}
+
+		if sandboxStatus == "success" || sandboxStatus == "error" {
+			break
+		}
+
+		time.Sleep(deleteRetryDelay * time.Second)
+		retryCount--
+	}
+
+	sb.setStatus("deleting")
+	sb.markForCleanup()
+
+	err := deleteAzureSandbox(*sb)
+	if err != nil {
+		log.Logger.Error("can't delete Azure resources", "error", err, "name", sb.Name)
+		sb.setStatus("error")
+		return err
+	}
+
+	_, err = sb.Provider.dbPool.Exec(
 		context.Background(),
 		`DELETE FROM resources WHERE id = $1`,
 		sb.Id,
@@ -545,6 +602,27 @@ func (sb *AzureSandboxWithCreds) Delete() error {
 	return nil
 }
 
-//////////////////////// MOCKUPS ////////////////////////
+func createAzureSandbox(sb AzureSandboxWithCreds) (*azure.SandboxInfo, error) {
+	// TODO: Implement method
+	sandboxInfo := &azure.SandboxInfo{
+		SubscriptionName:  sb.SubscriptionName,
+		SubscriptionId:    "test-subscription-id",
+		ResourceGroupName: "test-resource-group-name",
+		AppID:             "test-app-id",
+		DisplayName:       "test-display-name",
+		Password:          "test-password",
+	}
 
-// TODO: How to clean up sandboxes in error state if we need them for the investigation? Do we need to implement another endpoint?
+	// Some delay to imitade creation process
+	time.Sleep(25 * time.Second)
+
+	return sandboxInfo, nil
+}
+
+func deleteAzureSandbox(sb AzureSandboxWithCreds) error {
+	// TODO: Implement method
+	fmt.Printf("\n\nDeleting sandbox: %s\n\n", sb.Name)
+	time.Sleep(35 * time.Second)
+
+	return nil
+}
