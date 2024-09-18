@@ -25,6 +25,15 @@ jsonpath "$.access_token" isString
 jsonpath "$.access_token_exp" isString
 
 #################################################################################
+# Delete the reservation
+#################################################################################
+DELETE {{host}}/api/v1/reservations/summit
+Authorization: Bearer {{access_token_admin}}
+[Options]
+retry: 3
+HTTP 404
+
+#################################################################################
 # Create or update or a new reservation without the admin token
 #################################################################################
 
