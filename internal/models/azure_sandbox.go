@@ -100,12 +100,13 @@ func (a *AzureSandboxProvider) allocateSubscription() (string, error) {
 	// using Azure API calls. For simplicity we are using the subscriptionCount
 	// subscriptions starting from pool-01-001.
 	for i := 1; i <= subscriptionCount; i++ {
-		SubscriptionNames[fmt.Sprintf("%s%03d", subscriptionNamePrefix, i)] = false
+		SubscriptionNames[fmt.Sprintf("%s%d", subscriptionNamePrefix, i)] = false
 	}
 
 	rows, err := a.dbPool.Query(
 		context.Background(),
-		`SELECT resource_data ->> 'subscription_name' FROM resources WHERE status = 'success'`)
+		`SELECT resource_data ->> 'subscription_name' FROM resources WHERE status = 'success'`,
+	)
 	if err != nil {
 		return "", fmt.Errorf("can't get retrieve about allocated pools")
 	}
@@ -392,142 +393,9 @@ func (sb *AzureSandboxWithCreds) markForCleanup() error {
 	return err
 }
 
-// func (sb *AzureSandboxWithCreds) Create() {
-// 	poolClient := azure.InitPoolClient(
-// 		projectTagPrefix+"test",
-// 		azurePoolId,
-// 		sb.Provider.azurePoolApiSecret,
-// 	)
-
-// 	var err error
-// 	sb.SubscriptionName, err = poolClient.AllocatePool()
-// 	if err != nil {
-// 		log.Logger.Error("Error allocating Azure sandbox", "error", err)
-// 		return // TODO: Set error status
-// 	}
-
-// 	sandboxClient := azure.InitSandboxClient(
-// 		azure.AzureCredentials{
-// 			TenantID: sb.Provider.azureTenantId,
-// 			ClientID: sb.Provider.azureClientId,
-// 			Secret:   sb.Provider.azureSecret,
-// 		},
-// 	)
-
-// 	sandboxInfo, err := sandboxClient.CreateSandboxEnvironment(
-// 		sb.SubscriptionName,
-// 		sb.Annotations["requester"],
-// 		sb.Annotations["guid"],
-// 		sb.Annotations["cost_center"],
-// 		sb.Annotations["domain"],
-// 	)
-// 	if err != nil {
-// 		log.Logger.Error("Error creating Azure sandbox", "error", err)
-// 		return // TODO: Set error status
-// 	}
-
-// 	// Summary
-// 	fmt.Printf("\n\n"+
-// 		"Sandbox Info:\n"+
-// 		"\tSubscription Name: %s\n"+
-// 		"\tSubscription ID: %s\n"+
-// 		"\tResource Group Name: %s\n"+
-// 		"\tApp ID: %s\n"+
-// 		"\tDisplay Name: %s\n"+
-// 		"\tPassword: %s\n\n",
-// 		sandboxInfo.SubscriptionName,
-// 		sandboxInfo.SubscriptionId,
-// 		sandboxInfo.ResourceGroupName,
-// 		sandboxInfo.AppID,
-// 		sandboxInfo.DisplayName,
-// 		sandboxInfo.Password,
-// 	)
-
-// 	sb.SubscriptionId = sandboxInfo.SubscriptionId
-// 	sb.ResourceGroupName = sandboxInfo.ResourceGroupName
-// 	sb.AppID = sandboxInfo.AppID
-// 	sb.DisplayName = sandboxInfo.DisplayName
-// 	sb.Credentials = []any{
-// 		map[string]string{
-// 			"password": sandboxInfo.Password,
-// 		},
-// 	}
-
-// 	sb.Status = "success"
-// 	err = sb.Save()
-// 	if err != nil {
-// 		log.Logger.Error("Can't update Azure Sandbox status", "error", err)
-// 		return
-// 	}
-// }
-
-// // models.Deletable interface implementation
-// func (sb *AzureSandboxWithCreds) Delete() error {
-// 	fmt.Printf("\n\nSandbox: %s (%d) for deletion!\n\n", sb.Name, sb.Id)
-
-// 	// Sandbox cleanup can take time, so probably we should run it asynchronously
-// 	// at least yielding control and check for delete process complete periodically
-// 	// if it possible via API
-
-// 	sandboxClient := azure.InitSandboxClient(
-// 		azure.AzureCredentials{
-// 			TenantID: sb.Provider.azureTenantId,
-// 			ClientID: sb.Provider.azureClientId,
-// 			Secret:   sb.Provider.azureSecret,
-// 		},
-// 	)
-
-// 	err := sandboxClient.CleanupSandboxEnvironment(
-// 		sb.SubscriptionName,
-// 		sb.Annotations["guid"],
-// 	)
-// 	if err != nil {
-// 		log.Logger.Error("Error cleaning up Azure sandbox", "error", err)
-// 	}
-
-// 	poolClient := azure.InitPoolClient(
-// 		projectTagPrefix+"test",
-// 		azurePoolId,
-// 		sb.Provider.azurePoolApiSecret,
-// 	)
-
-// 	err = poolClient.ReleasePool()
-// 	if err != nil {
-// 		log.Logger.Error("Error releasing Azure sandbox", "error", err)
-// 	}
-
-// 	_, err = sb.Provider.DbPool.Exec(
-// 		context.Background(),
-// 		`DELETE FROM resources WHERE id = $1`,
-// 		sb.Id,
-// 	)
-// 	if err != nil {
-// 		return fmt.Errorf("failed to remove resource: %w", err)
-// 	}
-
-// 	return nil
-// }
-
 func (sb *AzureSandboxWithCreds) Create() {
-	sandboxInfo, err := createAzureSandbox(*sb)
+	sandboxInfo, err := sb.requestAzureSandbox()
 	if err == nil {
-		// TODO: delete this temp output
-		fmt.Printf("\n\n"+
-			"Sandbox Info:\n"+
-			"\tSubscription Name: %s\n"+
-			"\tSubscription ID: %s\n"+
-			"\tResource Group Name: %s\n"+
-			"\tApp ID: %s\n"+
-			"\tDisplay Name: %s\n"+
-			"\tPassword: %s\n\n",
-			sandboxInfo.SubscriptionName,
-			sandboxInfo.SubscriptionId,
-			sandboxInfo.ResourceGroupName,
-			sandboxInfo.AppID,
-			sandboxInfo.DisplayName,
-			sandboxInfo.Password,
-		)
-
 		sb.SubscriptionId = sandboxInfo.SubscriptionId
 		sb.ResourceGroupName = sandboxInfo.ResourceGroupName
 		sb.AppID = sandboxInfo.AppID
@@ -542,7 +410,6 @@ func (sb *AzureSandboxWithCreds) Create() {
 	} else {
 		log.Logger.Error("can't create Azure sandbox", "error", err, "name", sb.Name)
 		sb.Status = "error"
-		return
 	}
 
 	err = sb.Save()
@@ -583,7 +450,7 @@ func (sb *AzureSandboxWithCreds) Delete() error {
 	sb.setStatus("deleting")
 	sb.markForCleanup()
 
-	err := deleteAzureSandbox(*sb)
+	err := sb.cleanupAzureSandbox()
 	if err != nil {
 		log.Logger.Error("can't delete Azure resources", "error", err, "name", sb.Name)
 		sb.setStatus("error")
@@ -602,27 +469,45 @@ func (sb *AzureSandboxWithCreds) Delete() error {
 	return nil
 }
 
-func createAzureSandbox(sb AzureSandboxWithCreds) (*azure.SandboxInfo, error) {
-	// TODO: Implement method
-	sandboxInfo := &azure.SandboxInfo{
-		SubscriptionName:  sb.SubscriptionName,
-		SubscriptionId:    "test-subscription-id",
-		ResourceGroupName: "test-resource-group-name",
-		AppID:             "test-app-id",
-		DisplayName:       "test-display-name",
-		Password:          "test-password",
-	}
+func (sb *AzureSandboxWithCreds) requestAzureSandbox() (*azure.SandboxInfo, error) {
+	sandboxClient := azure.InitSandboxClient(
+		azure.AzureCredentials{
+			TenantID: sb.Provider.azureTenantId,
+			ClientID: sb.Provider.azureClientId,
+			Secret:   sb.Provider.azureSecret,
+		},
+	)
 
-	// Some delay to imitade creation process
-	time.Sleep(25 * time.Second)
+	sandboxInfo, err := sandboxClient.CreateSandboxEnvironment(
+		sb.SubscriptionName,
+		sb.Annotations["requester"],
+		sb.Annotations["guid"],
+		sb.Annotations["cost_center"],
+		sb.Annotations["domain"],
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	return sandboxInfo, nil
 }
 
-func deleteAzureSandbox(sb AzureSandboxWithCreds) error {
-	// TODO: Implement method
-	fmt.Printf("\n\nDeleting sandbox: %s\n\n", sb.Name)
-	time.Sleep(35 * time.Second)
+func (sb *AzureSandboxWithCreds) cleanupAzureSandbox() error {
+	sandboxClient := azure.InitSandboxClient(
+		azure.AzureCredentials{
+			TenantID: sb.Provider.azureTenantId,
+			ClientID: sb.Provider.azureClientId,
+			Secret:   sb.Provider.azureSecret,
+		},
+	)
+
+	err := sandboxClient.CleanupSandboxEnvironment(
+		sb.SubscriptionName,
+		sb.Annotations["guid"],
+	)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

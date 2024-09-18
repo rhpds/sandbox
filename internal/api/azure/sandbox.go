@@ -84,10 +84,9 @@ func (sc *SandboxClient) CreateSandboxEnvironment(
 		return nil, err
 	}
 
-	// TODO: Update input parameter to use correct values (just guid)
 	appDetails, err := sc.registerApplication(
 		subscription.SubscriptionFQID,
-		defaultAppPrefix+"test-"+guid)
+		defaultAppPrefix+guid)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +112,7 @@ func (sc *SandboxClient) CleanupSandboxEnvironment(subscriptionName string, guid
 		return err
 	}
 
-	err = sc.deleteApplications(defaultAppPrefix + "test-" + guid)
+	err = sc.deleteApplications(defaultAppPrefix + guid)
 	if err != nil {
 		return err
 	}
