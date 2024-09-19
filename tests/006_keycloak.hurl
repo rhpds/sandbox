@@ -41,9 +41,9 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "tests": "Simple OcpSandbox placement",
+    "tests": "Simple OcpSandbox placement with keycloak user",
     "guid": "testg",
-    "env_type": "ocp4-cluster-blablablabla"
+    "env_type": "ocp4-cluster-foo"
   }
 }
 HTTP 200
