@@ -1366,7 +1366,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		// Create secret to generate a token, for the clusters without image registry and for future versions of OCP
 		secret := &v1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: serviceAccountName + "-token",
+				Name:      serviceAccountName + "-token",
 				Namespace: namespaceName,
 				Annotations: map[string]string{
 					"kubernetes.io/service-account.name": serviceAccountName,
@@ -1376,16 +1376,15 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 		_, err = clientset.CoreV1().Secrets(namespaceName).Create(context.TODO(), secret, metav1.CreateOptions{})
 
-	if err != nil {
-					log.Logger.Error("Error creating secret for SA", "error", err)
-					// Delete the namespace
-					if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
-						log.Logger.Error("Error creating OCP secret for SA", "error", err)
-					}
-					rnew.SetStatus("error")
-					return
-	}
-
+		if err != nil {
+			log.Logger.Error("Error creating secret for SA", "error", err)
+			// Delete the namespace
+			if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+				log.Logger.Error("Error creating OCP secret for SA", "error", err)
+			}
+			rnew.SetStatus("error")
+			return
+		}
 
 		secrets, err := clientset.CoreV1().Secrets(namespaceName).List(context.TODO(), metav1.ListOptions{})
 
