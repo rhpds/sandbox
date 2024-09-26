@@ -1380,17 +1380,6 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		secrets, err := clientset.CoreV1().Secrets(namespaceName).List(context.TODO(), metav1.ListOptions{})
 
 		if err != nil {
-			log.Logger.Error("Error creating secret for SA", "error", err)
-			// Delete the namespace
-			if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
-				log.Logger.Error("Error creating OCP secret for SA", "error", err)
-			}
-			rnew.SetStatus("error")
-			return
-		}
-
-		secrets, err := clientset.CoreV1().Secrets(namespaceName).List(context.TODO(), metav1.ListOptions{})
-		if err != nil {
 			log.Logger.Error("Error listing OCP secrets", "error", err)
 			// Delete the namespace
 			if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {

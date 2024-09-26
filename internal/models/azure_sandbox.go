@@ -16,9 +16,6 @@ import (
 )
 
 const (
-	projectTagPrefix = "sandbox-"
-	azurePoolId      = "01"
-
 	subscriptionNamePrefix = "pool-01-"
 	subscriptionCount      = 10
 
