@@ -10,7 +10,7 @@ Then it runs link:https://github.com/rebuy-de/aws-nuke[aws-nuke] to wipe them, a
 
 == Dependencies
 
-* link:https://github.com/rebuy-de/aws-nuke[`aws-nuke`] binary
+* link:https://github.com/ekristen/aws-nuke[`aws-nuke`] binary
 * IPA client
 * kerberos, `kinit`
 * link:../readme.adoc[`sandbox-list`] binary
