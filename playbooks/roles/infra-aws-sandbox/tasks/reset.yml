@@ -126,7 +126,7 @@
     - name: Run aws-nuke legacy on sandbox account
       # be on the safe side, run the official (unmaintained) binary
       command: >-
-        {{ aws_nuke_lecacy_binary_path }} --profile {{ account_name }}
+        {{ aws_nuke_legacy_binary_path }} --profile {{ account_name }}
         -c "{{ output_dir }}/{{ account_name }}_nuke-config-legacy.yml"
         --no-dry-run
         --force
