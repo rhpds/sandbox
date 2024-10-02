@@ -6,7 +6,7 @@ image::conan.webp[Conan the destroyer of Sandboxes,300,300,float="left"]
 
 It watches the pool of sandboxes, and look for those marked as `to_cleanup`.
 
-Then it runs link:https://github.com/rebuy-de/aws-nuke[aws-nuke] to wipe them, and put them back in the pool of available sandboxes.
+Then it runs link:https://github.com/ekristen/aws-nuke[aws-nuke] to wipe them, and put them back in the pool of available sandboxes.
 
 == Dependencies
 
@@ -93,4 +93,10 @@ podman run -e sandbox_filter="^sandbox2345 " ...
 # Delete the secrets when done
 
 $ podman secret rm vault_file aws_credentials
+----
+
+== Install via helm
+
+----
+helm install  -f .dev.conan.yaml sandbox-conan deploy/helm-conan/
 ----
