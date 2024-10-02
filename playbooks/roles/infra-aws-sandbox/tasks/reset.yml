@@ -141,9 +141,17 @@
       poll: 30
       delay: 30
 
+    - debug:
+        var: _awsnuke_legacy
+
     - name: Report aws-nuke error
       fail:
         msg: aws-nuke failed
       when:
         - _awsnuke is failed
         - _awsnuke2 is failed or _awsnuke2 is skipped
+
+    - name: Report aws-nuke-legacy error
+      fail:
+        msg: aws-nuke-legacy failed
+      when: _awsnuke_legacy is failed
