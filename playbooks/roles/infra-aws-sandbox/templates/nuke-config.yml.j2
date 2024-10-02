@@ -4,12 +4,16 @@ regions: {{ ( all_regions + ['global'] ) | to_json }}
 blocklist: {{ aws_nuke_account_blacklist | to_json }}
 
 settings:
-  disable-deletion-protection:
-    RDSInstance: true
-    EC2Instance: true
-    CloudformationStack: true
-    ELBv2: true
-    QLDBLedger: true
+  EC2Instance:
+    DisableDeletionProtection: true
+  RDSInstance:
+    DisableDeletionProtection: true
+  CloudformationStack:
+    DisableDeletionProtection: true
+  ELBv2:
+    DisableDeletionProtection: true
+  QLDBLedger:
+    DisableDeletionProtection: true
 
 accounts:
   "{{ account_id }}":
@@ -18,4 +22,24 @@ accounts:
 resource-types:
   excludes:
     # don't nuke OpenSearch Packages, see https://github.com/rebuy-de/aws-nuke/issues/1123
+    - AmazonML
+    - Cloud9Environment
+    - CloudSearchDomain
+    - CodeStarProject
+    - FMSNotificationChannel
+    - FMSPolicy
+    - MachineLearningBranchPrediction
+    - MachineLearningDataSource
+    - MachineLearningEvaluation
+    - MachineLearningMLModel
     - OSPackage
+    - OpsWorksApp
+    - OpsWorksCMBackup
+    - OpsWorksCMServer
+    - OpsWorksCMServerState
+    - OpsWorksInstance
+    - OpsWorksLayer
+    - OpsWorksUserProfile
+    - RoboMakerRobotApplication
+    - RoboMakerSimulationApplication
+    - RoboMakerSimulationJob

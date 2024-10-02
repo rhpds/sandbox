@@ -65,6 +65,11 @@
         src: "{{ role_path }}/templates/nuke-config.yml.j2"
         dest: "{{ output_dir }}/{{ account_name }}_nuke-config.yml"
 
+    - name: Generate config file for aws-nuke-legacy
+      template:
+        src: "{{ role_path }}/templates/nuke-config-legacy.yml.j2"
+        dest: "{{ output_dir }}/{{ account_name }}_nuke-config-legacy.yml"
+
     - name: Run aws-nuke on sandbox account
       command: >-
         {{ aws_nuke_binary_path }} nuke --profile {{ account_name }}
@@ -122,7 +127,7 @@
       # be on the safe side, run the official (unmaintained) binary
       command: >-
         {{ aws_nuke_lecacy_binary_path }} --profile {{ account_name }}
-        -c "{{ output_dir }}/{{ account_name }}_nuke-config.yml"
+        -c "{{ output_dir }}/{{ account_name }}_nuke-config-legacy.yml"
         --no-dry-run
         --force
       args:
