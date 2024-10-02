@@ -9,7 +9,8 @@ RUN make sandbox-list
 FROM registry.access.redhat.com/ubi8/ubi:latest
     MAINTAINER Guillaume Coré <gucore@redhat.com>
 
-ARG AWSNUKE_VERSION=v2.25.0
+ARG AWSNUKE_VERSION=v3.22.0
+ARG AWSNUKE_LEGACY_VERSION=v2.25.0
 ARG RUSH_VERSION=v0.5.4
 
 USER root
@@ -52,9 +53,12 @@ RUN mkdir -p -m 770  /home/opentlc-mgr/pool_management/output_dir_sandbox \
 # aws-nuke
 ##############################
     && curl --silent --location \
-    https://github.com/rebuy-de/aws-nuke/releases/download/${AWSNUKE_VERSION}/aws-nuke-${AWSNUKE_VERSION}-linux-amd64.tar.gz \
+    https://github.com/ekristen/aws-nuke/releases/download/${AWSNUKE_VERSION}/aws-nuke-${AWSNUKE_VERSION}-linux-amd64.tar.gz \
+    | tar -xz -C /usr/local/bin --wildcards 'aws-nuke' \
+    && curl --silent --location \
+    https://github.com/rebuy-de/aws-nuke/releases/download/${AWSNUKE_LEGACY_VERSION}/aws-nuke-${AWSNUKE_LEGACY_VERSION}-linux-amd64.tar.gz \
     | tar -xz -C /usr/local/bin --wildcards 'aws-nuke-*-linux-amd64' \
-    && ln -s /usr/local/bin/aws-nuke-${AWSNUKE_VERSION}-linux-amd64 /usr/local/bin/aws-nuke \
+    && ln -s /usr/local/bin/aws-nuke-${AWSNUKE_LEGACY_VERSION}-linux-amd64 /usr/local/bin/aws-nuke-legacy \
 ##############################
 # Rush
 ##############################

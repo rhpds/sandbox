@@ -67,7 +67,7 @@
 
     - name: Run aws-nuke on sandbox account
       command: >-
-        {{ aws_nuke_binary_path }} --profile {{ account_name }}
+        {{ aws_nuke_binary_path }} nuke --profile {{ account_name }}
         -c "{{ output_dir }}/{{ account_name }}_nuke-config.yml"
         --no-dry-run
         --force
@@ -100,7 +100,7 @@
         - name: Run aws-nuke again
           when: run_aws_nuke_again | default(false)
           command: >-
-            {{ aws_nuke_binary_path }} --profile {{ account_name }}
+            {{ aws_nuke_binary_path }} nuke --profile {{ account_name }}
             -c "{{ output_dir }}/{{ account_name }}_nuke-config.yml"
             --no-dry-run
             --force
@@ -118,6 +118,23 @@
         - debug:
             var: _awsnuke2
 
+    - name: Run aws-nuke legacy on sandbox account
+      # be on the safe side, run the official (unmaintained) binary
+      command: >-
+        {{ aws_nuke_lecacy_binary_path }} --profile {{ account_name }}
+        -c "{{ output_dir }}/{{ account_name }}_nuke-config.yml"
+        --no-dry-run
+        --force
+      args:
+        stdin: "{{ account_name }}{{ alias_suffix }}"
+      register: _awsnuke_legacy
+      ignore_errors: true
+      retries: "{{ aws_nuke_legacy_retries | default(0) }}"
+      until: _awsnuke_legacy is succeeded
+      no_log: true
+      async: 1800
+      poll: 30
+      delay: 30
 
     - name: Report aws-nuke error
       fail:
