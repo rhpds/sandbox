@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -8,6 +9,8 @@ import (
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/models"
 
+	"k8s.io/client-go/kubernetes"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"github.com/go-chi/render"
 )
 
@@ -86,6 +89,65 @@ func (h *BaseHandler) DisableOcpSharedClusterConfigurationHandler(w http.Respons
 	})
 }
 
+func (h *BaseHandler) HealthOcpSharedClusterConfigurationHandler(w http.ResponseWriter, r *http.Request) {
+	// Get the name of the OCP shared cluster configuration from the URL
+	name := chi.URLParam(r, "name")
+
+	// Get the OCP shared cluster configuration from the database
+	cluster, err := h.OcpSandboxProvider.GetOcpSharedClusterConfigurationByName(name)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "OCP shared cluster configuration not found",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to get OCP shared cluster configuration",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+	config, err := cluster.CreateRestConfig()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error creating OCP config",
+			ErrorMultiline: []string{err.Error()},
+		})
+	}
+
+	// Create an OpenShift client
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error creating OCP client",
+			ErrorMultiline: []string{err.Error()},
+		})
+
+	}
+
+	// Check if we can access to "default" namespace
+	_, err = clientset.CoreV1().Namespaces().Get(context.TODO(), "default", metav1.GetOptions{})
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error accessing default namespace",
+			ErrorMultiline: []string{err.Error()},
+		})
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
 func (h *BaseHandler) EnableOcpSharedClusterConfigurationHandler(w http.ResponseWriter, r *http.Request) {
 	// Get the name of the OCP shared cluster configuration from the URL
 	name := chi.URLParam(r, "name")
