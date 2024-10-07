@@ -113,8 +113,20 @@ try:
         )
 
         print("Deleted VPC: " + vpc['VpcId'])
-
         changed = True
+
+    # Delete all EC2Snapshot
+
+    response5 = client.describe_snapshots(OwnerIds=['self'])
+
+
+    for snapshot in response5['Snapshots']:
+        client.delete_snapshot(
+            SnapshotId=snapshot['SnapshotId']
+        )
+        print("Deleted snapshot: " + snapshot['SnapshotId'])
+        changed = True
+
 
 except botocore.exceptions.ClientError as e:
     print(e)
