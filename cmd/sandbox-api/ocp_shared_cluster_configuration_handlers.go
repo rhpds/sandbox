@@ -9,9 +9,9 @@ import (
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/models"
 
-	"k8s.io/client-go/kubernetes"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"github.com/go-chi/render"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 func (h *BaseHandler) CreateOcpSharedClusterConfigurationHandler(w http.ResponseWriter, r *http.Request) {
