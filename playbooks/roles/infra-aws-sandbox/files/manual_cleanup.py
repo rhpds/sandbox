@@ -363,7 +363,23 @@ try:
 except client.exceptions.UninitializedAccountException:
     print("MGNSourceServer is not supported in this region")
 
+# Delete cloudformation stack
+client = boto3.client('cloudformation')
 
+try:
+    response = client.describe_stacks()
+
+    for stack in response['Stacks']:
+        # Check if stack is in DELETE_FAILED state
+        if stack['StackStatus'] == 'DELETE_FAILED':
+            client.delete_stack(
+                StackName=stack['StackName'],
+                DeletionMode='FORCE_DELETE_STACK'
+            )
+            print("Deleted stack: " + stack['StackName'])
+            changed = True
+except botocore.exceptions.ClientError as e:
+    print(e)
 
 
 # Display Change
