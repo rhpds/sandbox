@@ -1,10 +1,4 @@
 ---
-- name: Delete IAM role using Cloudformation
-  cloudformation:
-    profile: "{{ account_profile }}"
-    stack_name: roles
-    state: absent
-
 - name: Create IAM role using Cloudformation
   cloudformation:
     profile: "{{ account_profile }}"
