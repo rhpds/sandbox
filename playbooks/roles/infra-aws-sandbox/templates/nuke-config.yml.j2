@@ -6,6 +6,7 @@ blocklist: {{ aws_nuke_account_blacklist | to_json }}
 settings:
   EC2Instance:
     DisableDeletionProtection: true
+    DisableStopProtection: true
   RDSInstance:
     DisableDeletionProtection: true
   CloudformationStack:
