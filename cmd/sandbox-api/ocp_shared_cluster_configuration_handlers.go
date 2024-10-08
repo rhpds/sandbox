@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -10,8 +9,6 @@ import (
 	"github.com/rhpds/sandbox/internal/models"
 
 	"github.com/go-chi/render"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 )
 
 func (h *BaseHandler) CreateOcpSharedClusterConfigurationHandler(w http.ResponseWriter, r *http.Request) {
@@ -113,35 +110,13 @@ func (h *BaseHandler) HealthOcpSharedClusterConfigurationHandler(w http.Response
 		})
 		return
 	}
-	config, err := cluster.CreateRestConfig()
+
+	err = cluster.TestConnection()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
 			HTTPStatusCode: http.StatusInternalServerError,
-			Message:        "Error creating OCP config",
-			ErrorMultiline: []string{err.Error()},
-		})
-	}
-
-	// Create an OpenShift client
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		render.Render(w, r, &v1.Error{
-			HTTPStatusCode: http.StatusInternalServerError,
-			Message:        "Error creating OCP client",
-			ErrorMultiline: []string{err.Error()},
-		})
-
-	}
-
-	// Check if we can access to "default" namespace
-	_, err = clientset.CoreV1().Namespaces().Get(context.TODO(), "default", metav1.GetOptions{})
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		render.Render(w, r, &v1.Error{
-			HTTPStatusCode: http.StatusInternalServerError,
-			Message:        "Error accessing default namespace",
+			Message:        "Error connecting to OpenShift Cluster",
 			ErrorMultiline: []string{err.Error()},
 		})
 	}
