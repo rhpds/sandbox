@@ -97,9 +97,6 @@ try:
         )
 
         for route_table in response4['RouteTables']:
-            # Disassociate subnet associations
-            for association in route_table['Associations']:
-
             for association in route_table['Associations']:
                 if not association['Main']:
                     client.disassociate_route_table(
