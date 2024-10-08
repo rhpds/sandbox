@@ -5,6 +5,7 @@
     template_body: "{{ lookup('file', 'CF-IAM.json') }}"
     region: "{{ aws_region }}"
     stack_name: roles
+    on_create_failure: DO_NOTHING
   register: _cfiamrole
   until: _cfiamrole is succeeded
   delay: 60
