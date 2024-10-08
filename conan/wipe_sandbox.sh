@@ -204,6 +204,7 @@ sandbox_reset() {
     echo "$(date -uIs) reset sandbox${s}" >> "${eventlog}"
 
     echo "$(date -uIs) ${sandbox} reset starting..."
+    start_time=$(date +%s)
 
     export ANSIBLE_NO_TARGET_SYSLOG=True
 
@@ -237,8 +238,18 @@ sandbox_reset() {
         -e kerberos_password="${kerberos_password:-}" \
         reset_single.yml > "${logfile}"; then
         echo "$(date -uIs) ${sandbox} reset OK"
+        end_time=$(date +%s)
+        duration=$((end_time - start_time))
+        # Calculate the time it took
+        echo "$(date -uIs) ${sandbox} reset took $((duration / 60))m$((duration % 60))s"
+
         rm "${eventlog}"
     else
+        end_time=$(date +%s)
+        duration=$((end_time - start_time))
+        # Calculate the time it took
+        echo "$(date -uIs) ${sandbox} reset took $((duration / 60))m$((duration % 60))s"
+
         echo "$(date -uIs) ${sandbox} reset FAILED." >&2
         echo "$(date -uIs) =========BEGIN========== ${logfile}" >&2
         cat "${logfile}" >&2
