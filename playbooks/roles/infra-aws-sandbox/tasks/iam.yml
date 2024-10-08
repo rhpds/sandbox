@@ -1,11 +1,16 @@
 ---
+- name: Delete IAM role using Cloudformation
+  cloudformation:
+    profile: "{{ account_profile }}"
+    stack_name: roles
+    state: absent
+
 - name: Create IAM role using Cloudformation
   cloudformation:
     profile: "{{ account_profile }}"
     template_body: "{{ lookup('file', 'CF-IAM.json') }}"
     region: "{{ aws_region }}"
     stack_name: roles
-    on_create_failure: DELETE
   register: _cfiamrole
   until: _cfiamrole is succeeded
   delay: 60
