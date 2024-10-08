@@ -97,6 +97,9 @@ try:
         )
 
         for route_table in response4['RouteTables']:
+            # Disassociate subnet associations
+            for association in route_table['Associations']:
+
             for association in route_table['Associations']:
                 if not association['Main']:
                     client.disassociate_route_table(
@@ -131,6 +134,17 @@ try:
 except botocore.exceptions.ClientError as e:
     print(e)
 
+try:
+    response = client.describe_images(Owners=['self'])
+
+    for image in response['Images']:
+        client.deregister_image(
+            ImageId=image['ImageId']
+        )
+        print("Deregistered AMI: " + image['ImageId'])
+        changed = True
+except botocore.exceptions.ClientError as e:
+    print(e)
 
 # Delete all Cognito User Pools
 
