@@ -7,6 +7,7 @@ max_retries=${max_retries:-2}
 aws_nuke_retries=${aws_nuke_retries:-0}
 # retry after 48h
 TTL_EVENTLOG=$((3600*24))
+debug=${debug:-false}
 
 
 # Mandatory ENV variables
@@ -125,7 +126,9 @@ EOM
         fi
 
         if grep -q ConditionalCheckFailedException "${errlog}"; then
-            echo "$(date -uIs) Another process is already cleaning up ${sandbox}: skipping"
+            if [ "${debug}" = "true" ]; then
+                echo "$(date -uIs) Another process is already cleaning up ${sandbox}: skipping"
+            fi
             rm "${errlog}"
             return 1
         else

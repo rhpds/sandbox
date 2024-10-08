@@ -64,6 +64,10 @@ fi
 # the conan process owning the lock.
 lock_timeout=${lock_timeout:-2}
 
+
+# Variable to manage output loglevel
+debug=false
+
 ##############
 
 export AWSCLI
@@ -87,6 +91,7 @@ export threads
 export vault_file
 export workdir
 export sandbox_filter
+export debug
 
 ORIG="$(cd "$(dirname "$0")" || exit; pwd)"
 
