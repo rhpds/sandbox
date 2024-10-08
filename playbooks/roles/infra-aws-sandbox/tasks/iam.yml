@@ -6,6 +6,7 @@
     region: "{{ aws_region }}"
     stack_name: roles
   register: r_cf
+  ignore_errors: yes
 
 - when: r_cf is failed
   block:
