@@ -15,6 +15,7 @@ if os.path.exists('/tmp/aws_nuke_filters.json'):
     with open('/tmp/aws_nuke_filters.json', 'r') as f:
         aws_nuke_filter.update(json.load(f))
 
+clientlaticce = boto3.client('vpc-lattice')
 
 # Delete all EC2VPC
 
@@ -24,6 +25,8 @@ try:
     response = client.describe_vpcs()
 
     for vpc in response['Vpcs']:
+
+        print("Deleting VPC: " + vpc['VpcId'])
         # Delete all subnets
         response2 = client.describe_subnets(
             Filters=[
@@ -106,6 +109,33 @@ try:
                     print("Disassociated route table: " + association['RouteTableAssociationId'])
                     changed = True
 
+        # deregister all VPC lattice target groups
+
+        response5 = clientlaticce.list_target_groups(
+            vpcIdentifier=vpc['VpcId']
+        )
+
+        for target_group in response5['items']:
+            # remove all targets from the target group
+
+            response6 = clientlaticce.list_targets(
+                targetGroupIdentifier=target_group['arn']
+            )
+
+            if len(response6['items']) != 0:
+                clientlaticce.deregister_targets(
+                    targetGroupIdentifier=target_group['arn'],
+                    targets=[
+                        { 'id': y['id'], 'port': y['port'] } for y in response6['items']
+                    ]
+                )
+                print("Deregistered targets: " + response6['items'])
+
+            clientlaticce.delete_target_group(
+                targetGroupIdentifier=target_group['arn']
+            )
+            print("Deregistered target group: " + target_group['arn'])
+            changed = True
 
         # Delete VPC
 
