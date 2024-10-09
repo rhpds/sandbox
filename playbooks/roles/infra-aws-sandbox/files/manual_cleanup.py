@@ -307,6 +307,31 @@ except client.exceptions.EndpointConnectionError:
 except botocore.exceptions.ClientError as e:
     print(e)
 
+
+
+# Release all Elastic IPs
+
+try:
+    response = client.describe_addresses()
+
+    for address in response['Addresses']:
+        # Disassociate address
+        if address.get('AssociationId'):
+            client.disassociate_address(
+                AssociationId=address['AssociationId']
+            )
+            print("Disassociated Elastic IP: " + address['AllocationId'])
+
+        client.release_address(
+            AllocationId=address['AllocationId'],
+            NetworkBorderGroup=address.get('NetworkBorderGroup', '')
+        )
+        print("Released Elastic IP: " + address['AllocationId'])
+        changed = True
+except botocore.exceptions.ClientError as e:
+    print(e)
+
+
 # Cleanup Public ECR
 client = boto3.client('ecr-public')
 
@@ -388,7 +413,8 @@ try:
         changed = True
 # UninitializedAccountException
 except client.exceptions.UninitializedAccountException:
-    print("MGNSourceServer is not supported in this region")
+    pass
+    #print("MGNSourceServer is not supported in this region")
 
 # Delete cloudformation stack
 client = boto3.client('cloudformation')
@@ -407,6 +433,7 @@ try:
             changed = True
 except botocore.exceptions.ClientError as e:
     print(e)
+
 
 
 # Display Change
