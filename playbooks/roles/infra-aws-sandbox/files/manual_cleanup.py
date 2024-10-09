@@ -362,10 +362,10 @@ except botocore.exceptions.ClientError as e:
     print(e)
 
 
-# Cleanup Public ECR
-client = boto3.client('ecr-public')
 
-if os.environ.get('AWS_REGION') == 'us-east-1':
+if os.environ.get('AWS_DEFAULT_REGION') == 'us-east-1':
+    # Cleanup Public ECR
+    client = boto3.client('ecr-public')
     try:
         response = client.describe_repositories()
 
