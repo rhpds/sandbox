@@ -102,7 +102,7 @@ type OcpSandbox struct {
 type OcpSandboxWithCreds struct {
 	OcpSandbox
 
-	Credentials []any               `json:"credentials"`
+	Credentials []any               `json:"credentials,omitempty"`
 	Provider    *OcpSandboxProvider `json:"-"`
 }
 
