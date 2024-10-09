@@ -18,6 +18,7 @@ debug=${debug:-false}
 : "${aws_profile:?"aws_profile is unset or empty"}"
 : "${aws_nuke_binary_path:?"aws_nuke_binary_path is unset or empty"}"
 : "${lock_timeout:?"lock_timeout is unset or empty"}"
+: "${lock_timeout_m:?"lock_timeout_m is unset or empty"}"
 : "${kerberos_user:?"kerberos_user is unset or empty"}"
 : "${vault_file:?"vault_file is unset or empty"}"
 : "${workdir:?"workdir is unset or empty"}"
@@ -91,7 +92,7 @@ sandbox_lock() {
         ":true": {"BOOL": true},
         ":st": {"S": "cleanup in progress"},
         ":timestamp": {"S": "$(date -uIs)"},
-        ":old": {"S": "$(date -uIs -d "now - ${lock_timeout} hour")"},
+        ":old": {"S": "$(date -uIs -d "now - ${lock_timeout} hour - ${lock_timeout_m} minute - 10 second")"},
         ":old24h": {"S": "$(date -uIs -d "now - 24 hour")"},
         ":host": {"S": "${conan_instance}"},
         ":maxretries": {"N": "${max_retries}"}
