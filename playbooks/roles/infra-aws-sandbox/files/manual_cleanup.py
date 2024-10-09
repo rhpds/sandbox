@@ -15,6 +15,7 @@ if os.path.exists('/tmp/aws_nuke_filters.json'):
     with open('/tmp/aws_nuke_filters.json', 'r') as f:
         aws_nuke_filter.update(json.load(f))
 
+
 # Delete all EC2VPC
 
 client = boto3.client('ec2')
@@ -115,30 +116,33 @@ try:
         print("Deleted VPC: " + vpc['VpcId'])
         changed = True
 
-    # Delete all EC2Snapshot
-
-    response5 = client.describe_snapshots(OwnerIds=['self'])
-
-
-    for snapshot in response5['Snapshots']:
-        client.delete_snapshot(
-            SnapshotId=snapshot['SnapshotId']
-        )
-        print("Deleted snapshot: " + snapshot['SnapshotId'])
-        changed = True
-
-
 except botocore.exceptions.ClientError as e:
     print(e)
 
 try:
-    response = client.describe_images(Owners=['self'])
+    response = client.describe_images(Owners=['self'], IncludeDeprecated=True, IncludeDisabled=True)
 
     for image in response['Images']:
+        print("Deregistering AMI: " + image['ImageId'])
         client.deregister_image(
             ImageId=image['ImageId']
         )
         print("Deregistered AMI: " + image['ImageId'])
+        for device in image.get('BlockDeviceMappings', []):
+            snapshot_id = device.get('Ebs', {}).get('SnapshotId')
+            if snapshot_id:
+                print("Deleting snapshot: %s associated with AMI: %s" % (snapshot_id, image['ImageId']))
+                client.delete_snapshot(SnapshotId=snapshot_id)
+                print("Successfully deleted snapshot: %s" % (snapshot_id))
+        changed = True
+    # Delete all snapshots
+    response = client.describe_snapshots(OwnerIds=['self'])
+
+    for snapshot in response['Snapshots']:
+        client.delete_snapshot(
+            SnapshotId=snapshot['SnapshotId']
+        )
+        print("Deleted snapshot: " + snapshot['SnapshotId'])
         changed = True
 except botocore.exceptions.ClientError as e:
     print(e)
