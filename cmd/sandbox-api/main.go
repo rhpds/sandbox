@@ -267,6 +267,7 @@ func main() {
 		r.Post("/api/v1/ocp-shared-cluster-configurations", baseHandler.CreateOcpSharedClusterConfigurationHandler)
 		r.Get("/api/v1/ocp-shared-cluster-configurations", baseHandler.GetOcpSharedClusterConfigurationsHandler)
 		r.Get("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.GetOcpSharedClusterConfigurationHandler)
+		r.Get("/api/v1/ocp-shared-cluster-configurations/{name}/health", baseHandler.HealthOcpSharedClusterConfigurationHandler)
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/disable", baseHandler.DisableOcpSharedClusterConfigurationHandler)
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/enable", baseHandler.EnableOcpSharedClusterConfigurationHandler)
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/update", baseHandler.UpdateOcpSharedClusterConfigurationHandler)
