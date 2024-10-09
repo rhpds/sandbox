@@ -64,9 +64,6 @@ fi
 # the conan process owning the lock.
 lock_timeout=${lock_timeout:-2}
 
-# Lock timeout in minutes to add to the previous lock_timeout
-lock_timeout_m=${lock_timeout_m:-0}
-
 
 # Variable to manage output loglevel
 debug=false
@@ -86,7 +83,6 @@ export kerberos_keytab
 export kerberos_password
 export kerberos_user
 export lock_timeout
-export lock_timeout_m
 export max_retries
 export aws_nuke_retries
 export noop
