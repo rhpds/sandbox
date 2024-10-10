@@ -7,6 +7,7 @@ max_retries=${max_retries:-2}
 aws_nuke_retries=${aws_nuke_retries:-0}
 # retry after 48h
 TTL_EVENTLOG=$((3600*24))
+debug=${debug:-false}
 
 
 # Mandatory ENV variables
@@ -125,7 +126,9 @@ EOM
         fi
 
         if grep -q ConditionalCheckFailedException "${errlog}"; then
-            echo "$(date -uIs) Another process is already cleaning up ${sandbox}: skipping"
+            if [ "${debug}" = "true" ]; then
+                echo "$(date -uIs) Another process is already cleaning up ${sandbox}: skipping"
+            fi
             rm "${errlog}"
             return 1
         else
@@ -201,6 +204,7 @@ sandbox_reset() {
     echo "$(date -uIs) reset sandbox${s}" >> "${eventlog}"
 
     echo "$(date -uIs) ${sandbox} reset starting..."
+    start_time=$(date +%s)
 
     export ANSIBLE_NO_TARGET_SYSLOG=True
 
@@ -234,8 +238,18 @@ sandbox_reset() {
         -e kerberos_password="${kerberos_password:-}" \
         reset_single.yml > "${logfile}"; then
         echo "$(date -uIs) ${sandbox} reset OK"
+        end_time=$(date +%s)
+        duration=$((end_time - start_time))
+        # Calculate the time it took
+        echo "$(date -uIs) ${sandbox} reset took $((duration / 60))m$((duration % 60))s"
+
         rm "${eventlog}"
     else
+        end_time=$(date +%s)
+        duration=$((end_time - start_time))
+        # Calculate the time it took
+        echo "$(date -uIs) ${sandbox} reset took $((duration / 60))m$((duration % 60))s"
+
         echo "$(date -uIs) ${sandbox} reset FAILED." >&2
         echo "$(date -uIs) =========BEGIN========== ${logfile}" >&2
         cat "${logfile}" >&2

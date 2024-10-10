@@ -70,10 +70,12 @@
         src: "{{ role_path }}/templates/nuke-config-legacy.yml.j2"
         dest: "{{ output_dir }}/{{ account_name }}_nuke-config-legacy.yml"
 
-    - name: Run aws-nuke on sandbox account
+    - name: Run aws-nuke on sandbox account with minimal output
       command: >-
         {{ aws_nuke_binary_path }} nuke --profile {{ account_name }}
         -c "{{ output_dir }}/{{ account_name }}_nuke-config.yml"
+        --quiet
+        --log-level error
         --no-dry-run
         --force
       args:
@@ -88,7 +90,13 @@
       delay: 30
 
     - debug:
-        var: _awsnuke
+        # stdout and stderr are really not human friendly. keep stdout_lines and stdin_lines
+        var: >-
+          _awsnuke
+          | dict2items
+          | selectattr('key', 'ne', 'stdout')
+          | selectattr('key', 'ne', 'stderr')
+          | items2dict
 
     - when: _awsnuke is failed
       block:
@@ -107,6 +115,7 @@
           command: >-
             {{ aws_nuke_binary_path }} nuke --profile {{ account_name }}
             -c "{{ output_dir }}/{{ account_name }}_nuke-config.yml"
+            --quiet
             --no-dry-run
             --force
           args:
@@ -121,12 +130,18 @@
           delay: 30
 
         - debug:
-            var: _awsnuke2
+            var: >-
+              _awsnuke2
+              | dict2items
+              | selectattr('key', 'ne', 'stdout')
+              | selectattr('key', 'ne', 'stderr')
+              | items2dict
 
     - name: Run aws-nuke legacy on sandbox account
       # be on the safe side, run the official (unmaintained) binary
       command: >-
-        {{ aws_nuke_legacy_binary_path }} --profile {{ account_name }}
+        {{ aws_nuke_legacy_binary_path }}
+        --profile {{ account_name }}
         -c "{{ output_dir }}/{{ account_name }}_nuke-config-legacy.yml"
         --no-dry-run
         --force
@@ -142,7 +157,12 @@
       delay: 30
 
     - debug:
-        var: _awsnuke_legacy
+        var: >-
+          _awsnuke_legacy
+          | dict2items
+          | selectattr('key', 'ne', 'stdout')
+          | selectattr('key', 'ne', 'stderr')
+          | items2dict
 
     - name: Report aws-nuke error
       fail:
