@@ -75,7 +75,7 @@ get_conan_cleanup_count() {
         exit 1
     fi
 
-    if [ "${conan_cleanup_count}" = "null" ]; then
+    if [ "${conan_cleanup_count}" = "null" ] || [ -z "${conan_cleanup_count}" ]; then
         conan_cleanup_count=0
     fi
 
