@@ -122,32 +122,6 @@
         - set_fact:
             run_aws_nuke_again: true
 
-    # Target groups
-    - name: List all target groups
-      command: >-
-        {{ aws_cli }} --region "{{ _region }}"
-        vpc-lattice list-target-groups
-        --query 'items[*].arn'  --output json
-
-      register: r_target_groups
-      changed_when: false
-      failed_when: >-
-        r_target_groups.rc != 0
-        and 'Could not connect to the endpoint URL' not in r_target_groups.stderr
-
-    - when: >-
-        r_target_groups.rc == 0 and r_target_groups.stdout != ""
-      block:
-        - name: Delete all target groups
-          loop: "{{ r_target_groups.stdout | default('[]', true) | from_json | default([]) }}"
-          command: >-
-            {{ aws_cli }} --region "{{ _region }}"
-            vpc-lattice delete-target-group
-            --target-group-identifier {{ item | quote }}
-
-        - set_fact:
-            run_aws_nuke_again: true
-
     # FSx filesystem cleanup
     - name: List all fsx volumes
       command: >-
