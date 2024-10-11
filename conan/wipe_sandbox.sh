@@ -120,7 +120,11 @@ EOM
 
         # check if max_retries is reached
         if [ "$(get_conan_cleanup_count "${sandbox}")" -ge "${max_retries}" ]; then
-            echo "$(date -uIs) ${sandbox} max_retries reached, skipping for now, will retry after 24h"
+            # print info only once.
+            if [ ! -e "/tmp/${sandbox}_max_retries" ]; then
+                echo "$(date -uIs) ${sandbox} max_retries reached, skipping for now, will retry after 24h"
+                touch "/tmp/${sandbox}_max_retries"
+            fi
             rm "${errlog}"
             return 1
         fi
@@ -138,7 +142,6 @@ EOM
             exit 1
         fi
     fi
-
 
     # If anything happens, unlock the sandbox
     trap "_on_exit" EXIT
