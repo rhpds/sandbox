@@ -69,30 +69,6 @@
         - set_fact:
             run_aws_nuke_again: true
 
-    # RDS DB Instances
-
-    - name: Get all RDS DB instances
-      command: >-
-        {{ aws_cli }}
-        --region {{ _region | quote }}
-        rds describe-db-instances
-        --output json
-        --query 'DBInstances[*].DBInstanceIdentifier'
-      register: r_all_db_instances
-      changed_when: false
-
-    - name: Save list as fact
-      set_fact:
-        db_instances: "{{ r_all_db_instances.stdout | from_json | list }}"
-
-    - name: Disable termination protection on all DBInstances
-      loop: "{{ db_instances }}"
-      command: >-
-        {{ aws_cli }}
-        --region {{ _region | quote }}
-        rds modify-db-instance
-        --db-instance-identifier {{ item }}
-        --no-deletion-protection
     # EIP
 
     - ec2_eip_info:
