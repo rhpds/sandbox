@@ -69,38 +69,6 @@
         - set_fact:
             run_aws_nuke_again: true
 
-    # EIP
-
-    - ec2_eip_info:
-      register: r_all_eips
-
-    - when: r_all_eips.addresses | length > 0
-      block:
-        # The following does not seem to work with aws profile
-        # Thus use the aws CLI instead.
-        # - name: Disassociate and release EIP
-        #   ec2_eip:
-        #     state: absent
-        #     release_on_disassociation: true
-        #     public_ip: "{{ _eip.public_ip }}"
-        #     profile: "{{ account_profile }}"
-        #   loop: "{{ r_all_eips.addresses }}"
-        #   loop_control:
-        #     loop_var: _eip
-
-        - name: Disassociate EIP
-          command: >-
-            {{ aws_cli }} ec2
-            --region "{{ _region }}"
-            disassociate-address
-            --public-ip "{{ _eip.public_ip }}"
-          loop: "{{ r_all_eips.addresses }}"
-          loop_control:
-            loop_var: _eip
-
-        - set_fact:
-            run_aws_nuke_again: true
-
     # Access Points
     - name: List all Access points
       command: >-
