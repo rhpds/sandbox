@@ -22,6 +22,10 @@
       debug:
         var: r_manual_cleanup
 
+    - when: r_manual_cleanup is changed
+      set_fact:
+        run_aws_nuke_again: true
+
     # Reject all VPC connections
 
     - name: Get all VPC endpoint connections
@@ -61,31 +65,6 @@
             name: "{{ _sg.group_name }}"
             description: "{{ _sg.description }}"
             vpc_id: "{{ _sg.vpc_id }}"
-
-        - set_fact:
-            run_aws_nuke_again: true
-
-    # Instance
-
-    - name: Get all instances
-      ec2_instance_info:
-      register: r_all_instances
-
-    - when: r_all_instances.instances | length > 0
-      block:
-        - name: Disable termination protection on all instances
-          command: >-
-            {{ aws_cli }} ec2
-            --region "{{ _region }}"
-            modify-instance-attribute
-            --instance-id {{ _instance.instance_id }}
-            --no-disable-api-termination
-          when:
-            - '"state" in _instance'
-            - _instance.state.name != "terminated"
-          loop: "{{ r_all_instances.instances }}"
-          loop_control:
-            loop_var: _instance
 
         - set_fact:
             run_aws_nuke_again: true
