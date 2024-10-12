@@ -64,7 +64,7 @@
       retries: "{{ aws_nuke_retries }}"
       until: _awsnuke is succeeded
       no_log: true
-      async: 1800
+      async: 3600
       poll: 30
       delay: 30
 
@@ -104,6 +104,7 @@
           retries: 0
           until: _awsnuke2 is succeeded
           no_log: true
+          # second time shouldn't take too long
           async: 1800
           poll: 30
           delay: 30
