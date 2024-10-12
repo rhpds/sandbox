@@ -246,6 +246,12 @@ sandbox_reset() {
         # Calculate the time it took
         echo "$(date -uIs) ${sandbox} reset took $((duration / 60))m$((duration % 60))s"
 
+        if [ "${debug}" = "true" ]; then
+            echo "$(date -uIs) =========BEGIN========== ${logfile}"
+            cat "${logfile}"
+            echo "$(date -uIs) =========END============ ${logfile}"
+        fi
+
         rm "${eventlog}"
     else
         end_time=$(date +%s)
