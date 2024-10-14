@@ -68,6 +68,9 @@ lock_timeout=${lock_timeout:-2}
 # Variable to manage output loglevel
 debug=false
 
+# Control weither to run the legacy aws-nuke or not, in addition to the active fork
+run_aws_nuke_legacy=false
+
 ##############
 
 export AWSCLI
@@ -92,6 +95,7 @@ export vault_file
 export workdir
 export sandbox_filter
 export debug
+export run_aws_nuke_legacy
 
 ORIG="$(cd "$(dirname "$0")" || exit; pwd)"
 

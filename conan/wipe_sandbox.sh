@@ -239,6 +239,7 @@ sandbox_reset() {
         -e kerberos_keytab="${kerberos_keytab:-}" \
         -e kerberos_user="${kerberos_user}" \
         -e kerberos_password="${kerberos_password:-}" \
+        -e run_aws_nuke_legacy="${run_aws_nuke_legacy:-false}" \
         reset_single.yml > "${logfile}"; then
         echo "$(date -uIs) ${sandbox} reset OK"
         end_time=$(date +%s)

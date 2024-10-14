@@ -118,6 +118,7 @@
               | items2dict
 
     - name: Run aws-nuke legacy on sandbox account
+      when: run_aws_nuke_legacy | default(false) | bool
       # be on the safe side, run the official (unmaintained) binary
       command: >-
         {{ aws_nuke_legacy_binary_path }}
@@ -143,6 +144,7 @@
           | selectattr('key', 'ne', 'stdout')
           | selectattr('key', 'ne', 'stderr')
           | items2dict
+      when: run_aws_nuke_legacy | default(false) | bool
 
     - name: Report aws-nuke error
       fail:
