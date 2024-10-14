@@ -132,6 +132,8 @@
       ignore_errors: true
       retries: "{{ aws_nuke_legacy_retries | default(0) }}"
       until: _awsnuke_legacy is succeeded
+      changed_when: >-
+        'No resource to delete.' not in _awsnuke_legacy.stdout_lines
       no_log: true
       async: 1800
       poll: 30
@@ -157,3 +159,8 @@
       fail:
         msg: aws-nuke-legacy failed
       when: _awsnuke_legacy is failed
+
+    - name: Report aws-nuke-legacy deleted resource(s)
+      fail:
+        msg: aws-nuke-legacy deleted resource(s). That should be investigated and reported.
+      when: _awsnuke_legacy is changed
