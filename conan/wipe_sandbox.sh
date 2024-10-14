@@ -246,6 +246,7 @@ sandbox_reset() {
         duration=$((end_time - start_time))
         # Calculate the time it took
         echo "$(date -uIs) ${sandbox} reset took $((duration / 60))m$((duration % 60))s"
+        echo "$(date -uIs) ${sandbox} $(grep -Eo 'Nuke complete: [^"]+' "${logfile}")"
 
         if [ "${debug}" = "true" ]; then
             echo "$(date -uIs) =========BEGIN========== ${logfile}"
