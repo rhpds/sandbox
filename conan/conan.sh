@@ -66,7 +66,7 @@ lock_timeout=${lock_timeout:-2}
 
 
 # Variable to manage output loglevel
-debug=false
+debug=${debug:-false}
 
 # Control weither to run the legacy aws-nuke or not, in addition to the active fork
 run_aws_nuke_legacy=${run_aws_nuke_legacy:-false}
