@@ -17,27 +17,6 @@
     _hostedzoneid: "{{ _route53zone.zone_id }}"
     aws_public_zone: "{{ account_name }}{{subdomain_base}}."
 
-# Get a new token as the current one may have timed out (1h)
-- include_tasks: assume.yml
-
-- loop: "{{ all_regions }}"
-  loop_control:
-    loop_var: _region
-  environment:
-    AWS_REGION: "{{ _region }}"
-    AWS_DEFAULT_REGION: "{{ _region }}"
-    AWS_ACCESS_KEY_ID: "{{ assumed_role.sts_creds.access_key }}"
-    AWS_SECRET_ACCESS_KEY: "{{ assumed_role.sts_creds.secret_key }}"
-    AWS_SESSION_TOKEN: "{{ assumed_role.sts_creds.session_token }}"
-  ignore_errors: true
-  name: Run files/manual_cleanup.py script
-  script: files/manual_cleanup.py
-  register: r_manual_cleanup
-  # timeout after 2 minutes
-  timeout: 120
-  changed_when: >-
-    'Changes were made' in r_manual_cleanup.stdout
-
 - tags: nuke
   when: nuke_sandbox | bool
   block:
@@ -70,12 +49,10 @@
         src: "{{ role_path }}/templates/nuke-config-legacy.yml.j2"
         dest: "{{ output_dir }}/{{ account_name }}_nuke-config-legacy.yml"
 
-    - name: Run aws-nuke on sandbox account with minimal output
+    - name: Run aws-nuke on sandbox account
       command: >-
         {{ aws_nuke_binary_path }} nuke --profile {{ account_name }}
         -c "{{ output_dir }}/{{ account_name }}_nuke-config.yml"
-        --quiet
-        --log-level error
         --no-dry-run
         --force
       args:
@@ -85,9 +62,11 @@
       retries: "{{ aws_nuke_retries }}"
       until: _awsnuke is succeeded
       no_log: true
-      async: 1800
+      async: 3600
       poll: 30
       delay: 30
+      changed_when: >-
+        'No resource to delete.' not in _awsnuke.stdout_lines
 
     - debug:
         # stdout and stderr are really not human friendly. keep stdout_lines and stdin_lines
@@ -115,7 +94,6 @@
           command: >-
             {{ aws_nuke_binary_path }} nuke --profile {{ account_name }}
             -c "{{ output_dir }}/{{ account_name }}_nuke-config.yml"
-            --quiet
             --no-dry-run
             --force
           args:
@@ -125,9 +103,12 @@
           retries: 0
           until: _awsnuke2 is succeeded
           no_log: true
+          # second time shouldn't take too long
           async: 1800
           poll: 30
           delay: 30
+          changed_when: >-
+            'No resource to delete.' not in _awsnuke.stdout_lines
 
         - debug:
             var: >-
@@ -138,6 +119,7 @@
               | items2dict
 
     - name: Run aws-nuke legacy on sandbox account
+      when: run_aws_nuke_legacy | default(false) | bool
       # be on the safe side, run the official (unmaintained) binary
       command: >-
         {{ aws_nuke_legacy_binary_path }}
@@ -151,6 +133,8 @@
       ignore_errors: true
       retries: "{{ aws_nuke_legacy_retries | default(0) }}"
       until: _awsnuke_legacy is succeeded
+      changed_when: >-
+        'No resource to delete.' not in _awsnuke_legacy.stdout_lines
       no_log: true
       async: 1800
       poll: 30
@@ -163,6 +147,7 @@
           | selectattr('key', 'ne', 'stdout')
           | selectattr('key', 'ne', 'stderr')
           | items2dict
+      when: run_aws_nuke_legacy | default(false) | bool
 
     - name: Report aws-nuke error
       fail:
@@ -175,3 +160,8 @@
       fail:
         msg: aws-nuke-legacy failed
       when: _awsnuke_legacy is failed
+
+    - name: Report aws-nuke-legacy deleted resource(s)
+      fail:
+        msg: aws-nuke-legacy deleted resource(s). That should be investigated and reported.
+      when: _awsnuke_legacy is changed

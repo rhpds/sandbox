@@ -120,7 +120,11 @@ EOM
 
         # check if max_retries is reached
         if [ "$(get_conan_cleanup_count "${sandbox}")" -ge "${max_retries}" ]; then
-            echo "$(date -uIs) ${sandbox} max_retries reached, skipping for now, will retry after 24h"
+            # print info only once.
+            if [ ! -e "/tmp/${sandbox}_max_retries" ]; then
+                echo "$(date -uIs) ${sandbox} max_retries reached, skipping for now, will retry after 24h"
+                touch "/tmp/${sandbox}_max_retries"
+            fi
             rm "${errlog}"
             return 1
         fi
@@ -138,7 +142,6 @@ EOM
             exit 1
         fi
     fi
-
 
     # If anything happens, unlock the sandbox
     trap "_on_exit" EXIT
@@ -236,12 +239,20 @@ sandbox_reset() {
         -e kerberos_keytab="${kerberos_keytab:-}" \
         -e kerberos_user="${kerberos_user}" \
         -e kerberos_password="${kerberos_password:-}" \
+        -e run_aws_nuke_legacy="${run_aws_nuke_legacy:-false}" \
         reset_single.yml > "${logfile}"; then
         echo "$(date -uIs) ${sandbox} reset OK"
         end_time=$(date +%s)
         duration=$((end_time - start_time))
         # Calculate the time it took
         echo "$(date -uIs) ${sandbox} reset took $((duration / 60))m$((duration % 60))s"
+        echo "$(date -uIs) ${sandbox} $(grep -Eo 'Nuke complete: [^"]+' "${logfile}")"
+
+        if [ "${debug}" = "true" ]; then
+            echo "$(date -uIs) =========BEGIN========== ${logfile}"
+            cat "${logfile}"
+            echo "$(date -uIs) =========END============ ${logfile}"
+        fi
 
         rm "${eventlog}"
     else
