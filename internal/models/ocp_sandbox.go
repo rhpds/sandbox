@@ -1411,6 +1411,9 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			return
 		}
 
+		maxRetries := 5
+		retryCount := 0
+		sleepDuration := time.Second * 5
 		var saSecret *v1.Secret
 		// Loop till token exists
 		for {
@@ -1438,6 +1441,16 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			if saSecret != nil {
 				break
 			}
+			// Retry logic
+			retryCount++
+			if retryCount >= maxRetries {
+				log.Logger.Error("Max retries reached, service account secret not found")
+				rnew.SetStatus("error")
+				return
+			}
+
+			// Sleep before retrying
+			time.Sleep(sleepDuration)
 		}
 		creds := []any{
 			OcpServiceAccount{
