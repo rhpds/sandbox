@@ -1411,21 +1411,23 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			return
 		}
 
-		secrets, err := clientset.CoreV1().Secrets(namespaceName).List(context.TODO(), metav1.ListOptions{})
-
-		if err != nil {
-			log.Logger.Error("Error listing OCP secrets", "error", err)
-			// Delete the namespace
-			if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
-				log.Logger.Error("Error creating OCP service account", "error", err)
-			}
-			rnew.SetStatus("error")
-			return
-		}
-
+		maxRetries := 5
+		retryCount := 0
+		sleepDuration := time.Second * 5
 		var saSecret *v1.Secret
 		// Loop till token exists
 		for {
+			secrets, err := clientset.CoreV1().Secrets(namespaceName).List(context.TODO(), metav1.ListOptions{})
+			if err != nil {
+				log.Logger.Error("Error listing OCP secrets", "error", err)
+				// Delete the namespace
+				if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+					log.Logger.Error("Error creating OCP service account", "error", err)
+				}
+				rnew.SetStatus("error")
+				return
+			}
+
 			for _, secret := range secrets.Items {
 				if val, exists := secret.ObjectMeta.Annotations["kubernetes.io/service-account.name"]; exists {
 					if _, exists := secret.Data["token"]; exists {
@@ -1439,6 +1441,16 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			if saSecret != nil {
 				break
 			}
+			// Retry logic
+			retryCount++
+			if retryCount >= maxRetries {
+				log.Logger.Error("Max retries reached, service account secret not found")
+				rnew.SetStatus("error")
+				return
+			}
+
+			// Sleep before retrying
+			time.Sleep(sleepDuration)
 		}
 		creds := []any{
 			OcpServiceAccount{
