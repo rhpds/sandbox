@@ -41,9 +41,7 @@ func (p *Placement) Render(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider) error {
-
 	accounts, err := awsProvider.FetchAllByServiceUuid(p.ServiceUuid)
-
 	if err != nil {
 		return err
 	}
@@ -58,7 +56,6 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 	status := "success"
 
 	ocpSandboxes, err := ocpProvider.FetchAllByServiceUuid(p.ServiceUuid)
-
 	if err != nil {
 		return err
 	}
@@ -86,9 +83,7 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 }
 
 func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider) error {
-
 	accounts, err := awsProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
-
 	if err != nil {
 		return err
 	}
@@ -102,7 +97,6 @@ func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpPr
 	status := "success"
 
 	ocpSandboxes, err := ocpProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
-
 	if err != nil {
 		return err
 	}
@@ -131,7 +125,6 @@ func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpPr
 
 func (p *Placement) LoadActiveResources(awsProvider AwsAccountProvider) error {
 	accounts, err := awsProvider.FetchAllActiveByServiceUuid(p.ServiceUuid)
-
 	if err != nil {
 		return err
 	}
@@ -148,9 +141,7 @@ func (p *Placement) LoadActiveResources(awsProvider AwsAccountProvider) error {
 }
 
 func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider) error {
-
 	accounts, err := awsProvider.FetchAllActiveByServiceUuidWithCreds(p.ServiceUuid)
-
 	if err != nil {
 		return err
 	}
@@ -164,7 +155,6 @@ func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider,
 	status := "success"
 
 	ocpSandboxes, err := ocpProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
-
 	if err != nil {
 		return err
 	}
@@ -216,7 +206,6 @@ func (p *Placement) Create() error {
 			 VALUES ($1, $2, $3) RETURNING id`,
 			p.ServiceUuid, p.Request, p.Annotations,
 		).Scan(&id)
-
 		if err != nil {
 			return err
 		}
@@ -238,7 +227,7 @@ func (p *Placement) Create() error {
 }
 
 // Delete deletes a placement
-func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider OcpSandboxProvider) {
+func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, azureProvider *AzureSandboxProvider) {
 	if err := p.SetStatus("deleting"); err != nil {
 		log.Logger.Error("error setting status for placement",
 			"serviceUuid", p.ServiceUuid,
@@ -265,11 +254,16 @@ func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider OcpSa
 		return
 	}
 
+	if err := azureProvider.Release(p.ServiceUuid); err != nil {
+		log.Logger.Error("Error while releasing Azure sandboxes")
+		p.SetStatus("error")
+		return
+	}
+
 	_, err := p.DbPool.Exec(
 		context.Background(),
 		"DELETE FROM placements WHERE id = $1", p.ID,
 	)
-
 	if err != nil {
 		p.SetStatus("error")
 		return
@@ -300,7 +294,6 @@ func (p *Placement) GetLastStatus() ([]*LifecycleResourceJob, error) {
 		 ORDER BY updated_at DESC LIMIT 1`,
 		p.ID,
 	).Scan(&id)
-
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +306,6 @@ func (p *Placement) GetLastStatus() ([]*LifecycleResourceJob, error) {
 		 ORDER BY updated_at`,
 		id,
 	)
-
 	if err != nil {
 		return nil, err
 	}
@@ -330,7 +322,6 @@ func (p *Placement) GetLastStatus() ([]*LifecycleResourceJob, error) {
 		}
 
 		job, err := GetLifecycleResourceJob(p.DbPool, idR)
-
 		if err != nil {
 			return result, err
 		}
@@ -371,7 +362,6 @@ func GetPlacement(dbpool *pgxpool.Pool, id int) (*Placement, error) {
 		&p.ToCleanup,
 		&p.CreatedAt,
 		&p.UpdatedAt)
-
 	if err != nil {
 		return nil, err
 	}
@@ -397,7 +387,6 @@ func GetAllPlacements(dbpool *pgxpool.Pool) (Placements, error) {
 			updated_at
 		FROM placements`,
 	)
-
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +445,6 @@ func GetPlacementByServiceUuid(dbpool *pgxpool.Pool, serviceUuid string) (*Place
 		&p.ToCleanup,
 		&p.CreatedAt,
 		&p.UpdatedAt)
-
 	if err != nil {
 		return nil, err
 	}
@@ -466,7 +454,7 @@ func GetPlacementByServiceUuid(dbpool *pgxpool.Pool, serviceUuid string) (*Place
 }
 
 // DeletePlacementByServiceUuid deletes a placement by ServiceUuid
-func DeletePlacementByServiceUuid(dbpool *pgxpool.Pool, awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, serviceUuid string) error {
+func DeletePlacementByServiceUuid(dbpool *pgxpool.Pool, awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, azureProvider *AzureSandboxProvider, serviceUuid string) error {
 	placement, err := GetPlacementByServiceUuid(dbpool, serviceUuid)
 	if err != nil {
 		return err
@@ -479,7 +467,7 @@ func DeletePlacementByServiceUuid(dbpool *pgxpool.Pool, awsProvider AwsAccountPr
 		return err
 	}
 
-	go placement.Delete(awsProvider, ocpProvider)
+	go placement.Delete(awsProvider, ocpProvider, azureProvider)
 	return nil
 }
 
@@ -491,7 +479,6 @@ func (p *Placement) SetStatus(status string) error {
 		status,
 		p.ID,
 	)
-
 	if err != nil {
 		log.Logger.Error("Error setting status", "error", err)
 		return err
@@ -508,7 +495,6 @@ func (p *Placement) MarkForCleanup() error {
 		"UPDATE placements SET to_cleanup = true WHERE id = $1",
 		p.ID,
 	)
-
 	if err != nil {
 		return err
 	}
