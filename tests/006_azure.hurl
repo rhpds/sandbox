@@ -53,3 +53,14 @@ jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 jsonpath "$.Placement.resources" count == 1
 jsonpath "$.Placement.resources[0].annotations.guid" == "st6zn"
 jsonpath "$.Placement.resources[0].annotations.purpose" == "backend"
+
+
+#################################################################################
+# Get placement and ensure credentials are present
+#################################################################################
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+HTTP 200
+[Asserts]
+jsonpath "$.resources[0].credentials" count >= 1
