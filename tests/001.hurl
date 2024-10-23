@@ -240,7 +240,7 @@ jsonpath "$.reservation.status" == "updating"
 GET {{host}}/api/v1/reservations/summit
 Authorization: Bearer {{access_token}}
 [Options]
-retry: 15
+retry: 25
 HTTP 200
 [Asserts]
 jsonpath "$.reservation.status" == "success"

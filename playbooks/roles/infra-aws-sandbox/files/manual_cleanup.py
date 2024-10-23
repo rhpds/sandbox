@@ -15,6 +15,8 @@ if os.path.exists('/tmp/aws_nuke_filters.json'):
     with open('/tmp/aws_nuke_filters.json', 'r') as f:
         aws_nuke_filter.update(json.load(f))
 
+clientlaticce = boto3.client('vpc-lattice')
+
 # Delete all EC2VPC
 
 client = boto3.client('ec2')
@@ -23,6 +25,8 @@ try:
     response = client.describe_vpcs()
 
     for vpc in response['Vpcs']:
+
+        print("Deleting VPC: " + vpc['VpcId'])
         # Delete all subnets
         response2 = client.describe_subnets(
             Filters=[
@@ -105,6 +109,33 @@ try:
                     print("Disassociated route table: " + association['RouteTableAssociationId'])
                     changed = True
 
+        # deregister all VPC lattice target groups
+
+        response5 = clientlaticce.list_target_groups(
+            vpcIdentifier=vpc['VpcId']
+        )
+
+        for target_group in response5['items']:
+            # remove all targets from the target group
+
+            response6 = clientlaticce.list_targets(
+                targetGroupIdentifier=target_group['arn']
+            )
+
+            if len(response6['items']) != 0:
+                clientlaticce.deregister_targets(
+                    targetGroupIdentifier=target_group['arn'],
+                    targets=[
+                        { 'id': y['id'], 'port': y['port'] } for y in response6['items']
+                    ]
+                )
+                print("Deregistered targets: " + response6['items'])
+
+            clientlaticce.delete_target_group(
+                targetGroupIdentifier=target_group['arn']
+            )
+            print("Deregistered target group: " + target_group['arn'])
+            changed = True
 
         # Delete VPC
 
@@ -113,12 +144,38 @@ try:
         )
 
         print("Deleted VPC: " + vpc['VpcId'])
-
         changed = True
 
 except botocore.exceptions.ClientError as e:
     print(e)
 
+try:
+    response = client.describe_images(Owners=['self'], IncludeDeprecated=True, IncludeDisabled=True)
+
+    for image in response['Images']:
+        print("Deregistering AMI: " + image['ImageId'])
+        client.deregister_image(
+            ImageId=image['ImageId']
+        )
+        print("Deregistered AMI: " + image['ImageId'])
+        for device in image.get('BlockDeviceMappings', []):
+            snapshot_id = device.get('Ebs', {}).get('SnapshotId')
+            if snapshot_id:
+                print("Deleting snapshot: %s associated with AMI: %s" % (snapshot_id, image['ImageId']))
+                client.delete_snapshot(SnapshotId=snapshot_id)
+                print("Successfully deleted snapshot: %s" % (snapshot_id))
+        changed = True
+    # Delete all snapshots
+    response = client.describe_snapshots(OwnerIds=['self'])
+
+    for snapshot in response['Snapshots']:
+        client.delete_snapshot(
+            SnapshotId=snapshot['SnapshotId']
+        )
+        print("Deleted snapshot: " + snapshot['SnapshotId'])
+        changed = True
+except botocore.exceptions.ClientError as e:
+    print(e)
 
 # Delete all Cognito User Pools
 
@@ -280,10 +337,35 @@ except client.exceptions.EndpointConnectionError:
 except botocore.exceptions.ClientError as e:
     print(e)
 
-# Cleanup Public ECR
-client = boto3.client('ecr-public')
 
-if os.environ.get('AWS_REGION') == 'us-east-1':
+
+# Release all Elastic IPs
+
+try:
+    response = client.describe_addresses()
+
+    for address in response['Addresses']:
+        # Disassociate address
+        if address.get('AssociationId'):
+            client.disassociate_address(
+                AssociationId=address['AssociationId']
+            )
+            print("Disassociated Elastic IP: " + address['AllocationId'])
+
+        client.release_address(
+            AllocationId=address['AllocationId'],
+            NetworkBorderGroup=address.get('NetworkBorderGroup', '')
+        )
+        print("Released Elastic IP: " + address['AllocationId'])
+        changed = True
+except botocore.exceptions.ClientError as e:
+    print(e)
+
+
+
+if os.environ.get('AWS_DEFAULT_REGION') == 'us-east-1':
+    # Cleanup Public ECR
+    client = boto3.client('ecr-public')
     try:
         response = client.describe_repositories()
 
@@ -361,8 +443,26 @@ try:
         changed = True
 # UninitializedAccountException
 except client.exceptions.UninitializedAccountException:
-    print("MGNSourceServer is not supported in this region")
+    pass
+    #print("MGNSourceServer is not supported in this region")
 
+# Delete cloudformation stack
+client = boto3.client('cloudformation')
+
+try:
+    response = client.describe_stacks()
+
+    for stack in response['Stacks']:
+        # Check if stack is in DELETE_FAILED state
+        if stack['StackStatus'] == 'DELETE_FAILED':
+            client.delete_stack(
+                StackName=stack['StackName'],
+                DeletionMode='FORCE_DELETE_STACK'
+            )
+            print("Deleted stack: " + stack['StackName'])
+            changed = True
+except botocore.exceptions.ClientError as e:
+    print(e)
 
 
 
