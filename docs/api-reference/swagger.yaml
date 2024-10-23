@@ -2408,8 +2408,8 @@ components:
             StrictDefaultSandboxQuota is a flag to determine if the default sandbox quota
             should be strictly enforced. If set to true, the default sandbox quota will be
             enforced as a hard limit. Requested quota not be allowed to exceed the default.
-            If set to false, the default sandbox will be updated
-            to the requested quota.
+            If set to false, the default sandbox-quota will be updated
+            to the requested quota even if some values are greater.
           default: false
         quota_required:
           type: boolean
