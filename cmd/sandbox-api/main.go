@@ -5,14 +5,10 @@ import (
 	_ "embed"
 	"log/slog"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"strings"
 	"time"
-
-	"github.com/rhpds/sandbox/internal/config"
-	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
-	"github.com/rhpds/sandbox/internal/log"
-	"github.com/rhpds/sandbox/internal/models"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	gorillamux "github.com/getkin/kin-openapi/routers/gorillamux"
@@ -21,6 +17,11 @@ import (
 	"github.com/go-chi/httplog/v2"
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/jackc/pgx/v4/pgxpool"
+
+	"github.com/rhpds/sandbox/internal/config"
+	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
+	"github.com/rhpds/sandbox/internal/log"
+	"github.com/rhpds/sandbox/internal/models"
 )
 
 //go:embed assets/swagger.yaml
@@ -267,6 +268,7 @@ func main() {
 		r.Post("/api/v1/ocp-shared-cluster-configurations", baseHandler.CreateOcpSharedClusterConfigurationHandler)
 		r.Get("/api/v1/ocp-shared-cluster-configurations", baseHandler.GetOcpSharedClusterConfigurationsHandler)
 		r.Get("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.GetOcpSharedClusterConfigurationHandler)
+		r.Get("/api/v1/ocp-shared-cluster-configurations/{name}/health", baseHandler.HealthOcpSharedClusterConfigurationHandler)
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/disable", baseHandler.DisableOcpSharedClusterConfigurationHandler)
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/enable", baseHandler.EnableOcpSharedClusterConfigurationHandler)
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/update", baseHandler.UpdateOcpSharedClusterConfigurationHandler)
@@ -276,6 +278,23 @@ func main() {
 		r.Post("/api/v1/reservations", baseHandler.CreateReservationHandler)
 		r.Put("/api/v1/reservations/{name}", baseHandler.UpdateReservationHandler)
 		r.Delete("/api/v1/reservations/{name}", baseHandler.DeleteReservationHandler)
+	})
+
+	// ---------------------------------------------------------------------
+	// Profiling
+	// ---------------------------------------------------------------------
+	router.Group(func(r chi.Router) {
+		// ---------------------------------
+		// Admin auth but no OpenAPI validation
+		// ---------------------------------
+		r.Use(jwtauth.Verifier(tokenAuth))
+		r.Use(AuthenticatorAdmin)
+		// Profiling
+		r.Get("/debug/pprof/", pprof.Index)
+		r.Get("/debug/pprof/profile", pprof.Profile)
+		r.Get("/debug/pprof/trace", pprof.Trace)
+		r.Get("/debug/pprof/cmdline", pprof.Cmdline)
+		r.Get("/debug/pprof/symbol", pprof.Symbol)
 	})
 
 	// ---------------------------------------------------------------------

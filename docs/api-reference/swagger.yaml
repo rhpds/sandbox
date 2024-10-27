@@ -1487,6 +1487,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /ocp-shared-cluster-configurations/{name}/health:
+    get:
+      summary: Get health status about an OcpSharedClusterConfiguration endpoint
+      operationId: healthOcpSharedClusterConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration
+          schema:
+            type: string
+          example: ocp-cluster-1
+      responses:
+        '200':
+          description: Validation successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OcpSharedClusterConfiguration"
+        '404':
+          description: healthOcpSharedClusterConfiguration OcpSharedClusterConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: healthOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /ocp-shared-cluster-configurations/{name}/enable:
     put:
       summary: Enable an OcpSharedClusterConfiguration

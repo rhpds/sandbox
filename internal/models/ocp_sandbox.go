@@ -107,7 +107,7 @@ type OcpSandbox struct {
 type OcpSandboxWithCreds struct {
 	OcpSandbox
 
-	Credentials []any               `json:"credentials"`
+	Credentials []any               `json:"credentials,omitempty"`
 	Provider    *OcpSandboxProvider `json:"-"`
 }
 
@@ -862,6 +862,31 @@ func (a *OcpSharedClusterConfiguration) CreateRestConfig() (*rest.Config, error)
 	return clientcmd.RESTConfigFromKubeConfig([]byte(a.Kubeconfig))
 }
 
+
+func (a *OcpSharedClusterConfiguration) TestConnection() (error) {
+	// Get the OCP shared cluster configuration from the database
+	config, err := a.CreateRestConfig()
+	if err != nil {
+		log.Logger.Error("Error creating OCP config", "error", err)
+		return errors.New("Error creating OCP config: "  + err.Error())
+	}
+
+	// Create an OpenShift client
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		log.Logger.Error("Error creating OCP client", "error", err)
+		return errors.New("Error creating OCP client: "  + err.Error())
+	}
+
+	// Check if we can access to "default" namespace
+	_, err = clientset.CoreV1().Namespaces().Get(context.TODO(), "default", metav1.GetOptions{})
+	if err != nil {
+		log.Logger.Error("Error accessing default namespace", "error", err)
+		return errors.New("Error accessing default namespace: " + err.Error())
+	}
+	return nil
+}
+
 func includeNodeInUsageCalculation(node v1.Node) (bool, string) {
 	if node.Spec.Unschedulable {
 		return false, "unschedulable"
@@ -1420,21 +1445,47 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				}
 			}
 		}
-		secrets, err := clientset.CoreV1().Secrets(namespaceName).List(context.TODO(), metav1.ListOptions{})
+
+		// Create secret to generate a token, for the clusters without image registry and for future versions of OCP
+		secret := &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      serviceAccountName + "-token",
+				Namespace: namespaceName,
+				Annotations: map[string]string{
+					"kubernetes.io/service-account.name": serviceAccountName,
+				},
+			},
+			Type: v1.SecretTypeServiceAccountToken,
+		}
+		_, err = clientset.CoreV1().Secrets(namespaceName).Create(context.TODO(), secret, metav1.CreateOptions{})
 
 		if err != nil {
-			log.Logger.Error("Error listing OCP secrets", "error", err)
+			log.Logger.Error("Error creating secret for SA", "error", err)
 			// Delete the namespace
 			if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
-				log.Logger.Error("Error creating OCP service account", "error", err)
+				log.Logger.Error("Error creating OCP secret for SA", "error", err)
 			}
 			rnew.SetStatus("error")
 			return
 		}
 
+		maxRetries := 5
+		retryCount := 0
+		sleepDuration := time.Second * 5
 		var saSecret *v1.Secret
 		// Loop till token exists
 		for {
+			secrets, err := clientset.CoreV1().Secrets(namespaceName).List(context.TODO(), metav1.ListOptions{})
+			if err != nil {
+				log.Logger.Error("Error listing OCP secrets", "error", err)
+				// Delete the namespace
+				if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+					log.Logger.Error("Error creating OCP service account", "error", err)
+				}
+				rnew.SetStatus("error")
+				return
+			}
+
 			for _, secret := range secrets.Items {
 				if val, exists := secret.ObjectMeta.Annotations["kubernetes.io/service-account.name"]; exists {
 					if _, exists := secret.Data["token"]; exists {
@@ -1448,6 +1499,16 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			if saSecret != nil {
 				break
 			}
+			// Retry logic
+			retryCount++
+			if retryCount >= maxRetries {
+				log.Logger.Error("Max retries reached, service account secret not found")
+				rnew.SetStatus("error")
+				return
+			}
+
+			// Sleep before retrying
+			time.Sleep(sleepDuration)
 		}
 		creds = append(creds,
 			OcpServiceAccount{
