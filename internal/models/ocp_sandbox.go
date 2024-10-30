@@ -42,6 +42,7 @@ type OcpSharedClusterConfiguration struct {
 	AdditionalVars           map[string]any    `json:"additional_vars,omitempty"`
 	MaxMemoryUsagePercentage float64           `json:"max_memory_usage_percentage"`
 	MaxCpuUsagePercentage    float64           `json:"max_cpu_usage_percentage"`
+	UsageNodeSelector        string            `json:"usage_node_selector"`
 	DbPool                   *pgxpool.Pool     `json:"-"`
 	VaultSecret              string            `json:"-"`
 	// For any new project (openshift namespace) created by the sandbox API
@@ -129,6 +130,7 @@ func MakeOcpSharedClusterConfiguration() *OcpSharedClusterConfiguration {
 	p.Valid = true
 	p.MaxMemoryUsagePercentage = 80
 	p.MaxCpuUsagePercentage = 100
+	p.UsageNodeSelector = "node-role.kubernetes.io/worker="
 	p.DefaultSandboxQuota = &v1.ResourceQuota{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "sandbox-quota",
@@ -268,12 +270,13 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 			additional_vars,
 			max_memory_usage_percentage,
 			max_cpu_usage_percentage,
+			usage_node_selector,
 			default_sandbox_quota,
 			strict_default_sandbox_quota,
 			quota_required,
 			skip_quota,
 			limit_range)
-			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 			RETURNING id`,
 		p.Name,
 		p.ApiUrl,
@@ -286,6 +289,7 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 		p.AdditionalVars,
 		p.MaxMemoryUsagePercentage,
 		p.MaxCpuUsagePercentage,
+		p.UsageNodeSelector,
 		p.DefaultSandboxQuota,
 		p.StrictDefaultSandboxQuota,
 		p.QuotaRequired,
@@ -316,11 +320,12 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 			 additional_vars = $9,
 			 max_memory_usage_percentage = $11,
 			 max_cpu_usage_percentage = $12,
-			 default_sandbox_quota = $13,
-			 strict_default_sandbox_quota = $14,
-			 quota_required = $15,
-			 skip_quota = $16,
-			 limit_range = $17
+       usage_node_selector = $13,
+			 default_sandbox_quota = $14,
+			 strict_default_sandbox_quota = $15,
+			 quota_required = $16,
+			 skip_quota = $17,
+			 limit_range = $18
 		 WHERE id = $10`,
 		p.Name,
 		p.ApiUrl,
@@ -334,6 +339,7 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 		p.ID,
 		p.MaxMemoryUsagePercentage,
 		p.MaxCpuUsagePercentage,
+		p.UsageNodeSelector,
 		p.DefaultSandboxQuota,
 		p.StrictDefaultSandboxQuota,
 		p.QuotaRequired,
@@ -402,6 +408,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 			additional_vars,
 			max_memory_usage_percentage,
 			max_cpu_usage_percentage,
+			usage_node_selector,
 			default_sandbox_quota,
 			strict_default_sandbox_quota,
 			quota_required,
@@ -426,6 +433,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 		&cluster.AdditionalVars,
 		&cluster.MaxMemoryUsagePercentage,
 		&cluster.MaxCpuUsagePercentage,
+		&cluster.UsageNodeSelector,
 		&cluster.DefaultSandboxQuota,
 		&cluster.StrictDefaultSandboxQuota,
 		&cluster.QuotaRequired,
@@ -460,6 +468,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			additional_vars,
 			max_memory_usage_percentage,
 			max_cpu_usage_percentage,
+			usage_node_selector,
 			default_sandbox_quota,
 			strict_default_sandbox_quota,
 			quota_required,
@@ -492,6 +501,8 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			&cluster.Valid,
 			&cluster.AdditionalVars,
 			&cluster.MaxMemoryUsagePercentage,
+			&cluster.MaxCpuUsagePercentage,
+			&cluster.UsageNodeSelector,
 			&cluster.MaxCpuUsagePercentage,
 			&cluster.DefaultSandboxQuota,
 			&cluster.StrictDefaultSandboxQuota,
@@ -985,7 +996,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				continue providerLoop
 			}
 
-			nodes, err := clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/worker="})
+			nodes, err := clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: cluster.UsageNodeSelector})
 			if err != nil {
 				log.Logger.Error("Error listing OCP nodes", "error", err)
 				rnew.SetStatus("error")

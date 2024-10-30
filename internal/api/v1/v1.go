@@ -194,6 +194,7 @@ type UpdateOcpSharedConfigurationRequest struct {
 	AdditionalVars            map[string]any      `json:"additional_vars,omitempty"`
 	MaxMemoryUsagePercentage  *float64            `json:"max_memory_usage_percentage,omitempty"`
 	MaxCpuUsagePercentage     *float64            `json:"max_cpu_usage_percentage,omitempty"`
+	UsageSelector             *string             `json:"usage_node_selector,omitempty"`
 	LimitRange                *v1.LimitRange      `json:"limit_range,omitempty"`
 }
 
