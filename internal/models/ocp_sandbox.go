@@ -1367,6 +1367,40 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				Username: userAccountName,
 				Password: password,
 			})
+
+			// Create RoleBind for the Service Account in the Namespace
+			_, err = clientset.RbacV1().RoleBindings(namespaceName).Create(context.TODO(), &rbacv1.RoleBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: userAccountName,
+					Labels: map[string]string{
+						"serviceUuid": serviceUuid,
+						"guid":        annotations["guid"],
+					},
+				},
+				RoleRef: rbacv1.RoleRef{
+					APIGroup: rbacv1.GroupName,
+					Kind:     "ClusterRole",
+					Name:     "admin",
+				},
+				Subjects: []rbacv1.Subject{
+					{
+						Kind:      "User",
+						Name:      userAccountName,
+						Namespace: namespaceName,
+					},
+				},
+			}, metav1.CreateOptions{})
+
+			if err != nil {
+				log.Logger.Error("Error creating OCP RoleBind", "error", err)
+				if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+					log.Logger.Error("Error cleaning up the namespace", "error", err)
+				}
+				rnew.SetStatus("error")
+				return
+			}
+
+
 		}
 
 		// Assign ClusterRole sandbox-hcp (created with gitops) to the SA if hcp option was selected
