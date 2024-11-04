@@ -312,7 +312,7 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 		`UPDATE ocp_shared_cluster_configurations
 		 SET name = $1,
 			 api_url = $2,
-             ingress_domain = $3,
+			 ingress_domain = $3,
 			 kubeconfig = pgp_sym_encrypt($4::text, $5),
 			 token = pgp_sym_encrypt($6::text, $5),
 			 annotations = $7,
@@ -320,7 +320,7 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 			 additional_vars = $9,
 			 max_memory_usage_percentage = $11,
 			 max_cpu_usage_percentage = $12,
-       usage_node_selector = $13,
+			 usage_node_selector = $13,
 			 default_sandbox_quota = $14,
 			 strict_default_sandbox_quota = $15,
 			 quota_required = $16,
