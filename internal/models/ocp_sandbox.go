@@ -503,7 +503,6 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			&cluster.MaxMemoryUsagePercentage,
 			&cluster.MaxCpuUsagePercentage,
 			&cluster.UsageNodeSelector,
-			&cluster.MaxCpuUsagePercentage,
 			&cluster.DefaultSandboxQuota,
 			&cluster.StrictDefaultSandboxQuota,
 			&cluster.QuotaRequired,
