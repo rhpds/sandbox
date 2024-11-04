@@ -851,20 +851,19 @@ func (a *OcpSharedClusterConfiguration) CreateRestConfig() (*rest.Config, error)
 	return clientcmd.RESTConfigFromKubeConfig([]byte(a.Kubeconfig))
 }
 
-
-func (a *OcpSharedClusterConfiguration) TestConnection() (error) {
+func (a *OcpSharedClusterConfiguration) TestConnection() error {
 	// Get the OCP shared cluster configuration from the database
 	config, err := a.CreateRestConfig()
 	if err != nil {
 		log.Logger.Error("Error creating OCP config", "error", err)
-		return errors.New("Error creating OCP config: "  + err.Error())
+		return errors.New("Error creating OCP config: " + err.Error())
 	}
 
 	// Create an OpenShift client
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		log.Logger.Error("Error creating OCP client", "error", err)
-		return errors.New("Error creating OCP client: "  + err.Error())
+		return errors.New("Error creating OCP client: " + err.Error())
 	}
 
 	// Check if we can access to "default" namespace
