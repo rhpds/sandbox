@@ -352,6 +352,10 @@ func (h *BaseHandler) UpdateOcpSharedClusterConfigurationHandler(w http.Response
 		ocpSharedClusterConfiguration.LimitRange = input.LimitRange
 	}
 
+	if input.UsageNodeSelector != nil {
+		ocpSharedClusterConfiguration.UsageNodeSelector = *input.UsageNodeSelector
+	}
+
 	if err := ocpSharedClusterConfiguration.Save(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
