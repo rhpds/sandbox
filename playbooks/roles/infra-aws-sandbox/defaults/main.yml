@@ -73,6 +73,9 @@ aws_nuke_filters_default:
   IAMRolePolicy:
     - "OrganizationAccountAccessRole -> AdministratorAccess"
     - config-rule-role -> config-rule-policy
+    - CloudabilityRole_OU -> CloudabilityAutomationPolicy
+    - CloudabilityRole_OU -> CloudabilityMonitorResourcesPolicy
+    - CloudabilityRole_OU -> CloudabilityVerificationPolicy
 
   IAMRolePolicyAttachment:
     - property: RoleName
