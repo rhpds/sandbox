@@ -32,6 +32,13 @@ RUN dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x
     && curl --silent --location https://github.com/Orange-OpenSource/hurl/releases/download/$VERSION/hurl-$VERSION-x86_64-unknown-linux-gnu.tar.gz \
     | tar -xz -C /usr/local/bin --strip-components=1 --wildcards '*/hurl' '*/hurlfmt'
 
+RUN pip install --no-cache-dir --upgrade pip
+
+RUN pip install --no-cache-dir \
+    pyaml \
+    retry \
+    requests
+
 COPY --from=docker.io/migrate/migrate /usr/local/bin/migrate /usr/local/bin/migrate
 WORKDIR /sandbox/
 USER ${USER_UID}
