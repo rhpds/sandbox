@@ -69,6 +69,7 @@ aws_nuke_filters_default:
     - AWSServiceRoleForOrganizations
     - AWSServiceRoleForSupport
     - AWSServiceRoleForTrustedAdvisor
+    - CloudabilityRole_OU
 
   IAMRolePolicy:
     - "OrganizationAccountAccessRole -> AdministratorAccess"
