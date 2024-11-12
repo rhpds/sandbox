@@ -22,15 +22,23 @@ RUN dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x
     postgresql \
     python39 \
     python39-pip \
+    python39-requests \
     rsync \
     tar \
     unzip \
     vim \
     wget \
-    && dnf clean all \
     && VERSION=4.1.0 \
     && curl --silent --location https://github.com/Orange-OpenSource/hurl/releases/download/$VERSION/hurl-$VERSION-x86_64-unknown-linux-gnu.tar.gz \
-    | tar -xz -C /usr/local/bin --strip-components=1 --wildcards '*/hurl' '*/hurlfmt'
+    | tar -xz -C /usr/local/bin --strip-components=1 --wildcards '*/hurl' '*/hurlfmt' \
+##############################
+# Python
+##############################
+    && alternatives --set python /usr/bin/python3.9 \
+    && alternatives --set python3 /usr/bin/python3.9 \
+    && alternatives --install /usr/bin/pip pip /usr/bin/pip3.9 1 \
+    && alternatives --list \
+    && dnf clean all && rm -rf /tmp/*
 
 COPY --from=docker.io/migrate/migrate /usr/local/bin/migrate /usr/local/bin/migrate
 WORKDIR /sandbox/
