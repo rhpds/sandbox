@@ -17,6 +17,9 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -1098,6 +1101,14 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			return
 		}
 
+		// Create an dynamic OpenShift client for non regular objects
+		dynclientset, err := dynamic.NewForConfig(config)
+		if err != nil {
+			log.Logger.Error("Error creating OCP client", "error", err)
+			rnew.SetStatus("error")
+			return
+		}
+
 		serviceAccountName := "sandbox"
 		suffix := annotations["namespace_suffix"]
 		if suffix == "" {
@@ -1395,6 +1406,33 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 					}
 				}
 			}
+			// TODO: decide if we want another flag to configure the RadosNamespace
+			// Define the CephBlockPoolRadosNamespace GroupVersionResource
+			cephBlockPoolRadosNamespaceGVR := schema.GroupVersionResource{
+				Group:    "ceph.rook.io",
+				Version:  "v1",
+				Resource: "cephblockpoolradosnamespaces",
+			}
+			// Create the CephBlockPoolRadosNamespace object as an unstructured object
+			cephBlockPoolRadosNamespace := &unstructured.Unstructured{
+				Object: map[string]any{
+					"apiVersion": "ceph.rook.io/v1",
+					"kind":       "CephBlockPoolRadosNamespace",
+					"metadata": map[string]any{
+						"name":      namespaceName,
+						"namespace": "openshift-storage",
+					},
+					"spec": map[string]any{
+						"blockPoolName": "ocpv-tenants",
+					},
+				},
+			}
+			_, err = dynclientset.Resource(cephBlockPoolRadosNamespaceGVR).Namespace("openshift-storage").Create(context.TODO(), cephBlockPoolRadosNamespace, metav1.CreateOptions{})
+			if err != nil {
+				log.Logger.Error("Error creating CephBlockPoolRadosNamespace", "error", err)
+			}
+
+			log.Logger.Debug("CephBlockPoolRadosNamespace created successfully")
 		}
 
 		// Create secret to generate a token, for the clusters without image registry and for future versions of OCP
@@ -1730,6 +1768,14 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		return err
 	}
 
+	// Create an dynamic OpenShift client for non regular objects
+	dynclientset, err := dynamic.NewForConfig(config)
+	if err != nil {
+		log.Logger.Error("Error creating OCP client", "error", err, account.Name)
+		account.SetStatus("error")
+		return err
+	}
+
 	// Check if the namespace exists
 	_, err = clientset.CoreV1().Namespaces().Get(context.TODO(), account.Namespace, metav1.GetOptions{})
 	if err != nil {
@@ -1767,6 +1813,21 @@ func (account *OcpSandboxWithCreds) Delete() error {
 	if _, err := clientset.RbacV1().RoleBindings("cnv-images").Get(context.TODO(), rbName, metav1.GetOptions{}); err == nil {
 		if err := clientset.RbacV1().RoleBindings("cnv-images").Delete(context.TODO(), rbName, metav1.DeleteOptions{}); err != nil {
 			log.Logger.Error("Error deleting rolebinding on cnv-images", "error", err)
+			account.SetStatus("error")
+			return err
+		}
+	}
+
+	// Delete the cephBlockPoolRadosNamespace from the openshift-storage namespace
+	// Define the CephBlockPoolRadosNamespace GroupVersionResource
+	cephBlockPoolRadosNamespaceGVR := schema.GroupVersionResource{
+		Group:    "ceph.rook.io",
+		Version:  "v1",
+		Resource: "cephblockpoolradosnamespaces",
+	}
+	if _, err := dynclientset.Resource(cephBlockPoolRadosNamespaceGVR).Namespace("openshift-storage").Get(context.TODO(), account.Namespace, metav1.GetOptions{}); err == nil {
+		if err := dynclientset.Resource(cephBlockPoolRadosNamespaceGVR).Namespace("openshift-storage").Delete(context.TODO(), account.Namespace, metav1.DeleteOptions{}); err != nil {
+			log.Logger.Error("Error deleting rolebinding on CephBlockPoolRadosNamespace", "error", err)
 			account.SetStatus("error")
 			return err
 		}
