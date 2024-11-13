@@ -1771,7 +1771,7 @@ func (account *OcpSandboxWithCreds) Delete() error {
 	// Create an dynamic OpenShift client for non regular objects
 	dynclientset, err := dynamic.NewForConfig(config)
 	if err != nil {
-		log.Logger.Error("Error creating OCP client", "error", err, account.Name)
+		log.Logger.Error("Error creating OCP client", "error", err, "name", account.Name)
 		account.SetStatus("error")
 		return err
 	}
