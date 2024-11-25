@@ -1833,18 +1833,20 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		}
 	}
 
-	// Delete the cephBlockPoolRadosNamespace from the openshift-storage namespace
-	// Define the CephBlockPoolRadosNamespace GroupVersionResource
-	cephBlockPoolRadosNamespaceGVR := schema.GroupVersionResource{
-		Group:    "ceph.rook.io",
-		Version:  "v1",
-		Resource: "cephblockpoolradosnamespaces",
-	}
-	if _, err := dynclientset.Resource(cephBlockPoolRadosNamespaceGVR).Namespace("openshift-storage").Get(context.TODO(), account.Namespace, metav1.GetOptions{}); err == nil {
-		if err := dynclientset.Resource(cephBlockPoolRadosNamespaceGVR).Namespace("openshift-storage").Delete(context.TODO(), account.Namespace, metav1.DeleteOptions{}); err != nil {
-			log.Logger.Error("Error deleting rolebinding on CephBlockPoolRadosNamespace", "error", err)
-			account.SetStatus("error")
-			return err
+	if selectedCluster.CephBlockPoolRadosNamespaceEnable {
+		// Delete the cephBlockPoolRadosNamespace from the openshift-storage namespace
+		// Define the CephBlockPoolRadosNamespace GroupVersionResource
+		cephBlockPoolRadosNamespaceGVR := schema.GroupVersionResource{
+			Group:    "ceph.rook.io",
+			Version:  "v1",
+			Resource: "cephblockpoolradosnamespaces",
+		}
+		if _, err := dynclientset.Resource(cephBlockPoolRadosNamespaceGVR).Namespace("openshift-storage").Get(context.TODO(), account.Namespace, metav1.GetOptions{}); err == nil {
+			if err := dynclientset.Resource(cephBlockPoolRadosNamespaceGVR).Namespace("openshift-storage").Delete(context.TODO(), account.Namespace, metav1.DeleteOptions{}); err != nil {
+				log.Logger.Error("Error deleting rolebinding on CephBlockPoolRadosNamespace", "error", err)
+				account.SetStatus("error")
+				return err
+			}
 		}
 	}
 
