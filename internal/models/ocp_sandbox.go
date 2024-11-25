@@ -1447,8 +1447,9 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				if err != nil {
 					log.Logger.Error("Error creating CephBlockPoolRadosNamespace", "error", err)
 				}
-			  log.Logger.Debug("CephBlockPoolRadosNamespace created successfully")
+				log.Logger.Debug("CephBlockPoolRadosNamespace created successfully")
 			}
+		}
 		// Create secret to generate a token, for the clusters without image registry and for future versions of OCP
 		secret := &v1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
