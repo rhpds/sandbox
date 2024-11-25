@@ -65,6 +65,7 @@ Authorization: Bearer {{access_token_admin}}
     "ingress_domain": "apps.ocp-cluster-1.com",
     "kubeconfig": "apiVersion: v1 ...",
     "skip_quota": true,
+    "ceph_blockpool_radosnamespace_enable": false,
     "annotations": {
         "virt": "no",
         "cloud": "ibm",
@@ -105,6 +106,7 @@ jsonpath "$.default_sandbox_quota.spec.hard['requests.memory']" == "20Gi"
 jsonpath "$.strict_default_sandbox_quota" == false
 jsonpath "$.quota_required" == false
 jsonpath "$.skip_quota" == true
+jsonpath "$.ceph_blockpool_radosnamespace_enable" == false
 
 PUT {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1/disable
 Authorization: Bearer {{access_token_admin}}
@@ -141,7 +143,8 @@ Authorization: Bearer {{ access_token_admin }}
   "quota_required": true,
   "strict_default_sandbox_quota": true,
   "max_memory_usage_percentage": 60,
-  "skip_quota": false
+  "skip_quota": false,
+  "ceph_blockpool_radosnamespace_enable": true
 }
 HTTP 200
 [Asserts]
@@ -155,6 +158,7 @@ jsonpath "$.strict_default_sandbox_quota" == true
 jsonpath "$.quota_required" == true
 jsonpath "$.max_memory_usage_percentage" == 60
 jsonpath "$.skip_quota" == false
+jsonpath "$.ceph_blockpool_radosnamespace_enable" == true
 
 DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}

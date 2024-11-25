@@ -76,6 +76,12 @@ type OcpSharedClusterConfiguration struct {
 	// TODO: change the default value to false
 	SkipQuota bool `json:"skip_quota"`
 
+	// CephBlockPoolRadosNamespaceEnable is a flag to control if a CephBlockPoolRadosNamespace object is created
+	// if set to true, CephBlockPoolRadosNamespace will be created with the same name of the namespace inside openshift-storage
+	// if set to false, the namespace wont be created
+	// By default it's true
+	CephBlockPoolRadosNamespaceEnable bool `json:"ceph_blockpool_radosnamespace_enable"`
+
 	// Limit Range for the sandbox
 	// This allows to set the default limit and request for pods
 	// see https://kubernetes.io/docs/concepts/policy/limit-range/
@@ -163,6 +169,7 @@ func MakeOcpSharedClusterConfiguration() *OcpSharedClusterConfiguration {
 	p.StrictDefaultSandboxQuota = false
 	p.QuotaRequired = false
 	p.SkipQuota = true
+	p.CephBlockPoolRadosNamespaceEnable = true
 
 	// Default Limit Range for new OcpSharedClusterConfiguration
 	// ---
@@ -278,7 +285,8 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 			strict_default_sandbox_quota,
 			quota_required,
 			skip_quota,
-			limit_range)
+			limit_range,
+			ceph_blockpool_radosnamespace_enable)
 			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 			RETURNING id`,
 		p.Name,
@@ -298,6 +306,7 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 		p.QuotaRequired,
 		p.SkipQuota,
 		p.LimitRange,
+		p.CephBlockPoolRadosNamespaceEnable,
 	).Scan(&p.ID); err != nil {
 		return err
 	}
@@ -328,7 +337,8 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 			 strict_default_sandbox_quota = $15,
 			 quota_required = $16,
 			 skip_quota = $17,
-			 limit_range = $18
+			 limit_range = $18,
+			 ceph_blockpool_radosnamespace_enable = $19
 		 WHERE id = $10`,
 		p.Name,
 		p.ApiUrl,
@@ -348,6 +358,7 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 		p.QuotaRequired,
 		p.SkipQuota,
 		p.LimitRange,
+		p.CephBlockPoolRadosNamespaceEnable,
 	); err != nil {
 		return err
 	}
@@ -416,7 +427,8 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 			strict_default_sandbox_quota,
 			quota_required,
 			skip_quota,
-			limit_range
+			limit_range,
+			ceph_blockpool_radosnamespace_enable
 		 FROM ocp_shared_cluster_configurations WHERE name = $2`,
 		p.VaultSecret, name,
 	)
@@ -442,6 +454,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 		&cluster.QuotaRequired,
 		&cluster.SkipQuota,
 		&cluster.LimitRange,
+		&cluster.CephBlockPoolRadosNamespaceEnable,
 	); err != nil {
 		return OcpSharedClusterConfiguration{}, err
 	}
@@ -475,8 +488,9 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			default_sandbox_quota,
 			strict_default_sandbox_quota,
 			quota_required,
-            skip_quota,
-			limit_range
+      skip_quota,
+			limit_range,
+      ceph_blockpool_radosnamespace_enable
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
 	)
@@ -511,6 +525,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			&cluster.QuotaRequired,
 			&cluster.SkipQuota,
 			&cluster.LimitRange,
+			&cluster.CephBlockPoolRadosNamespaceEnable,
 		); err != nil {
 			return []OcpSharedClusterConfiguration{}, err
 		}
@@ -1407,34 +1422,35 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				}
 			}
 			// TODO: decide if we want another flag to configure the RadosNamespace
-			// Define the CephBlockPoolRadosNamespace GroupVersionResource
-			cephBlockPoolRadosNamespaceGVR := schema.GroupVersionResource{
-				Group:    "ceph.rook.io",
-				Version:  "v1",
-				Resource: "cephblockpoolradosnamespaces",
-			}
-			// Create the CephBlockPoolRadosNamespace object as an unstructured object
-			cephBlockPoolRadosNamespace := &unstructured.Unstructured{
-				Object: map[string]any{
-					"apiVersion": "ceph.rook.io/v1",
-					"kind":       "CephBlockPoolRadosNamespace",
-					"metadata": map[string]any{
-						"name":      namespaceName,
-						"namespace": "openshift-storage",
+			if selectedCluster.CephBlockPoolRadosNamespaceEnable {
+				// Define the CephBlockPoolRadosNamespace GroupVersionResource
+				cephBlockPoolRadosNamespaceGVR := schema.GroupVersionResource{
+					Group:    "ceph.rook.io",
+					Version:  "v1",
+					Resource: "cephblockpoolradosnamespaces",
+				}
+				// Create the CephBlockPoolRadosNamespace object as an unstructured object
+				cephBlockPoolRadosNamespace := &unstructured.Unstructured{
+					Object: map[string]any{
+						"apiVersion": "ceph.rook.io/v1",
+						"kind":       "CephBlockPoolRadosNamespace",
+						"metadata": map[string]any{
+							"name":      namespaceName,
+							"namespace": "openshift-storage",
+						},
+						"spec": map[string]any{
+							"blockPoolName": "ocpv-tenants",
+						},
 					},
-					"spec": map[string]any{
-						"blockPoolName": "ocpv-tenants",
-					},
-				},
-			}
-			_, err = dynclientset.Resource(cephBlockPoolRadosNamespaceGVR).Namespace("openshift-storage").Create(context.TODO(), cephBlockPoolRadosNamespace, metav1.CreateOptions{})
-			if err != nil {
-				log.Logger.Error("Error creating CephBlockPoolRadosNamespace", "error", err)
-			}
+				}
+				_, err = dynclientset.Resource(cephBlockPoolRadosNamespaceGVR).Namespace("openshift-storage").Create(context.TODO(), cephBlockPoolRadosNamespace, metav1.CreateOptions{})
+				if err != nil {
+					log.Logger.Error("Error creating CephBlockPoolRadosNamespace", "error", err)
+				}
 
-			log.Logger.Debug("CephBlockPoolRadosNamespace created successfully")
+				log.Logger.Debug("CephBlockPoolRadosNamespace created successfully")
+			}
 		}
-
 		// Create secret to generate a token, for the clusters without image registry and for future versions of OCP
 		secret := &v1.Secret{
 			ObjectMeta: metav1.ObjectMeta{

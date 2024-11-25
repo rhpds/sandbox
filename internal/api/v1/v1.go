@@ -196,6 +196,7 @@ type UpdateOcpSharedConfigurationRequest struct {
 	MaxCpuUsagePercentage     *float64            `json:"max_cpu_usage_percentage,omitempty"`
 	UsageNodeSelector         *string             `json:"usage_node_selector,omitempty"`
 	LimitRange                *v1.LimitRange      `json:"limit_range,omitempty"`
+	CephBlockPoolRadosNamespaceEnable *bool				`json:"ceph_blockpool_radosnamespace_enable,omitempty"`
 }
 
 func (j *UpdateOcpSharedConfigurationRequest) Bind(r *http.Request) error {

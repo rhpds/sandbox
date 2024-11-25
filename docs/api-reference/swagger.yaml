@@ -1635,6 +1635,14 @@ paths:
                     If set to true, the sandbox quota will not be created.
                     If set to false, the sandbox quota will be created, depending on the value of quota_required, default_sandbox_quota and strict_default_sandbox_quota.
                     By default it's true.
+                ceph_blockpool_radosnamespace_enable:
+                  type: boolean
+                  description: |-
+                    CephBlockPoolRadosNamespaceEnable is a flag to control if a CephBlockPoolRadosNamespace object is created
+                    if set to true, CephBlockPoolRadosNamespace will be created with the same name of the namespace inside openshift-storage
+                    if set to false, the namespace wont be created
+                    By default it's true
+
                 max_memory_usage_percentage:
                   type: number
                   format: float
@@ -1673,6 +1681,7 @@ paths:
               strict_default_sandbox_quota: true
               quota_required: true
               skip_quota: false
+              ceph_blockpool_radosnamespace_enable: false
               max_memory_usage_percentage: 70
               max_cpu_usage_percentage: 80
               usage_node_selector: 'node-role.kubernetes.io/compute='
@@ -2436,6 +2445,14 @@ components:
             If set to true, the sandbox quota will not be created.
             If set to false, the sandbox quota will be created, depending on the value of
             quota_required, default_sandbox_quota and strict_default_sandbox_quota.
+          default: true
+        ceph_blockpool_radosnamespace_enable:
+          type: boolean
+          description: |-
+            CephBlockPoolRadosNamespaceEnable is a flag to control if a CephBlockPoolRadosNamespace object is created
+            if set to true, CephBlockPoolRadosNamespace will be created with the same name of the namespace inside openshift-storage
+            if set to false, the namespace wont be created
+            By default it's true
           default: true
         limit_range:
           type: object
