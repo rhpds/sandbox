@@ -2220,6 +2220,7 @@ components:
       enum:
         - AwsSandbox
         - OcpSandbox
+        - AzureSandbox
 
     Reservation:
       description: Reservation record

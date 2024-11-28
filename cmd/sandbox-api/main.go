@@ -133,6 +133,15 @@ func main() {
 	OcpSandboxProvider := models.NewOcpSandboxProvider(dbPool, vaultSecret)
 
 	// ---------------------------------------------------------------------
+	// Azure
+	// ---------------------------------------------------------------------
+	azureSandboxProvider, err := models.NewAzureSandboxProvider(dbPool, vaultSecret)
+	if err != nil {
+		log.Logger.Error("Error creating AzureSandboxProvider", "error", err)
+		os.Exit(1)
+	}
+
+	// ---------------------------------------------------------------------
 	// Setup JWT
 	// ---------------------------------------------------------------------
 
@@ -155,7 +164,15 @@ func main() {
 	accountHandler := NewAccountHandler(awsAccountProvider, OcpSandboxProvider)
 
 	// Factory for handlers which need connections to both databases
-	baseHandler := NewBaseHandler(awsAccountProvider.Svc, dbPool, doc, oaRouter, awsAccountProvider, OcpSandboxProvider)
+	baseHandler := NewBaseHandler(
+		awsAccountProvider.Svc,
+		dbPool,
+		doc,
+		oaRouter,
+		awsAccountProvider,
+		OcpSandboxProvider,
+		azureSandboxProvider,
+	)
 
 	// Admin handler adds tokenAuth to the baseHandler
 	adminHandler := NewAdminHandler(baseHandler, tokenAuth)

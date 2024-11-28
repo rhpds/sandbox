@@ -105,3 +105,23 @@ hurl --variable login_token_admin=$admintoken \
 === Troubleshoot ===
 
 Add the `--verbose` argument to the `hurl` command to see the full requests.
+
+== Azure tests ==
+
+Variables 'requester', 'cost_center', 'domain' need to be set
+----
+export HURL_requester="...@redhat.com"
+export HURL_pool_id="..."
+export HURL_cost_center="..."
+export HURL_domain="..."
+
+
+hurl --variable login_token_admin=$admintoken \
+--variable login_token=$apptoken \
+--variable host=http://localhost:8080 \
+--variable requester=${HURL_requester} \
+--variable cost_center=${HURL_cost_center} \
+--variable domain=${HURL_domain} \
+--variable uuid=$uuid \
+006_azure.hurl --test
+----
