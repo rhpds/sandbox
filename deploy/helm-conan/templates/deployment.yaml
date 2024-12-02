@@ -74,20 +74,8 @@ spec:
         - name: vault_file
           value: /secrets/vault_file/vault_file
 
-        - name: kerberos_user
-          valueFrom:
-            secretKeyRef:
-              name: {{ .Values.sandbox_conan_secrets.kerberos_secret.name }}
-              key: username
-
         - name: workdir
           value: /home/opentlc-mgr/pool_management
-
-        - name: kerberos_password
-          valueFrom:
-            secretKeyRef:
-              name: {{ .Values.sandbox_conan_secrets.kerberos_secret.name }}
-              key: password
 
         - name: AWSCLI
           value: {{ .Values.awscli | default "aws" | quote }}

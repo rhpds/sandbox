@@ -18,7 +18,6 @@ debug=${debug:-false}
 : "${aws_profile:?"aws_profile is unset or empty"}"
 : "${aws_nuke_binary_path:?"aws_nuke_binary_path is unset or empty"}"
 : "${lock_timeout:?"lock_timeout is unset or empty"}"
-: "${kerberos_user:?"kerberos_user is unset or empty"}"
 : "${vault_file:?"vault_file is unset or empty"}"
 : "${workdir:?"workdir is unset or empty"}"
 
@@ -236,9 +235,6 @@ sandbox_reset() {
         -e output_dir="${workdir}/output_dir_sandbox" \
         -e vault_file="${vault_file}" \
         -e aws_cli="${AWSCLI}" \
-        -e kerberos_keytab="${kerberos_keytab:-}" \
-        -e kerberos_user="${kerberos_user}" \
-        -e kerberos_password="${kerberos_password:-}" \
         -e run_aws_nuke_legacy="${run_aws_nuke_legacy:-false}" \
         reset_single.yml > "${logfile}"; then
         echo "$(date -uIs) ${sandbox} reset OK"

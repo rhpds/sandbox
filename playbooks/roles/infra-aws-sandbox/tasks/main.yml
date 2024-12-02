@@ -21,9 +21,4 @@
 - include_tasks: keypair.yml
   when: operation in ['CREATE', 'RESET']
   tags: keypair
-- include_tasks: ipa.yml
-  tags: ipa
-  when:
-    - kerberos_user is defined
-    - kerberos_password | default("", true) != "" or kerberos_keytab | default("", true) != ""
 - import_tasks: pool.yml

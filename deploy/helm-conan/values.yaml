@@ -31,12 +31,6 @@ sandbox_conan_secrets:
     name: vault-file
     #content: "..."
 
-  kerberos_secrets:
-    #namespace: ...
-    name: kerberos-ipa
-    kerberos_user: "..."
-    #kerberos_password: "..."
-
   aws_credentials:
     #namespace: ...
     name: aws-credentials
