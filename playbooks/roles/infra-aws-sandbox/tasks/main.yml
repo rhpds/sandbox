@@ -21,9 +21,10 @@
 - include_tasks: keypair.yml
   when: operation in ['CREATE', 'RESET']
   tags: keypair
-- include_tasks: ipa.yml
-  tags: ipa
+- include_tasks: ddns.yml
+  tags: ddns
   when:
-    - kerberos_user is defined
-    - kerberos_password | default("", true) != "" or kerberos_keytab | default("", true) != ""
+    - ddns_server is defined
+    - ddns_key_name is defined
+    - ddns_key_secret is defined
 - import_tasks: pool.yml

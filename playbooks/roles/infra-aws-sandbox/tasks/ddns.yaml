@@ -1,0 +1,59 @@
+---
+- tags:
+    - nuke
+    - ddns
+  when: operation == 'CREATE' or nuke_sandbox | bool
+  block:
+    - name: Fetch all NS records for this sandbox
+      shell: >-
+        set -o pipefail;
+        host -t ns -W 60 -R 10 {{ account_name }}.{{ ddns_domain }}
+        | awk '{ print $4 }'
+        | perl -pe 's/\.$//'
+      register: _recordfind
+      ignore_errors: true
+
+    - when: _recordfind is succeeded
+      set_fact:
+        ddns_ns_records: "{{ _recordfind.stdout.split('\n') }}"
+
+    - when: _recordfind is failed
+      set_fact:
+        ddns_ns_records: ""
+
+    - name: Delete all NS records that are not needed anymore
+      commnity.general.nsupdate:
+        server: "{{ ddns_server }}"
+        zone: "{{ ddns_domain }}"
+        record: "{{ account_name }}"
+        value: "{{ _z }}"
+        type: NS
+        port: "{{ ddns_port | d('53') }}"
+        key_name: "{{ ddns_key_name }}"
+        key_algorithm: "{{ ddns_key_algorithm | d('hmac-sha512') }}"
+        key_secret: "{{ ddns_key_secret }}"
+        state: absent
+      loop_control:
+        loop_var: _z
+      loop: "{{ ddns_ns_records | difference(ns_records) }}"
+      when: _z != ''
+
+    - name: Add NS records to DDNS
+      when: >-
+        ddns_ns_records | length == 0
+        or ddns_ns_records | difference(ns_records) | length != 0
+        or  ns_records | difference(ddns_ns_records) | length != 0
+      commnity.general.nsupdate:
+        server: "{{ ddns_server }}"
+        zone: "{{ ddns_domain }}"
+        record: "{{ account_name }}"
+        value: "{{ _z }}"
+        type: NS
+        port: "{{ ddns_port | d('53') }}"
+        key_name: "{{ ddns_key_name }}"
+        key_algorithm: "{{ ddns_key_algorithm | d('hmac-sha512') }}"
+        key_secret: "{{ ddns_key_secret }}"
+        state: present
+      loop: "{{ ns_records }}"
+      loop_control:
+        loop_var: _z
