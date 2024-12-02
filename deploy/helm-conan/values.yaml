@@ -37,7 +37,6 @@ sandbox_conan_secrets:
     key_name: "mydynamickey"
     key_algorithm: "hmac-sha512"
     #key_secret: "..."
-
   aws_credentials:
     #namespace: ...
     name: aws-credentials
