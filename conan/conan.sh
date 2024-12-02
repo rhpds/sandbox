@@ -46,7 +46,7 @@ workdir=${workdir:-~/pool_management}
 vault_file=${vault_file:-~/secrets/infra-sandbox-vault}
 
 # Dynamic DNS
-ddns_server=${ddns_server:-"ipa4.opentlc.com"}
+ddns_server=${ddns_server:-"ipaserver"}
 ddns_key_name=${ddns_key_name:-mydynamickey}
 ddns_key_algorithm=${ddns_key_algorithm:-"hmac-sha512"}
 ddns_key_secret=${ddns_ddns_key_secret:-}
