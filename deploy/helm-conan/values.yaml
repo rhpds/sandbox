@@ -34,6 +34,7 @@ sandbox_conan_secrets:
   ddns:
     #namespace: ...
     name: ipa4
+    server: ipaserver
     key_name: "mydynamickey"
     key_algorithm: "hmac-sha512"
     #key_secret: "..."
