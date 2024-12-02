@@ -12,7 +12,6 @@ Then it runs link:https://github.com/ekristen/aws-nuke[aws-nuke] to wipe them, a
 
 * link:https://github.com/ekristen/aws-nuke[`aws-nuke`] binary
 * IPA client
-* kerberos, `kinit`
 * link:../readme.adoc[`sandbox-list`] binary
 * link:https://github.com/shenwei356/rush[`rush`] binary (parallel tool)
 
@@ -77,8 +76,6 @@ $ podman run \
     -e conan_instance=container$$ \
     -e AWS_SHARED_CREDENTIALS_FILE=/run/secrets/aws_credentials \
     -e vault_file=/run/secrets/vault_file \
-    -e kerberos_user=... \
-    -e kerberos_password="...." \
     -e workdir=/home/opentlc-mgr/pool_management \
     -e AWSCLI=aws \
     -e threads=1 \

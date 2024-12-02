@@ -30,6 +30,4 @@
         account_email: sandbox{{account_num}}@opentlc.com
         account_destination_ou: sandboxes
         output_dir: ~/pool_management/output_dir_sandbox
-        kerberos_user: hostadmin
-        kerberos_keytab: ~/secrets/hostadmin.keytab
         operation: CREATE
