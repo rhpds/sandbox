@@ -29,6 +29,16 @@
           {{ _route53facts.DelegationSet.NameServers
           | map('regex_replace', '$', '.') }}
 
+    - name: Set the NS records using the Delegation Set
+      route53:
+        state: present
+        zone: "{{ account_name }}{{subdomain_base}}."
+        record: "{{ account_name }}{{subdomain_base}}."
+        type: NS
+        ttl: 600
+        value: "{{ ns_records }}"
+        overwrite: true
+
     - name: Add HostedZoneId to the report
       lineinfile:
         path: "{{ output_dir }}/{{ account_name }}_report.txt"

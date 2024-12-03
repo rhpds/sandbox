@@ -11,6 +11,7 @@
         | awk '{ print $4 }'
       register: _recordfind
       ignore_errors: true
+      changed_when: false
 
     - when: _recordfind is succeeded
       set_fact:
