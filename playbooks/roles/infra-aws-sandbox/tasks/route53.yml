@@ -25,7 +25,7 @@
 
     - name: Save NS records
       set_fact:
-        ns_records: "{{ _route53facts.DelegationSet.NameServers }}"
+        ns_records: "{{ _route53facts.DelegationSet.NameServers | map('regex_replace', '$', '.') }}"
 
     # NEEDED?
     #- name: Generate commands to del NS records to IPA
