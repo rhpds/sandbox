@@ -25,14 +25,9 @@
 
     - name: Save NS records
       set_fact:
-        ns_records: "{{ _route53facts.DelegationSet.NameServers | map('regex_replace', '$', '.') }}"
-
-    # NEEDED?
-    #- name: Generate commands to del NS records to IPA
-    #  copy:
-    #    content: |-
-    #      ipa dnsrecord-del opentlc.com. {{ account_name }}
-    #    dest: "{{ output_dir }}/ipa_del_{{ account_name }}.sh"
+        ns_records: >-
+          {{ _route53facts.DelegationSet.NameServers
+          | map('regex_replace', '$', '.') }}
 
     - name: Add HostedZoneId to the report
       lineinfile:

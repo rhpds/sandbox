@@ -21,11 +21,12 @@
         ddns_ns_records: ""
 
     - name: Override NS records to DDNS
+      when: ddns_ns_records | sort != ns_records | sort
       community.general.nsupdate:
         server: "{{ lookup('dig', ddns_server) }}"
         zone: "{{ ddns_domain }}."
         record: "{{ account_name }}.{{ ddns_domain }}."
-        value: "{{ ns_records | map('regex_replace', '$', '.') }}"
+        value: "{{ ns_records }}"
         type: NS
         port: "{{ ddns_port | d('53') }}"
         key_name: "{{ ddns_key_name }}"
