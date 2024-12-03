@@ -26,7 +26,7 @@
         server: "{{ ddns_server }}"
         zone: "{{ ddns_domain }}"
         record: "{{ account_name }}"
-        value: "{{ _z }}"
+        value: "{{ _z }}."
         type: NS
         port: "{{ ddns_port | d('53') }}"
         key_name: "{{ ddns_key_name }}"
@@ -47,7 +47,7 @@
         server: "{{ ddns_server }}"
         zone: "{{ ddns_domain }}"
         record: "{{ account_name }}"
-        value: "{{ _z }}"
+        value: "{{ _z }}."
         type: NS
         port: "{{ ddns_port | d('53') }}"
         key_name: "{{ ddns_key_name }}"
