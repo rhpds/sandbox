@@ -22,7 +22,7 @@
         ddns_ns_records: ""
 
     - name: Delete all NS records that are not needed anymore
-      commnity.general.nsupdate:
+      community.general.nsupdate:
         server: "{{ ddns_server }}"
         zone: "{{ ddns_domain }}"
         record: "{{ account_name }}"
@@ -43,7 +43,7 @@
         ddns_ns_records | length == 0
         or ddns_ns_records | difference(ns_records) | length != 0
         or  ns_records | difference(ddns_ns_records) | length != 0
-      commnity.general.nsupdate:
+      community.general.nsupdate:
         server: "{{ ddns_server }}"
         zone: "{{ ddns_domain }}"
         record: "{{ account_name }}"
