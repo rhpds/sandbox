@@ -49,7 +49,7 @@ vault_file=${vault_file:-~/secrets/infra-sandbox-vault}
 ddns_server=${ddns_server:-"ipaserver"}
 ddns_key_name=${ddns_key_name:-mydynamickey}
 ddns_key_algorithm=${ddns_key_algorithm:-"hmac-sha512"}
-ddns_key_secret=${ddns_ddns_key_secret:-}
+ddns_key_secret=${ddns_key_secret:-}
 
 # Pattern to filter the sandboxes to cleanup
 sandbox_filter=${sandbox_filter:-}
