@@ -25,7 +25,7 @@
         server: "{{ lookup('dig', ddns_server) }}"
         zone: "{{ ddns_domain }}."
         record: "{{ account_name }}.{{ ddns_domain }}."
-        value: "{{ ns_records }}"
+        value: "{{ ns_records | map('regex_replace', '$', '.') }}"
         type: NS
         port: "{{ ddns_port | d('53') }}"
         key_name: "{{ ddns_key_name }}"
