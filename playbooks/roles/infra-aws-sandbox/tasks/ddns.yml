@@ -23,13 +23,14 @@
     - name: Override NS records to DDNS
       when: ddns_ns_records | sort != ns_records | sort
       community.general.nsupdate:
+        state: present
         server: "{{ lookup('dig', ddns_server) }}"
-        zone: "{{ ddns_domain }}."
-        record: "{{ account_name }}.{{ ddns_domain }}."
-        value: "{{ ns_records }}"
-        type: NS
-        port: "{{ ddns_port | d('53') }}"
         key_name: "{{ ddns_key_name }}"
         key_algorithm: "{{ ddns_key_algorithm | d('hmac-sha512') }}"
         key_secret: "{{ ddns_key_secret }}"
-        state: present
+        port: "{{ ddns_port | d('53') }}"
+        type: NS
+        ttl: 600
+        zone: "{{ ddns_domain }}."
+        record: "{{ account_name }}.{{ ddns_domain }}."
+        value: "{{ ns_records }}"
