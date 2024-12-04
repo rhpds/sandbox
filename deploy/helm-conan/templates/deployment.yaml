@@ -74,8 +74,32 @@ spec:
         - name: vault_file
           value: /secrets/vault_file/vault_file
 
+        - name: ddns_server
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.sandbox_conan_secrets.ddns.server }}
+              key: server
+
+        - name: ddns_key_name
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.sandbox_conan_secrets.ddns.key_name }}
+              key: key_name
+
         - name: workdir
           value: /home/opentlc-mgr/pool_management
+
+        - name: ddns_key_secret
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.sandbox_conan_secrets.ddns.key_secret }}
+              key: key_secret
+
+        - name: ddns_key_algorithm
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.sandbox_conan_secrets.ddns.key_algorithm }}
+              key: key_algorithm
 
         - name: AWSCLI
           value: {{ .Values.awscli | default "aws" | quote }}

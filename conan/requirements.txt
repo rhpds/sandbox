@@ -10,11 +10,6 @@ dnspython
 docutils
 gssapi
 importlib-resources
-ipa
-ipaclient
-ipalib
-ipaplatform
-ipapython
 Jinja2
 jmespath
 MarkupSafe

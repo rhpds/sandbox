@@ -21,4 +21,10 @@
 - include_tasks: keypair.yml
   when: operation in ['CREATE', 'RESET']
   tags: keypair
+- include_tasks: ddns.yml
+  tags: ddns
+  when:
+    - ddns_server is defined
+    - ddns_key_name is defined
+    - ddns_key_secret is defined
 - import_tasks: pool.yml

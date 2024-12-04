@@ -4,7 +4,6 @@
     path: "{{ output_dir }}"
     state: directory
 
-
 - name: Ensure vault file exists
   stat:
     path: "{{ vault_file }}"

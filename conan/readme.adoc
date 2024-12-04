@@ -76,6 +76,9 @@ $ podman run \
     -e conan_instance=container$$ \
     -e AWS_SHARED_CREDENTIALS_FILE=/run/secrets/aws_credentials \
     -e vault_file=/run/secrets/vault_file \
+    -e ddns_server="..." \
+    -e ddns_key_name="..." \
+    -e ddns_key_secret="...." \
     -e workdir=/home/opentlc-mgr/pool_management \
     -e AWSCLI=aws \
     -e threads=1 \

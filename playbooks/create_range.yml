@@ -30,4 +30,7 @@
         account_email: sandbox{{account_num}}@opentlc.com
         account_destination_ou: sandboxes
         output_dir: ~/pool_management/output_dir_sandbox
+        ddns_server: ipaserver
+        ddns_key_name: mydynamickey
+        ddns_key_algorithm: hmac-sha512
         operation: CREATE
