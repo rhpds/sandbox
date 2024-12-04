@@ -2,7 +2,7 @@
 - tags:
     - nuke
     - ddns
-  when: operation == 'CREATE' or nuke_sandbox | bool
+  when: operation in ['CREATE','RESET'] or nuke_sandbox | bool
   block:
     - name: Fetch all NS records for this sandbox
       shell: >-
@@ -31,7 +31,7 @@
         key_secret: "{{ ddns_key_secret }}"
         port: "{{ ddns_port | d('53') }}"
         type: NS
-        ttl: 600
+        ttl: "{{ ddns_ttl | default(600, true) }}"
         zone: "{{ ddns_domain }}."
         record: "{{ account_name }}.{{ ddns_domain }}."
         value: "{{ ns_records }}"

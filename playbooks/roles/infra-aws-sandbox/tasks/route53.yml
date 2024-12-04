@@ -35,7 +35,6 @@
         zone: "{{ account_name }}{{subdomain_base}}."
         record: "{{ account_name }}{{subdomain_base}}."
         type: NS
-        ttl: 600
         value: "{{ ns_records }}"
         overwrite: true
       register: _route53zoneNS

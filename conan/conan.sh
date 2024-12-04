@@ -50,6 +50,7 @@ ddns_server=${ddns_server:-"ipaserver"}
 ddns_key_name=${ddns_key_name:-mydynamickey}
 ddns_key_algorithm=${ddns_key_algorithm:-"hmac-sha512"}
 ddns_key_secret=${ddns_key_secret:-}
+ddns_ttl=${ddns_ttl:-600}
 
 # Pattern to filter the sandboxes to cleanup
 sandbox_filter=${sandbox_filter:-}
@@ -84,6 +85,7 @@ export ddns_server
 export ddns_key_name
 export ddns_key_algorithm
 export ddns_key_secret
+export ddns_ttl
 export lock_timeout
 export max_retries
 export aws_nuke_retries

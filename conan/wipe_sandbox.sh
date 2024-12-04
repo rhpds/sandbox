@@ -241,6 +241,7 @@ sandbox_reset() {
         -e ddns_server="${ddns_server}" \
         -e ddns_key_name="${ddns_key_name}" \
         -e ddns_key_secret="${ddns_key_secret}" \
+        -e ddns_ttl="${ddns_ttl}" \
         -e run_aws_nuke_legacy="${run_aws_nuke_legacy:-false}" \
         reset_single.yml > "${logfile}"; then
         echo "$(date -uIs) ${sandbox} reset OK"
