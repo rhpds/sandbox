@@ -15,19 +15,3 @@
   retries: 5
   delay: "{{ 30|random(start=3, step=1) }}"
   until: r_import is succeeded
-
-- name: Import OPENTLC ocpkey
-  ec2_key:
-    name: ocpkey
-    region: "{{ _region }}"
-    key_material: "{{ ocpkey }}"
-    aws_access_key: "{{ assumed_role.sts_creds.access_key }}"
-    aws_secret_key: "{{ assumed_role.sts_creds.secret_key }}"
-    session_token: "{{ assumed_role.sts_creds.session_token }}"
-  loop: "{{ all_regions }}"
-  loop_control:
-    loop_var: _region
-  register: r_import2
-  retries: 5
-  delay: "{{ 30|random(start=3, step=1) }}"
-  until: r_import2 is succeeded
