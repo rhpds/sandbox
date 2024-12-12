@@ -252,9 +252,9 @@ sandbox_reset() {
         echo "$(date -uIs) ${sandbox} $(grep -Eo 'Nuke complete: [^"]+' "${logfile}")"
 
         if [ "${debug}" = "true" ]; then
-            echo "$(date -uIs) =========BEGIN========== ${logfile}"
+            echo "$(date -uIs) =========BEGIN========== ${HOSTNAME} ${logfile}"
             cat "${logfile}"
-            echo "$(date -uIs) =========END============ ${logfile}"
+            echo "$(date -uIs) =========END============ ${HOSTNAME} ${logfile}"
         fi
 
         rm "${eventlog}"
@@ -265,9 +265,9 @@ sandbox_reset() {
         echo "$(date -uIs) ${sandbox} reset took $((duration / 60))m$((duration % 60))s"
 
         echo "$(date -uIs) ${sandbox} reset FAILED." >&2
-        echo "$(date -uIs) =========BEGIN========== ${logfile}" >&2
+        echo "$(date -uIs) =========BEGIN========== ${HOSTNAME} ${logfile}" >&2
         cat "${logfile}" >&2
-        echo "$(date -uIs) =========END============ ${logfile}" >&2
+        echo "$(date -uIs) =========END============ ${HOSTNAME} ${logfile}" >&2
         sandbox_increase_conan_cleanup_count "${sandbox}"
         echo "$(date -uIs) ${sandbox} cleanup count: $(get_conan_cleanup_count "${sandbox}")"
         sync
