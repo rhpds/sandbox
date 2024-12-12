@@ -18,6 +18,7 @@ USER root
 COPY --from=builder /sandbox/build/sandbox-list /usr/local/bin/sandbox-list
 COPY conan/requirements.txt /tmp/requirements.txt
 COPY conan/requirements.yml /tmp/requirements.yml
+COPY conan/ansible.cfg /etc/ansible/ansible.cfg
 
 RUN mkdir -p -m 770  /home/opentlc-mgr/pool_management/output_dir_sandbox \
     && chmod -R 770 /home/opentlc-mgr \
