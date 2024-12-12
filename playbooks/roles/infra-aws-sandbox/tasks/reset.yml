@@ -45,6 +45,7 @@
         dest: "{{ output_dir }}/{{ account_name }}_nuke-config.yml"
 
     - name: Generate config file for aws-nuke-legacy
+      when: run_aws_nuke_legacy | default(false) | bool
       template:
         src: "{{ role_path }}/templates/nuke-config-legacy.yml.j2"
         dest: "{{ output_dir }}/{{ account_name }}_nuke-config-legacy.yml"
