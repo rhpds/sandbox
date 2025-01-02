@@ -7,6 +7,7 @@ import (
 	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
 
+	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 )
 
@@ -229,6 +230,12 @@ func (j *LifecyclePlacementJob) GlobalStatus() (string, error) {
 	)
 
 	if err != nil {
+		// If no rows are found, return success
+		// This is a special case where resources lifecycle jobs are not implemented yet
+		if err == pgx.ErrNoRows {
+			return "success", nil
+		}
+
 		return "unknown", err
 	}
 
