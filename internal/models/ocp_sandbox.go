@@ -482,9 +482,6 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 	)
 
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			log.Logger.Info("No cluster found")
-		}
 		return []OcpSharedClusterConfiguration{}, err
 	}
 
@@ -534,9 +531,6 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByAnnotations(annot
 	)
 
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			log.Logger.Info("No cluster found", "annotations", annotations)
-		}
 		return []OcpSharedClusterConfiguration{}, err
 	}
 
@@ -709,9 +703,6 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuid(serviceUuid string) ([]OcpSan
 	)
 
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			log.Logger.Info("No account found", "service_uuid", serviceUuid)
-		}
 		return accounts, err
 	}
 
@@ -763,9 +754,6 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 	)
 
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			log.Logger.Info("No account found", "service_uuid", serviceUuid)
-		}
 		return accounts, err
 	}
 
@@ -813,11 +801,6 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]st
 	)
 
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			log.Logger.Info("No cluster found", "cloud_selector", cloud_selector)
-			return OcpSharedClusterConfigurations{}, ErrNoSchedule
-		}
-
 		log.Logger.Error("Error querying ocp clusters", "error", err)
 		return OcpSharedClusterConfigurations{}, err
 	}
@@ -1621,9 +1604,6 @@ func (a *OcpSandboxProvider) FetchAll() ([]OcpSandbox, error) {
 	)
 
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			log.Logger.Info("No account found")
-		}
 		return accounts, err
 	}
 
