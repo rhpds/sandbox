@@ -217,6 +217,7 @@ func (j *LifecyclePlacementJob) SetStatus(status string) error {
 
 // GlobalStatus returns the status of a LifecyclePlacementJob considering all it's children
 func (j *LifecyclePlacementJob) GlobalStatus() (string, error) {
+
 	if j.Status != "successfully_dispatched" {
 		return j.Status, nil
 	}
@@ -230,19 +231,15 @@ func (j *LifecyclePlacementJob) GlobalStatus() (string, error) {
 	)
 
 	if err != nil {
-		// If no rows are found, return success
-		// This is a special case where resources lifecycle jobs are not implemented yet
-		if err == pgx.ErrNoRows {
-			return "success", nil
-		}
-
 		return "unknown", err
 	}
 
 	defer rows.Close()
 
 	status := "unknown"
+	count := 0
 	for rows.Next() {
+		count++
 		var idR int
 		err := rows.Scan(&idR)
 		if err != nil {
@@ -272,7 +269,14 @@ func (j *LifecyclePlacementJob) GlobalStatus() (string, error) {
 		}
 	}
 
+	// If no rows are found, return success
+	// This is a special case where resources lifecycle jobs are not implemented yet
+	if count == 0 {
+		return "success", nil
+	}
+
 	if rows.Err() != nil {
+		log.Logger.Error("Error iterating over rows", "err", rows.Err())
 		return "unknown", err
 	}
 	return status, nil
