@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v4"
@@ -472,7 +473,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			default_sandbox_quota,
 			strict_default_sandbox_quota,
 			quota_required,
-            skip_quota,
+			skip_quota,
 			limit_range
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
@@ -800,14 +801,25 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 
 var ErrNoSchedule error = errors.New("No OCP shared cluster configuration found")
 
-func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]string) (OcpSharedClusterConfigurations, error) {
+func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]string, affinity string) (OcpSharedClusterConfigurations, error) {
 	clusters := OcpSharedClusterConfigurations{}
+	var err error 
+	var rows pgx.Rows 
 	// Get resource from 'ocp_shared_cluster_configurations' table
-	rows, err := a.DbPool.Query(
+	if affinity == "" {
+	rows, err = a.DbPool.Query(
 		context.Background(),
 		`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true ORDER BY random()`,
 		cloud_selector,
 	)
+	} else {
+	rows, err = a.DbPool.Query(
+		context.Background(),
+		`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and annotations->>'affinity' = $2 ORDER BY random()`,
+		cloud_selector, affinity,
+	)
+
+	}
 
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -916,16 +928,23 @@ func anySchedulableNodes(nodes []v1.Node) bool {
 	return false
 }
 
-func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, requestedQuota *v1.ResourceList, requestedLimitRange *v1.LimitRange, multiple bool, ctx context.Context) (OcpSandboxWithCreds, error) {
+func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, requestedQuota *v1.ResourceList, requestedLimitRange *v1.LimitRange, multiple bool, multipleAccounts []OcpSandbox, ctx context.Context, wg *sync.WaitGroup) (OcpSandboxWithCreds, error) {
 	var selectedCluster OcpSharedClusterConfiguration
-
+	var affinity string
 	// Ensure annotation has guid
 	if _, exists := annotations["guid"]; !exists {
 		return OcpSandboxWithCreds{}, errors.New("guid not found in annotations")
 	}
+  log.Logger.Info("multipleCluster", "length", len(multipleAccounts))
+	if (multipleAccounts != nil) {
+		for _, account := range multipleAccounts { 
+			affinity = account.OcpSharedClusterConfigurationName
+			break
+		}
+	}
 
 	// Version with OcpSharedClusterConfiguration methods
-	candidateClusters, err := a.GetSchedulableClusters(cloud_selector)
+	candidateClusters, err := a.GetSchedulableClusters(cloud_selector, affinity)
 	if err != nil {
 		log.Logger.Error("Error getting schedulable clusters", "error", err)
 		return OcpSandboxWithCreds{}, err
@@ -1480,6 +1499,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 		log.Logger.Info("Ocp sandbox booked", "account", rnew.Name, "service_uuid", rnew.ServiceUuid,
 			"cluster", rnew.OcpSharedClusterConfigurationName, "namespace", rnew.Namespace)
+		defer wg.Done()
 	}()
 	//--------------------------------------------------
 

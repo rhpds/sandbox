@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+  "sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -77,6 +78,7 @@ func multipleKind(resources []v1.ResourceRequest, kind string) bool {
 }
 
 func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Request) {
+	var wg sync.WaitGroup
 	placementRequest := &v1.PlacementRequest{}
 	if err := render.Bind(r, placementRequest); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -129,6 +131,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 	tocleanup := []models.Deletable{}
 	resources := []any{}
 	multipleOcp := multipleKind(placementRequest.Resources, "OcpSandbox")
+	multipleOcpAccounts := []models.OcpSandbox{}
 
 	for _, request := range placementRequest.Resources {
 		switch request.Kind {
@@ -182,8 +185,11 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				request.Quota,
 				request.LimitRange,
 				multipleOcp,
+				multipleOcpAccounts,
 				r.Context(),
+				&wg,
 			)
+
 			if err != nil {
 				// Cleanup previous accounts
 				go func() {
@@ -225,6 +231,12 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			tocleanup = append(tocleanup, &account)
+			if multipleOcp {
+				wg.Add(1)
+				wg.Wait()
+				maccount, _ := h.OcpSandboxProvider.FetchByName(account.Name)
+				multipleOcpAccounts = append(multipleOcpAccounts, maccount)
+			}
 			resources = append(resources, account)
 
 		default:
@@ -238,15 +250,15 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	placement := models.PlacementWithCreds{
-		Placement: models.Placement{
-			ServiceUuid: placementRequest.ServiceUuid,
-			Annotations: placementRequest.Annotations,
-			Request:     placementRequest,
-			Resources:   resources,
-			DbPool:      h.dbpool,
-		},
-	}
+placement := models.PlacementWithCreds{
+	Placement: models.Placement{
+		ServiceUuid: placementRequest.ServiceUuid,
+		Annotations: placementRequest.Annotations,
+		Request:     placementRequest,
+		Resources:   resources,
+		DbPool:      h.dbpool,
+	},
+}
 	placement.Resources = resources
 
 	if err := placement.Create(); err != nil {
