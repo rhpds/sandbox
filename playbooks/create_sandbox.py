@@ -38,6 +38,7 @@ parser.add_argument('--reservation', required=False, help='The reservation name'
 parser.add_argument('--target-db', required=False, help='The target database', default='dev')
 parser.add_argument('--log-level', required=False, help='The log level', default='info')
 parser.add_argument('--retry', required=False, help='Retry sandbox by passing its name', default=None)
+parser.add_argument('--playbook-output', required=False, help='Print output of ansible-playbook commands?', action=argparse.BooleanOptionalAction, default=True)
 
 args = parser.parse_args()
 
@@ -46,6 +47,7 @@ logger = logger.bind(reservation=reservation)
 target_db = args.target_db
 log_level = args.log_level
 retry = args.retry
+playbook_output = args.playbook_output
 
 if log_level == 'debug':
     logger.info("Setting log level to DEBUG")
@@ -473,7 +475,7 @@ args = args + ['-e', f'ddns_key_secret={os.environ["ddns_key_secret"]}']
 try:
     completed = subprocess.run(
         args, check=True,
-        #capture_output=True,
+        capture_output=(not playbook_output),
         timeout=1800,
     )
 except subprocess.CalledProcessError as e:
@@ -668,7 +670,7 @@ logger.info(f"Running {' '.join(args)}")
 try:
     completed = subprocess.run(
         args, check=True,
-        #capture_output=True,
+        capture_output=(not playbook_output),
         timeout=1800,
     )
 
