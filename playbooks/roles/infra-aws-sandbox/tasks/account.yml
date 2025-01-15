@@ -21,52 +21,92 @@
     account_id: "{{ _getaccountid.stdout }}"
     account_already_exists: true
 
-- when:
-    - all_accounts is not defined
-    - operation == 'CREATE' or account_id is not defined
-  block:
-    - name: List all accounts in the organization.
-      command: >-
-        {{ aws_cli }} --profile {{ aws_master_profile }}
-        organizations list-accounts
-        --query 'Accounts[].{Name: Name, Id: Id}'
-      register: _listaccounts
-      changed_when: false
-
-    - set_fact:
-        all_accounts: "{{_listaccounts.stdout|from_json}}"
-
-- when:
-    - operation == 'CREATE' or account_id is not defined
-    - account_name not in all_accounts|json_query('[].Name')
-  name: Create New account.
+- name: List all accounts in the organization.
   command: >-
     {{ aws_cli }} --profile {{ aws_master_profile }}
-    organizations create-account
-    --email {{ account_email }}
-    --account-name "{{ account_name }}"
-    --role-name "{{ aws_role_name }}"
-    --query 'CreateAccountStatus.[Id]'
-    --output text
-  register: _createaccount
+    organizations list-accounts
+    --query 'Accounts[].{Name: Name, Id: Id, Email: Email, Status: Status}'
+  register: _listaccounts
+  changed_when: false
+  when:
+    - check_account_list | bool
+    - all_accounts is not defined
+    - operation == 'CREATE' or account_id is not defined
 
 - when:
+    - check_account_list | bool
     - operation == 'CREATE' or account_id is not defined
-    - account_name in all_accounts|json_query('[].Name')
   block:
-    - name: Find and set the account_id (existing account)
+    - set_fact:
+        all_active_accounts: >-
+          {{
+          _listaccounts.stdout
+          | from_json
+          | json_query('[?Status==`ACTIVE`].{Name: Name, Id: Id}') }}
+
+    - name: Fail if the account name exists multiple times
+      vars:
+        selected_accounts: >-
+          {{
+          all_active_accounts
+          | json_query('[?Name==`'~ account_name ~'`]')
+          | list
+          }}
+      fail:
+        msg: |-
+          Account name exists multiple times in the organization.
+          {{ selected_accounts }}
+      when: selected_accounts | length > 1
+
+    - name: Reuse the existing account if one exists
+      vars:
+        selected_accounts: >-
+          {{
+          all_active_accounts
+          | json_query('[?Name==`'~ account_name ~'`]')
+          | list
+          }}
+      when: selected_accounts | length == 1
       set_fact:
         account_id: >-
-          {{
-          (
-          all_accounts
-          |selectattr('Name', 'equalto', account_name)
-          |first
-          )['Id']
-          }}
+          {{ all_active_accounts
+          | json_query('[?Name==`' ~ account_name ~ '`].Id')
+          | first }}
 
-    - debug:
-        var: account_id
+- when: account_id is defined
+  debug:
+    msg: "Reusing existing account with id {{ account_id }}"
+
+- when:
+    - operation == 'CREATE'
+    - account_id is not defined
+  block:
+  - name: Save status of the sandbox
+    when: update_stage
+    vars:
+      step1: "1 - Account Creation Started"
+      _data:
+        name:
+          S: "{{ account_name }}"
+    command: >-
+      {{ aws_cli }} --profile {{ dynamodb_profile }}
+      --region {{ dynamodb_region }}
+      dynamodb update-item
+      --table-name {{ dynamodb_table }}
+      --key '{{ _data | to_json }}'
+      --update-expression 'SET stage = :val'
+      --expression-attribute-values '{":val": {"S": "{{ step1 }}"}}'
+
+  - name: Create New account.
+    command: >-
+      {{ aws_cli }} --profile {{ aws_master_profile }}
+      organizations create-account
+      --email {{ account_email }}
+      --account-name "{{ account_name }}"
+      --role-name "{{ aws_role_name }}"
+      --query 'CreateAccountStatus.[Id]'
+      --output text
+    register: _createaccount
 
 - when:
     - _createaccount is not skipped
@@ -85,9 +125,37 @@
       retries: 40
       changed_when: false
 
-    - fail:
-        msg: The creation of the account failed.
-      when: _describestatus.stdout == 'FAILED'
+    - when: update_stage and _describestatus.stdout == 'FAILED'
+      block:
+        - name: Save failed status of the sandbox
+          command: >-
+            {{ aws_cli }} --profile {{ aws_master_profile }}
+            organizations describe-create-account-status
+            --create-account-request-id {{ _createaccount.stdout }}
+            --output json
+          register: _describestatus2
+          changed_when: false
+
+        - name: Save failed status of the sandbox
+          vars:
+            step1: "1 - Account Creation Failed"
+            _data:
+              name:
+                S: "{{ account_name }}"
+          command: >-
+            {{ aws_cli }} --profile {{ dynamodb_profile }}
+            --region {{ dynamodb_region }}
+            dynamodb update-item
+            --table-name {{ dynamodb_table }}
+            --key '{{ _data | to_json }}'
+            --update-expression 'SET stage = :val'
+            --expression-attribute-values '{":val": {"S": "{{ step1 }}"}}'
+
+        - debug:
+            var: _describestatus2
+
+        - fail:
+            msg: The creation of the account failed.
 
     - name: Get the account ID
       command: >-
@@ -106,6 +174,26 @@
 - when: account_id is not defined
   fail:
     msg: Account Id not defined
+
+- name: Save status of the sandbox
+  vars:
+    step1: "1 - Account Creation Succeeded"
+    _data:
+      name:
+        S: "{{ account_name }}"
+    _expr:
+      ":val":
+        "S": "{{ step1 }}"
+      ":accountid":
+        "S": "{{ account_id }}"
+  command: >-
+    {{ aws_cli }} --profile {{ dynamodb_profile }}
+    --region {{ dynamodb_region }}
+    dynamodb update-item
+    --table-name {{ dynamodb_table }}
+    --key '{{ _data | to_json }}'
+    --update-expression 'SET stage = :val, account_id = :accountid'
+    --expression-attribute-values '{{ _expr | to_json }}'
 
 - name: Add Account Id to the report
   lineinfile:

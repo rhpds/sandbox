@@ -37,7 +37,7 @@
     --table-name {{ dynamodb_table }}
     --item '{{ _data | to_json }}'
   register: _putaccount
-  when: _getaccount.stdout == '' or force_create
+  when: _getaccount.stdout == '' or force_create or update_stage
 
 - debug:
     var: _putaccount

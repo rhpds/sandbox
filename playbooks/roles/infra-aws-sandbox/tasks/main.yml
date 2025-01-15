@@ -1,5 +1,7 @@
 ---
 - import_tasks: pre_checks.yml
+- when: operation == 'VALIDATE' or operation == 'validate'
+  include_tasks: validate.yaml
 - import_tasks: account.yml
   tags: account
 - import_tasks: profile.yml

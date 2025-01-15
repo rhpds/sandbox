@@ -8,6 +8,11 @@ account_user: student
 
 operation: CREATE
 
+# Listing all accounts in the organization is a costly operation
+# it takes currently 47s to execute.
+# Check the account only in certain scenario, like for a retry
+check_account_list: false
+
 available_after_reset: true
 available_after_create: false
 alias_suffix: '-gpte'
@@ -168,5 +173,6 @@ dynamodb_region: us-east-1
 account_altready_exists: false
 
 force_create: false
+update_stage: false
 
 aws_cli: aws
