@@ -39,6 +39,9 @@ parser.add_argument('--target-db', required=False, help='The target database', d
 parser.add_argument('--log-level', required=False, help='The log level', default='info')
 parser.add_argument('--retry', required=False, help='Retry sandbox by passing its name', default=None)
 parser.add_argument('--playbook-output', required=False, help='Print output of ansible-playbook commands?', action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument('--hcc', required=False, help='run the registration step for Gold images?', action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument('--validation', required=False, help='run the validation playbook?', action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument('--guess-strategy', required=False, help='How to guess the next number: smart, end', default='end')
 
 args = parser.parse_args()
 
@@ -48,6 +51,9 @@ target_db = args.target_db
 log_level = args.log_level
 retry = args.retry
 playbook_output = args.playbook_output
+hcc = args.hcc
+validation = args.validation
+guess_strategy = args.guess_strategy
 
 if log_level == 'debug':
     logger.info("Setting log level to DEBUG")
@@ -193,6 +199,12 @@ if 'Items' in response:
     logger.info(f"Found {len(sandboxes_prod)} sandboxes in prod")
     sandboxes = sandboxes + sandboxes_prod
 
+def extract_sandbox_number(sandbox):
+    """Extract the number from the sandbox name, for example sandbox1234 returns 1234"""
+    return int(sandbox.split('sandbox')[1])
+
+sandboxes.sort(key=extract_sandbox_number)
+
 # transform into a dictionary
 sandboxes_dict = {sandbox: True for sandbox in sandboxes}
 
@@ -275,10 +287,6 @@ def get_sandbox(dynamodb, sandbox):
         return {}
 
 
-def extract_sandbox_number(sandbox):
-    """Extract the number from the sandbox name, for example sandbox1234 returns 1234"""
-    return int(sandbox.split('sandbox')[1])
-
 
 def guess_next_sandbox(sandboxes, sandboxes_dict):
     """Find the first available sandbox name"""
@@ -289,10 +297,13 @@ def guess_next_sandbox(sandboxes, sandboxes_dict):
 
     if retry:
         return retry, f"{retry}+{random_email_tag}@{os.environ['email_domain']}"
-    for i in range(1, len(sandboxes) + 1):
-        if not sandboxes_dict.get(f"sandbox{i}", False):
-            return f"sandbox{i}", f"sandbox{i}+{random_email_tag}@{os.environ['email_domain']}"
 
+    if guess_strategy == 'smart':
+        for i in range(1, len(sandboxes) + 1):
+            if not sandboxes_dict.get(f"sandbox{i}", False):
+                return f"sandbox{i}", f"sandbox{i}+{random_email_tag}@{os.environ['email_domain']}"
+
+    logger.info(f"len(sanboxes) = {len(sandboxes)}")
     s = f"sandbox{extract_sandbox_number(sandboxes[-1]) + 1}"
     return s, f"{s}+{random_email_tag}@{os.environ['email_domain']}"
 
@@ -303,7 +314,6 @@ def decrypt_vaulted_str(secret):
 
 new_sandbox, new_email = guess_next_sandbox(sandboxes, sandboxes_dict)
 logger = logger.bind(sandbox=new_sandbox)
-
 
 # Lock the name of the sandbox in DB so another
 # concurrent process won't be able to create the same sandbox.
@@ -549,215 +559,218 @@ set_(dynamodb, new_sandbox, 'stage', STAGE2_ACCOUNT_CREATED)
 ACCOUNT_CREATED_TIME = time.time()
 logger.info(f"Duration: {round(ACCOUNT_CREATED_TIME - START_TIME)} seconds to create {new_sandbox}")
 
-# Use https://console.redhat.com/docs/api/sources/v3.1#operations-sources-bulkCreate
 
-sandbox_data = get_sandbox(dynamodb, new_sandbox)
+if hcc:
+    # Use https://console.redhat.com/docs/api/sources/v3.1#operations-sources-bulkCreate
 
-if not sandbox_data:
-    logger.error(f"Failed to get the sandbox data for {new_sandbox}")
-    sys.exit(1)
+    sandbox_data = get_sandbox(dynamodb, new_sandbox)
 
-if 'aws_secret_access_key' not in sandbox_data:
-    logger.error(f"Failed to get the aws_secret_access_key for {new_sandbox}")
-    sys.exit(1)
-
-plaintext_key = decrypt_vaulted_str(sandbox_data.get('aws_secret_access_key', {}).get('S', '')).strip(' \t\n\r')
-access_key = sandbox_data.get('aws_access_key_id', {}).get('S', '').strip(' \t\n\r')
-
-if not access_key or not plaintext_key:
-    logger.error(f"Failed to get the access key for {new_sandbox}")
-    sys.exit(1)
-
-# use requests and create the POST request
-
-baseurl = 'https://console.redhat.com/api/sources/v3.1'
-
-s = requests.Session()
-s.auth = (os.environ['RH_USERNAME'], os.environ['RH_PASSWORD'])
-
-# delete the source if it exists
-# First get the source_id
-max_retries = 20
-while True:
-    response = s.get(f"{baseurl}/sources?filter[name][eq]={new_sandbox}")
-    if response.status_code == 200:
-        break
-    logger.error(f"Failed to get the source: {response.text}", status_code=response.status_code, sandbox=new_sandbox)
-    if max_retries == 0:
+    if not sandbox_data:
+        logger.error(f"Failed to get the sandbox data for {new_sandbox}")
         sys.exit(1)
 
-    logger.info(f"Retrying: {max_retries} retries left")
-    max_retries -= 1
-    time.sleep(5)
+    if 'aws_secret_access_key' not in sandbox_data:
+        logger.error(f"Failed to get the aws_secret_access_key for {new_sandbox}")
+        sys.exit(1)
 
-result = response.json().get('data', [])
-if len(result) > 0:
-    source_id = response.json().get('data', [{}])[0].get('id', '')
+    plaintext_key = decrypt_vaulted_str(sandbox_data.get('aws_secret_access_key', {}).get('S', '')).strip(' \t\n\r')
+    access_key = sandbox_data.get('aws_access_key_id', {}).get('S', '').strip(' \t\n\r')
 
-    if source_id:
-        response = s.delete(f"{baseurl}/sources/{source_id}")
-        if response.status_code not in [200, 201, 202]:
-            logger.error(f"Failed to delete the source: {response.text}", status_code=response.status_code, sandbox=new_sandbox)
+    if not access_key or not plaintext_key:
+        logger.error(f"Failed to get the access key for {new_sandbox}")
+        sys.exit(1)
 
-        logger.info(f"Deleted the source {source_id} for {new_sandbox}")
+    # use requests and create the POST request
 
-        # Wait for the deletion to complete
-        max_retries = 20
-        while max_retries > 0:
-            response = s.get(f"{baseurl}/sources/{source_id}")
-            if response.status_code == 404:
-                break
-            max_retries -= 1
-            logger.info(f"Waiting for the source to be deleted from HCC (console): {max_retries} retries left")
-            time.sleep(5)
+    baseurl = 'https://console.redhat.com/api/sources/v3.1'
 
+    s = requests.Session()
+    s.auth = (os.environ['RH_USERNAME'], os.environ['RH_PASSWORD'])
+
+    # delete the source if it exists
+    # First get the source_id
+    max_retries = 20
+    while True:
+        response = s.get(f"{baseurl}/sources?filter[name][eq]={new_sandbox}")
+        if response.status_code == 200:
+            break
+        logger.error(f"Failed to get the source: {response.text}", status_code=response.status_code, sandbox=new_sandbox)
         if max_retries == 0:
-            logger.error(f"Failed to delete the source {source_id} for {new_sandbox}")
             sys.exit(1)
 
-payload = {
-    "sources": [
-        {
-            "name": new_sandbox,
-            "source_type_name": "amazon",
-            "app_creation_workflow": "account_authorization"
-        }
-    ],
-    "authentications": [
-        {
-            "resource_type": "source",
-            "resource_name": new_sandbox,
-            "username": access_key,
-            "password": plaintext_key,
-            "authtype": "access_key_secret_key"
-        }
-    ],
+        logger.info(f"Retrying: {max_retries} retries left")
+        max_retries -= 1
+        time.sleep(5)
 
-    "applications": [
-        {
-            "source_name": new_sandbox,
-            "application_type_name": "cloud-meter"
-        }
-    ]
-}
-response = s.post(f"{baseurl}/bulk_create", json=payload)
+    result = response.json().get('data', [])
+    if len(result) > 0:
+        source_id = response.json().get('data', [{}])[0].get('id', '')
 
-if response.status_code not in [200, 201]:
-    logger.error(f"Failed to create the source: {response.text}", status_code=response.status_code, sandbox=new_sandbox)
-    sys.exit(1)
+        if source_id:
+            response = s.delete(f"{baseurl}/sources/{source_id}")
+            if response.status_code not in [200, 201, 202]:
+                logger.error(f"Failed to delete the source: {response.text}", status_code=response.status_code, sandbox=new_sandbox)
 
-logger.info(f"Source create in HCC")
+            logger.info(f"Deleted the source {source_id} for {new_sandbox}")
 
-# Run the validation playbook operation
+            # Wait for the deletion to complete
+            max_retries = 20
+            while max_retries > 0:
+                response = s.get(f"{baseurl}/sources/{source_id}")
+                if response.status_code == 404:
+                    break
+                max_retries -= 1
+                logger.info(f"Waiting for the source to be deleted from HCC (console): {max_retries} retries left")
+                time.sleep(5)
 
-local_path = os.path.dirname(os.path.realpath(__file__))
-playbook = os.path.join(local_path, '..', 'playbooks', 'validate.yml')
+            if max_retries == 0:
+                logger.error(f"Failed to delete the source {source_id} for {new_sandbox}")
+                sys.exit(1)
 
-args = [
-    'ansible-playbook',
-    playbook,
-    '-e', f'account_num_start={extract_sandbox_number(new_sandbox)}',
-    '-e', f'account_num_end={extract_sandbox_number(new_sandbox)}',
-    '-e', f'sandbox={new_sandbox}',
-    '-e', 'dynamodb_profile=dynamodb',
-    '-e', f'dynamodb_table={dynamodb_table}',
-    '-e', 'aws_master_profile=pool-manager',
-    '-e', f'vault_file={INFRA_VAULT_SECRET_FILE}',
-    '-e', 'operation=VALIDATE',
-]
-
-# Run the command
-logger.info(f"Running {' '.join(args)}")
-
-try:
-    completed = subprocess.run(
-        args, check=True,
-        capture_output=(not playbook_output),
-        timeout=1800,
-    )
-
-except subprocess.CalledProcessError as e:
-    logger.error(f"Failed to run the command: {e}")
-    # print stdout and stderr
-    logger.error(e.stdout.decode(), stdout=True)
-    logger.error(e.stderr.decode(), stderr=True)
-
-    # Set sandbox status to validation failed
-    response = dynamodb.update_item(
-        TableName=dynamodb_table,
-        Key={
-            'name': {
-                'S': new_sandbox
+    payload = {
+        "sources": [
+            {
+                "name": new_sandbox,
+                "source_type_name": "amazon",
+                "app_creation_workflow": "account_authorization"
             }
-        },
-        UpdateExpression='SET #s = :val1',
-        ExpressionAttributeNames={
-            '#s': 'creation_status'
-        },
-        ExpressionAttributeValues={
-            ':val1': {
-                'S': 'validation failed'
+        ],
+        "authentications": [
+            {
+                "resource_type": "source",
+                "resource_name": new_sandbox,
+                "username": access_key,
+                "password": plaintext_key,
+                "authtype": "access_key_secret_key"
             }
-        }
-    )
+        ],
 
-    sys.exit(1)
-
-except subprocess.TimeoutExpired as e:
-    logger.error(f"Timeout: {e}")
-    # Set sandbox status to validation failed
-    response = dynamodb.update_item(
-        TableName=dynamodb_table,
-        Key={
-            'name': {
-                'S': new_sandbox
+        "applications": [
+            {
+                "source_name": new_sandbox,
+                "application_type_name": "cloud-meter"
             }
-        },
-        UpdateExpression='SET #s = :val1',
-        ExpressionAttributeNames={
-            '#s': 'creation_status'
-        },
-        ExpressionAttributeValues={
-            ':val1': {
-                'S': 'validation timed out'
-            }
-        }
-    )
-    sys.exit(1)
-
-logger.info(f"Validation successful for {new_sandbox}")
-
-# Move the sandbox to the final reservation
-
-response = dynamodb.update_item(
-    TableName=dynamodb_table,
-    Key={
-        'name': {
-            'S': new_sandbox
-        }
-    },
-    UpdateExpression='SET #r = :val1, #s = :val2, #c = :val3',
-    ExpressionAttributeNames={
-        '#r': 'reservation',
-        '#s': 'stage',
-        '#c': 'creation_status'
-    },
-    ExpressionAttributeValues={
-        ':val1': {
-            'S': reservation
-        },
-        ':val2': {
-            'S': STAGE4_VALIDATED
-        },
-        ':val3': {
-            'S': 'success'
-        }
+        ]
     }
-)
+    response = s.post(f"{baseurl}/bulk_create", json=payload)
 
-if response['ResponseMetadata']['HTTPStatusCode'] != 200:
-    logger.error("Failed to update the reservation")
-    sys.exit(1)
+    if response.status_code not in [200, 201]:
+        logger.error(f"Failed to create the source: {response.text}", status_code=response.status_code, sandbox=new_sandbox)
+        sys.exit(1)
 
-logger.info(f"Moved {new_sandbox} to {reservation}")
-logger.info(f"Total duration: {round(time.time() - START_TIME)} seconds")
+    logger.info(f"Source create in HCC")
+
+if validation:
+    # Run the validation playbook operation
+
+    local_path = os.path.dirname(os.path.realpath(__file__))
+    playbook = os.path.join(local_path, '..', 'playbooks', 'validate.yml')
+
+    args = [
+        'ansible-playbook',
+        playbook,
+        '-e', f'account_num_start={extract_sandbox_number(new_sandbox)}',
+        '-e', f'account_num_end={extract_sandbox_number(new_sandbox)}',
+        '-e', f'sandbox={new_sandbox}',
+        '-e', 'dynamodb_profile=dynamodb',
+        '-e', f'dynamodb_table={dynamodb_table}',
+        '-e', 'aws_master_profile=pool-manager',
+        '-e', f'vault_file={INFRA_VAULT_SECRET_FILE}',
+        '-e', 'operation=VALIDATE',
+    ]
+
+    # Run the command
+    logger.info(f"Running {' '.join(args)}")
+
+    try:
+        completed = subprocess.run(
+            args, check=True,
+            capture_output=(not playbook_output),
+            timeout=1800,
+        )
+
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to run the command: {e}")
+        # print stdout and stderr
+        logger.error(e.stdout.decode(), stdout=True)
+        logger.error(e.stderr.decode(), stderr=True)
+
+        # Set sandbox status to validation failed
+        response = dynamodb.update_item(
+            TableName=dynamodb_table,
+            Key={
+                'name': {
+                    'S': new_sandbox
+                }
+            },
+            UpdateExpression='SET #s = :val1',
+            ExpressionAttributeNames={
+                '#s': 'creation_status'
+            },
+            ExpressionAttributeValues={
+                ':val1': {
+                    'S': 'validation failed'
+                }
+            }
+        )
+
+        sys.exit(1)
+
+    except subprocess.TimeoutExpired as e:
+        logger.error(f"Timeout: {e}")
+        # Set sandbox status to validation failed
+        response = dynamodb.update_item(
+            TableName=dynamodb_table,
+            Key={
+                'name': {
+                    'S': new_sandbox
+                }
+            },
+            UpdateExpression='SET #s = :val1',
+            ExpressionAttributeNames={
+                '#s': 'creation_status'
+            },
+            ExpressionAttributeValues={
+                ':val1': {
+                    'S': 'validation timed out'
+                }
+            }
+        )
+        sys.exit(1)
+
+    logger.info(f"Validation successful for {new_sandbox}")
+
+    # Move the sandbox to the final reservation
+
+    response = dynamodb.update_item(
+        TableName=dynamodb_table,
+        Key={
+            'name': {
+                'S': new_sandbox
+            }
+        },
+        UpdateExpression='SET #r = :val1, #s = :val2, #c = :val3',
+        ExpressionAttributeNames={
+            '#r': 'reservation',
+            '#s': 'stage',
+            '#c': 'creation_status'
+        },
+        ExpressionAttributeValues={
+            ':val1': {
+                'S': reservation
+            },
+            ':val2': {
+                'S': STAGE4_VALIDATED
+            },
+            ':val3': {
+                'S': 'success'
+            }
+        }
+    )
+
+    if response['ResponseMetadata']['HTTPStatusCode'] != 200:
+        logger.error("Failed to update the reservation")
+        sys.exit(1)
+
+    logger.info(f"Moved {new_sandbox} to {reservation}")
+    logger.info(f"Total duration: {round(time.time() - START_TIME)} seconds")
