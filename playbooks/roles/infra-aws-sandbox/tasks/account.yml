@@ -200,3 +200,72 @@
     path: "{{ output_dir }}/{{ account_name }}_report.txt"
     line: "account_id: {{ account_id }}"
     create: true
+
+- name: Load environment variables for SECURITY contact
+  set_fact:
+    security_email: "{{ lookup('env', 'SECURITY_EMAIL') }}"
+    security_name: "{{ lookup('env', 'SECURITY_NAME') }}"
+    security_phone: "{{ lookup('env', 'SECURITY_PHONE') }}"
+    security_title: "{{ lookup('env', 'SECURITY_TITLE') }}"
+
+- name: Set SECURITY alternate contact
+  when:
+    - security_email != ''
+    - security_name  != ''
+    - security_phone != ''
+    - security_title != ''
+  command: >-
+    aws --profile {{ aws_master_profile | quote }}
+    account put-alternate-contact
+    --account-id {{ account_id | quote }}
+    --alternate-contact-type=SECURITY
+    --email-address {{ security_email | quote }}
+    --name {{ security_name | quote }}
+    --phone-number {{ security_phone | quote }}
+    --title {{ security_title | quote }}
+
+- name: Load environment variables for OPERATIONS contact
+  set_fact:
+    operations_email: "{{ lookup('env', 'OPERATIONS_EMAIL') }}"
+    operations_name: "{{ lookup('env', 'OPERATIONS_NAME') }}"
+    operations_phone: "{{ lookup('env', 'OPERATIONS_PHONE') }}"
+    operations_title: "{{ lookup('env', 'OPERATIONS_TITLE') }}"
+
+- name: Set OPERATIONS alternate contact
+  when:
+    - operations_email != ''
+    - operations_name  != ''
+    - operations_phone != ''
+    - operations_title != ''
+  command: >-
+    aws --profile {{ aws_master_profile | quote }}
+    account put-alternate-contact
+    --account-id {{ account_id | quote }}
+    --alternate-contact-type=OPERATIONS
+    --email-address {{ operations_email | quote }}
+    --name {{ operations_name | quote }}
+    --phone-number {{ operations_phone | quote }}
+    --title {{ operations_title | quote }}
+
+- name: Load environment variables for BILLING contact
+  set_fact:
+    billing_email: "{{ lookup('env', 'BILLING_EMAIL') }}"
+    billing_name: "{{ lookup('env', 'BILLING_NAME') }}"
+    billing_phone: "{{ lookup('env', 'BILLING_PHONE') }}"
+    billing_title: "{{ lookup('env', 'BILLING_TITLE') }}"
+
+- name: Set BILLING alternate contact
+  when:
+    - billing_email != ''
+    - billing_name  != ''
+    - billing_phone != ''
+    - billing_title != ''
+  command: >-
+    aws --profile {{ aws_master_profile | quote }}
+    account put-alternate-contact
+    --account-id {{ account_id | quote }}
+    --alternate-contact-type=BILLING
+    --email-address {{ billing_email | quote }}
+    --name {{ billing_name | quote }}
+    --phone-number {{ billing_phone | quote }}
+    --title {{ billing_title | quote }}

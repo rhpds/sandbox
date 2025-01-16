@@ -302,7 +302,7 @@ def decrypt_vaulted_str(secret):
     return Vault(os.environ['INFRA_VAULT_SECRET']).load_raw(secret).decode('utf-8')
 
 new_sandbox, new_email = guess_next_sandbox(sandboxes, sandboxes_dict)
-logger.info(f"=> Create {new_sandbox}")
+logger = logger.bind(sandbox=new_sandbox)
 
 
 # Lock the name of the sandbox in DB so another
@@ -645,6 +645,8 @@ response = s.post(f"{baseurl}/bulk_create", json=payload)
 if response.status_code not in [200, 201]:
     logger.error(f"Failed to create the source: {response.text}", status_code=response.status_code, sandbox=new_sandbox)
     sys.exit(1)
+
+logger.info(f"Source create in HCC")
 
 # Run the validation playbook operation
 
