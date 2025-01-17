@@ -120,8 +120,8 @@ type OcpServiceAccount struct {
 type OcpSandboxes []OcpSandbox
 
 type MultipleOcpAccount struct {
-  AffinityLabel string `json:"affinity_label"`
-  Account OcpSandbox   `json:"account"`
+	AffinityLabel string     `json:"affinity_label"`
+	Account       OcpSandbox `json:"account"`
 }
 
 type TokenResponse struct {
@@ -801,8 +801,8 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]st
 	// Get resource from 'ocp_shared_cluster_configurations' table
 	var err error
 	var rows pgx.Rows
-  log.Logger.Info("affinityCluster", "cluster", affinityCluster)
-  log.Logger.Info("affinityType", "type", affinityType)
+	log.Logger.Info("affinityCluster", "cluster", affinityCluster)
+	log.Logger.Info("affinityType", "type", affinityType)
 	if affinityCluster == "" {
 		rows, err = a.DbPool.Query(
 			context.Background(),
@@ -934,10 +934,10 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 	if _, exists := annotations["guid"]; !exists {
 		return OcpSandboxWithCreds{}, errors.New("guid not found in annotations")
 	}
-	if (multipleAccounts != nil) {
-		for _, maccount := range multipleAccounts { 
+	if multipleAccounts != nil {
+		for _, maccount := range multipleAccounts {
 			if maccount.AffinityLabel == affinityLabel {
-				affinityCluster = maccount.Account.OcpSharedClusterConfigurationName	
+				affinityCluster = maccount.Account.OcpSharedClusterConfigurationName
 			}
 		}
 	}
@@ -1534,9 +1534,9 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			"cluster", rnew.OcpSharedClusterConfigurationName, "namespace", rnew.Namespace)
 	}
 	if asyncRequest {
-		go task();
+		go task()
 	} else {
-		task();
+		task()
 	}
 	//--------------------------------------------------
 

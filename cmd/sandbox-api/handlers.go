@@ -175,7 +175,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			}
 		case "OcpSandbox":
 			// Create the placement in OCP
-		  log.Logger.Info("Affinity", "label", request.AffinityLabel, "type", request.AffinityType)
+			log.Logger.Info("Affinity", "label", request.AffinityLabel, "type", request.AffinityType)
 			var async_request bool = request.AffinityLabel == "" && request.AffinityType != ""
 			account, err := h.OcpSandboxProvider.Request(
 				placementRequest.ServiceUuid,
