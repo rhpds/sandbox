@@ -119,6 +119,11 @@ type OcpServiceAccount struct {
 
 type OcpSandboxes []OcpSandbox
 
+type MultipleOcpAccount struct {
+  AffinityLabel string `json:"affinity_label"`
+  Account OcpSandbox   `json:"account"`
+}
+
 type TokenResponse struct {
 	AccessToken string `json:"access_token"`
 }
@@ -475,7 +480,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			default_sandbox_quota,
 			strict_default_sandbox_quota,
 			quota_required,
-            skip_quota,
+      skip_quota,
 			limit_range
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
@@ -791,14 +796,34 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 
 var ErrNoSchedule error = errors.New("No OCP shared cluster configuration found")
 
-func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]string) (OcpSharedClusterConfigurations, error) {
+func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]string, affinityCluster string, affinityType string) (OcpSharedClusterConfigurations, error) {
 	clusters := OcpSharedClusterConfigurations{}
 	// Get resource from 'ocp_shared_cluster_configurations' table
-	rows, err := a.DbPool.Query(
-		context.Background(),
-		`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true ORDER BY random()`,
-		cloud_selector,
-	)
+	var err error
+	var rows pgx.Rows
+  log.Logger.Info("affinityCluster", "cluster", affinityCluster)
+  log.Logger.Info("affinityType", "type", affinityType)
+	if affinityCluster == "" {
+		rows, err = a.DbPool.Query(
+			context.Background(),
+			`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true ORDER BY random()`,
+			cloud_selector,
+		)
+	} else {
+		if affinityType == "affinity_cluster" {
+			rows, err = a.DbPool.Query(
+				context.Background(),
+				`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and annotations->>'affinity' = $2 ORDER BY random()`,
+				cloud_selector, affinityCluster,
+			)
+		} else if affinityType == "sandbox_cluster" {
+			rows, err = a.DbPool.Query(
+				context.Background(),
+				`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and name = $2 ORDER BY random()`,
+				cloud_selector, affinityCluster,
+			)
+		}
+	}
 
 	if err != nil {
 		log.Logger.Error("Error querying ocp clusters", "error", err)
@@ -902,16 +927,22 @@ func anySchedulableNodes(nodes []v1.Node) bool {
 	return false
 }
 
-func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, requestedQuota *v1.ResourceList, requestedLimitRange *v1.LimitRange, multiple bool, ctx context.Context) (OcpSandboxWithCreds, error) {
+func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, requestedQuota *v1.ResourceList, requestedLimitRange *v1.LimitRange, multiple bool, multipleAccounts []MultipleOcpAccount, ctx context.Context, asyncRequest bool, affinityLabel string, affinityType string) (OcpSandboxWithCreds, error) {
 	var selectedCluster OcpSharedClusterConfiguration
-
+	var affinityCluster string
 	// Ensure annotation has guid
 	if _, exists := annotations["guid"]; !exists {
 		return OcpSandboxWithCreds{}, errors.New("guid not found in annotations")
 	}
-
+	if (multipleAccounts != nil) {
+		for _, maccount := range multipleAccounts { 
+			if maccount.AffinityLabel == affinityLabel {
+				affinityCluster = maccount.Account.OcpSharedClusterConfigurationName	
+			}
+		}
+	}
 	// Version with OcpSharedClusterConfiguration methods
-	candidateClusters, err := a.GetSchedulableClusters(cloud_selector)
+	candidateClusters, err := a.GetSchedulableClusters(cloud_selector, affinityCluster, affinityType)
 	if err != nil {
 		log.Logger.Error("Error getting schedulable clusters", "error", err)
 		return OcpSandboxWithCreds{}, err
@@ -950,7 +981,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 
 	//--------------------------------------------------
 	// The following is async
-	go func() {
+	task := func() {
 	providerLoop:
 		for _, cluster := range candidateClusters {
 			rnew.SetStatus("scheduling")
@@ -1501,7 +1532,12 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		}
 		log.Logger.Info("Ocp sandbox booked", "account", rnew.Name, "service_uuid", rnew.ServiceUuid,
 			"cluster", rnew.OcpSharedClusterConfigurationName, "namespace", rnew.Namespace)
-	}()
+	}
+	if asyncRequest {
+		go task();
+	} else {
+		task();
+	}
 	//--------------------------------------------------
 
 	return rnew, nil

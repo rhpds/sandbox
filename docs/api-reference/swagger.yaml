@@ -1796,6 +1796,13 @@ components:
                 minimum: 1
                 default: 1
                 example: 1
+              affinity_label:
+                type: string
+              affinity_type:
+                type: string
+                enum:
+                  - sandbox_cluster
+                  - affinity_cluster
               cloud_selector:
                 $ref: "#/components/schemas/Annotations"
               annotations:

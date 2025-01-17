@@ -105,6 +105,8 @@ func (p *PlacementResponse) Render(w http.ResponseWriter, r *http.Request) error
 type ResourceRequest struct {
 	Kind           string             `json:"kind"`
 	Count          int                `json:"count"`
+	AffinityLabel  string             `json:"affinity_label,omitempty"`
+	AffinityType   string             `json:"affinity_type,omitempty"`
 	Annotations    models.Annotations `json:"annotations,omitempty"`
 	CloudSelector  models.Annotations `json:"cloud_selector,omitempty"`
 	Quota          *v1.ResourceList   `json:"quota,omitempty"`

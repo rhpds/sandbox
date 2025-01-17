@@ -129,7 +129,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 	tocleanup := []models.Deletable{}
 	resources := []any{}
 	multipleOcp := multipleKind(placementRequest.Resources, "OcpSandbox")
-
+	multipleOcpAccounts := []models.MultipleOcpAccount{}
 	for _, request := range placementRequest.Resources {
 		switch request.Kind {
 		case "AwsSandbox", "AwsAccount", "aws_account":
@@ -175,6 +175,8 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			}
 		case "OcpSandbox":
 			// Create the placement in OCP
+		  log.Logger.Info("Affinity", "label", request.AffinityLabel, "type", request.AffinityType)
+			var async_request bool = request.AffinityLabel == "" && request.AffinityType != ""
 			account, err := h.OcpSandboxProvider.Request(
 				placementRequest.ServiceUuid,
 				request.CloudSelector,
@@ -182,7 +184,11 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				request.Quota,
 				request.LimitRange,
 				multipleOcp,
+				multipleOcpAccounts,
 				r.Context(),
+				async_request,
+				request.AffinityLabel,
+				request.AffinityType,
 			)
 			if err != nil {
 				// Cleanup previous accounts
@@ -225,6 +231,10 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			tocleanup = append(tocleanup, &account)
+			if multipleOcp && request.AffinityLabel != "" && request.AffinityType == "" {
+				maccount, _ := h.OcpSandboxProvider.FetchByName(account.Name)
+				multipleOcpAccounts = append(multipleOcpAccounts, models.MultipleOcpAccount{AffinityLabel: request.AffinityLabel, Account: maccount})
+			}
 			resources = append(resources, account)
 
 		default:
