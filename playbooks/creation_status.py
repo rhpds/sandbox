@@ -33,16 +33,13 @@ def print_sandbox(item, db):
                 creation_status=item.get('creation_status', {}).get('S', ''),
                 stage= item.get('stage', {}).get('S', ''),
                 reservation= item.get('reservation', {}).get('S', ''),
+                account_id=item.get('account_id', {}).get('S', ''),
                 db=db)
 
 
 response = dynamodb_dev.scan(
     TableName='accounts-dev',
     ConsistentRead=True,
-    ProjectionExpression='#n, creation_status, stage, reservation',
-    ExpressionAttributeNames={
-        '#n': 'name'
-    }
 )
 
 if response['ResponseMetadata']['HTTPStatusCode'] != 200:
@@ -54,8 +51,6 @@ while 'LastEvaluatedKey' in response:
     response = dynamodb_dev.scan(
         TableName='accounts-dev',
         ConsistentRead=True,
-        ProjectionExpression='#n',
-        ExpressionAttributeNames={'#n': 'name'},
         ExclusiveStartKey=response['LastEvaluatedKey']
     )
     data.extend(response['Items'])
@@ -69,8 +64,6 @@ if 'Items' in response:
 response = dynamodb_prod.scan(
     TableName='accounts',
     ConsistentRead=True,
-    ProjectionExpression='#n',
-    ExpressionAttributeNames={'#n': 'name'}
 )
 
 if response['ResponseMetadata']['HTTPStatusCode'] != 200:
@@ -83,8 +76,6 @@ while 'LastEvaluatedKey' in response:
     response = dynamodb_prod.scan(
         TableName='accounts',
         ConsistentRead=True,
-        ProjectionExpression='#n',
-        ExpressionAttributeNames={'#n': 'name'},
         ExclusiveStartKey=response['LastEvaluatedKey']
     )
     data.extend(response['Items'])

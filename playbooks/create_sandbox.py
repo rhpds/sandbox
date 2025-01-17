@@ -39,6 +39,7 @@ parser.add_argument('--target-db', required=False, help='The target database', d
 parser.add_argument('--log-level', required=False, help='The log level', default='info')
 parser.add_argument('--retry', required=False, help='Retry sandbox by passing its name', default=None)
 parser.add_argument('--playbook-output', required=False, help='Print output of ansible-playbook commands?', action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument('--playbook', required=False, help='run the creation playbook?', action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument('--hcc', required=False, help='run the registration step for Gold images?', action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument('--validation', required=False, help='run the validation playbook?', action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument('--guess-strategy', required=False, help='How to guess the next number: smart, end', default='end')
@@ -50,6 +51,7 @@ logger = logger.bind(reservation=reservation)
 target_db = args.target_db
 log_level = args.log_level
 retry = args.retry
+playbook= args.playbook
 playbook_output = args.playbook_output
 hcc = args.hcc
 validation = args.validation
@@ -385,8 +387,6 @@ def lock_sandbox(dynamodb, sandbox):
 
     logger.info(f"Locked {new_sandbox}")
 
-lock_sandbox(dynamodb, new_sandbox)
-
 def exit_handler(db, table, sandbox):
     '''Function to cleanup everything in case something went wrong'''
 
@@ -414,13 +414,23 @@ def exit_handler(db, table, sandbox):
     elif stage == STAGE4_VALIDATED:
         pass
     else:
-        # something went wrong
-        logger.error(f"Unexpected stage: {stage}, missing validation")
-        logger.info(f"You can retry the operation by running the command with --retry {sandbox}")
-        set_(dynamodb, new_sandbox, 'creation_status', 'failed')
-        sys.exit(1)
+        if validation:
+            # something went wrong
+            logger.error(f"Unexpected stage: {stage}, missing validation")
+            logger.info(f"You can retry the operation by running the command with --retry {sandbox}")
+            set_(dynamodb, new_sandbox, 'creation_status', 'failed')
+            sys.exit(1)
+        if hcc:
+            if stage != STAGE3_GOLD_IMAGE:
+                # something went wrong
+                logger.error(f"Unexpected stage: {stage}, missing validation")
+                logger.info(f"You can retry the operation by running the command with --retry {sandbox}")
+                set_(dynamodb, new_sandbox, 'creation_status', 'failed')
+                sys.exit(1)
+
 
 atexit.register(exit_handler, dynamodb, dynamodb_table, new_sandbox)
+
 
 # Prepare the AWS profile for the ansible-playbook command
 # - dynamodb   profile to manage the dynamodb table
@@ -450,114 +460,118 @@ aws_access_key_id = {os.environ['AWS_ACCESS_KEY_ID']}
 aws_secret_access_key = {os.environ['AWS_SECRET_ACCESS_KEY']}
             ''')
 
-# Prepare args for the ansible-playbook command
-#./create_range.yml -e account_num_start=3001 -e account_count=10 -e ddns_key_name=... -e ddns_key_secret=... -e ddns_server=...
+if playbook:
+    lock_sandbox(dynamodb, new_sandbox)
 
-local_path = os.path.dirname(os.path.realpath(__file__))
-playbook = os.path.join(local_path, '..', 'playbooks', 'create_range.yml')
+    # Prepare args for the ansible-playbook command
+    #./create_range.yml -e account_num_start=3001 -e account_count=10 -e ddns_key_name=... -e ddns_key_secret=... -e ddns_server=...
 
-args = [
-    'ansible-playbook',
-    playbook,
-    '-e', f'account_num_start={extract_sandbox_number(new_sandbox)}',
-    '-e', f'account_email={new_email}',
-    '-e', 'account_count=1',
-    '-e', f'ddns_key_name={os.environ["ddns_key_name"]}',
-    '-e', f'ddns_server={os.environ["ddns_server"]}',
-    '-e', f'ddns_ttl={os.environ["ddns_ttl"]}',
-    '-e', f'sandbox={new_sandbox}',
-    '-e', 'update_stage=true',
-    '-e', 'dynamodb_profile=dynamodb',
-    '-e', f'dynamodb_table={dynamodb_table}',
-    '-e', 'aws_master_profile=pool-manager',
-    # Listing all accounts in the organization is a costly operation
-    # it takes currently 47s to execute.
-    # Check the account only in certain scenario, like for a retry
-    '-e', f'check_account_list={True if retry else False}',
-    '-e', f'vault_file={INFRA_VAULT_SECRET_FILE}',
-]
+    local_path = os.path.dirname(os.path.realpath(__file__))
+    playbook = os.path.join(local_path, '..', 'playbooks', 'create_range.yml')
+
+    args = [
+        'ansible-playbook',
+        playbook,
+        '-e', f'account_num_start={extract_sandbox_number(new_sandbox)}',
+        '-e', f'account_email={new_email}',
+        '-e', 'account_count=1',
+        '-e', f'ddns_key_name={os.environ["ddns_key_name"]}',
+        '-e', f'ddns_server={os.environ["ddns_server"]}',
+        '-e', f'ddns_ttl={os.environ["ddns_ttl"]}',
+        '-e', f'sandbox={new_sandbox}',
+        '-e', 'update_stage=true',
+        '-e', 'dynamodb_profile=dynamodb',
+        '-e', f'dynamodb_table={dynamodb_table}',
+        '-e', 'aws_master_profile=pool-manager',
+        # Listing all accounts in the organization is a costly operation
+        # it takes currently 47s to execute.
+        # Check the account only in certain scenario, like for a retry
+        '-e', f'check_account_list={True if retry else False}',
+        '-e', f'vault_file={INFRA_VAULT_SECRET_FILE}',
+    ]
 
 
-# Run the command
-logger.info(f"Running {' '.join(args)}")
-# Add the ddns_key_secret to the args
-args = args + ['-e', f'ddns_key_secret={os.environ["ddns_key_secret"]}']
-try:
-    completed = subprocess.run(
-        args, check=True,
-        capture_output=(not playbook_output),
-        timeout=1800,
-    )
-except subprocess.CalledProcessError as e:
-    # Sanitize the error message by removing the DDNS key secret
-    e_sanitized = str(e).replace(os.environ['ddns_key_secret'], '***')
-    logger.error(f"Failed to run the command: {e_sanitized}")
-    # print stdout and stderr
-    logger.error(e.stdout.decode(), stdout=True)
-    logger.error(e.stderr.decode(), stderr=True)
+    # Run the command
+    logger.info(f"Running {' '.join(args)}")
+    # Add the ddns_key_secret to the args
+    args = args + ['-e', f'ddns_key_secret={os.environ["ddns_key_secret"]}']
+    try:
+        completed = subprocess.run(
+            args, check=True,
+            capture_output=(not playbook_output),
+            timeout=1800,
+        )
+    except subprocess.CalledProcessError as e:
+        # Sanitize the error message by removing the DDNS key secret
+        e_sanitized = str(e).replace(os.environ['ddns_key_secret'], '***')
+        logger.error(f"Failed to run the command: {e_sanitized}")
+        # print stdout and stderr
+        logger.error(e.stdout.decode(), stdout=True)
+        logger.error(e.stderr.decode(), stderr=True)
 
-    # Set sandbox status to failed
-    response = dynamodb.update_item(
-        TableName=dynamodb_table,
-        Key={
-            'name': {
-                'S': new_sandbox
+        # Set sandbox status to failed
+        response = dynamodb.update_item(
+            TableName=dynamodb_table,
+            Key={
+                'name': {
+                    'S': new_sandbox
+                }
+            },
+            UpdateExpression='SET #s = :val1',
+            ExpressionAttributeNames={
+                '#s': 'creation_status'
+            },
+            ExpressionAttributeValues={
+                ':val1': {
+                    'S': 'failed'
+                }
             }
-        },
-        UpdateExpression='SET #s = :val1',
-        ExpressionAttributeNames={
-            '#s': 'creation_status'
-        },
-        ExpressionAttributeValues={
-            ':val1': {
-                'S': 'failed'
+        )
+
+        sys.exit(1)
+    except subprocess.TimeoutExpired as e:
+        # Sanitize the error message by removing the DDNS key secret
+        e_sanitized = str(e).replace(os.environ['ddns_key_secret'], '***')
+        logger.error(f"Timeout: {e_sanitized}", sandbox=new_sandbox)
+        # Set sandbox status to failed
+        response = dynamodb.update_item(
+            TableName=dynamodb_table,
+            Key={
+                'name': {
+                    'S': new_sandbox
+                }
+            },
+            UpdateExpression='SET #s = :val1',
+            ExpressionAttributeNames={
+                '#s': 'creation_status'
+            },
+            ExpressionAttributeValues={
+                ':val1': {
+                    'S': 'failed'
+                }
             }
-        }
-    )
+        )
+        sys.exit(1)
 
-    sys.exit(1)
-except subprocess.TimeoutExpired as e:
-    # Sanitize the error message by removing the DDNS key secret
-    e_sanitized = str(e).replace(os.environ['ddns_key_secret'], '***')
-    logger.error(f"Timeout: {e_sanitized}", sandbox=new_sandbox)
-    # Set sandbox status to failed
-    response = dynamodb.update_item(
-        TableName=dynamodb_table,
-        Key={
-            'name': {
-                'S': new_sandbox
-            }
-        },
-        UpdateExpression='SET #s = :val1',
-        ExpressionAttributeNames={
-            '#s': 'creation_status'
-        },
-        ExpressionAttributeValues={
-            ':val1': {
-                'S': 'failed'
-            }
-        }
-    )
-    sys.exit(1)
+    logger.info(f"Created {new_sandbox}")
 
-logger.info(f"Created {new_sandbox}")
+    # Get the account_id from the db
 
-# Get the account_id from the db
+    sandbox_data = get_sandbox(dynamodb, new_sandbox)
 
-sandbox_data = get_sandbox(dynamodb, new_sandbox)
+    if sandbox_data:
+        account_id = sandbox_data.get('account_id', {}).get('S', '')
+        logger.info(f"Account ID: {account_id}")
+        logger = logger.bind(account_id=account_id)
 
-if sandbox_data:
-    account_id = sandbox_data.get('account_id', {}).get('S', '')
-    logger.info(f"Account ID: {account_id}")
-    logger = logger.bind(account_id=account_id)
+        # Write the account_id and the account name to cloud-automation/new_sandboxes.txt
+        with open('cloud-automation/new_sandboxes.txt', 'w') as f:
+            f.write(f"{new_sandbox} {account_id}\n")
 
-    # Write the account_id and the account name to cloud-automation/new_sandboxes.txt
-    with open('cloud-automation/new_sandboxes.txt', 'w') as f:
-        f.write(f"{new_sandbox} {account_id}\n")
-
-set_(dynamodb, new_sandbox, 'stage', STAGE2_ACCOUNT_CREATED)
-ACCOUNT_CREATED_TIME = time.time()
-logger.info(f"Duration: {round(ACCOUNT_CREATED_TIME - START_TIME)} seconds to create {new_sandbox}")
+    set_(dynamodb, new_sandbox, 'stage', STAGE2_ACCOUNT_CREATED)
+    set_(dynamodb, new_sandbox, 'reservation', 'untested')
+    ACCOUNT_CREATED_TIME = time.time()
+    logger.info(f"Duration: {round(ACCOUNT_CREATED_TIME - START_TIME)} seconds to create {new_sandbox}")
 
 
 if hcc:
