@@ -338,11 +338,11 @@ if sandbox_data:
             logger.error(f"Failed to get the stage for {new_sandbox}")
             sys.exit(1)
 
-        creation_status = sandbox_data.get('creation_status', {}).get('S', '')
+        # creation_status = sandbox_data.get('creation_status', {}).get('S', '')
 
-        if not creation_status:
-            logger.error(f"Failed to get the creation_status for {new_sandbox}")
-            sys.exit(1)
+        # if not creation_status:
+        #     logger.error(f"Failed to get the creation_status for {new_sandbox}")
+        #     sys.exit(1)
 
 
 def lock_sandbox(dynamodb, sandbox):
@@ -396,7 +396,7 @@ def exit_handler(db, table, sandbox):
 
     # Check if the stage is STAGE0
     stage = get_stage(db, sandbox)
-    if stage in [ STAGE0, STAGE1_FAILED ]:
+    if stage in [ STAGE0, STAGE1_STARTED, STAGE1_FAILED ]:
         response = db.delete_item(
             TableName=table,
             Key={
@@ -675,6 +675,19 @@ if hcc:
     logger.info(f"Source create in HCC")
 
 if validation:
+    # First ensure the current reservation of the sandbox is 'untested'
+
+    sandbox_data = get_sandbox(dynamodb, new_sandbox)
+
+    if sandbox_data:
+        if sandbox_data.get('stage', {}).get('S', '') == STAGE4_VALIDATED:
+            logger.info("Sandbox is already validated. Skipping.")
+            exit(0)
+
+        if sandbox_data.get('reservation', {}).get('S', '') != 'untested':
+            logger.error("Sandbox reservation is not 'untested'. something's off.")
+            exit(1)
+
     # Run the validation playbook operation
 
     local_path = os.path.dirname(os.path.realpath(__file__))
@@ -763,11 +776,12 @@ if validation:
                 'S': new_sandbox
             }
         },
-        UpdateExpression='SET #r = :val1, #s = :val2, #c = :val3',
+        UpdateExpression='SET #r = :val1, #s = :val2, #c = :val3, #a = :val4',
         ExpressionAttributeNames={
             '#r': 'reservation',
             '#s': 'stage',
-            '#c': 'creation_status'
+            '#c': 'creation_status',
+            '#a': 'available'
         },
         ExpressionAttributeValues={
             ':val1': {
@@ -778,6 +792,9 @@ if validation:
             },
             ':val3': {
                 'S': 'success'
+            },
+            ':val4': {
+                'BOOL': True,
             }
         }
     )
