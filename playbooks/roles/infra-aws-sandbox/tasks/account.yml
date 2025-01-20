@@ -107,6 +107,9 @@
       --query 'CreateAccountStatus.[Id]'
       --output text
     register: _createaccount
+    retries: 10
+    # Make this especially long to avoid the issue with too many requests
+    delay: 120
 
 - when:
     - _createaccount is not skipped

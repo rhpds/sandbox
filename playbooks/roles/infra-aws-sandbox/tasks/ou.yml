@@ -51,3 +51,5 @@
     --account-id {{ account_id }}
     --source-parent-id {{ rootid }}
     --destination-parent-id {{ destouid }}
+  retries: 10
+  delay: 120
