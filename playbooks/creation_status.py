@@ -32,6 +32,7 @@ def print_sandbox(item, db):
     logger.info(item['name']['S'],
                 creation_status=item.get('creation_status', {}).get('S', ''),
                 stage= item.get('stage', {}).get('S', ''),
+                available=item.get('available', {}).get('BOOL', ''),
                 reservation= item.get('reservation', {}).get('S', ''),
                 account_id=item.get('account_id', {}).get('S', ''),
                 db=db)

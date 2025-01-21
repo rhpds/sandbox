@@ -141,76 +141,12 @@ with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
     INFRA_VAULT_SECRET_FILE = f.name
     logger.info(f"Created temporary file {INFRA_VAULT_SECRET_FILE}")
 
-# run `sandbox-list -all --sort name`
-
-response = dynamodb_dev.scan(
-    TableName='accounts-dev',
-    ConsistentRead=True,
-    ProjectionExpression='#n',
-    ExpressionAttributeNames={
-        '#n': 'name'
-    }
-)
-
-if response['ResponseMetadata']['HTTPStatusCode'] != 200:
-    logger.error("Failed to get items from dynamodb")
-    sys.exit(1)
-
-data = response['Items']
-while 'LastEvaluatedKey' in response:
-    response = dynamodb_dev.scan(
-        TableName='accounts-dev',
-        ConsistentRead=True,
-        ProjectionExpression='#n',
-        ExpressionAttributeNames={'#n': 'name'},
-        ExclusiveStartKey=response['LastEvaluatedKey']
-    )
-    data.extend(response['Items'])
-
-if 'Items' in response:
-    sandboxes = [item['name']['S'] for item in data]
-    logger.info(f"Found {len(sandboxes)} sandboxes in dev")
-
-# Now run the command for the prod database
-
-response = dynamodb_prod.scan(
-    TableName='accounts',
-    ConsistentRead=True,
-    ProjectionExpression='#n',
-    ExpressionAttributeNames={'#n': 'name'}
-)
-
-if response['ResponseMetadata']['HTTPStatusCode'] != 200:
-    logger.error("Failed to get items from dynamodb")
-    sys.exit(1)
-
-data = response['Items']
-
-while 'LastEvaluatedKey' in response:
-    response = dynamodb_prod.scan(
-        TableName='accounts',
-        ConsistentRead=True,
-        ProjectionExpression='#n',
-        ExpressionAttributeNames={'#n': 'name'},
-        ExclusiveStartKey=response['LastEvaluatedKey']
-    )
-    data.extend(response['Items'])
-
-if 'Items' in response:
-    sandboxes_prod = [item['name']['S'] for item in data]
-    logger.info(f"Found {len(sandboxes_prod)} sandboxes in prod")
-    sandboxes = sandboxes + sandboxes_prod
 
 def extract_sandbox_number(sandbox):
     """Extract the number from the sandbox name, for example sandbox1234 returns 1234"""
     return int(sandbox.split('sandbox')[1])
 
-sandboxes.sort(key=extract_sandbox_number)
-
-# transform into a dictionary
-sandboxes_dict = {sandbox: True for sandbox in sandboxes}
-
-def set_(dynamodb, sandbox, key, value):
+def set_str(dynamodb, sandbox, key, value):
     '''Set the key value pair in the DB'''
     response = dynamodb.update_item(
         TableName=dynamodb_table,
@@ -226,6 +162,30 @@ def set_(dynamodb, sandbox, key, value):
         ExpressionAttributeValues={
             ':val1': {
                 'S': value
+            }
+        }
+    )
+
+    if response['ResponseMetadata']['HTTPStatusCode'] != 200:
+        raise Exception(f"Failed to set {key} to {value}")
+
+# TODO detect type instead of this _bool and _str
+def set_bool(dynamodb, sandbox, key, value):
+    '''Set the key value pair in the DB'''
+    response = dynamodb.update_item(
+        TableName=dynamodb_table,
+        Key={
+            'name': {
+                'S': sandbox
+            }
+        },
+        UpdateExpression='SET #k = :val1',
+        ExpressionAttributeNames={
+            '#k': key
+        },
+        ExpressionAttributeValues={
+            ':val1': {
+                'BOOL': value
             }
         }
     )
@@ -288,9 +248,74 @@ def get_sandbox(dynamodb, sandbox):
     else:
         return {}
 
+def get_all_sandboxes(dynamodb_prod, dynamodb_dev):
+    # run `sandbox-list -all --sort name`
+
+    response = dynamodb_dev.scan(
+        TableName='accounts-dev',
+        ConsistentRead=True,
+        ProjectionExpression='#n',
+        ExpressionAttributeNames={
+            '#n': 'name'
+        }
+    )
+
+    if response['ResponseMetadata']['HTTPStatusCode'] != 200:
+        logger.error("Failed to get items from dynamodb")
+        sys.exit(1)
+
+    data = response['Items']
+    while 'LastEvaluatedKey' in response:
+        response = dynamodb_dev.scan(
+            TableName='accounts-dev',
+            ConsistentRead=True,
+            ProjectionExpression='#n',
+            ExpressionAttributeNames={'#n': 'name'},
+            ExclusiveStartKey=response['LastEvaluatedKey']
+        )
+        data.extend(response['Items'])
+
+    if 'Items' in response:
+        sandboxes = [item['name']['S'] for item in data]
+        logger.info(f"Found {len(sandboxes)} sandboxes in dev")
+
+    # Now run the command for the prod database
+
+    response = dynamodb_prod.scan(
+        TableName='accounts',
+        ConsistentRead=True,
+        ProjectionExpression='#n',
+        ExpressionAttributeNames={'#n': 'name'}
+    )
+
+    if response['ResponseMetadata']['HTTPStatusCode'] != 200:
+        logger.error("Failed to get items from dynamodb")
+        sys.exit(1)
+
+    data = response['Items']
+
+    while 'LastEvaluatedKey' in response:
+        response = dynamodb_prod.scan(
+            TableName='accounts',
+            ConsistentRead=True,
+            ProjectionExpression='#n',
+            ExpressionAttributeNames={'#n': 'name'},
+            ExclusiveStartKey=response['LastEvaluatedKey']
+        )
+        data.extend(response['Items'])
+
+    if 'Items' in response:
+        sandboxes_prod = [item['name']['S'] for item in data]
+        logger.info(f"Found {len(sandboxes_prod)} sandboxes in prod")
+        sandboxes = sandboxes + sandboxes_prod
+
+    sandboxes.sort(key=extract_sandbox_number)
+
+    return sandboxes
 
 
-def guess_next_sandbox(sandboxes, sandboxes_dict):
+
+def guess_next_sandbox(dynamodb_prod, dynamodb_dev):
     """Find the first available sandbox name"""
     # Generate a random email tag sandbox1+RANDSTR@opentlc.com
     # used when we reuse the account name. For some reason, the email is still registered
@@ -299,6 +324,11 @@ def guess_next_sandbox(sandboxes, sandboxes_dict):
 
     if retry:
         return retry, f"{retry}+{random_email_tag}@{os.environ['email_domain']}"
+
+    sandboxes = get_all_sandboxes(dynamodb_prod, dynamodb_dev)
+
+    # transform into a dictionary
+    sandboxes_dict = {sandbox: True for sandbox in sandboxes}
 
     if guess_strategy == 'smart':
         for i in range(1, len(sandboxes) + 1):
@@ -314,7 +344,7 @@ def decrypt_vaulted_str(secret):
     '''Decrypt the vaulted secret'''
     return Vault(os.environ['INFRA_VAULT_SECRET']).load_raw(secret).decode('utf-8')
 
-new_sandbox, new_email = guess_next_sandbox(sandboxes, sandboxes_dict)
+new_sandbox, new_email = guess_next_sandbox(dynamodb_prod, dynamodb_dev)
 logger = logger.bind(sandbox=new_sandbox)
 
 # Lock the name of the sandbox in DB so another
@@ -328,7 +358,7 @@ if sandbox_data:
 
     # Ensure the sandbox is not in use, available should be absent or true
     if retry:
-        if sandbox_data.get('available', {}).get('BOOL', True) is False:
+        if sandbox_data.get('service_uuid', {}).get('S', '') == '':
             logger.info(f"Retry {new_sandbox}")
         else:
             logger.error(f"{new_sandbox} is not available")
@@ -418,14 +448,14 @@ def exit_handler(db, table, sandbox):
             # something went wrong
             logger.error(f"Unexpected stage: {stage}, missing validation")
             logger.info(f"You can retry the operation by running the command with --retry {sandbox}")
-            set_(dynamodb, new_sandbox, 'creation_status', 'failed')
+            set_str(dynamodb, new_sandbox, 'creation_status', 'failed')
             sys.exit(1)
         if hcc:
             if stage != STAGE3_GOLD_IMAGE:
                 # something went wrong
                 logger.error(f"Unexpected stage: {stage}, missing validation")
                 logger.info(f"You can retry the operation by running the command with --retry {sandbox}")
-                set_(dynamodb, new_sandbox, 'creation_status', 'failed')
+                set_str(dynamodb, new_sandbox, 'creation_status', 'failed')
                 sys.exit(1)
 
 
@@ -568,8 +598,8 @@ if playbook:
         with open('cloud-automation/new_sandboxes.txt', 'w') as f:
             f.write(f"{new_sandbox} {account_id}\n")
 
-    set_(dynamodb, new_sandbox, 'stage', STAGE2_ACCOUNT_CREATED)
-    set_(dynamodb, new_sandbox, 'reservation', 'untested')
+    set_str(dynamodb, new_sandbox, 'stage', STAGE2_ACCOUNT_CREATED)
+    set_str(dynamodb, new_sandbox, 'reservation', 'untested')
     ACCOUNT_CREATED_TIME = time.time()
     logger.info(f"Duration: {round(ACCOUNT_CREATED_TIME - START_TIME)} seconds to create {new_sandbox}")
 
@@ -680,12 +710,24 @@ if validation:
     sandbox_data = get_sandbox(dynamodb, new_sandbox)
 
     if sandbox_data:
+        reservation_current = sandbox_data.get('reservation', {}).get('S', '')
         if sandbox_data.get('stage', {}).get('S', '') == STAGE4_VALIDATED:
-            logger.info("Sandbox is already validated. Skipping.")
+
+            if sandbox_data.get('available', {}).get('BOOL', '') == False:
+                set_bool(dynamodb, new_sandbox, 'available', True)
+                logger.info(f"Set {new_sandbox} as available")
+            logger.info("Sandbox is already validated. Skipping validation.")
+
+            if reservation_current != reservation:
+                set_str(dynamodb, new_sandbox, 'reservation', reservation)
+
+                logger.info("Reservation updated",
+                            previous_reservation=reservation_current)
+
             exit(0)
 
-        if sandbox_data.get('reservation', {}).get('S', '') != 'untested':
-            logger.error("Sandbox reservation is not 'untested'. something's off.")
+        if reservation_current != 'untested':
+            logger.error("Sandbox reservation is not 'untested'. something's off.", found=reservation_current)
             exit(1)
 
     # Run the validation playbook operation
