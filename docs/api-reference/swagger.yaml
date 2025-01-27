@@ -424,6 +424,8 @@ paths:
             - AwsSandbox
             - ocp
             - OcpSandbox
+            - ibmshared
+            - IBMSharedSandbox
       - name: available
         in: query
         description: Boolean to filter if available or taken.
@@ -473,6 +475,8 @@ paths:
             - AwsSandbox
             - ocp
             - OcpSandbox
+            - ibmshared
+            - IBMSharedSandbox
       - name: name
         in: path
         required: true
@@ -569,6 +573,8 @@ paths:
             - AwsSandbox
             - ocp
             - OcpSandbox
+            - ibmshared
+            - IBMSharedSandbox
       - name: name
         in: path
         required: true
@@ -626,6 +632,8 @@ paths:
             - AwsSandbox
             - ocp
             - OcpSandbox
+            - ibmshared
+            - IBMSharedSandbox
       - name: name
         in: path
         required: true
@@ -680,6 +688,8 @@ paths:
             - AwsSandbox
             - ocp
             - OcpSandbox
+            - ibmshared
+            - IBMSharedSandbox
       - name: name
         in: path
         required: true
@@ -734,6 +744,8 @@ paths:
             - AwsSandbox
             - ocp
             - OcpSandbox
+            - ibmshared
+            - IBMSharedSandbox
       - name: name
         in: path
         required: true
@@ -1724,6 +1736,276 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /ibm-shared-account-configurations:
+    post:
+      summary: Create a new IBMSharedSandboxConfiguration
+      operationId: createIBMSharedSandboxConfiguration
+      tags:
+        - admin
+      requestBody:
+        description: JSON object to specify the IBMSharedSandboxConfiguration.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IBMSharedSandboxConfiguration"
+            example:
+              name: development
+              apikey: '...'
+              annotations:
+                purpose: dev
+      responses:
+        '201':
+          description: IBMSharedSandboxConfiguration created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM shared account configuration created
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: createIBMSharedSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      summary: Get all IBMSharedSandboxConfigurations
+      operationId: getIBMSharedSandboxConfigurations
+      tags:
+        - admin
+      responses:
+        '200':
+          description: The list of IBMSharedSandboxConfigurations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IBMSharedSandboxConfigurations"
+        default:
+          description: getIBMSharedSandboxConfigurations unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ibm-shared-account-configurations/{name}:
+    get:
+      summary: Get information about an IBMSharedSandboxConfiguration
+      operationId: getIBMSharedSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMSharedSandboxConfiguration
+          schema:
+            type: string
+          example: development
+      responses:
+        '200':
+          description: The IBMSharedSandboxConfiguration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IBMSharedSandboxConfiguration"
+        '404':
+          description: getIBMSharedSandboxConfiguration IBMSharedSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getIBMSharedSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete an IBMSharedSandboxConfiguration
+      operationId: deleteIBMSharedSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMSharedSandboxConfiguration
+          schema:
+            type: string
+          example: development
+      responses:
+        '200':
+          description: The IBMSharedSandboxConfiguration is deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM shared account configuration deleted
+        '404':
+          description: deleteIBMSharedSandboxConfiguration IBMSharedSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: |-
+            IBMSharedSandboxConfiguration is not deletable. Usually because it has
+            resources attached to it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: deleteIBMSharedSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ibm-shared-account-configurations/{name}/enable:
+    put:
+      summary: Enable an IBMSharedSandboxConfiguration
+      operationId: enableIBMSharedSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMSharedSandboxConfiguration
+          schema:
+            type: string
+          example: development
+      responses:
+        '200':
+          description: The IBMSharedSandboxConfiguration is enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM shared account configuration enabled
+        '404':
+          description: enableIBMSharedSandboxConfiguration IBMSharedSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: enableIBMSharedSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ibm-shared-account-configurations/{name}/disable:
+    put:
+      summary: Disable an IBMSharedSandboxConfiguration
+      operationId: disableIBMSharedSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMSharedSandboxConfiguration
+          schema:
+            type: string
+            example: development
+          example: development
+      responses:
+        '200':
+          description: The IBMSharedSandboxConfiguration is disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM shared account configuration disabled
+        '404':
+          description: disableIBMSharedSandboxConfiguration IBMSharedSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: disableIBMSharedSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ibm-shared-account-configurations/{name}/update:
+    put:
+      summary: Update quota conf for an IBMSharedSandboxConfiguration
+      operationId: updateIBMSharedSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMSharedSandboxConfiguration changes
+          schema:
+            type: string
+            example: development
+      requestBody:
+        description: JSON object to specify the IBMSharedSandboxConfiguration.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                apikey:
+                  type: string
+                annotations:
+                  $ref: "#/components/schemas/Annotations"
+                additional_vars:
+                  type: object
+            example:
+              apikey: '...'
+              additional_vars:
+                fordeployer: '...'
+              annotations:
+                purpose: dev
+      responses:
+        '200':
+          description: The IBMSharedSandboxConfiguration is updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM shared account configuration updated
+        '404':
+          description: updateIBMSharedSandboxConfiguration IBMSharedSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: updateIBMSharedSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /health:
     get:
       summary: Health endpoint
@@ -1905,6 +2187,7 @@ components:
         - $ref: '#/components/schemas/AwsAccount'
         - $ref: '#/components/schemas/AzureAccount'
         - $ref: '#/components/schemas/OcpSandbox'
+        - $ref: '#/components/schemas/IBMSharedSandbox'
       discriminator:
         propertyName: kind
         mapping:
@@ -1914,11 +2197,13 @@ components:
       oneOf:
         - $ref: '#/components/schemas/AwsAccountWithCreds'
         - $ref: '#/components/schemas/OcpSandboxWithCreds'
+        - $ref: '#/components/schemas/IBMSharedSandboxWithCreds'
       discriminator:
         propertyName: kind
         mapping:
           AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
           OcpSandbox: '#/components/schemas/OcpSandboxWithCreds'
+          IBMSharedSandbox: '#/components/schemas/IBMSharedSandboxWithCreds'
 
     Resource:
       type: object
@@ -1952,6 +2237,7 @@ components:
         mapping:
           AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
           OcpSandbox: '#/components/schemas/OcpSandboxWithCreds'
+          IBMSharedSandbox: '#/components/schemas/IBMSharedSandboxWithCreds'
 
     Resources:
       type: array
@@ -1963,11 +2249,13 @@ components:
       oneOf:
         - $ref: '#/components/schemas/AwsIamKey'
         - $ref: '#/components/schemas/OcpServiceAccount'
+        - $ref: '#/components/schemas/IBMSharedServiceAccount'
       discriminator:
         propertyName: kind
         mapping:
           aws_iam_key: '#/components/schemas/AwsIamKey'
           ServiceAccount: '#/components/schemas/OcpServiceAccount'
+          IBMSharedServiceAccount: '#/components/schemas/IBMSharedServiceAccount'
 
     # Credential for OcpSandbox
     OcpServiceAccount:
@@ -1984,6 +2272,20 @@ components:
           type: string
           example: guid-uuid
         token:
+          type: string
+          example: 1234567890abcdefghij
+
+    # Credential for IBMSharedSandbox
+    IBMSharedServiceAccount:
+      type: object
+      required:
+        - name
+        - apikey
+      properties:
+        name:
+          type: string
+          example: guid-uuid
+        apikey:
           type: string
           example: 1234567890abcdefghij
 
@@ -2069,7 +2371,6 @@ components:
               items:
                 $ref: '#/components/schemas/Credentials'
 
-
     OcpSandbox:
       type: object
       required:
@@ -2126,6 +2427,48 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/Credentials'
+
+    IBMSharedSandbox:
+      type: object
+      required:
+        - name
+        - service_uuid
+      properties:
+        name:
+          type: string
+          example: sandbox123
+        resourcegroupnam:
+          type: string
+          example: sandbox-GUID-UUID
+        service_uuid:
+          $ref: '#/components/schemas/UUID'
+        annotations:
+          $ref: '#/components/schemas/Annotations'
+        status:
+          type: string
+          enum:
+            - initializing
+            - scheduling
+            - success
+            - error
+            - deleting
+        cluster_additional_vars:
+          type: object
+          example:
+            deployer:
+              openshift_cnv_nfs_path: /IBMfoobar/data01
+              openshift_cnv_nfs_server: fsf-region.domain.com
+
+    IBMSharedSandboxWithCreds:
+      allOf:
+        - $ref: '#/components/schemas/IBMSharedSandbox'
+        - type: object
+          properties:
+            credentials:
+              type: array
+              items:
+                $ref: '#/components/schemas/Credentials'
+
     Accounts:
       type: array
       items:
@@ -2220,6 +2563,7 @@ components:
       enum:
         - AwsSandbox
         - OcpSandbox
+        - IBMSharedSandbox
 
     Reservation:
       description: Reservation record
@@ -2489,3 +2833,45 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/OcpSharedClusterConfiguration'
+
+
+    IBMSharedSandboxConfiguration:
+      description: IBMSharedSandboxConfiguration is a record of an IBM Account
+      type: object
+      required:
+        - name
+        - apikey
+        - annotations
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: The name of the account
+          example: development
+        valid:
+          type: boolean
+          description: true if the account is valid
+          example: true
+          default: true
+        apikey:
+          type: string
+        annotations:
+          $ref: "#/components/schemas/Annotations"
+        additional_vars:
+          type: object
+          description: Additional variables for the account
+          example:
+            deployer:
+              openshift_cnv_nfs_path: /IBMfoobar/data01
+              openshift_cnv_nfs_server: fsf-region.domain.com
+
+      example:
+        name: development
+        apikey: '...'
+        annotations:
+          purpose: dev
+    IBMSharedSandboxConfigurations:
+      description: The list of IBMSharedSandboxConfigurations
+      type: array
+      items:
+        $ref: '#/components/schemas/IBMSharedSandboxConfiguration'
