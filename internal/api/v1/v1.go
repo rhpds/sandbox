@@ -202,12 +202,12 @@ func (j *UpdateOcpSharedConfigurationRequest) Bind(r *http.Request) error {
 	return nil
 }
 
-type UpdateIBMSharedSandboxConfigurationRequest struct {
+type UpdateIBMResourceGroupSandboxConfigurationRequest struct {
 	Annotations               *models.Annotations `json:"annotations,omitempty"`
 	APIKey                    *string             `json:"apikey,omitempty"`
 	AdditionalVars            map[string]any      `json:"additional_vars,omitempty"`
 }
 
-func (j *UpdateIBMSharedSandboxConfigurationRequest) Bind(r *http.Request) error {
+func (j *UpdateIBMResourceGroupSandboxConfigurationRequest) Bind(r *http.Request) error {
 	return nil
 }

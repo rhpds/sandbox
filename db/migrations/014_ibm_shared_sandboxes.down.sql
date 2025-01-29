@@ -1,7 +1,7 @@
 BEGIN;
 
-DROP TRIGGER IF EXISTS ibm_shared_account_configurations_updated_at ON ibm_shared_account_configurations;
-DROP TABLE IF EXISTS ibm_shared_account_configurations;
+DROP TRIGGER IF EXISTS ibm_resource_group_account_configurations_updated_at ON ibm_resource_group_account_configurations;
+DROP TABLE IF EXISTS ibm_resource_group_account_configurations;
 
 DROP TRIGGER IF EXISTS resource_delete ON resources;
 DROP FUNCTION IF EXISTS resource_del;

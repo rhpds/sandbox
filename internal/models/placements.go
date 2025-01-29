@@ -40,7 +40,7 @@ func (p *Placement) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, ibmProvider IBMSharedSandboxProvider) error {
+func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) error {
 
 	accounts, err := awsProvider.FetchAllByServiceUuid(p.ServiceUuid)
 
@@ -107,11 +107,10 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 		}
 	}
 
-
 	return nil
 }
 
-func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, ibmProvider IBMSharedSandboxProvider) error {
+func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) error {
 
 	accounts, err := awsProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
 
@@ -171,7 +170,7 @@ func (p *Placement) LoadActiveResources(awsProvider AwsAccountProvider) error {
 	return nil
 }
 
-func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, ibmProvider IBMSharedSandboxProvider) error {
+func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) error {
 
 	accounts, err := awsProvider.FetchAllActiveByServiceUuidWithCreds(p.ServiceUuid)
 
@@ -220,7 +219,6 @@ func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider,
 			}
 		}
 	}
-
 
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
@@ -280,7 +278,7 @@ func (p *Placement) Create() error {
 }
 
 // Delete deletes a placement
-func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, ibmProvider IBMSharedSandboxProvider) {
+func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) {
 	if err := p.SetStatus("deleting"); err != nil {
 		log.Logger.Error("error setting status for placement",
 			"serviceUuid", p.ServiceUuid,
@@ -288,7 +286,6 @@ func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider OcpSa
 		)
 		return
 	}
-	log.Logger.Info("p", "p", p)
 	if p.FailOnDelete {
 		log.Logger.Error("Failing on delete", "serviceUuid", p.ServiceUuid)
 		p.SetStatus("error")
@@ -308,7 +305,7 @@ func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider OcpSa
 	}
 
 	if err := ibmProvider.Release(p.ServiceUuid); err != nil {
-		log.Logger.Error("Error while releasing IBMShared sandboxes", "error", err)
+		log.Logger.Error("Error while releasing IBMResourceGroup sandboxes", "error", err)
 		p.SetStatus("error")
 		return
 	}
@@ -514,7 +511,7 @@ func GetPlacementByServiceUuid(dbpool *pgxpool.Pool, serviceUuid string) (*Place
 }
 
 // DeletePlacementByServiceUuid deletes a placement by ServiceUuid
-func DeletePlacementByServiceUuid(dbpool *pgxpool.Pool, awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, ibmProvider IBMSharedSandboxProvider, serviceUuid string) error {
+func DeletePlacementByServiceUuid(dbpool *pgxpool.Pool, awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider, serviceUuid string) error {
 	placement, err := GetPlacementByServiceUuid(dbpool, serviceUuid)
 	if err != nil {
 		return err

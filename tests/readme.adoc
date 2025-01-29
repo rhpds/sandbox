@@ -102,6 +102,18 @@ hurl --variable login_token_admin=$admintoken \
 002_ocp.hurl --test
 ----
 
+. Run the tests for IBMResourceGroupSandbox
+---
+uuid=$(uuidgen -r)
+cd tests
+
+hurl --variable login_token_admin=$admintoken \
+--variable login_token=$apptoken \
+--variable host=http://localhost:8080 \
+--variable uuid=$uuid \
+006_ibm_rg.hurl --test
+---
+
 === Troubleshoot ===
 
 Add the `--verbose` argument to the `hurl` command to see the full requests.
