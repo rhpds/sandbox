@@ -1,0 +1,2894 @@
+openapi: "3.0.3"
+info:
+  description: Sandbox API
+  version: 1.0.0
+  title: Sandbox API
+  license:
+    name: MIT
+servers:
+  - url: /api/v1
+tags:
+  - name: placement
+    description: Anything related to Placements. Ex, booking or releasing sandboxes
+  - name: requests
+    description: Anything related to Requests. Ex, stop instances of an account
+  - name: account
+    description: Anything related to Accounts.
+  - name: admin
+    description: HTTP routes protected and accessible only by admins.
+  - name: insight
+    description: Metrics and health of the API
+paths:
+  /login:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Login JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <LOGIN_TOKEN>
+    get:
+      summary: Get an access token using a login token.
+      operationId: login
+      responses:
+        '200':
+          description: The access token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  access_token_exp:
+                    type: string
+              example:
+                access_token: "eyJhbGc.oq[...].GWQdpMPSNf[...]-Gi7uB[...]"
+                access_token_exp: "2023-04-20T23:00:00Z"
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /placements:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ACCESS_TOKEN>
+    get:
+      parameters:
+        - in: query
+          name: min-age
+          description: The minimum age of the placements to return
+          required: false
+          example: 15
+          schema:
+            type: integer
+            minimum: 0
+        - in: query
+          name: max-age
+          description: The maximum age of the placements to return
+          required: false
+          example: 1
+          schema:
+            type: integer
+            minimum: 0
+        - in: query
+          name: unit
+          description: The unit for min-age and max-age.
+          required: false
+          example: day
+          schema:
+            type: string
+            default: day
+            enum:
+              - day
+              - hour
+              - minute
+              - second
+      tags:
+        - placement
+      operationId: getPlacements
+      summary: Get all placements
+      description: |
+        The placements are returned.
+        Only Admins are authorized to get all placements.
+
+        NOTE: the resources are not returned because that would generate too much data and take too much time. To get the information about accounts for a particular placement, query the `/placements/{uuid}` endpoint.
+      responses:
+        '200':
+          description: The list of placements
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Placements"
+              example:
+                - id: 1
+                  created_at: "2023-04-17T13:19:11.835373+02:00"
+                  updated_at: "2023-04-17T13:19:11.835373+02:00"
+                  service_uuid: "6548dc97-5799-4bfe-8843-8d1793996593"
+                  resources: []
+                  annotations:
+                    guid: testguid
+                  request:
+                    service_uuid: "6548dc97-5799-4bfe-8843-8d1793996593"
+                    annotations:
+                      guid: testguid
+                    resources:
+                      - kind: AwsSandbox
+                        count: 2
+        default:
+          description: getPlacements unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Create a new placement; Request a sandbox.
+      operationId: createPlacements
+      tags:
+        - placement
+      requestBody:
+        description: JSON object to specify UUID and other annotations when requesting a resource.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlacementRequest"
+      responses:
+        '200':
+          description: The Placement, containing the allocated resource(s), with credentials.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlacementWithCreds"
+        '404':
+          description: NotFound
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: book unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /placements/{uuid}:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ACCESS_TOKEN>
+      - name: uuid
+        in: path
+        required: true
+        description: The UUID of the service.
+        schema:
+          $ref: "#/components/schemas/UUID"
+    get:
+      tags:
+        - placement
+      operationId: getPlacement
+      summary: Get information about a placement and its resources
+      responses:
+        '200':
+          description: The placement assigned to this uuid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Placement"
+        '404':
+          description: getPlacement Placement not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getPlacement unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    delete:
+      tags:
+        - placement
+      operationId: deletePlacement
+      summary: Delete the placement assigned to a specific uuid.
+      description: |-
+        You usually call this endpoint once your service is destroyed.
+
+        This action will cascade cleanup for all the accounts associated with the placement.
+      responses:
+        '202':
+          description: The placement assigned to this uuid is deleted. The resources associated with this placement are marked for cleanup.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: Placement marked for deletion
+
+        '404':
+          description: deletePlacement Placement not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: placement not found
+                http_code: 404
+        default:
+          description: deletePlacement unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /placements/{uuid}/stop:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ACCESS_TOKEN>
+      - name: uuid
+        in: path
+        required: true
+        description: The UUID of the service.
+        schema:
+          $ref: "#/components/schemas/UUID"
+    put:
+      tags:
+        - placement
+      operationId: stopPlacement
+      summary: Stop all the resources of a placement assigned to a specific UUID.
+      description: |-
+        Call this endpoint to stop all the resources in all the accounts of a service identified by service UUID.
+
+        This action will cascade stop to all the accounts associated with the placement.
+      responses:
+        '200':
+          description: The stop request was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '404':
+          description: Placement not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: stopPlacement unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /placements/{uuid}/start:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ACCESS_TOKEN>
+      - name: uuid
+        in: path
+        required: true
+        description: The UUID of the service.
+        schema:
+          $ref: "#/components/schemas/UUID"
+    put:
+      tags:
+        - placement
+      operationId: startPlacement
+      summary: Start all the resources of a placement assigned to a specific UUID.
+      description: |-
+        Call this endpoint to start all the resources in all the accounts of a service identified by service UUID.
+
+        This action will cascade start to all the accounts associated with the placement.
+      responses:
+        '200':
+          description: The start request was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '404':
+          description: Placement not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: startPlacement unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /placements/{uuid}/status:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ACCESS_TOKEN>
+      - name: uuid
+        in: path
+        required: true
+        description: The UUID of the service.
+        schema:
+          $ref: "#/components/schemas/UUID"
+    put:
+      tags:
+        - placement
+      operationId: statusPlacement
+      summary: Request new status update of all accounts of a placement
+      description: |-
+        Given a placement, query an async status on all its resources
+      responses:
+        '200':
+          description: The status request was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '404':
+          description: Placement not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: statusAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      tags:
+        - placement
+      operationId: getStatusPlacement
+      summary: Get latest status of all accounts in an placement
+      description: |-
+        Given a specific placement, return the latest status.
+
+        To trigger a new asynchronous status update, use the PUT method.
+      responses:
+        '200':
+          description: Placement status
+          content:
+            application/json:
+              schema:
+                type: object
+                items:
+                  $ref: "#/components/schemas/AccountStatus"
+              example:
+                http_code: 200
+                status:
+                - account_name: sandbox3199
+                  account_kind: AwsAccount
+                  instances:
+                  - instance_id: i-0850efbed08529f66
+                    instance_type: t3a.large
+                    region: us-east-2
+                    state: stopped
+                  updated_at: '2023-09-17T08:21:52.256677+02:00'
+                  status: success
+        '404':
+          description: Placement not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getStatusPlacement unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /accounts/{kind}:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ACCESS_TOKEN>
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
+            - AwsSandbox
+            - ocp
+            - OcpSandbox
+            - ibmresourcegroup
+            - IBMResourceGroupSandbox
+      - name: available
+        in: query
+        description: Boolean to filter if available or taken.
+        schema:
+          type: boolean
+      - name: service_uuid
+        in: query
+        description: Filter accounts by Service UUID
+        schema:
+          $ref: '#/components/schemas/UUID'
+    get:
+      tags:
+        - account
+      operationId: getAccounts
+      summary: Get all accounts
+      responses:
+        '200':
+          description: The list of accounts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Accounts"
+        default:
+          description: getAccounts unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /accounts/{kind}/{name}:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+          example: Bearer <ACCESS_TOKEN>
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
+            - AwsSandbox
+            - ocp
+            - OcpSandbox
+            - ibmresourcegroup
+            - IBMResourceGroupSandbox
+      - name: name
+        in: path
+        required: true
+        description: The name of the sandbox
+        schema:
+          type: string
+
+    get:
+      tags:
+        - account
+      operationId: getAccount
+      summary: Get information about an account
+      responses:
+        '200':
+          description: The account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        '404':
+          description: getAccount account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags:
+        - account
+      operationId: deleteAccount
+      summary: Delete an account
+      description: |-
+        Delete an account by its name.
+
+        The account will be close and removed from the database.
+      responses:
+        '200':
+          description: The account deletion request is accepted and successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: Account is not deletable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: 'Error deleting account'
+                http_code: 500
+                code: '500'
+        default:
+          description: deleteAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /accounts/{kind}/{name}/cleanup:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ACCESS_TOKEN>
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
+            - AwsSandbox
+            - ocp
+            - OcpSandbox
+            - ibmresourcegroup
+            - IBMResourceGroupSandbox
+      - name: name
+        in: path
+        required: true
+        description: The name of the sandbox to mark for cleanup.
+        schema:
+          type: string
+    put:
+      tags:
+        - account
+      operationId: markForCleanup
+      summary: Manually mark a sandbox (account) for cleanup.
+      description: |-
+        This is an ad-hoc operation, deleting placement should be preferred for regular cleanup of sandboxes.
+        If the sandbox is part of a placement, the corresponding placement will be updated:
+          - The sandbox is removed from the placement.
+
+        The placement is automatically deleted if there is no more resources.
+      responses:
+        '200':
+          description: The account is marked for cleanup.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: markForCleanup unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /accounts/{kind}/{name}/stop:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ACCESS_TOKEN>
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
+            - AwsSandbox
+            - ocp
+            - OcpSandbox
+            - ibmresourcegroup
+            - IBMResourceGroupSandbox
+      - name: name
+        in: path
+        required: true
+        description: The name of the sandbox to stop
+        schema:
+          type: string
+    put:
+      tags:
+        - account
+      operationId: stopAccount
+      summary: Stop all instances and (supported) services in an account
+      description: |-
+        Given a specific account, stop all instances on all regions.
+
+        Also stop all supported services.
+      responses:
+        '200':
+          description: The stop request was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: stopAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /accounts/{kind}/{name}/start:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ACCESS_TOKEN>
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
+            - AwsSandbox
+            - ocp
+            - OcpSandbox
+            - ibmresourcegroup
+            - IBMResourceGroupSandbox
+      - name: name
+        in: path
+        required: true
+        description: The name of the sandbox to start
+        schema:
+          type: string
+    put:
+      tags:
+        - account
+      operationId: startAccount
+      summary: Start all instances and (supported) services in an account
+      description: |-
+        Given a specific account, start all instances on all regions.
+
+        Also start all supported services.
+      responses:
+        '200':
+          description: The start request was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: startAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /accounts/{kind}/{name}/status:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ACCESS_TOKEN>
+      - name: kind
+        in: path
+        required: true
+        description: The kind of account
+        schema:
+          type: string
+          enum:
+            - aws
+            - AwsSandbox
+            - ocp
+            - OcpSandbox
+            - ibmresourcegroup
+            - IBMResourceGroupSandbox
+      - name: name
+        in: path
+        required: true
+        description: The name of the sandbox
+        schema:
+          type: string
+    put:
+      tags:
+        - account
+      operationId: statusAccount
+      summary: Request new status update of all instances and (supported) services in an account
+      description: |-
+        Given a specific account, query an async status
+      responses:
+        '200':
+          description: The status request was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: statusAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      tags:
+        - account
+      operationId: getStatusAccount
+      summary: Get latest status of all instances and (supported) services in an account
+      description: |-
+        Given a specific account, return the latest status.
+
+        To trigger a new asynchronous status update, use the PUT method.
+      responses:
+        '200':
+          description: Account status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountStatus"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getStatusAccount unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /requests/{id}/status:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ACCESS_TOKEN>
+      - name: id
+        in: path
+        required: true
+        description: The id of the request
+        schema:
+          type: string
+    get:
+      tags:
+        - requests
+      operationId: getStatusRequest
+      summary: Get status of a request
+      description: |-
+        Returns status of a request.
+      responses:
+        '200':
+          description: Request status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '404':
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getStatusRequest unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /reservations:
+    post:
+      parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ACCESS_TOKEN>
+      summary: Reserve resources
+      description: |-
+        Create new reservation, for example for an event.
+
+        The reserved resources won't be allocated to a request, unless the name of the reservation is specifically passed, as part of the request.
+        Resources are randomly put inside the new reservation group. Fragmentation is expected.
+      operationId: createReservation
+      tags:
+        - admin
+      requestBody:
+        description: JSON object to specify the reservation.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Reservation"
+            example:
+              name: summit
+              resources:
+                - kind: AwsSandbox
+                  count: 200
+                  expiration: 2023-04-20T23:13:27.464333+02:00
+      responses:
+        '202':
+          description: Reservation request created
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                message: reservation request created
+
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: reservation already exists
+                http_code: 400
+
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /reservations/{name}:
+    get:
+      operationId: getReservation
+      summary: Get information about a reservation
+      description: Returns the definition of the reservation and its status.
+      tags:
+        - placement
+      parameters:
+        - in: header
+          name: Authorization
+          description: Access JTW Token
+          required: true
+          schema:
+            type: string
+          example: Bearer <ACCESS_TOKEN>
+        - name: name
+          in: path
+          required: true
+          description: The name of the reservation
+          schema:
+            type: string
+            pattern: '^[\w\d_-]+$'
+          example: summit
+      responses:
+        '200':
+          description: Return the reservation definition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReservationResponse"
+              example:
+                name: summit
+                expiration: 2023-04-20T23:13:27.464333+02:00
+                status: success
+                resources:
+                  - kind: AwsSandbox
+                    count: 2
+
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      parameters:
+        - in: header
+          name: Authorization
+          description: Access JTW Token
+          required: true
+          schema:
+            type: string
+          example: Bearer <ACCESS_TOKEN>
+        - name: name
+          in: path
+          required: true
+          description: The name of the reservation
+          schema:
+            type: string
+            pattern: '^[\w\d_-]+$'
+          example: summit
+      summary: Reserve resources
+      description: |-
+        Update a reservation.
+
+        Scale up or down a reservation. Add or remove resources.
+      operationId: updateReservation
+      tags:
+        - admin
+      requestBody:
+        description: JSON object to specify the reservation.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Reservation"
+            example:
+              name: summit
+              resources:
+                - kind: AwsSandbox
+                  count: 200
+      responses:
+        '202':
+          description: Reservation update request created
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                message: reservation update request created
+
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: reservation already exists
+                http_code: 400
+
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: deleteReservation
+      summary: Delete a reservation
+      description: |-
+        Delete a reservation by its name.
+
+        All accounts marked as part of the reservation are unmarked. The accounts will **not** be marked for cleanup, they are retained intacted. Only the 'reservation' field of those accounts is cleared.
+      tags:
+        - admin
+      parameters:
+        - in: header
+          name: Authorization
+          description: Access JTW Token
+          required: true
+          schema:
+            type: string
+          example: Bearer <ACCESS_TOKEN>
+        - name: name
+          in: path
+          required: true
+          description: The name of the reservation
+          schema:
+            type: string
+            pattern: '^[\w\d_-]+$'
+          example: summit
+      responses:
+        '202':
+          description: Request is successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: reservation delete request created
+
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /reservations/{name}/resources:
+    get:
+      operationId: getReservationResources
+      summary: Get all resources of a reservation.
+      description: >-
+        Actually fetch the resource information and list all the resources of
+        a reservation.
+      tags:
+        - placement
+      parameters:
+        - in: header
+          name: Authorization
+          description: Access JTW Token
+          required: true
+          schema:
+            type: string
+          example: Bearer <ACCESS_TOKEN>
+        - name: name
+          in: path
+          required: true
+          description: The name of the reservation
+          schema:
+            type: string
+            pattern: '^[\w\d_-]+$'
+          example: summit
+
+      responses:
+        '200':
+          description: Return the resources
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReservationResourcesResponse"
+
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /admin/jwt:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Admin Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ADMIN_ACCESS_TOKEN>
+    post:
+      summary: Issue a new JWT token for login
+      operationId: issueJWT
+      tags:
+        - admin
+      requestBody:
+        description: JSON object to specify claims.
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - claims
+              properties:
+                claims:
+                  type: object
+                  required:
+                    - name
+                    - role
+                  properties:
+                    name:
+                      type: string
+                      example: operatorXYZ
+                    role:
+                      type: string
+                      enum:
+                        - admin
+                        - app
+                      example: app
+            example:
+              claims:
+                role: app
+                name: anarchy
+      responses:
+        '200':
+          description: The JWT Login token
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                token: eyJhbGc.oq[...].GWQdpMPSNf[...]-Gi7uB[...]
+
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      summary: Get the list of JWT tokens
+      operationId: GetJWT
+      tags:
+        - admin
+      responses:
+        '200':
+          description: The tokens
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+              example:
+                - id: 20
+                  created_at: 2023-04-20T23:03:32.267238+02:00
+                  updated_at: 2023-04-20T23:13:27.464333+02:00
+                  kind: login
+                  name: gucore
+                  role: admin
+                  iat: 1682024612
+                  exp: 1997384612
+                  expiration: 2033-04-17T23:03:32+02:00
+                - id: 21
+                  created_at: 2023-04-20T23:16:00.615025+02:00
+                  updated_at: 2023-04-20T23:16:00.615025+02:00
+                  kind: login
+                  name: anarchy
+                  role: app
+                  iat: 1682025360
+                  exp: 1997385360
+                  expiration: 2033-04-17T23:16:00+02:00
+
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+                code: 401
+        default:
+          description: book unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /admin/jwt/{id}/invalidate:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Admin Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ADMIN_ACCESS_TOKEN>
+      - name: id
+        in: path
+        required: true
+        description: The id of the token to invalidate
+        schema:
+          type: integer
+    put:
+      summary: Invalidate a login token
+      operationId: invalidateToken
+      tags:
+        - admin
+      responses:
+        '200':
+          description: Invalidation Successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    example: Token successfully invalidated
+              example:
+                message: Token successfully invalidated
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        '500':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Error invalidating token
+                http_code: 500
+  /ocp-shared-cluster-configurations:
+    post:
+      summary: Create a new OcpSharedClusterConfiguration
+      operationId: createOcpSharedClusterConfiguration
+      tags:
+        - admin
+      requestBody:
+        description: JSON object to specify the OcpSharedClusterConfiguration.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OcpSharedClusterConfiguration"
+            example:
+              name: ocp-cluster-1
+              api_url: https://api.ocp-cluster-1.com:6443
+              ingress_domain: apps.ocp-cluster-1.com
+              kubeconfig: |
+                apiVersion: v1
+                clusters:
+                - cluster:
+                    server: https://api.ocp-cluster-1.com:6443
+                  name: ocp-cluster-1
+                contexts:
+                - context:
+                    cluster: ocp-cluster-1
+                    user: ocp-cluster-1
+                  name: ocp-cluster-1
+                current-context: ocp-cluster-1
+                kind: Config
+                preferences: {}
+                users:
+                - name: ocp-cluster-1
+                  user:
+                    token: <TOKEN>
+              annotations:
+                virt: available
+                cloud: ibm
+                purpose: dev
+      responses:
+        '201':
+          description: OcpSharedClusterConfiguration created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: OCP shared cluster configuration created
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: createOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      summary: Get all OcpSharedClusterConfigurations
+      operationId: getOcpSharedClusterConfigurations
+      tags:
+        - admin
+      responses:
+        '200':
+          description: The list of OcpSharedClusterConfigurations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OcpSharedClusterConfigurations"
+        default:
+          description: getOcpSharedClusterConfigurations unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ocp-shared-cluster-configurations/{name}:
+    get:
+      summary: Get information about an OcpSharedClusterConfiguration
+      operationId: getOcpSharedClusterConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration
+          schema:
+            type: string
+          example: ocp-cluster-1
+      responses:
+        '200':
+          description: The OcpSharedClusterConfiguration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OcpSharedClusterConfiguration"
+        '404':
+          description: getOcpSharedClusterConfiguration OcpSharedClusterConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete an OcpSharedClusterConfiguration
+      operationId: deleteOcpSharedClusterConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration
+          schema:
+            type: string
+          example: ocp-cluster-1
+      responses:
+        '200':
+          description: The OcpSharedClusterConfiguration is deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: OCP shared cluster configuration deleted
+        '404':
+          description: deleteOcpSharedClusterConfiguration OcpSharedClusterConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: |-
+            OcpSharedClusterConfiguration is not deletable. Usually because it has
+            resources attached to it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: deleteOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ocp-shared-cluster-configurations/{name}/health:
+    get:
+      summary: Get health status about an OcpSharedClusterConfiguration endpoint
+      operationId: healthOcpSharedClusterConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration
+          schema:
+            type: string
+          example: ocp-cluster-1
+      responses:
+        '200':
+          description: Validation successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OcpSharedClusterConfiguration"
+        '404':
+          description: healthOcpSharedClusterConfiguration OcpSharedClusterConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: healthOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /ocp-shared-cluster-configurations/{name}/enable:
+    put:
+      summary: Enable an OcpSharedClusterConfiguration
+      operationId: enableOcpSharedClusterConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration
+          schema:
+            type: string
+          example: ocp-cluster-1
+      responses:
+        '200':
+          description: The OcpSharedClusterConfiguration is enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: OCP shared cluster configuration enabled
+        '404':
+          description: enableOcpSharedClusterConfiguration OcpSharedClusterConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: enableOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ocp-shared-cluster-configurations/{name}/disable:
+    put:
+      summary: Disable an OcpSharedClusterConfiguration
+      operationId: disableOcpSharedClusterConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration
+          schema:
+            type: string
+            example: ocp-cluster-1
+          example: ocp-cluster-1
+      responses:
+        '200':
+          description: The OcpSharedClusterConfiguration is disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: OCP shared cluster configuration disabled
+        '404':
+          description: disableOcpSharedClusterConfiguration OcpSharedClusterConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: disableOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ocp-shared-cluster-configurations/{name}/update:
+    put:
+      summary: Update quota conf for an OcpSharedClusterConfiguration
+      operationId: updateOcpSharedClusterConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration changes
+          schema:
+            type: string
+            example: ocp-cluster-1
+      requestBody:
+        description: JSON object to specify the OcpSharedClusterConfiguration.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                strict_default_sandbox_quota:
+                  type: boolean
+                  description: |-
+                    StrictDefaultSandboxQuota is a flag to determine if the default sandbox quota should be strictly enforced. If set to true, the default sandbox quota will be enforced as a hard limit. Requested quota not be allowed to exceed the default. By default it's false.
+                quota_required:
+                  type: boolean
+                  description: |-
+                    QuotaRequired is a flag to determine if a quota is required in any request for an OcpSandbox. If set to true, a quota must be provided in the request. If set to false, a quota will be created based on the default sandbox quota. By default it's false.
+                default_sandbox_quota:
+                  type: object
+                  description: |
+                    Quota to be applied to the namespace of the OcpSandbox
+                    The way quota is applied depends on the OcpSharedClusterConfiguration.
+                    By default, if a quota value is missing, the default quota of the shared cluster is applied instead.
+                skip_quota:
+                  type: boolean
+                  description: |-
+                    SkipQuota is a flag to control if the sandbox quota should be disabled.
+                    If set to true, the sandbox quota will not be created.
+                    If set to false, the sandbox quota will be created, depending on the value of quota_required, default_sandbox_quota and strict_default_sandbox_quota.
+                    By default it's true.
+                max_memory_usage_percentage:
+                  type: number
+                  format: float
+                max_cpu_usage_percentage:
+                  type: number
+                  format: float
+                usage_node_selector:
+                  type: string
+                token:
+                  type: string
+                annotations:
+                  $ref: "#/components/schemas/Annotations"
+                additional_vars:
+                  type: object
+                limit_range:
+                  description: |-
+                    Limit Range for the sandbox
+                    This allows to set the default limit and request for pods
+                    see https://kubernetes.io/docs/concepts/policy/limit-range/
+                  type: object
+                  example:
+                    apiVersion: v1
+                    kind: LimitRange
+                    metadata:
+                      name: sandbox-limit-range
+                    spec:
+                      limits:
+                        - default:
+                            cpu: "1"
+                            memory: 2Gi
+                          defaultRequest:
+                            cpu: "0.5"
+                            memory: 1Gi
+                          type: Container
+            example:
+              strict_default_sandbox_quota: true
+              quota_required: true
+              skip_quota: false
+              max_memory_usage_percentage: 70
+              max_cpu_usage_percentage: 80
+              usage_node_selector: 'node-role.kubernetes.io/compute='
+              token: '...'
+              additional_vars:
+                fordeployer: '...'
+              annotations:
+                virt: available
+                cloud: ibm
+                purpose: dev
+              default_sandbox_quota:
+                pods: "12"
+                requests.memory: "20Gi"
+                limits.memory: "20Gi"
+                secrets: "2"
+                requests.ephemeral-storage: "100Gi"
+              limit_range:
+                apiVersion: v1
+                kind: LimitRange
+                metadata:
+                  name: sandbox-limit-range
+                spec:
+                  limits:
+                    - default:
+                        cpu: "1"
+                        memory: 2Gi
+                      defaultRequest:
+                        cpu: "0.5"
+                        memory: 1Gi
+                      type: Container
+      responses:
+        '200':
+          description: The OcpSharedClusterConfiguration is updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: OCP shared cluster configuration updated
+        '404':
+          description: updateOcpSharedClusterConfiguration OcpSharedClusterConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: updateOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ibm-resource-group-configurations:
+    post:
+      summary: Create a new IBMResourceGroupSandboxConfiguration
+      operationId: createIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      requestBody:
+        description: JSON object to specify the IBMResourceGroupSandboxConfiguration.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IBMResourceGroupSandboxConfiguration"
+            example:
+              name: development
+              apikey: '...'
+              annotations:
+                purpose: dev
+      responses:
+        '201':
+          description: IBMResourceGroupSandboxConfiguration created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM resource group account configuration created
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: createIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      summary: Get all IBMResourceGroupSandboxConfigurations
+      operationId: getIBMResourceGroupSandboxConfigurations
+      tags:
+        - admin
+      responses:
+        '200':
+          description: The list of IBMResourceGroupSandboxConfigurations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IBMResourceGroupSandboxConfigurations"
+        default:
+          description: getIBMResourceGroupSandboxConfigurations unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ibm-resource-group-configurations/{name}:
+    get:
+      summary: Get information about an IBMResourceGroupSandboxConfiguration
+      operationId: getIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMResourceGroupSandboxConfiguration
+          schema:
+            type: string
+          example: development
+      responses:
+        '200':
+          description: The IBMResourceGroupSandboxConfiguration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IBMResourceGroupSandboxConfiguration"
+        '404':
+          description: getIBMResourceGroupSandboxConfiguration IBMResourceGroupSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete an IBMResourceGroupSandboxConfiguration
+      operationId: deleteIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMResourceGroupSandboxConfiguration
+          schema:
+            type: string
+          example: development
+      responses:
+        '200':
+          description: The IBMResourceGroupSandboxConfiguration is deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM resource group account configuration deleted
+        '404':
+          description: deleteIBMResourceGroupSandboxConfiguration IBMResourceGroupSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: |-
+            IBMResourceGroupSandboxConfiguration is not deletable. Usually because it has
+            resources attached to it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: deleteIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ibm-resource-group-configurations/{name}/enable:
+    put:
+      summary: Enable an IBMResourceGroupSandboxConfiguration
+      operationId: enableIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMResourceGroupSandboxConfiguration
+          schema:
+            type: string
+          example: development
+      responses:
+        '200':
+          description: The IBMResourceGroupSandboxConfiguration is enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM resource group account configuration enabled
+        '404':
+          description: enableIBMResourceGroupSandboxConfiguration IBMResourceGroupSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: enableIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ibm-resource-group-configurations/{name}/disable:
+    put:
+      summary: Disable an IBMResourceGroupSandboxConfiguration
+      operationId: disableIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMResourceGroupSandboxConfiguration
+          schema:
+            type: string
+            example: development
+          example: development
+      responses:
+        '200':
+          description: The IBMResourceGroupSandboxConfiguration is disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM resource group account configuration disabled
+        '404':
+          description: disableIBMResourceGroupSandboxConfiguration IBMResourceGroupSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: disableIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ibm-resource-group-configurations/{name}/update:
+    put:
+      summary: Update quota conf for an IBMResourceGroupSandboxConfiguration
+      operationId: updateIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMResourceGroupSandboxConfiguration changes
+          schema:
+            type: string
+            example: development
+      requestBody:
+        description: JSON object to specify the IBMResourceGroupSandboxConfiguration.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                apikey:
+                  type: string
+                annotations:
+                  $ref: "#/components/schemas/Annotations"
+                additional_vars:
+                  type: object
+            example:
+              apikey: '...'
+              additional_vars:
+                fordeployer: '...'
+              annotations:
+                purpose: dev
+      responses:
+        '200':
+          description: The IBMResourceGroupSandboxConfiguration is updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM resource group account configuration updated
+        '404':
+          description: updateIBMResourceGroupSandboxConfiguration IBMResourceGroupSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: updateIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /health:
+    get:
+      summary: Health endpoint
+      tags:
+        - insight
+      operationId: health
+      responses:
+        '200':
+          description: Invalidation Successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    example: OK
+                  http_code:
+                    example: 200
+              example:
+                message: OK
+                http_code: 200
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Internal server error
+                http_code: 500
+
+components:
+  schemas:
+    UUID:
+      type: string
+      description: The UUID of the service. Sandboxes are assigned uuid when booked.
+      format: uuid
+
+    PlacementRequest:
+      description: |-
+        A placement request is a record of service(uuid) / resources / annotations
+      type: object
+      required:
+        - service_uuid
+      properties:
+        service_uuid:
+          $ref: "#/components/schemas/UUID"
+        reservation:
+          type: string
+          example: summit
+        resources:
+          description: Request resources
+          type: array
+          items:
+            type: object
+            properties:
+              kind:
+                $ref: '#/components/schemas/ResourceKind'
+              count:
+                type: integer
+                minimum: 1
+                default: 1
+                example: 1
+              alias:
+                type: string
+              cluster_condition:
+                type: string
+              cluster_relation:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    relation:
+                      type: string
+                      enum:
+                        - same
+                        - different
+                        - child
+                    reference:
+                      type: string
+              cloud_selector:
+                $ref: "#/components/schemas/Annotations"
+              annotations:
+                $ref: "#/components/schemas/Annotations"
+              quota:
+                type: object
+                description: |
+                  Quota to be applied to the namespace of the OcpSandbox
+                  The way quota is applied depends on the OcpSharedClusterConfiguration.
+                  By default, if a quota value is missing, the default quota of the shared cluster is applied instead.
+
+                  StrictDefaultSandboxQuota is a flag to determine if the default sandbox quota should be strictly enforced. If set to true, the default sandbox quota will be enforced as a hard limit. Requested quota not be allowed to exceed the default. By default it's false.
+
+                  If set to false, the default sandbox will be updated to the requested quota.
+                  QuotaRequired is a flag to determine if a quota is required in any request for an OcpSandbox.
+                  If set to true, a quota must be provided in the request.
+                  If set to false, a quota will be created based on the default sandbox quota.
+                  By default it's false.
+                example:
+                  pods: "12"
+                  requests.memory: "20Gi"
+                  limits.memory: "20Gi"
+                  secrets: "2"
+                  requests.ephemeral-storage: "100Gi"
+              limit_range:
+                type: object
+                description: |-
+                  Limit Range for the sandbox
+                  This allows to set the default limit and request for pods
+                  see https://kubernetes.io/docs/concepts/policy/limit-range/
+                example:
+                  spec:
+                    limits:
+                      - default:
+                          cpu: "1"
+                          memory: 2Gi
+                        defaultRequest:
+                          cpu: "0.5"
+                          memory: 1Gi
+                        type: Container
+        annotations:
+          $ref: "#/components/schemas/Annotations"
+      example:
+        service_uuid: 13a8b15c-e752-4727-ac78-600e8833e575
+        resources:
+          - kind: AwsSandbox
+            count: 2
+
+    Annotations:
+      description: Key / Value map to provide optional information.
+      type: object
+      additionalProperties:
+        type: string
+        minLength: 1
+      example:
+        guid: abcde
+        env_type: ocp4-cluster
+        hcp: "yes"
+
+    Placement:
+      type: object
+      description: A placement is a record of service(uuid) / resource(name) / when(date)
+      required:
+        - service_uuid
+        - resources
+        - annotations
+      properties:
+        request:
+          $ref: "#/components/schemas/PlacementRequest"
+        service_uuid:
+          $ref: "#/components/schemas/UUID"
+        resources:
+          $ref: "#/components/schemas/Resources"
+        status:
+          type: string
+          enum:
+            - new
+            - initializing
+            - updating
+            - success
+            - error
+            - deleting
+        created_at:
+          description: The date (UTC and RFC3339 format) the placement was made.
+          type: string
+          format: date-time
+          example: 2023-03-13T09:42:33+01:00
+        updated_at:
+          description: The date (UTC and RFC3339 format) the placement was last updated.
+          type: string
+          format: date-time
+          example: 2023-03-13T09:42:33+01:00
+        annotations:
+          $ref: "#/components/schemas/Annotations"
+
+    PlacementWithCreds:
+      description: A placement with credentials
+      allOf:
+        - $ref: '#/components/schemas/Placement'
+        - type: object
+          properties:
+            resources:
+              $ref: "#/components/schemas/ResourcesWithCreds"
+
+    Account:
+      oneOf:
+        - $ref: '#/components/schemas/AwsAccount'
+        - $ref: '#/components/schemas/AzureAccount'
+        - $ref: '#/components/schemas/OcpSandbox'
+        - $ref: '#/components/schemas/IBMResourceGroupSandbox'
+      discriminator:
+        propertyName: kind
+        mapping:
+          AwsSandbox: '#/components/schemas/AwsAccount'
+
+    AccountWithCreds:
+      oneOf:
+        - $ref: '#/components/schemas/AwsAccountWithCreds'
+        - $ref: '#/components/schemas/OcpSandboxWithCreds'
+        - $ref: '#/components/schemas/IBMResourceGroupSandboxWithCreds'
+      discriminator:
+        propertyName: kind
+        mapping:
+          AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
+          OcpSandbox: '#/components/schemas/OcpSandboxWithCreds'
+          IBMResourceGroupSandbox: '#/components/schemas/IBMResourceGroupSandboxWithCreds'
+
+    Resource:
+      type: object
+      required:
+        - available
+        - to_cleanup
+      properties:
+        to_cleanup:
+          description: True if the resource is marked for cleanup
+          type: boolean
+          default: false
+          example: false
+        available:
+          description: True if the resource has no placement associated.
+          type: boolean
+          default: true
+          example: false
+      oneOf:
+        - $ref: '#/components/schemas/Account'
+        - $ref: '#/components/schemas/AwsAccount'
+      discriminator:
+        propertyName: kind
+        mapping:
+          AwsSandbox: '#/components/schemas/AwsAccount'
+
+    ResourceWithCreds:
+      oneOf:
+        - $ref: '#/components/schemas/AccountWithCreds'
+      discriminator:
+        propertyName: kind
+        mapping:
+          AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
+          OcpSandbox: '#/components/schemas/OcpSandboxWithCreds'
+          IBMResourceGroupSandbox: '#/components/schemas/IBMResourceGroupSandboxWithCreds'
+
+    Resources:
+      type: array
+      nullable: true
+      items:
+        $ref: '#/components/schemas/Resource'
+
+    Credential:
+      oneOf:
+        - $ref: '#/components/schemas/AwsIamKey'
+        - $ref: '#/components/schemas/OcpServiceAccount'
+        - $ref: '#/components/schemas/IBMResourceGroupServiceAccount'
+      discriminator:
+        propertyName: kind
+        mapping:
+          aws_iam_key: '#/components/schemas/AwsIamKey'
+          ServiceAccount: '#/components/schemas/OcpServiceAccount'
+          IBMResourceGroupServiceAccount: '#/components/schemas/IBMResourceGroupServiceAccount'
+
+    # Credential for OcpSandbox
+    OcpServiceAccount:
+      type: object
+      required:
+        - name
+        - kind
+        - token
+      properties:
+        kind:
+          type: string
+          example: ServiceAccount
+        name:
+          type: string
+          example: guid-uuid
+        token:
+          type: string
+          example: 1234567890abcdefghij
+
+    # Credential for IBMResourceGroupSandbox
+    IBMResourceGroupServiceAccount:
+      type: object
+      required:
+        - name
+        - apikey
+      properties:
+        name:
+          type: string
+          example: guid-uuid
+        apikey:
+          type: string
+          example: 1234567890abcdefghij
+
+    Credentials:
+      type: array
+      items:
+        $ref: '#/components/schemas/Credential'
+
+    AzureAccount:
+      type: object
+      properties:
+        name:
+          type: string
+          example: sandbox123
+    AwsAccount:
+      type: object
+      required:
+        - name
+        - account_id
+        - zone
+        - hosted_zone_id
+      properties:
+        name:
+          type: string
+          example: sandbox123
+        service_uuid:
+          $ref: '#/components/schemas/UUID'
+        annotations:
+          $ref: '#/components/schemas/Annotations'
+        account_id:
+          type: string
+          example: '0123456'
+        zone:
+          type: string
+          example: sandbox123.domain.com
+        hosted_zone_id:
+          type: string
+          example: Z019612345AH4C7KTTZJ0
+        to_cleanup:
+          type: boolean
+          default: false
+          example: true
+        conan_status:
+          type: string
+          example: cleanup in progress
+        conan_timestamp:
+          type: string
+          format: date-time
+          example: 2023-03-09T07:22:42+00:00
+        conan_hostname:
+          type: string
+          example: conan2.domain.com
+
+    AwsIamKey:
+      type: object
+      required:
+        - name
+        - aws_access_key_id
+        - aws_secret_access_key
+      additionalProperties:
+        type: string
+      properties:
+        kind:
+          type: string
+          example: aws_iam_key
+        name:
+          type: string
+          example: IAM key
+        aws_access_key_id:
+          type: string
+          example: AKI123456Z
+        aws_secret_access_key:
+          type: string
+          example: 1234567890abcdefghij
+
+    AwsAccountWithCreds:
+      allOf:
+        - $ref: '#/components/schemas/AwsAccount'
+        - type: object
+          properties:
+            credentials:
+              type: array
+              items:
+                $ref: '#/components/schemas/Credentials'
+
+    OcpSandbox:
+      type: object
+      required:
+        - name
+        - kind
+        - service_uuid
+        - ocp_cluster
+        - ingress_domain
+        - api_url
+      properties:
+        name:
+          type: string
+          example: sandbox123
+        namespace:
+          type: string
+          example: sandbox-GUID-UUID
+        ocp_cluster:
+          type: string
+          example: ocp-cluster-1
+        kind:
+          type: string
+          example: OcpSandbox
+        service_uuid:
+          $ref: '#/components/schemas/UUID'
+        annotations:
+          $ref: '#/components/schemas/Annotations'
+        api_url:
+          type: string
+          example: https://api.ocp-cluster-1.com:6443
+        ingress_domain:
+          type: string
+          example: apps.ocp-cluster-1.com
+        status:
+          type: string
+          enum:
+            - initializing
+            - scheduling
+            - success
+            - error
+            - deleting
+        cluster_additional_vars:
+          type: object
+          example:
+            deployer:
+              openshift_cnv_nfs_path: /IBMfoobar/data01
+              openshift_cnv_nfs_server: fsf-region.domain.com
+
+    OcpSandboxWithCreds:
+      allOf:
+        - $ref: '#/components/schemas/OcpSandbox'
+        - type: object
+          properties:
+            credentials:
+              type: array
+              items:
+                $ref: '#/components/schemas/Credentials'
+
+    IBMResourceGroupSandbox:
+      type: object
+      required:
+        - name
+        - service_uuid
+      properties:
+        name:
+          type: string
+          example: sandbox123
+        resourcegroupnam:
+          type: string
+          example: sandbox-GUID-UUID
+        service_uuid:
+          $ref: '#/components/schemas/UUID'
+        annotations:
+          $ref: '#/components/schemas/Annotations'
+        status:
+          type: string
+          enum:
+            - initializing
+            - scheduling
+            - success
+            - error
+            - deleting
+        account_additional_vars:
+          type: object
+          example:
+            deployer:
+              account_nfs_path: /IBMfoobar/data01
+              account_nfs_server: fsf-region.domain.com
+
+    IBMResourceGroupSandboxWithCreds:
+      allOf:
+        - $ref: '#/components/schemas/IBMResourceGroupSandbox'
+        - type: object
+          properties:
+            credentials:
+              type: array
+              items:
+                $ref: '#/components/schemas/Credentials'
+
+    Accounts:
+      type: array
+      items:
+        $ref: '#/components/schemas/Account'
+
+    ResourcesWithCreds:
+      type: array
+      items:
+        $ref: '#/components/schemas/ResourceWithCreds'
+
+    Placements:
+      type: array
+      items:
+        $ref: '#/components/schemas/Placement'
+
+    Error:
+      type: object
+      required:
+        - http_code
+        - message
+      properties:
+        http_code:
+          type: integer
+          format: integer
+          example: 502
+        message:
+          type: string
+          example: Unexpected Error
+
+    Message:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          example: Account successfully marked for cleanup
+
+    LifecycleResponse:
+      type: object
+      required:
+        - request_id
+      properties:
+        request_id:
+          type: string
+          example: F8HWO8Bo79n1I_DPQPIEw
+        message:
+          type: string
+          example: "Request created"
+        status:
+          type: string
+          example: "running"
+    AccountStatus:
+      type: object
+      properties:
+        account_name:
+          type: string
+          example: sandbox123
+        account_kind:
+          type: string
+          description: internal representation of the account type
+          example: aws_sandbox
+        updated_at:
+          type: string
+          format: date-time
+          example: 2023-03-13T09:42:33+01:00
+
+        instances:
+          type: array
+          items:
+            type: object
+          example:
+            - instance_id: i-0850efbed08529f66
+              instance_type: t3a.large
+              region: us-east-2
+              state: stopped
+        status:
+          type: string
+          enum:
+            - new
+            - initializing
+            - initialized
+            - running
+            - successfully_dispatched
+            - success
+            - error
+          example: success
+    ResourceKind:
+      type: string
+      example: AwsSandbox
+      default: AwsSandbox
+      enum:
+        - AwsSandbox
+        - OcpSandbox
+        - IBMResourceGroupSandbox
+
+    Reservation:
+      description: Reservation record
+      type: object
+      # additionalProperties: false
+      properties:
+        name:
+          type: string
+          example: summit
+          description: unique name of the reservation
+          pattern: '^[\w\d_-]+$'
+        expiration:
+          type: string
+          example: 2033-04-17T23:16:00+02:00
+          format: date-time
+          description: >-
+            date when the reservation expires.
+            RFC 3339 format. When it expires, a reservation is deleted.
+        status:
+          type: string
+          enum:
+            - new
+            - initializing
+            - updating
+            - success
+            - deleting
+        resources:
+          type: array
+          items:
+            type: object
+            properties:
+              kind:
+                $ref: "#/components/schemas/ResourceKind"
+              count:
+                type: integer
+          example:
+            - kind: AwsSandbox
+              count: 2
+
+
+    ReservationResponse:
+      description: The reservation response
+      type: object
+      properties:
+        http_code:
+          type: integer
+          format: integer
+          example: 202
+        message:
+          type: string
+          example: "Reservation request created"
+        reservation:
+          $ref: "#/components/schemas/Reservation"
+
+    ReservationResourcesResponse:
+      description: The list of resources in a reservation
+      type: array
+      items:
+        type: object
+        properties:
+          count:
+            type: integer
+          resources:
+            type: array
+            nullable: true
+            items:
+              $ref: '#/components/schemas/Resource'
+      example:
+        - count: 2
+          resources:
+            - name: sandbox123
+              kind: AwsSandbox
+              available: true
+              account_id: '0123456'
+              zone: sandbox123.domain.com
+              hosted_zone_id: Z019612345AH4C7KTTZJ0
+              to_cleanup: false
+            - name: sandbox124
+              kind: AwsSandbox
+              available: false
+              service_uuid: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+              annotations:
+                guid: abcde
+                env_type: ocp4-cluster
+              account_id: '0123456'
+              zone: sandbox123.domain.com
+              hosted_zone_id: Z019612345AH4C7KTTZJ0
+              to_cleanup: false
+
+    OcpSharedClusterConfiguration:
+      description: OcpSharedClusterConfiguration is a record of an OpenShift cluster
+      type: object
+      required:
+        - name
+        - api_url
+        - ingress_domain
+        - annotations
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: The name of the cluster, must be alphanumeric or dash
+          example: ocp-cluster-1
+        api_url:
+          type: string
+          description: The API URL of the cluster
+          example: https://api.ocp-cluster-1.com:6443
+        ingress_domain:
+          type: string
+          description: The default ingress domain of the cluster
+          example: apps.ocp-cluster-1.com
+        valid:
+          type: boolean
+          description: true if the cluster is valid
+          example: true
+          default: true
+        kubeconfig:
+          type: string
+          example: |
+            apiVersion: v1
+            clusters:
+            - cluster:
+                server: https://api.ocp-cluster-1.com:6443
+              name: ocp-cluster-1
+            contexts:
+            - context:
+                cluster: ocp-cluster-1
+                user: ocp-cluster-1
+              name: ocp-cluster-1
+            current-context: ocp-cluster-1
+            kind: Config
+            preferences: {}
+            users:
+            - name: ocp-cluster-1
+              user:
+                token: <TOKEN>
+        token:
+          type: string
+        annotations:
+          $ref: "#/components/schemas/Annotations"
+        additional_vars:
+          type: object
+          description: Additional variables for the cluster
+          example:
+            deployer:
+              openshift_cnv_nfs_path: /IBMfoobar/data01
+              openshift_cnv_nfs_server: fsf-region.domain.com
+        max_memory_usage_percentage:
+          type: integer
+          description: The maximum memory usage percentage for a cluster to be considered healthy
+          example: 80
+          default: 90
+        usage_node_selector:
+          type: string
+          description: Specify the nodeSelector value to calculate the current usage percentage
+          example: "node-role.kubernetes.io/compute="
+          default: "node-role.kubernetes.io/worker="
+        max_cpu_usage_percentage:
+          type: integer
+          description: The maximum CPU usage percentage for a cluster to be considered healthy
+          example: 80
+          default: 100
+        default_sandbox_quota:
+          type: object
+          description: |-
+            The default quota for namespaces for sandboxes in the cluster
+            type is ResourceQuota from k8s.io/api/core/v1
+          default:
+            apiVersion: v1
+            kind: ResourceQuota
+            metadata:
+              name: sandbox-quota
+            spec:
+              hard:
+                pods: "10"
+                limits.cpu: "10"
+                limits.memory: "20Gi"
+                requests.cpu: "10"
+                requests.memory: "20Gi"
+                requests.storage: "50Gi"
+                requests.ephemeral-storage: "50Gi"
+                limits.ephemeral-storage: "50Gi"
+                persistentvolumeclaims: "10"
+                services: "10"
+                services.loadbalancers: "10"
+                services.nodeports: "10"
+                secrets: "10"
+                configmaps: "10"
+                replicationcontrollers: "10"
+                resourcequotas: "10"
+        strict_default_sandbox_quota:
+          type: boolean
+          description: |-
+            StrictDefaultSandboxQuota is a flag to determine if the default sandbox quota
+            should be strictly enforced. If set to true, the default sandbox quota will be
+            enforced as a hard limit. Requested quota not be allowed to exceed the default.
+            If set to false, the default sandbox will be updated
+            to the requested quota.
+          default: false
+        quota_required:
+          type: boolean
+          description: |-
+            QuotaRequired is a flag to determine if a quota is required for
+            a shared Cluster.
+            If set to true, a quota will be required in the request for a
+            Sandbox, usually set in agnosticV.
+            If set to false, a quota will not be required and the default quota
+            will apply.
+          default: false
+        skip_quota:
+          type: boolean
+          description: |-
+            SkipQuota is a flag to control if the sandbox quota should be disabled.
+            If set to true, the sandbox quota will not be created.
+            If set to false, the sandbox quota will be created, depending on the value of
+            quota_required, default_sandbox_quota and strict_default_sandbox_quota.
+          default: true
+        limit_range:
+          type: object
+          description: |-
+            Limit Range for the sandbox
+            This allows to set the default limit and request for pods
+            see https://kubernetes.io/docs/concepts/policy/limit-range/
+          default:
+            apiVersion: v1
+            kind: LimitRange
+            metadata:
+              name: sandbox-limit-range
+            spec:
+              limits:
+                - default:
+                    cpu: "1"
+                    memory: 2Gi
+                  defaultRequest:
+                    cpu: "0.5"
+                    memory: 1Gi
+                  type: Container
+
+      example:
+        name: ocp-cluster-1
+        api_url: https://api.ocp-cluster-1.com:6443
+        ingress_domain: apps.ocp-cluster-1.com
+        kubeconfig: |
+          apiVersion: v1
+          clusters:
+          - cluster:
+              server: https://api.ocp-cluster-1.com:6443
+            name: ocp-cluster-1
+          contexts:
+          - context:
+              cluster: ocp-cluster-1
+              user: ocp-cluster-1
+            name: ocp-cluster-1
+          current-context: ocp-cluster-1
+          kind: Config
+          preferences: {}
+          users:
+          - name: ocp-cluster-1
+            user:
+              token: <TOKEN>
+        annotations:
+          virt: available
+          cloud: ibm
+          purpose: dev
+    OcpSharedClusterConfigurations:
+      description: The list of OcpSharedClusterConfigurations
+      type: array
+      items:
+        $ref: '#/components/schemas/OcpSharedClusterConfiguration'
+
+
+    IBMResourceGroupSandboxConfiguration:
+      description: IBMResourceGroupSandboxConfiguration is a record of an IBM Account
+      type: object
+      required:
+        - name
+        - apikey
+        - annotations
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: The name of the account
+          example: development
+        valid:
+          type: boolean
+          description: true if the account is valid
+          example: true
+          default: true
+        apikey:
+          type: string
+        annotations:
+          $ref: "#/components/schemas/Annotations"
+        additional_vars:
+          type: object
+          description: Additional variables for the account
+          example:
+            deployer:
+              openshift_cnv_nfs_path: /IBMfoobar/data01
+              openshift_cnv_nfs_server: fsf-region.domain.com
+
+      example:
+        name: development
+        apikey: '...'
+        annotations:
+          purpose: dev
+    IBMResourceGroupSandboxConfigurations:
+      description: The list of IBMResourceGroupSandboxConfigurations
+      type: array
+      items:
+        $ref: '#/components/schemas/IBMResourceGroupSandboxConfiguration'
