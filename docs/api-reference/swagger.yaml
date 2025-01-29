@@ -2356,7 +2356,7 @@ components:
           example: IAM key
         aws_access_key_id:
           type: string
-          example: AKIAR2AI7M4QU6KCVIWJ
+          example: AKI123456Z
         aws_secret_access_key:
           type: string
           example: 1234567890abcdefghij
