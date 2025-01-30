@@ -50,7 +50,7 @@ type IBMResourceGroupSandbox struct {
 	ErrorMessage                             string            `json:"error_message,omitempty"`
 	ResourceGroup                            string            `json:"resourcegroup"`
 	CleanupCount                             int               `json:"cleanup_count"`
-	AccountAdditionalVars                    map[string]any    `json:"account_additional_vars,omitempty"`
+	DeployerAdditionalVars                   map[string]any    `json:"deployer_additional_vars,omitempty"`
 	ToCleanup                                bool              `json:"to_cleanup"`
 }
 
@@ -493,7 +493,7 @@ func (a *IBMResourceGroupSandboxProvider) FetchAllByServiceUuid(serviceUuid stri
 			&account.UpdatedAt,
 			&account.Status,
 			&account.CleanupCount,
-			&account.AccountAdditionalVars,
+			&account.DeployerAdditionalVars,
 		); err != nil {
 			return accounts, err
 		}
@@ -547,7 +547,7 @@ func (a *IBMResourceGroupSandboxProvider) FetchAllByServiceUuidWithCreds(service
 			&account.Status,
 			&account.CleanupCount,
 			&creds,
-			&account.AccountAdditionalVars,
+			&account.DeployerAdditionalVars,
 		); err != nil {
 			return accounts, err
 		}
@@ -941,7 +941,7 @@ func (a *IBMResourceGroupSandboxProvider) FetchAll() ([]IBMResourceGroupSandbox,
 			&account.UpdatedAt,
 			&account.Status,
 			&account.CleanupCount,
-			&account.AccountAdditionalVars,
+			&account.DeployerAdditionalVars,
 		); err != nil {
 			return accounts, err
 		}
@@ -1210,7 +1210,7 @@ func (p *IBMResourceGroupSandboxProvider) FetchByName(name string) (IBMResourceG
 		&account.UpdatedAt,
 		&account.Status,
 		&account.CleanupCount,
-		&account.AccountAdditionalVars,
+		&account.DeployerAdditionalVars,
 	); err != nil {
 		return IBMResourceGroupSandbox{}, err
 	}
@@ -1247,7 +1247,7 @@ func (p *IBMResourceGroupSandboxProvider) FetchById(id int) (IBMResourceGroupSan
 		&account.UpdatedAt,
 		&account.Status,
 		&account.CleanupCount,
-		&account.AccountAdditionalVars,
+		&account.DeployerAdditionalVars,
 	); err != nil {
 		return IBMResourceGroupSandbox{}, err
 	}
@@ -1297,7 +1297,7 @@ func (a *IBMResourceGroupSandboxWithCreds) Reload() error {
 		&account.Status,
 		&account.CleanupCount,
 		&creds,
-		&account.AccountAdditionalVars,
+		&account.DeployerAdditionalVars,
 	); err != nil {
 		return err
 	}
