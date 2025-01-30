@@ -2452,12 +2452,12 @@ components:
             - success
             - error
             - deleting
-        cluster_additional_vars:
+        account_additional_vars:
           type: object
           example:
             deployer:
-              openshift_cnv_nfs_path: /IBMfoobar/data01
-              openshift_cnv_nfs_server: fsf-region.domain.com
+              account_nfs_path: /IBMfoobar/data01
+              account_nfs_server: fsf-region.domain.com
 
     IBMResourceGroupSandboxWithCreds:
       allOf:
