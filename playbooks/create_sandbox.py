@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 
-# First, grab the list of all sandboxes
-
 import subprocess
 import os
 import sys
 import boto3
+import hashlib
 import argparse
 import atexit
 import structlog
@@ -15,6 +14,7 @@ import random
 import string
 import requests
 import time
+import json
 from ansible_vault import Vault
 
 START_TIME = time.time()
@@ -70,6 +70,7 @@ os.environ.setdefault('ddns_key_name', 'mydynamickey')
 os.environ.setdefault('ddns_key_algorithm', 'hmac-sha512')
 os.environ.setdefault('ddns_ttl', '600')
 os.environ.setdefault('email_domain', 'opentlc.com')
+os.environ.setdefault('REDHAT_ACCOUNT', '998366406740')
 # set default to ~/.aws/credentials_create
 os.environ.setdefault('AWS_SHARED_CREDENTIALS_FILE', os.path.expanduser('~/.aws/credentials_create'))
 # Create directory if it doesn't exist, chmod 700
@@ -87,8 +88,8 @@ required_env_vars = [
     'INFRA_VAULT_SECRET_PROD',
     'ddns_server',
     'ddns_key_secret',
-    'RH_USERNAME',
-    'RH_PASSWORD',
+    'HCC_CLIENT_ID',
+    'HCC_CLIENT_SECRET',
 ]
 
 # constants: Steps
@@ -462,6 +463,33 @@ def exit_handler(db, table, sandbox):
 atexit.register(exit_handler, dynamodb, dynamodb_table, new_sandbox)
 
 
+def get_sso_access_token():
+    """ Create a session token using HCC_CLIENT_ID and HCC_CLIENT_SECRET"""
+
+    # This is the standard Keycloak endpoint for client_credentials
+    token_url = "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
+    # Client Credentials Grant
+    payload = {
+        "grant_type": "client_credentials",
+        "client_id": os.environ['HCC_CLIENT_ID'],
+        "client_secret": os.environ['HCC_CLIENT_SECRET']
+    }
+
+    response = requests.post(token_url, data=payload)
+
+    if response.status_code != 200:
+        raise ValueError(f"Failed to obtain token: {response.status_code} {response.text}")
+
+
+    # Parse out the access token
+    access_token = response.json().get("access_token")
+    if not access_token:
+        raise ValueError("No access token found in the response")
+
+
+    logger.info("Successfully obtained an access token for console.redhat.com.")
+    return access_token
+
 # Prepare the AWS profile for the ansible-playbook command
 # - dynamodb   profile to manage the dynamodb table
 # - pool-manager profile to manage the pool
@@ -489,6 +517,24 @@ aws_secret_access_key = {os.environ['AWS_SECRET_ACCESS_KEY_DEV']}
 aws_access_key_id = {os.environ['AWS_ACCESS_KEY_ID']}
 aws_secret_access_key = {os.environ['AWS_SECRET_ACCESS_KEY']}
             ''')
+
+def assume_role(master_profile, role_arn, role_session_name, region_name='us-east-2'):
+    """Assume a role using the master profile"""
+
+
+    session = boto3.Session(profile_name=master_profile)
+    sts = session.client('sts', region_name=region_name)
+
+    response = sts.assume_role(
+        RoleArn=role_arn,
+        RoleSessionName=role_session_name
+    )
+
+    if response['ResponseMetadata']['HTTPStatusCode'] != 200:
+        raise Exception("Failed to assume role")
+
+    return response['Credentials']
+
 
 if playbook:
     lock_sandbox(dynamodb, new_sandbox)
@@ -617,19 +663,169 @@ if hcc:
         logger.error(f"Failed to get the aws_secret_access_key for {new_sandbox}")
         sys.exit(1)
 
-    plaintext_key = decrypt_vaulted_str(sandbox_data.get('aws_secret_access_key', {}).get('S', '')).strip(' \t\n\r')
-    access_key = sandbox_data.get('aws_access_key_id', {}).get('S', '').strip(' \t\n\r')
 
-    if not access_key or not plaintext_key:
-        logger.error(f"Failed to get the access key for {new_sandbox}")
+    account_id = sandbox_data.get('account_id', {}).get('S', '')
+    role_arn = f"arn:aws:iam::{account_id}:role/OrganizationAccountAccessRole"
+
+    credentials = assume_role('pool-manager', role_arn, 'hcc-registration')
+
+    if not credentials:
+        logger.error("Failed to assume role", role_arn=role_arn)
         sys.exit(1)
+
+    # create a new session with the assumed role credentials
+    sandbox_session = boto3.Session(
+        aws_access_key_id=credentials['AccessKeyId'],
+        aws_secret_access_key=credentials['SecretAccessKey'],
+        aws_session_token=credentials['SessionToken'],
+        region_name='us-east-1'
+    )
+
+    policy_name = 'redhat-HCC-policy'
+
+    iam_client = sandbox_session.client('iam')
+
+    policies = iam_client.list_policies()
+    policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "CloudigradePolicy",
+                "Effect": "Allow",
+                "Action": [
+                    "sts:GetCallerIdentity",
+                    "ec2:DescribeImages",
+                    "ec2:DescribeInstances",
+                    "ec2:ModifySnapshotAttribute",
+                    "ec2:DescribeSnapshotAttribute",
+                    "ec2:DescribeSnapshots",
+                    "ec2:CopyImage",
+                    "ec2:CreateTags",
+                    "ec2:DescribeRegions",
+                    "cloudtrail:CreateTrail",
+                    "cloudtrail:UpdateTrail",
+                    "cloudtrail:PutEventSelectors",
+                    "cloudtrail:DescribeTrails",
+                    "cloudtrail:StartLogging",
+                    "cloudtrail:DeleteTrail"
+                ],
+                "Resource": "*"
+            }
+        ]
+    }
+
+    md5_policy = hashlib.md5(json.dumps(policy).encode()).hexdigest()
+
+    if policy_name not in [policy['PolicyName'] for policy in policies['Policies']]:
+        response = iam_client.create_policy(
+            PolicyName=policy_name,
+            PolicyDocument=json.dumps(policy),
+            Description="Policy to grant access to Red Hat Hybrid Cloud Console to the AWS account"
+        )
+
+        if response['ResponseMetadata']['HTTPStatusCode'] != 200:
+            logger.error("Failed to create the policy")
+            sys.exit(1)
+
+        logger.info("Policy created", policy_name=policy_name, md5=md5_policy)
+    else:
+        # update permission
+        response = iam_client.create_policy_version(
+            PolicyArn=f"arn:aws:iam::{account_id}:policy/{policy_name}",
+            PolicyDocument=json.dumps(policy),
+            SetAsDefault=True
+        )
+
+        logger.info("Policy updated", policy_name=policy_name, md5=md5_policy)
+
+
+
+    # Create the role redhat-HCC-role, using the external_id created earlier
+    # Get the external_id from db or generate a new one
+    external_id = sandbox_data.get('external_id', {}).get('S', '')
+
+    if not external_id:
+        # generate a random uuid
+        #external_id = str(uuid.uuid4())
+        # generate a random string
+        external_id = ''.join(
+            random.choice(string.ascii_uppercase + string.digits)
+            for _ in range(16)
+        )
+        set_str(dynamodb, new_sandbox, 'external_id', external_id)
+        logger.info(f"Generated external_id", hcc_external_id=external_id)
+    else:   # Create, if it doesn't exist, an IAM policy redhat-HCC-policy
+        logger.info(f"External ID already exists", hcc_external_id=external_id)
+
+    role_name = 'redhat-HCC-role'
+
+    roles = iam_client.list_roles()
+
+    policy_document = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": "sts:AssumeRole",
+                "Principal": {
+                    "AWS": f"arn:aws:iam::{os.environ['REDHAT_ACCOUNT']}:root"
+                },
+                "Condition": {
+                    "StringEquals": {
+                        "sts:ExternalId": external_id
+                    }
+                }
+            }
+        ]
+    }
+
+    if role_name in [role['RoleName'] for role in roles['Roles']]:
+        # update the role to ensure it has the right external_id
+        response = iam_client.update_assume_role_policy(
+            RoleName=role_name,
+            PolicyDocument=json.dumps(policy_document)
+        )
+        logger.info("Role updated", role_name=role_name, hcc_external_id=external_id)
+    else:
+        response = iam_client.create_role(
+            RoleName=role_name,
+            AssumeRolePolicyDocument=json.dumps(policy_document),
+        )
+
+        if response['ResponseMetadata']['HTTPStatusCode'] != 200:
+            logger.error("Failed to create the role")
+            sys.exit(1)
+
+        logger.info("Role created", role_name=role_name)
+
+    logger = logger.bind(hcc_external_id=external_id)
+    role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+    logger = logger.bind(role_arn=role_arn)
+
+    # Attach the policy to the role
+
+    response = iam_client.attach_role_policy(
+        RoleName=role_name,
+        PolicyArn=f"arn:aws:iam::{account_id}:policy/{policy_name}"
+    )
+
+    if response['ResponseMetadata']['HTTPStatusCode'] != 200:
+        logger.error("Failed to attach the policy to the role")
+        sys.exit(1)
+    else:
+        logger.info("Policy attached to the role", role_name=role_name, policy_name=policy_name)
 
     # use requests and create the POST request
 
-    baseurl = 'https://console.redhat.com/api/sources/v3.1'
+    try:
+        access_token = get_sso_access_token()
+    except Exception as e:
+        logger.error("Error getting the access token to console.redhat.com", error=e)
 
     s = requests.Session()
-    s.auth = (os.environ['RH_USERNAME'], os.environ['RH_PASSWORD'])
+    #s.auth = (os.environ['RH_USERNAME'], os.environ['RH_PASSWORD'])
+    s.headers.update({"Authorization": f"Bearer {access_token}"})
+    baseurl = 'https://console.redhat.com/api/sources/v3.1'
 
     # delete the source if it exists
     # First get the source_id
@@ -651,9 +847,11 @@ if hcc:
         source_id = response.json().get('data', [{}])[0].get('id', '')
 
         if source_id:
+
             response = s.delete(f"{baseurl}/sources/{source_id}")
-            if response.status_code not in [200, 201, 202]:
+            if response.status_code not in [200, 201, 202, 204]:
                 logger.error(f"Failed to delete the source: {response.text}", status_code=response.status_code, sandbox=new_sandbox)
+                os.exit(1)
 
             logger.info(f"Deleted the source {source_id} for {new_sandbox}")
 
@@ -671,24 +869,26 @@ if hcc:
                 logger.error(f"Failed to delete the source {source_id} for {new_sandbox}")
                 sys.exit(1)
 
+
     payload = {
         "sources": [
             {
                 "name": new_sandbox,
                 "source_type_name": "amazon",
-                "app_creation_workflow": "account_authorization"
+                "app_creation_workflow": "manual_configuration",
             }
         ],
         "authentications": [
             {
-                "resource_type": "source",
-                "resource_name": new_sandbox,
-                "username": access_key,
-                "password": plaintext_key,
-                "authtype": "access_key_secret_key"
+                "resource_type": "application",
+                "resource_name": "cloud-meter",
+                "authtype": "cloud-meter-arn",
+                "username": role_arn,
+                "extra": {
+                    "external_id": external_id
+                }
             }
         ],
-
         "applications": [
             {
                 "source_name": new_sandbox,
@@ -702,7 +902,9 @@ if hcc:
         logger.error(f"Failed to create the source: {response.text}", status_code=response.status_code, sandbox=new_sandbox)
         sys.exit(1)
 
-    logger.info(f"Source create in HCC")
+    source_id = response.json().get('sources', [{}])[0].get('id', '')
+    logger.info(f"Source create in HCC", source_id=source_id)
+
 
 if validation:
     # First ensure the current reservation of the sandbox is 'untested'

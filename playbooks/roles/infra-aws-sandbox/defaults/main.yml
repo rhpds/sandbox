@@ -78,10 +78,12 @@ aws_nuke_filters_default:
     - AWSServiceRoleForSupport
     - AWSServiceRoleForTrustedAdvisor
     - CloudabilityRole_OU
+    - redhat-HCC-role
 
   IAMRolePolicy:
     - "OrganizationAccountAccessRole -> AdministratorAccess"
     - config-rule-role -> config-rule-policy
+    - redhat-HCC-role -> redhat-HCC-policy
     - CloudabilityRole_OU -> CloudabilityAutomationPolicy
     - CloudabilityRole_OU -> CloudabilityMonitorResourcesPolicy
     - CloudabilityRole_OU -> CloudabilityVerificationPolicy
@@ -103,6 +105,8 @@ aws_nuke_filters_default:
 
   IAMPolicy:
     - arn:aws:iam::{{ account_id }}:policy/config-rule-policy
+    - arn:aws:iam::{{ account_id }}:policy/redhat-HCC-policy
+    - redhat-HCC-policy
 
   EC2KeyPair:
     - opentlc_admin_backdoor

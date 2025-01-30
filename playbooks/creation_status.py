@@ -35,6 +35,7 @@ def print_sandbox(item, db):
                 available=item.get('available', {}).get('BOOL', ''),
                 reservation= item.get('reservation', {}).get('S', ''),
                 account_id=item.get('account_id', {}).get('S', ''),
+                external_id=item.get('external_id', {}).get('S', ''),
                 db=db)
 
 
