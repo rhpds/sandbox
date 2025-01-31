@@ -9,7 +9,7 @@
         zone: "{{ account_name }}{{subdomain_base}}."
       register: _route53zone
       retries: 10
-      delay: "{{ 10|random(start=3, step=1) }}"
+      delay: 10
       until: _route53zone is succeeded
 
     - set_fact:
@@ -22,7 +22,7 @@
         hosted_zone_id: "{{ _route53zone.zone_id }}"
       register: _route53facts
       retries: 5
-      delay: "{{ 60|random(start=3, step=1) }}"
+      delay: 30
       until: _route53facts is succeeded
 
     - name: Save NS records
@@ -41,7 +41,7 @@
         overwrite: true
       register: _route53zoneNS
       retries: 5
-      delay: "{{ 60|random(start=3, step=1) }}"
+      delay: 30
       until: _route53zoneNS is succeeded
 
     - name: Add HostedZoneId to the report

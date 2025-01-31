@@ -19,5 +19,5 @@
       loop_var: _region
     register: r_import
     retries: 10
-    delay: "{{ 10|random(start=3, step=1) }}"
+    delay: 10
     until: r_import is succeeded
