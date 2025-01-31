@@ -50,7 +50,7 @@ type IBMResourceGroupSandbox struct {
 	ErrorMessage                             string            `json:"error_message,omitempty"`
 	ResourceGroup                            string            `json:"resourcegroup"`
 	CleanupCount                             int               `json:"cleanup_count"`
-	DeployerAdditionalVars                   map[string]any    `json:"deployer_additional_vars,omitempty"`
+	DeployerAdditionalVars                   map[string]any    `json:"additional_vars,omitempty"`
 	ToCleanup                                bool              `json:"to_cleanup"`
 }
 
@@ -469,7 +469,7 @@ func (a *IBMResourceGroupSandboxProvider) FetchAllByServiceUuid(serviceUuid stri
 			r.updated_at,
 			r.status,
 			r.cleanup_count,
-			COALESCE(oc.additional_vars, '{}'::jsonb) AS account_additional_vars
+			COALESCE(oc.additional_vars, '{}'::jsonb) AS additional_vars
 		FROM
 			resources r
 		LEFT JOIN
@@ -520,7 +520,7 @@ func (a *IBMResourceGroupSandboxProvider) FetchAllByServiceUuidWithCreds(service
 			r.status,
 			r.cleanup_count,
 			pgp_sym_decrypt(r.resource_credentials, $2),
-			COALESCE(oc.additional_vars, '{}'::jsonb) AS account_additional_vars
+			COALESCE(oc.additional_vars, '{}'::jsonb) AS additional_vars
 		FROM
 			resources r
 		LEFT JOIN
@@ -920,7 +920,7 @@ func (a *IBMResourceGroupSandboxProvider) FetchAll() ([]IBMResourceGroupSandbox,
 		 r.updated_at,
 		 r.status,
 		 r.cleanup_count,
-		 COALESCE(oc.additional_vars, '{}'::jsonb) AS account_additional_vars
+		 COALESCE(oc.additional_vars, '{}'::jsonb) AS additional_vars
 		 FROM resources r
 		 LEFT JOIN ibm_resource_group_account_configurations oc ON oc.name = r.resource_data->>'ibm_resource_group_account' 
 		 WHERE r.resource_type = 'IBMResourceGroupSandbox'`,
@@ -1193,7 +1193,7 @@ func (p *IBMResourceGroupSandboxProvider) FetchByName(name string) (IBMResourceG
 		 r.updated_at,
 		 r.status,
 		 r.cleanup_count,
-		 COALESCE(oc.additional_vars, '{}'::jsonb) AS account_additional_vars
+		 COALESCE(oc.additional_vars, '{}'::jsonb) AS additional_vars
 		 FROM resources r
 		 LEFT JOIN ibm_resource_group_account_configurations oc ON oc.name = resource_data->>'ibm_resource_group_account'
 		 WHERE r.resource_name = $1 AND r.resource_type = 'IBMResourceGroupSandbox'`,
@@ -1230,7 +1230,7 @@ func (p *IBMResourceGroupSandboxProvider) FetchById(id int) (IBMResourceGroupSan
 		 r.updated_at,
 		 r.status,
 		 r.cleanup_count,
-		 COALESCE(oc.additional_vars, '{}'::jsonb) AS account_additional_vars
+		 COALESCE(oc.additional_vars, '{}'::jsonb) AS additional_vars
 		 FROM resources r
 		 LEFT JOIN ibm_resource_group_account_configurations oc ON oc.name = resource_data->>'ibm_resource_group_account'
 		 WHERE r.id = $1`,
@@ -1278,7 +1278,7 @@ func (a *IBMResourceGroupSandboxWithCreds) Reload() error {
 		 r.status,
 		 r.cleanup_count,
 		 pgp_sym_decrypt(r.resource_credentials, $2),
-		 COALESCE(oc.additional_vars, '{}'::jsonb) AS account_additional_vars
+		 COALESCE(oc.additional_vars, '{}'::jsonb) AS additional_vars
 		 FROM resources r
 		 LEFT JOIN ibm_resource_group_account_configurations oc ON oc.name = resource_data->>'ibm_resource_group_account'
 		 WHERE r.id = $1  AND r.resource_type = 'IBMResourceGroupSandbox'`,
