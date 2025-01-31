@@ -1046,6 +1046,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			if clusterMemoryUsage < cluster.MaxMemoryUsagePercentage && clusterCpuUsage < cluster.MaxCpuUsagePercentage {
 				selectedCluster = cluster
 				log.Logger.Info("selectedCluster", "cluster", selectedCluster.Name)
+				break providerLoop
 			}
 		}
 
