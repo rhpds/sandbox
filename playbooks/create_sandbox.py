@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 
-import subprocess
-import os
-import sys
-import boto3
-import hashlib
 import argparse
 import atexit
-import structlog
-import logging
-import tempfile
-import random
-import string
-import requests
-import time
+import boto3
+import hashlib
 import json
+import logging
+import os
+import random
+import requests
+import string
+import structlog
+import subprocess
+import sys
+import tempfile
+import time
 from ansible_vault import Vault
 
 START_TIME = time.time()
