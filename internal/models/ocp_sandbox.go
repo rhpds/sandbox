@@ -904,6 +904,7 @@ func anySchedulableNodes(nodes []v1.Node) bool {
 
 func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, requestedQuota *v1.ResourceList, requestedLimitRange *v1.LimitRange, multiple bool, ctx context.Context) (OcpSandboxWithCreds, error) {
 	var selectedCluster OcpSharedClusterConfiguration
+	var selectedClusterMemoryUsage float64 = -1
 
 	// Ensure annotation has guid
 	if _, exists := annotations["guid"]; !exists {
@@ -1043,12 +1044,15 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				"CPU% Usage", clusterCpuUsage,
 				"Memory% Usage", clusterMemoryUsage,
 			)
-			if clusterMemoryUsage < cluster.MaxMemoryUsagePercentage && clusterCpuUsage < cluster.MaxCpuUsagePercentage {
+			log.Logger.Info("selectedMemory", "value", selectedClusterMemoryUsage)
+			log.Logger.Info("selectedMemory", "value", selectedClusterMemoryUsage)
+			if clusterMemoryUsage < cluster.MaxMemoryUsagePercentage && clusterCpuUsage < cluster.MaxCpuUsagePercentage  && (selectedClusterMemoryUsage == -1 || clusterMemoryUsage < selectedClusterMemoryUsage) {
 				selectedCluster = cluster
-				log.Logger.Info("selectedCluster", "cluster", selectedCluster.Name)
+				selectedClusterMemoryUsage = clusterMemoryUsage
 			}
 		}
 
+		log.Logger.Info("selectedCluster", "cluster", selectedCluster.Name)
 		if selectedCluster.Name == "" {
 			log.Logger.Error("Error electing cluster",
 				"name", rnew.Name,
