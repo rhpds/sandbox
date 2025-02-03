@@ -7,30 +7,49 @@ COPY ./ ./
 RUN make
 
 FROM registry.access.redhat.com/ubi8/ubi:latest AS deploy
+USER root
 RUN dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x86_64/pgdg-redhat-repo-latest.noarch.rpm \
     && dnf install -y \
     bash \
+    bzip2 \
     bind-utils \
     curl \
     findutils \
     gcc \
     git \
+    glibc-langpack-en \
     jq \
     nc \
     net-tools \
+    nodejs \
+    npm \
     openssl \
     postgresql \
-    python39 \
-    python39-pip \
+    python3.12 \
+    python3.12-pip \
     rsync \
     tar \
     unzip \
     vim \
     wget \
     && dnf clean all \
+    && sed -i 's/^LANG=.*/LANG="en_US.utf8"/' /etc/locale.conf \
     && VERSION=4.1.0 \
     && curl --silent --location https://github.com/Orange-OpenSource/hurl/releases/download/$VERSION/hurl-$VERSION-x86_64-unknown-linux-gnu.tar.gz \
-    | tar -xz -C /usr/local/bin --strip-components=1 --wildcards '*/hurl' '*/hurlfmt'
+    | tar -xz -C /usr/local/bin --strip-components=1 --wildcards '*/hurl' '*/hurlfmt' \
+    && cd /tmp \
+    && curl -s -L "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" \
+    && unzip "awscliv2.zip" \
+    && ./aws/install && rm -rf awscliv2.zip aws
+
+# Python
+
+RUN alternatives --set python /usr/bin/python3.12 \
+    && alternatives --set python3 /usr/bin/python3.12 \
+    && alternatives --install /usr/bin/pip pip /usr/bin/pip3.12 1
+RUN pip install --no-cache-dir --upgrade pip
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY --from=docker.io/migrate/migrate /usr/local/bin/migrate /usr/local/bin/migrate
 WORKDIR /sandbox/
@@ -38,11 +57,20 @@ USER ${USER_UID}
 COPY build/github_known_hosts /ssh/known_hosts
 env SSH_KNOWN_HOSTS /ssh/known_hosts
 COPY --from=builder /sandbox/build/sandbox-* ./
+COPY --from=builder /sandbox/build/sandbox-* /usr/bin/
 COPY --from=builder /sandbox/tools ./tools
 COPY --from=builder /sandbox/tests ./tests
 COPY --from=builder /sandbox/db ./db
+COPY --from=builder /sandbox/cloud-automation ./cloud-automation
+COPY --from=builder /sandbox/playbooks ./playbooks
+
+RUN cd cloud-automation && npm ci
+COPY conan/ansible.cfg /etc/ansible/ansible.cfg
+RUN rm -rf /tmp/* /root/.cache /root/*
+
 CMD ["/bin/bash"]
 
+ENV LANG='en_US.UTF-8' LANGUAGE='en_US:en' LC_ALL='en_US.UTF-8'
 
 ENV DESCRIPTION="Image for Admins to interact with the Sandbox API"
 LABEL name="rhpds/sandbox-admin" \
