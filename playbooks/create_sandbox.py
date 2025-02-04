@@ -41,6 +41,7 @@ parser.add_argument('--retry', required=False, help='Retry sandbox by passing it
 parser.add_argument('--playbook-output', required=False, help='Print output of ansible-playbook commands?', action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument('--playbook', required=False, help='run the creation playbook?', action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument('--hcc', required=False, help='run the registration step for Gold images?', action=argparse.BooleanOptionalAction, default=True)
+parser.add_argument('--rhsm-access', required=False, help='run the registration step for Gold images using access.redhat.com?', action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument('--validation', required=False, help='run the validation playbook?', action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument('--guess-strategy', required=False, help='How to guess the next number: smart, end', default='end')
 
@@ -54,6 +55,7 @@ retry = args.retry
 playbook= args.playbook
 playbook_output = args.playbook_output
 hcc = args.hcc
+rhsm_access = args.rhsm_access
 validation = args.validation
 guess_strategy = args.guess_strategy
 
@@ -90,6 +92,8 @@ required_env_vars = [
     'ddns_key_secret',
     'HCC_CLIENT_ID',
     'HCC_CLIENT_SECRET',
+    'RHSM_CLIENT_ID',
+    'RHSM_CLIENT_SECRET',
 ]
 
 # constants: Steps
@@ -463,17 +467,24 @@ def exit_handler(db, table, sandbox):
 atexit.register(exit_handler, dynamodb, dynamodb_table, new_sandbox)
 
 
-def get_sso_access_token():
+def get_sso_access_token(client_id=os.environ['HCC_CLIENT_ID'], secret=os.environ['HCC_CLIENT_SECRET'], grant_type='client_credentials'):
     """ Create a session token using HCC_CLIENT_ID and HCC_CLIENT_SECRET"""
 
     # This is the standard Keycloak endpoint for client_credentials
     token_url = "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
     # Client Credentials Grant
-    payload = {
-        "grant_type": "client_credentials",
-        "client_id": os.environ['HCC_CLIENT_ID'],
-        "client_secret": os.environ['HCC_CLIENT_SECRET']
-    }
+    if grant_type == 'client_credentials':
+        payload = {
+            "grant_type": grant_type,
+            "client_id": client_id,
+            "client_secret": secret,
+        }
+    elif grant_type == 'refresh_token':
+        payload = {
+            "grant_type": grant_type,
+            "client_id": client_id,
+            "refresh_token": secret,
+        }
 
     response = requests.post(token_url, data=payload)
 
@@ -487,7 +498,7 @@ def get_sso_access_token():
         raise ValueError("No access token found in the response")
 
 
-    logger.info("Successfully obtained an access token for console.redhat.com.")
+    logger.info("Successfully obtained access token from sso.redhat.com")
     return access_token
 
 # Prepare the AWS profile for the ansible-playbook command
@@ -648,6 +659,80 @@ if playbook:
     set_str(dynamodb, new_sandbox, 'reservation', 'untested')
     ACCOUNT_CREATED_TIME = time.time()
     logger.info(f"Duration: {round(ACCOUNT_CREATED_TIME - START_TIME)} seconds to create {new_sandbox}")
+
+
+if rhsm_access:
+    sandbox_data = get_sandbox(dynamodb, new_sandbox)
+
+    if not sandbox_data:
+        logger.error(f"Failed to get the sandbox data for {new_sandbox}")
+        sys.exit(1)
+
+    account_id = sandbox_data.get('account_id', {}).get('S', '')
+
+    # Get sso token
+    # 1) offline_token='....'
+
+    # 2) curl https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token -d grant_type=refresh_token -d client_id=rhsm-api -d refresh_token=$offline_token
+
+    access_token = get_sso_access_token(os.environ['RHSM_CLIENT_ID'], os.environ['RHSM_CLIENT_SECRET'], 'refresh_token')
+
+    headers = {
+        'Authorization': f'Bearer {access_token}'
+    }
+
+    # Base URL for RHSM Management API
+    base_url = 'https://api.access.redhat.com/management/v1'
+
+    # 2) Get all currently enabled cloud access providers
+    resp = requests.get(f'{base_url}/cloud_access_providers/enabled', headers=headers)
+    resp.raise_for_status()
+    enabled_providers = resp.json().get('body', [])  # 'body' should contain the list of providers
+
+    # Look for the AWS provider entry
+    aws_provider = next((p for p in enabled_providers if p.get('shortName') == 'AWS'), None)
+    if not aws_provider:
+        logger.error("AWS cloud access provider is not enabled for your account. Cannot proceed with Gold Images.")
+        sys.exit(1)
+
+    # 3) Check if the AWS account is already in the list of accounts
+    existing_account = next((acct for acct in aws_provider.get('accounts', [])
+                             if acct.get('id') == account_id), None)
+    if existing_account:
+        logger.info(f"AWS account {account_id} already exists. Proceeding to enable Gold Images.")
+    else:
+        logger.info(f"AWS account {account_id} not found. Creating it...")
+
+        # 4) Add new AWS account (up to 100 at a time, but here we add just one)
+        new_account_payload = [
+            {
+                "id": account_id,
+                "nickname": new_sandbox,
+            }
+        ]
+        add_resp = requests.post(f'{base_url}/cloud_access_providers/AWS/accounts',
+                                 headers=headers,
+                                 json=new_account_payload)
+        add_resp.raise_for_status()
+        logger.info(f"AWS account {account_id} created successfully.")
+
+    # 5) Request Gold Image access for the AWS account
+    #    You can pass multiple accounts and multiple images if needed.
+    gold_image_payload = {
+        "accounts": [account_id],
+        "images": ['RHEL'],
+    }
+    gold_resp = requests.post(f'{base_url}/cloud_access_providers/AWS/goldimage',
+                              headers=headers,
+                              json=gold_image_payload)
+    # This endpoint returns HTTP 202 on acceptance
+    if gold_resp.status_code == 202:
+        logger.info("Gold image request accepted. Please check status via /cloud_access_providers/enabled.")
+    else:
+        gold_resp.raise_for_status()
+        logger.error("Gold image request completed with status:", gold_resp.status_code)
+
+
 
 
 if hcc:
