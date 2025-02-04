@@ -16,6 +16,7 @@ import sys
 import tempfile
 import time
 from ansible_vault import Vault
+from sandbox_functions import decrypt_vaulted_str, extract_sandbox_number, get_random_sandbox
 
 START_TIME = time.time()
 
@@ -146,10 +147,6 @@ with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
     INFRA_VAULT_SECRET_FILE = f.name
     logger.info(f"Created temporary file {INFRA_VAULT_SECRET_FILE}")
 
-
-def extract_sandbox_number(sandbox):
-    """Extract the number from the sandbox name, for example sandbox1234 returns 1234"""
-    return int(sandbox.split('sandbox')[1])
 
 def set_str(dynamodb, sandbox, key, value):
     '''Set the key value pair in the DB'''
@@ -314,8 +311,6 @@ def get_all_sandboxes(dynamodb_prod, dynamodb_dev):
         logger.info(f"Found {len(sandboxes_prod)} sandboxes in prod")
         sandboxes = sandboxes + sandboxes_prod
 
-    sandboxes.sort(key=extract_sandbox_number)
-
     return sandboxes
 
 
@@ -331,6 +326,7 @@ def guess_next_sandbox(dynamodb_prod, dynamodb_dev):
         return retry, f"{retry}+{random_email_tag}@{os.environ['email_domain']}"
 
     sandboxes = get_all_sandboxes(dynamodb_prod, dynamodb_dev)
+    sandboxes.sort(key=extract_sandbox_number)
 
     # transform into a dictionary
     sandboxes_dict = {sandbox: True for sandbox in sandboxes}
@@ -344,10 +340,6 @@ def guess_next_sandbox(dynamodb_prod, dynamodb_dev):
     s = f"sandbox{extract_sandbox_number(sandboxes[-1]) + 1}"
     return s, f"{s}+{random_email_tag}@{os.environ['email_domain']}"
 
-
-def decrypt_vaulted_str(secret):
-    '''Decrypt the vaulted secret'''
-    return Vault(os.environ['INFRA_VAULT_SECRET']).load_raw(secret).decode('utf-8')
 
 new_sandbox, new_email = guess_next_sandbox(dynamodb_prod, dynamodb_dev)
 logger = logger.bind(sandbox=new_sandbox)
@@ -546,6 +538,23 @@ def assume_role(master_profile, role_arn, role_session_name, region_name='us-eas
 
     return response['Credentials']
 
+
+# Test the VAULT_SECRET, try to decrypt the key of a sandbox
+
+sandbox_data = get_random_sandbox(dynamodb, dynamodb_table)
+
+if not sandbox_data:
+    logger.error("Failed to get a random sandbox")
+    sys.exit(1)
+
+# decrypt the key to ensure Vault is working
+
+try:
+    _ = decrypt_vaulted_str(sandbox_data.get('aws_secret_access_key').get('S')).strip(' \t\n\r')
+    logger.info(f"Vault test passed on a random sandbox", sandbox=sandbox_data['name']['S'])
+except Exception as e:
+    logger.error(f"Vault test failed on a random sandbox", error=e)
+    sys.exit(1)
 
 if playbook:
     lock_sandbox(dynamodb, new_sandbox)
