@@ -7,6 +7,7 @@ import random
 import logging
 import os
 import argparse
+import sys
 import structlog
 from ansible_vault import Vault
 from sandbox_functions import get_sandbox, decrypt_vaulted_str, get_all_sandboxes
