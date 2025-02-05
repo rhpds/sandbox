@@ -49,3 +49,20 @@ def get_all_sandboxes(dynamodb, dynamodb_table):
         sandboxes = data
 
     return sandboxes
+
+def get_random_sandbox(dynamodb, dynamodb_table):
+    response = dynamodb.scan(
+        TableName=dynamodb_table,
+        ConsistentRead=True,
+        # limit to 1 item
+        Limit=1,
+    )
+
+    if response['ResponseMetadata']['HTTPStatusCode'] != 200:
+        raise Exception("Failed to get items from dynamodb")
+
+    data = response['Items']
+    if len(data) == 0:
+        raise Exception("No items found in dynamodb")
+
+    return data[0]
