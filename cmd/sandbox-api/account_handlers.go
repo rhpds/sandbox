@@ -26,7 +26,7 @@ func NewAccountHandler(awsAccountProvider models.AwsAccountProvider, OcpSandboxP
 	return &AccountHandler{
 		awsAccountProvider: awsAccountProvider,
 		OcpSandboxProvider: OcpSandboxProvider,
-	  DNSSandboxProvider: DNSSandboxProvider,
+		DNSSandboxProvider: DNSSandboxProvider,
 	}
 }
 

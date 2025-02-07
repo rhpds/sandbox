@@ -137,7 +137,6 @@ func main() {
 	// ---------------------------------------------------------------------
 	DNSSandboxProvider := models.NewDNSSandboxProvider(dbPool, vaultSecret)
 
-
 	// ---------------------------------------------------------------------
 	// Setup JWT
 	// ---------------------------------------------------------------------
@@ -290,8 +289,6 @@ func main() {
 		r.Put("/api/v1/dns-account-configurations/{name}/enable", baseHandler.EnableDNSAccountConfigurationHandler)
 		r.Put("/api/v1/dns-account-configurations/{name}/update", baseHandler.UpdateDNSAccountConfigurationHandler)
 		r.Delete("/api/v1/dns-account-configurations/{name}", baseHandler.DeleteDNSAccountConfigurationHandler)
-
-
 
 		// Reservations
 		r.Post("/api/v1/reservations", baseHandler.CreateReservationHandler)

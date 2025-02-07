@@ -612,7 +612,7 @@ func (a *DNSSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 		sandbox.ServiceUuid = serviceUuid
 		sandbox.Provider = a
 
-		sandboxes= append(sandboxes, sandbox)
+		sandboxes = append(sandboxes, sandbox)
 	}
 
 	return sandboxes, nil
@@ -678,9 +678,9 @@ func (a *DNSSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		return DNSSandboxWithCreds{}, err
 	}
 
-  suffix := annotations["sandbox_suffix"]
+	suffix := annotations["sandbox_suffix"]
 	if suffix != "" {
-			guid = guid + "-" + suffix
+		guid = guid + "-" + suffix
 	}
 	// Return the Placement with a status 'initializing'
 	rnew := DNSSandboxWithCreds{
@@ -933,7 +933,7 @@ func (a *DNSSandboxProvider) FetchAll() ([]DNSSandbox, error) {
 	)
 
 	if err != nil {
-		return sandboxes , err
+		return sandboxes, err
 	}
 
 	for rows.Next() {

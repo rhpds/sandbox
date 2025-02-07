@@ -283,7 +283,6 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			tocleanup = append(tocleanup, &account)
 			resources = append(resources, account)
 
-
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 			render.Render(w, r, &v1.Error{
