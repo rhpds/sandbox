@@ -509,7 +509,7 @@ retry: 40
 HTTP 404
 
 #################################################################################
-# Create a new placement With AWS + OCP
+# Create a new placement With AWS + DNS
 #################################################################################
 
 POST {{host}}/api/v1/placements
@@ -521,7 +521,7 @@ Authorization: Bearer {{access_token}}
     {"kind": "AwsSandbox", "annotations":{"purpose":"aws"}}
   ],
   "annotations": {
-    "test": "Placement with both AWS + OCP",
+    "test": "Placement with both AWS + DNS",
     "guid": "testdns",
     "env_type": "ocp4-cluster-blablablabla"
   }

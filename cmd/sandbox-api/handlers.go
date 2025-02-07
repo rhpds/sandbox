@@ -232,7 +232,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			resources = append(resources, account)
 
 		case "DNSSandbox":
-			// Create the placement in OCP
+			// Create the placement in DNS Account
 			account, err := h.DNSSandboxProvider.Request(
 				placementRequest.ServiceUuid,
 				request.CloudSelector,
