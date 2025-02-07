@@ -203,7 +203,7 @@ HTTP 404
 jsonpath "$.message" == "No DNS account configuration found"
 
 #################################################################################
-# Create a new placement with a multiple IBMResourceGroupSanbox
+# Create a new placement with a multiple IBMResourceGroupSandbox
 #################################################################################
 
 POST {{host}}/api/v1/placements
