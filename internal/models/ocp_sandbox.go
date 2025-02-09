@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
-  "slices"
+	"slices"
 	"strings"
 	"time"
 
@@ -121,8 +121,8 @@ type OcpServiceAccount struct {
 type OcpSandboxes []OcpSandbox
 
 type MultipleOcpAccount struct {
-	Alias string     `json:"alias"`
-	Account       OcpSandbox `json:"account"`
+	Alias   string     `json:"alias"`
+	Account OcpSandbox `json:"account"`
 }
 
 type TokenResponse struct {
@@ -810,47 +810,47 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]st
 			cloud_selector,
 		)
 	} else {
-			if len(childClusters) > 0 {
-				rows, err = a.DbPool.Query(
-					context.Background(),
-					`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and annotations->>'parent' = ANY($2::text[]) and valid=true ORDER BY random()`,
-					cloud_selector, childClusters,
-				)
-				for rows.Next() {
-					var clusterName string
+		if len(childClusters) > 0 {
+			rows, err = a.DbPool.Query(
+				context.Background(),
+				`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and annotations->>'parent' = ANY($2::text[]) and valid=true ORDER BY random()`,
+				cloud_selector, childClusters,
+			)
+			for rows.Next() {
+				var clusterName string
 
-					if err := rows.Scan(&clusterName); err != nil {
-						return OcpSharedClusterConfigurations{}, err
-					}
-          if len(possibleClusters) > 0 && !slices.Contains(possibleClusters, clusterName) {
-            continue
-          }
-					possibleClusters = append(possibleClusters,clusterName)
+				if err := rows.Scan(&clusterName); err != nil {
+					return OcpSharedClusterConfigurations{}, err
 				}
-
+				if len(possibleClusters) > 0 && !slices.Contains(possibleClusters, clusterName) {
+					continue
+				}
+				possibleClusters = append(possibleClusters, clusterName)
 			}
-			if (len(possibleClusters) > 0 && len(excludeClusters) == 0 ) {
+
+		}
+		if len(possibleClusters) > 0 && len(excludeClusters) == 0 {
+			rows, err = a.DbPool.Query(
+				context.Background(),
+				`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and name = ANY($2::text[]) ORDER BY random()`,
+				cloud_selector, possibleClusters,
+			)
+		} else {
+			if len(possibleClusters) == 0 && len(excludeClusters) > 0 {
 				rows, err = a.DbPool.Query(
 					context.Background(),
-					`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and name = ANY($2::text[]) ORDER BY random()`,
-					cloud_selector, possibleClusters,
+					`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and name != ALL($2::text[]) ORDER BY random()`,
+					cloud_selector, excludeClusters,
 				)
+
 			} else {
-				if (len(possibleClusters) == 0 && len(excludeClusters) > 0) {
-					rows, err = a.DbPool.Query(
-						context.Background(),
-						`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and name != ALL($2::text[]) ORDER BY random()`,
-						cloud_selector, excludeClusters,
-					)
-
-				} else {
-					rows, err = a.DbPool.Query(
-						context.Background(),
-						`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and name = ANY($2::text[]) and name != ALL($3::text[]) ORDER BY random()`,
-						cloud_selector, possibleClusters, excludeClusters,
-					)
-				}
+				rows, err = a.DbPool.Query(
+					context.Background(),
+					`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and name = ANY($2::text[]) and name != ALL($3::text[]) ORDER BY random()`,
+					cloud_selector, possibleClusters, excludeClusters,
+				)
 			}
+		}
 	}
 
 	if err != nil {
@@ -959,7 +959,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 	var selectedCluster OcpSharedClusterConfiguration
 	var possibleClusters []string
 	var excludeClusters []string
-	var childClusters	[]string
+	var childClusters []string
 	// Ensure annotation has guid
 	if _, exists := annotations["guid"]; !exists {
 		return OcpSandboxWithCreds{}, errors.New("guid not found in annotations")
@@ -969,7 +969,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			for _, maccount := range multipleAccounts {
 				if maccount.Alias == relation.Reference && relation.Relation == "same" {
 					possibleClusters = append(possibleClusters, maccount.Account.OcpSharedClusterConfigurationName)
-				} 
+				}
 				if maccount.Alias == relation.Reference && relation.Relation == "different" {
 					excludeClusters = append(excludeClusters, maccount.Account.OcpSharedClusterConfigurationName)
 				}
