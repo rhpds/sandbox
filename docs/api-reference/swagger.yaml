@@ -1796,13 +1796,23 @@ components:
                 minimum: 1
                 default: 1
                 example: 1
-              affinity_label:
+              alias:
                 type: string
-              affinity_type:
+              cluster_condition:
                 type: string
-                enum:
-                  - sandbox_cluster
-                  - affinity_cluster
+              cluster_relation:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    relation:
+                      type: string
+                      enum:
+                        - same
+                        - different
+                        - child
+                    reference:
+                      type: string
               cloud_selector:
                 $ref: "#/components/schemas/Annotations"
               annotations:

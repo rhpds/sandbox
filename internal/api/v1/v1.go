@@ -31,7 +31,7 @@ func (p *SimpleMessage) Render(w http.ResponseWriter, r *http.Request) error {
 type HealthCheckResult struct {
 	HTTPStatusCode int    `json:"http_code,omitempty"` // http response status code
 	Message        string `json:"message"`
-}
+				}
 
 type PlacementRequest struct {
 	ServiceUuid string             `json:"service_uuid"`
@@ -103,15 +103,16 @@ func (p *PlacementResponse) Render(w http.ResponseWriter, r *http.Request) error
 }
 
 type ResourceRequest struct {
-	Kind           string             `json:"kind"`
-	Count          int                `json:"count"`
-	AffinityLabel  string             `json:"affinity_label,omitempty"`
-	AffinityType   string             `json:"affinity_type,omitempty"`
-	Annotations    models.Annotations `json:"annotations,omitempty"`
-	CloudSelector  models.Annotations `json:"cloud_selector,omitempty"`
-	Quota          *v1.ResourceList   `json:"quota,omitempty"`
-	LimitRange     *v1.LimitRange     `json:"limit_range,omitempty"`
-	RequestedQuota *v1.ResourceQuota  `json:"-"` // plumbing
+	Kind             string              				`json:"kind"`
+	Count            int                 				`json:"count"`
+	Alias					   string              			 	`json:"alias,omitempty"`
+	ClusterRelation	 []models.ClusterRelation  	`json:"cluster_relation,omitempty"`
+	ClusterCondition string                    	`json:"cluster_condition,omitempty"`
+	Annotations      models.Annotations  				`json:"annotations,omitempty"`
+	CloudSelector    models.Annotations  				`json:"cloud_selector,omitempty"`
+	Quota            *v1.ResourceList    				`json:"quota,omitempty"`
+	LimitRange       *v1.LimitRange      				`json:"limit_range,omitempty"`
+	RequestedQuota   *v1.ResourceQuota   				`json:"-"` // plumbing
 }
 
 type ReservationResponse struct {
@@ -141,6 +142,12 @@ func (p *PlacementRequest) Bind(r *http.Request) error {
 		}
 		if p.Resources[i].Quota == nil {
 			p.Resources[i].Quota = &v1.ResourceList{}
+		}
+		if p.Resources[i].ClusterRelation == nil {
+			p.Resources[i].ClusterRelation = []models.ClusterRelation{}
+		}
+		if p.Resources[i].ClusterCondition == "" {
+			p.Resources[i].ClusterCondition = ""
 		}
 		if resourceRequest.CloudSelector != nil {
 			for k, v := range resourceRequest.CloudSelector {
