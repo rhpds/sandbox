@@ -1,8 +1,8 @@
 module github.com/rhpds/sandbox
 
-go 1.22.0
+go 1.22.4
 
-toolchain go1.22.4
+toolchain go1.22.9
 
 require (
 	github.com/aws/aws-lambda-go v1.46.0
@@ -32,6 +32,7 @@ require (
 
 require (
 	github.com/IBM/go-sdk-core/v5 v5.18.5 // indirect
+	github.com/IBM/networking-go-sdk v0.49.0 // indirect
 	github.com/IBM/platform-services-go-sdk v0.73.0 // indirect
 	github.com/ajg/form v1.5.1 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect

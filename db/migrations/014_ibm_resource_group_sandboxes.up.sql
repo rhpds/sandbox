@@ -1,8 +1,6 @@
 -- Create table ibm_resource_group_account_configurations
 
 BEGIN;
--- install the pgcrypto extension if not installed
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE ibm_resource_group_account_configurations (
     id SERIAL PRIMARY KEY,

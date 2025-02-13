@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+  "strings"
 	"time"
 
 	"github.com/IBM/go-sdk-core/v5/core"
@@ -14,6 +15,7 @@ import (
 	"github.com/IBM/platform-services-go-sdk/iampolicymanagementv1"
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
 	"github.com/IBM/platform-services-go-sdk/resourcemanagerv2"
+  "github.com/IBM/networking-go-sdk/zonesv1"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/rhpds/sandbox/internal/log"
@@ -1059,6 +1061,7 @@ func (account *IBMResourceGroupSandboxWithCreds) Delete() error {
 		SetApiKey(ibmResourceGroupAccount.APIKey).
 		Build()
 
+
 	resourceControllerServiceOptions := &resourcecontrollerv2.ResourceControllerV2Options{Authenticator: authenticator}
 	resourceControllerService, err := resourcecontrollerv2.NewResourceControllerV2UsingExternalConfig(resourceControllerServiceOptions)
 
@@ -1110,16 +1113,39 @@ func (account *IBMResourceGroupSandboxWithCreds) Delete() error {
 				if instance.ID == nil {
 					continue // Skip instances without an ID
 				}
-
+				fmt.Printf("CIS Instance: %s\n", *instance.Name)
+				if strings.HasPrefix(*instance.CRN,"crn:v1:bluemix:public:internet-svcs:") {
+					// CIS domains are treated different, list if they exist and delete them
+					fmt.Printf("CRN: %s\n", *instance.CRN)
+					fmt.Printf("Resource ID: %s\n", *instance.ResourceID)
+					fmt.Println("----------------------")
+					zonesService, err := zonesv1.NewZonesV1(&zonesv1.ZonesV1Options{
+						Authenticator: authenticator,
+						Crn: instance.CRN,
+					})
+					optionsListZones := zonesService.NewListZonesOptions()
+					result, _, err := zonesService.ListZones(optionsListZones)
+					if err != nil {
+						return err
+					}
+					for _, zone := range result.Result {
+						deleteOptions := zonesService.NewDeleteZoneOptions(*zone.ID)
+						_, _, err := zonesService.DeleteZone(deleteOptions)
+						if err != nil {
+							return err
+						}
+						log.Logger.Info("Successfully deleted", "domain", *zone.Name)
+					}
+				}
 				deleteResourceInstanceOptions := &resourcecontrollerv2.DeleteResourceInstanceOptions{
 					ID: instance.ID,
 				}
 
 				_, err := resourceControllerService.DeleteResourceInstance(deleteResourceInstanceOptions)
 				if err != nil {
-					log.Logger.Info("Failed to delete resource instance with IDxx %s: %v", *instance.ID, err)
+					log.Logger.Info("Failed to delete resource instance with IDxx", *instance.ID, err)
 				} else {
-					log.Logger.Info("Successfully deleted resource instance with ID %s\n", *instance.ID, "success")
+					log.Logger.Info("Successfully deleted resource instance with ID\n", *instance.ID, "success")
 				}
 			}
 			retryCount++
@@ -1150,7 +1176,7 @@ func (account *IBMResourceGroupSandboxWithCreds) Delete() error {
 	userdetails, _, err := iamIdentityService.GetAPIKeysDetails(iamOptions)
 	accountID := userdetails.AccountID
 
-	listServiceIDOptions := &iamidentityv1.ListServiceIdsOptions{AccountID: accountID, Name: &account.Name}
+	listServiceIDOptions := &iamidentityv1.ListServiceIdsOptions{AccountID: accountID, Name: &account.ResourceGroup}
 	services, response, err := iamIdentityService.ListServiceIds(listServiceIDOptions)
 	if err != nil {
 		log.Logger.Error("Error listing IBM Service ID", "error", err, "response", response)
