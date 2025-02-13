@@ -652,7 +652,7 @@ func (a *OcpSandboxWithCreds) GetStatus() (string, error) {
 	var status string
 	err := a.Provider.DbPool.QueryRow(
 		context.Background(),
-		"SELECT status FROM resources WHERE id = $1",
+		"SELECT status FROM resources WHERE id = $1 and resource_type='OcpSandbox'",
 		a.ID,
 	).Scan(&status)
 
@@ -698,7 +698,7 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuid(serviceUuid string) ([]OcpSan
 			resources r
 		LEFT JOIN
 			ocp_shared_cluster_configurations oc ON oc.name = r.resource_data->>'ocp_cluster'
-		WHERE r.service_uuid = $1`,
+		WHERE r.service_uuid = $1 AND r.resource_type = 'OcpSandbox'`,
 		serviceUuid,
 	)
 
@@ -749,7 +749,7 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 			resources r
 		LEFT JOIN
 			ocp_shared_cluster_configurations oc ON oc.name = r.resource_data->>'ocp_cluster'
-		WHERE r.service_uuid = $1`,
+		WHERE r.service_uuid = $1 AND r.resource_type = 'OcpSandbox'`,
 		serviceUuid, a.VaultSecret,
 	)
 
@@ -904,7 +904,6 @@ func anySchedulableNodes(nodes []v1.Node) bool {
 
 func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, requestedQuota *v1.ResourceList, requestedLimitRange *v1.LimitRange, multiple bool, ctx context.Context) (OcpSandboxWithCreds, error) {
 	var selectedCluster OcpSharedClusterConfiguration
-	var selectedClusterMemoryUsage float64 = -1
 
 	// Ensure annotation has guid
 	if _, exists := annotations["guid"]; !exists {
@@ -1044,15 +1043,13 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				"CPU% Usage", clusterCpuUsage,
 				"Memory% Usage", clusterMemoryUsage,
 			)
-			log.Logger.Info("selectedMemory", "value", selectedClusterMemoryUsage)
-			log.Logger.Info("selectedMemory", "value", selectedClusterMemoryUsage)
-			if clusterMemoryUsage < cluster.MaxMemoryUsagePercentage && clusterCpuUsage < cluster.MaxCpuUsagePercentage  && (selectedClusterMemoryUsage == -1 || clusterMemoryUsage < selectedClusterMemoryUsage) {
+			if clusterMemoryUsage < cluster.MaxMemoryUsagePercentage && clusterCpuUsage < cluster.MaxCpuUsagePercentage {
 				selectedCluster = cluster
-				selectedClusterMemoryUsage = clusterMemoryUsage
+				log.Logger.Info("selectedCluster", "cluster", selectedCluster.Name)
+				break providerLoop
 			}
 		}
 
-		log.Logger.Info("selectedCluster", "cluster", selectedCluster.Name)
 		if selectedCluster.Name == "" {
 			log.Logger.Error("Error electing cluster",
 				"name", rnew.Name,
@@ -1603,7 +1600,8 @@ func (a *OcpSandboxProvider) FetchAll() ([]OcpSandbox, error) {
 		 r.cleanup_count,
 		 COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
 		 FROM resources r
-		 LEFT JOIN ocp_shared_cluster_configurations oc ON oc.name = r.resource_data->>'ocp_cluster'`,
+		 LEFT JOIN ocp_shared_cluster_configurations oc ON oc.name = r.resource_data->>'ocp_cluster'
+     WHERE r.resource_type = 'OcpSandbox'`,
 	)
 
 	if err != nil {
@@ -1840,7 +1838,7 @@ func (p *OcpSandboxProvider) FetchByName(name string) (OcpSandbox, error) {
 		 COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
 		 FROM resources r
 		 LEFT JOIN ocp_shared_cluster_configurations oc ON oc.name = resource_data->>'ocp_cluster'
-		 WHERE r.resource_name = $1 and r.resource_type = 'OcpSandbox'`,
+		 WHERE r.resource_name = $1 AND r.resource_type = 'OcpSandbox'`,
 		name,
 	)
 
@@ -1877,7 +1875,7 @@ func (p *OcpSandboxProvider) FetchById(id int) (OcpSandbox, error) {
 		 COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
 		 FROM resources r
 		 LEFT JOIN ocp_shared_cluster_configurations oc ON oc.name = resource_data->>'ocp_cluster'
-		 WHERE r.id = $1`,
+		 WHERE r.id = $1 AND r.resource_type = 'OcpSandbox'`,
 		id,
 	)
 
@@ -1925,7 +1923,7 @@ func (a *OcpSandboxWithCreds) Reload() error {
 		 COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
 		 FROM resources r
 		 LEFT JOIN ocp_shared_cluster_configurations oc ON oc.name = resource_data->>'ocp_cluster'
-		 WHERE r.id = $1`,
+		 WHERE r.id = $1 AND r.resource_type = 'OcpSandbox'`,
 		a.ID, a.Provider.VaultSecret,
 	)
 

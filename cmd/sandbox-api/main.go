@@ -133,6 +133,11 @@ func main() {
 	OcpSandboxProvider := models.NewOcpSandboxProvider(dbPool, vaultSecret)
 
 	// ---------------------------------------------------------------------
+	// DNS
+	// ---------------------------------------------------------------------
+	DNSSandboxProvider := models.NewDNSSandboxProvider(dbPool, vaultSecret)
+
+	// ---------------------------------------------------------------------
 	// Setup JWT
 	// ---------------------------------------------------------------------
 
@@ -152,10 +157,10 @@ func main() {
 	// to the handler maker.
 	// When we need to migrate to Postgresql, we can pass a different "Provider" which will
 	// implement the same interface.
-	accountHandler := NewAccountHandler(awsAccountProvider, OcpSandboxProvider)
+	accountHandler := NewAccountHandler(awsAccountProvider, OcpSandboxProvider, DNSSandboxProvider)
 
 	// Factory for handlers which need connections to both databases
-	baseHandler := NewBaseHandler(awsAccountProvider.Svc, dbPool, doc, oaRouter, awsAccountProvider, OcpSandboxProvider)
+	baseHandler := NewBaseHandler(awsAccountProvider.Svc, dbPool, doc, oaRouter, awsAccountProvider, OcpSandboxProvider, DNSSandboxProvider)
 
 	// Admin handler adds tokenAuth to the baseHandler
 	adminHandler := NewAdminHandler(baseHandler, tokenAuth)
@@ -273,6 +278,17 @@ func main() {
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/enable", baseHandler.EnableOcpSharedClusterConfigurationHandler)
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/update", baseHandler.UpdateOcpSharedClusterConfigurationHandler)
 		r.Delete("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.DeleteOcpSharedClusterConfigurationHandler)
+
+		// ---------------------------------
+		// DNS
+		// ---------------------------------
+		r.Post("/api/v1/dns-account-configurations", baseHandler.CreateDNSAccountConfigurationHandler)
+		r.Get("/api/v1/dns-account-configurations", baseHandler.GetDNSAccountConfigurationsHandler)
+		r.Get("/api/v1/dns-account-configurations/{name}", baseHandler.GetDNSAccountConfigurationHandler)
+		r.Put("/api/v1/dns-account-configurations/{name}/disable", baseHandler.DisableDNSAccountConfigurationHandler)
+		r.Put("/api/v1/dns-account-configurations/{name}/enable", baseHandler.EnableDNSAccountConfigurationHandler)
+		r.Put("/api/v1/dns-account-configurations/{name}/update", baseHandler.UpdateDNSAccountConfigurationHandler)
+		r.Delete("/api/v1/dns-account-configurations/{name}", baseHandler.DeleteDNSAccountConfigurationHandler)
 
 		// Reservations
 		r.Post("/api/v1/reservations", baseHandler.CreateReservationHandler)
