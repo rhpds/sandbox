@@ -652,7 +652,7 @@ func (a *OcpSandboxWithCreds) GetStatus() (string, error) {
 	var status string
 	err := a.Provider.DbPool.QueryRow(
 		context.Background(),
-		"SELECT status FROM resources WHERE id = $1",
+		"SELECT status FROM resources WHERE id = $1 and resource_type='OcpSandbox'",
 		a.ID,
 	).Scan(&status)
 
@@ -698,7 +698,7 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuid(serviceUuid string) ([]OcpSan
 			resources r
 		LEFT JOIN
 			ocp_shared_cluster_configurations oc ON oc.name = r.resource_data->>'ocp_cluster'
-		WHERE r.service_uuid = $1`,
+		WHERE r.service_uuid = $1 AND r.resource_type = 'OcpSandbox'`,
 		serviceUuid,
 	)
 
@@ -749,7 +749,7 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 			resources r
 		LEFT JOIN
 			ocp_shared_cluster_configurations oc ON oc.name = r.resource_data->>'ocp_cluster'
-		WHERE r.service_uuid = $1`,
+		WHERE r.service_uuid = $1 AND r.resource_type = 'OcpSandbox'`,
 		serviceUuid, a.VaultSecret,
 	)
 
@@ -1603,7 +1603,8 @@ func (a *OcpSandboxProvider) FetchAll() ([]OcpSandbox, error) {
 		 r.cleanup_count,
 		 COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
 		 FROM resources r
-		 LEFT JOIN ocp_shared_cluster_configurations oc ON oc.name = r.resource_data->>'ocp_cluster'`,
+		 LEFT JOIN ocp_shared_cluster_configurations oc ON oc.name = r.resource_data->>'ocp_cluster'
+     WHERE r.resource_type = 'OcpSandbox'`,
 	)
 
 	if err != nil {
@@ -1840,7 +1841,7 @@ func (p *OcpSandboxProvider) FetchByName(name string) (OcpSandbox, error) {
 		 COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
 		 FROM resources r
 		 LEFT JOIN ocp_shared_cluster_configurations oc ON oc.name = resource_data->>'ocp_cluster'
-		 WHERE r.resource_name = $1 and r.resource_type = 'OcpSandbox'`,
+		 WHERE r.resource_name = $1 AND r.resource_type = 'OcpSandbox'`,
 		name,
 	)
 
@@ -1877,7 +1878,7 @@ func (p *OcpSandboxProvider) FetchById(id int) (OcpSandbox, error) {
 		 COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
 		 FROM resources r
 		 LEFT JOIN ocp_shared_cluster_configurations oc ON oc.name = resource_data->>'ocp_cluster'
-		 WHERE r.id = $1`,
+		 WHERE r.id = $1 AND r.resource_type = 'OcpSandbox'`,
 		id,
 	)
 
@@ -1925,7 +1926,7 @@ func (a *OcpSandboxWithCreds) Reload() error {
 		 COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
 		 FROM resources r
 		 LEFT JOIN ocp_shared_cluster_configurations oc ON oc.name = resource_data->>'ocp_cluster'
-		 WHERE r.id = $1`,
+		 WHERE r.id = $1 AND r.resource_type = 'OcpSandbox'`,
 		a.ID, a.Provider.VaultSecret,
 	)
 

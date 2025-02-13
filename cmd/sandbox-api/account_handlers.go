@@ -19,12 +19,14 @@ import (
 type AccountHandler struct {
 	awsAccountProvider models.AwsAccountProvider
 	OcpSandboxProvider models.OcpSandboxProvider
+	IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider
 }
 
-func NewAccountHandler(awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider models.OcpSandboxProvider) *AccountHandler {
+func NewAccountHandler(awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider models.OcpSandboxProvider, IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider) *AccountHandler {
 	return &AccountHandler{
 		awsAccountProvider: awsAccountProvider,
 		OcpSandboxProvider: OcpSandboxProvider,
+	  IBMResourceGroupSandboxProvider: IBMResourceGroupSandboxProvider,
 	}
 }
 
@@ -87,6 +89,32 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 		for i, acc := range accounts {
 			accountlist[i] = acc
 		}
+	case "IBMResourceGroupSandbox", "ibmrg":
+		var (
+			accounts []models.IBMResourceGroupSandbox
+		)
+		if available != "" && available == "true" {
+			// Account are created on the fly, so this request doesn't make sense
+			// for OcpSandboxes
+			// Return bad request
+			w.WriteHeader(http.StatusBadRequest)
+			enc.Encode(v1.Error{
+				HTTPStatusCode: http.StatusBadRequest,
+				Message:        "Bad request, IBM resource group are created on the fly",
+			})
+			return
+		}
+		if serviceUuid != "" {
+			// Get the account from DynamoDB
+			accounts, err = h.IBMResourceGroupSandboxProvider.FetchAllByServiceUuid(serviceUuid)
+		} else {
+			accounts, err = h.IBMResourceGroupSandboxProvider.FetchAll()
+		}
+
+		accountlist = make([]interface{}, len(accounts))
+		for i, acc := range accounts {
+			accountlist[i] = acc
+		}
 	}
 
 	if err != nil {
@@ -114,6 +142,7 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 			Message:        "Error reading account",
 		})
 	}
+
 }
 
 // GetAccountHandler returns an account
@@ -154,6 +183,32 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 	case "OcpSandbox", "ocp":
 		// Get the account from DynamoDB
 		sandbox, err := h.OcpSandboxProvider.FetchByName(accountName)
+		if err != nil {
+			if err == models.ErrAccountNotFound {
+				log.Logger.Warn("GET account", "error", err)
+				w.WriteHeader(http.StatusNotFound)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusNotFound,
+					Message:        "Account not found",
+				})
+				return
+			}
+			log.Logger.Error("GET account", "error", err)
+
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: 500,
+				Message:        "Error reading account",
+			})
+			return
+		}
+		// Print account using JSON
+		w.WriteHeader(http.StatusOK)
+		render.Render(w, r, &sandbox)
+		return
+	case "IBMResourceGroupSandbox", "ibmrg":
+		// Get the account from DynamoDB
+		sandbox, err := h.IBMResourceGroupSandboxProvider.FetchByName(accountName)
 		if err != nil {
 			if err == models.ErrAccountNotFound {
 				log.Logger.Warn("GET account", "error", err)
