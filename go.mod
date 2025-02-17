@@ -34,6 +34,7 @@ require (
 	github.com/IBM/go-sdk-core/v5 v5.18.5 // indirect
 	github.com/IBM/networking-go-sdk v0.49.0 // indirect
 	github.com/IBM/platform-services-go-sdk v0.73.0 // indirect
+	github.com/PaesslerAG/gval v1.2.4 // indirect
 	github.com/ajg/form v1.5.1 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.15.3 // indirect
@@ -100,6 +101,7 @@ require (
 	github.com/prometheus/common v0.50.0 // indirect
 	github.com/prometheus/procfs v0.13.0 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
+	github.com/shopspring/decimal v1.3.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	go.mongodb.org/mongo-driver v1.14.0 // indirect
 	golang.org/x/crypto v0.32.0 // indirect

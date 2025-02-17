@@ -2078,6 +2078,23 @@ components:
                 minimum: 1
                 default: 1
                 example: 1
+              alias:
+                type: string
+              cluster_condition:
+                type: string
+              cluster_relation:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    relation:
+                      type: string
+                      enum:
+                        - same
+                        - different
+                        - child
+                    reference:
+                      type: string
               cloud_selector:
                 $ref: "#/components/schemas/Annotations"
               annotations:
