@@ -960,6 +960,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 	var possibleClusters []string
 	var excludeClusters []string
 	var childClusters []string
+	var selectedClusterMemoryUsage float64 = -1
 	// Ensure annotation has guid
 	if _, exists := annotations["guid"]; !exists {
 		return OcpSandboxWithCreds{}, errors.New("guid not found in annotations")
@@ -1114,13 +1115,13 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				"CPU% Usage", clusterCpuUsage,
 				"Memory% Usage", clusterMemoryUsage,
 			)
-			if clusterMemoryUsage < cluster.MaxMemoryUsagePercentage && clusterCpuUsage < cluster.MaxCpuUsagePercentage {
+			if clusterMemoryUsage < cluster.MaxMemoryUsagePercentage && clusterCpuUsage < cluster.MaxCpuUsagePercentage  && (selectedClusterMemoryUsage == -1 || clusterMemoryUsage < selectedClusterMemoryUsage) {
 				selectedCluster = cluster
-				log.Logger.Info("selectedCluster", "cluster", selectedCluster.Name)
-				break providerLoop
+				selectedClusterMemoryUsage = clusterMemoryUsage
 			}
 		}
 
+		log.Logger.Info("selectedCluster", "cluster", selectedCluster.Name)
 		if selectedCluster.Name == "" {
 			log.Logger.Error("Error electing cluster",
 				"name", rnew.Name,
