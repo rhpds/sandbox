@@ -127,3 +127,8 @@ func (a Annotations) Merge(b Annotations) Annotations {
 	}
 	return c
 }
+
+type ClusterRelation struct {
+	Relation  string `json:"relation"`  // Can be "same", "different", or "child"
+	Reference string `json:"reference"` // A reference string
+}

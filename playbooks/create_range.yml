@@ -1,9 +1,9 @@
 #!/usr/bin/env ansible-playbook
 
 - hosts: localhost
-  gather_facts: no
+  gather_facts: false
   connection: local
-  run_once: yes
+  run_once: true
   tasks:
     - assert:
         msg: Please set account_num_start
