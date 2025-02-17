@@ -136,6 +136,9 @@ func main() {
 	// DNS
 	// ---------------------------------------------------------------------
 	DNSSandboxProvider := models.NewDNSSandboxProvider(dbPool, vaultSecret)
+	// IBMShared
+	// ---------------------------------------------------------------------
+	IBMSharedSandboxProvider := models.NewIBMSharedSandboxProvider(dbPool, vaultSecret)
 
 	// ---------------------------------------------------------------------
 	// Setup JWT
@@ -160,7 +163,7 @@ func main() {
 	accountHandler := NewAccountHandler(awsAccountProvider, OcpSandboxProvider, DNSSandboxProvider)
 
 	// Factory for handlers which need connections to both databases
-	baseHandler := NewBaseHandler(awsAccountProvider.Svc, dbPool, doc, oaRouter, awsAccountProvider, OcpSandboxProvider, DNSSandboxProvider)
+	baseHandler := NewBaseHandler(awsAccountProvider.Svc, dbPool, doc, oaRouter, awsAccountProvider, OcpSandboxProvider, DNSSandboxProvider, IBMSharedSandboxProvider)
 
 	// Admin handler adds tokenAuth to the baseHandler
 	adminHandler := NewAdminHandler(baseHandler, tokenAuth)
@@ -289,6 +292,16 @@ func main() {
 		r.Put("/api/v1/dns-account-configurations/{name}/enable", baseHandler.EnableDNSAccountConfigurationHandler)
 		r.Put("/api/v1/dns-account-configurations/{name}/update", baseHandler.UpdateDNSAccountConfigurationHandler)
 		r.Delete("/api/v1/dns-account-configurations/{name}", baseHandler.DeleteDNSAccountConfigurationHandler)
+
+		// IBM Shared
+		// ---------------------------------
+		r.Post("/api/v1/ibm-shared-account-configurations", baseHandler.CreateIBMSharedSandboxConfigurationHandler)
+		r.Get("/api/v1/ibm-shared-account-configurations", baseHandler.GetIBMSharedSandboxConfigurationsHandler)
+		r.Get("/api/v1/ibm-shared-account-configurations/{name}", baseHandler.GetIBMSharedSandboxConfigurationHandler)
+		r.Put("/api/v1/ibm-shared-account-configurations/{name}/disable", baseHandler.DisableIBMSharedSandboxConfigurationHandler)
+		r.Put("/api/v1/ibm-shared-account-configurations/{name}/enable", baseHandler.EnableIBMSharedSandboxConfigurationHandler)
+		r.Put("/api/v1/ibm-shared-account-configurations/{name}/update", baseHandler.UpdateIBMSharedSandboxConfigurationHandler)
+		r.Delete("/api/v1/ibm-shared-account-configurations/{name}", baseHandler.DeleteIBMSharedSandboxConfigurationHandler)
 
 		// Reservations
 		r.Post("/api/v1/reservations", baseHandler.CreateReservationHandler)
