@@ -32,7 +32,7 @@ rm-local-pg:
 
 run-local-pg: rm-local-pg .dev.pg_password
 	@echo "Running local postgres..."
-	@podman run  -p 5432:5432 --name localpg -e POSTGRES_PASSWORD=$(shell cat .dev.pg_password) -d postgres:16-bullseye
+	@podman run  --rm -p 5432:5432 --name localpg -e POSTGRES_PASSWORD=$(shell cat .dev.pg_password) -d postgres:16-bullseye
 # See full list of parameters here:
 # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
 
@@ -46,11 +46,13 @@ migrate: .dev.pgenv
 # Print a message with the database URL and ask for confirmation
 # Remove password from the URL before printing
 	@. ./.dev.pgenv && echo "Database URL: $$(echo $${DATABASE_URL} | sed -E 's/:[^@]+@/:<password>@/g')"
-	@read -p "Are you sure [y/n]? " -n 1 -r; \
+# Detect if it's TTYS and ask for confirmation
+	@tty -s && \
+	read -p "Are you sure [y/n]? " -n 1 -r && \
 	if [[ ! $$REPLY =~ ^[Yy]$$ ]]; then \
 		echo "Aborting."; \
 		exit 1; \
-	fi
+	fi || true
 	@echo "Running migrations..."
 	@. ./.dev.pgenv && migrate -database "$${DATABASE_URL}" -path db/migrations up
 

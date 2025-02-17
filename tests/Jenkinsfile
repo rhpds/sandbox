@@ -1,0 +1,16 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Test') {
+            steps {
+                // Use  credential sandbox-functional-tests-dev-creds as a file to load the credentials
+                withCredentials([
+                    file(credentialsId: 'sandbox-functional-tests-dev-creds', variable: 'CREDENTIALS_FILE')
+                ]) {
+                    sh 'tests/jenkins-run.sh'
+                }
+            }
+        }
+    }
+}
