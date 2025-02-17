@@ -27,6 +27,7 @@ RUN dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x
     postgresql \
     python3.12 \
     python3.12-pip \
+    python3.12-requests \
     rsync \
     tar \
     unzip \
