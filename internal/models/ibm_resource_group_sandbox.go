@@ -719,7 +719,7 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 			Type: core.StringPtr("access"),
 			Roles: []iampolicymanagementv1.PolicyRole{
 				{
-					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::serviceRole:Reader"),
+					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::serviceRole:Manager"),
 				},
 				{
 					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Administrator"),
