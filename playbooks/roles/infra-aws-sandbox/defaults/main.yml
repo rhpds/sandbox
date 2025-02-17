@@ -8,6 +8,11 @@ account_user: student
 
 operation: CREATE
 
+# Listing all accounts in the organization is a costly operation
+# it takes currently 47s to execute.
+# Check the account only in certain scenario, like for a retry
+check_account_list: false
+
 available_after_reset: true
 available_after_create: false
 alias_suffix: '-gpte'
@@ -22,8 +27,11 @@ vault_file: ~/secrets/infra-sandbox-vault
 subdomain_base: .opentlc.com
 output_dir: '/tmp/output_dir'
 
-kerberos_realm: OPENTLC.COM
-ipa_domain: opentlc.com
+ddns_key_name: mydynamickey
+ddns_key_algorithm: hmac-sha512
+ddns_port: 53
+ddns_domain: opentlc.com
+ddns_server: ipaserver
 
 # yamllint disable-line rule:line-length
 opentlc_admin_backdoor: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCvZvn+GL0wTOsAdh1ikIQoqj2Fw/RA6F14O347rgKdpkgOQpGQk1k2gM8wcla2Y1o0bPIzwlNy1oh5o9uNjZDMeDcEXWuXbu0cRBy4pVRhh8a8zAZfssnqoXHHLyPyHWpdTmgIhr0UIGYrzHrnySAnUcDp3gJuE46UEBtrlyv94cVvZf+EZUTaZ+2KjTRLoNryCn7vKoGHQBooYg1DeHLcLSRWEADUo+bP0y64+X/XTMZOAXbf8kTXocqAgfl/usbYdfLOgwU6zWuj8vxzAKuMEXS1AJSp5aeqRKlbbw40IkTmLoQIgJdb2Zt98BH/xHDe9xxhscUCfWeS37XLp75J
@@ -70,10 +78,12 @@ aws_nuke_filters_default:
     - AWSServiceRoleForSupport
     - AWSServiceRoleForTrustedAdvisor
     - CloudabilityRole_OU
+    - redhat-HCC-role
 
   IAMRolePolicy:
     - "OrganizationAccountAccessRole -> AdministratorAccess"
     - config-rule-role -> config-rule-policy
+    - redhat-HCC-role -> redhat-HCC-policy
     - CloudabilityRole_OU -> CloudabilityAutomationPolicy
     - CloudabilityRole_OU -> CloudabilityMonitorResourcesPolicy
     - CloudabilityRole_OU -> CloudabilityVerificationPolicy
@@ -95,6 +105,8 @@ aws_nuke_filters_default:
 
   IAMPolicy:
     - arn:aws:iam::{{ account_id }}:policy/config-rule-policy
+    - arn:aws:iam::{{ account_id }}:policy/redhat-HCC-policy
+    - redhat-HCC-policy
 
   EC2KeyPair:
     - opentlc_admin_backdoor
@@ -165,5 +177,6 @@ dynamodb_region: us-east-1
 account_altready_exists: false
 
 force_create: false
+update_stage: false
 
 aws_cli: aws

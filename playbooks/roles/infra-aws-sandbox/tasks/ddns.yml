@@ -1,0 +1,37 @@
+---
+- tags:
+    - nuke
+    - ddns
+  when: operation in ['CREATE','RESET'] or nuke_sandbox | bool
+  block:
+    - name: Fetch all NS records for this sandbox
+      shell: >-
+        set -o pipefail;
+        host -t ns -W 60 -R 10 {{ account_name }}.{{ ddns_domain }}
+        | awk '{ print $4 }'
+      register: _recordfind
+      ignore_errors: true
+      changed_when: false
+
+    - when: _recordfind is succeeded
+      set_fact:
+        ddns_ns_records: "{{ _recordfind.stdout.split('\n') }}"
+
+    - when: _recordfind is failed
+      set_fact:
+        ddns_ns_records: ""
+
+    - name: Override NS records to DDNS
+      when: ddns_ns_records | sort != ns_records | sort
+      community.general.nsupdate:
+        state: present
+        server: "{{ lookup('dig', ddns_server) }}"
+        key_name: "{{ ddns_key_name }}"
+        key_algorithm: "{{ ddns_key_algorithm | d('hmac-sha512') }}"
+        key_secret: "{{ ddns_key_secret }}"
+        port: "{{ ddns_port | d('53') }}"
+        type: NS
+        ttl: "{{ ddns_ttl | default(600, true) }}"
+        zone: "{{ ddns_domain }}."
+        record: "{{ account_name }}.{{ ddns_domain }}."
+        value: "{{ ns_records }}"

@@ -17,6 +17,9 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -479,9 +482,6 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 	)
 
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			log.Logger.Info("No cluster found")
-		}
 		return []OcpSharedClusterConfiguration{}, err
 	}
 
@@ -531,9 +531,6 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByAnnotations(annot
 	)
 
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			log.Logger.Info("No cluster found", "annotations", annotations)
-		}
 		return []OcpSharedClusterConfiguration{}, err
 	}
 
@@ -706,9 +703,6 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuid(serviceUuid string) ([]OcpSan
 	)
 
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			log.Logger.Info("No account found", "service_uuid", serviceUuid)
-		}
 		return accounts, err
 	}
 
@@ -760,9 +754,6 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 	)
 
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			log.Logger.Info("No account found", "service_uuid", serviceUuid)
-		}
 		return accounts, err
 	}
 
@@ -810,11 +801,6 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]st
 	)
 
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			log.Logger.Info("No cluster found", "cloud_selector", cloud_selector)
-			return OcpSharedClusterConfigurations{}, ErrNoSchedule
-		}
-
 		log.Logger.Error("Error querying ocp clusters", "error", err)
 		return OcpSharedClusterConfigurations{}, err
 	}
@@ -918,6 +904,7 @@ func anySchedulableNodes(nodes []v1.Node) bool {
 
 func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, requestedQuota *v1.ResourceList, requestedLimitRange *v1.LimitRange, multiple bool, ctx context.Context) (OcpSandboxWithCreds, error) {
 	var selectedCluster OcpSharedClusterConfiguration
+	var selectedClusterMemoryUsage float64 = -1
 
 	// Ensure annotation has guid
 	if _, exists := annotations["guid"]; !exists {
@@ -1057,13 +1044,13 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				"CPU% Usage", clusterCpuUsage,
 				"Memory% Usage", clusterMemoryUsage,
 			)
-			if clusterMemoryUsage < cluster.MaxMemoryUsagePercentage && clusterCpuUsage < cluster.MaxCpuUsagePercentage {
+			if clusterMemoryUsage < cluster.MaxMemoryUsagePercentage && clusterCpuUsage < cluster.MaxCpuUsagePercentage  && (selectedClusterMemoryUsage == -1 || clusterMemoryUsage < selectedClusterMemoryUsage) {
 				selectedCluster = cluster
-				log.Logger.Info("selectedCluster", "cluster", selectedCluster.Name)
-				break providerLoop
+				selectedClusterMemoryUsage = clusterMemoryUsage
 			}
 		}
 
+		log.Logger.Info("selectedCluster", "cluster", selectedCluster.Name)
 		if selectedCluster.Name == "" {
 			log.Logger.Error("Error electing cluster",
 				"name", rnew.Name,
@@ -1092,6 +1079,14 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 
 		// Create an OpenShift client
 		clientset, err := kubernetes.NewForConfig(config)
+		if err != nil {
+			log.Logger.Error("Error creating OCP client", "error", err)
+			rnew.SetStatus("error")
+			return
+		}
+
+		// Create an dynamic OpenShift client for non regular objects
+		dynclientset, err := dynamic.NewForConfig(config)
 		if err != nil {
 			log.Logger.Error("Error creating OCP client", "error", err)
 			rnew.SetStatus("error")
@@ -1395,6 +1390,33 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 					}
 				}
 			}
+			// TODO: decide if we want another flag to configure the RadosNamespace
+			// Define the CephBlockPoolRadosNamespace GroupVersionResource
+			cephBlockPoolRadosNamespaceGVR := schema.GroupVersionResource{
+				Group:    "ceph.rook.io",
+				Version:  "v1",
+				Resource: "cephblockpoolradosnamespaces",
+			}
+			// Create the CephBlockPoolRadosNamespace object as an unstructured object
+			cephBlockPoolRadosNamespace := &unstructured.Unstructured{
+				Object: map[string]any{
+					"apiVersion": "ceph.rook.io/v1",
+					"kind":       "CephBlockPoolRadosNamespace",
+					"metadata": map[string]any{
+						"name":      namespaceName,
+						"namespace": "openshift-storage",
+					},
+					"spec": map[string]any{
+						"blockPoolName": "ocpv-tenants",
+					},
+				},
+			}
+			_, err = dynclientset.Resource(cephBlockPoolRadosNamespaceGVR).Namespace("openshift-storage").Create(context.TODO(), cephBlockPoolRadosNamespace, metav1.CreateOptions{})
+			if err != nil {
+				log.Logger.Error("Error creating CephBlockPoolRadosNamespace", "error", err)
+			}
+
+			log.Logger.Debug("CephBlockPoolRadosNamespace created successfully")
 		}
 
 		// Create secret to generate a token, for the clusters without image registry and for future versions of OCP
@@ -1583,9 +1605,6 @@ func (a *OcpSandboxProvider) FetchAll() ([]OcpSandbox, error) {
 	)
 
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			log.Logger.Info("No account found")
-		}
 		return accounts, err
 	}
 
@@ -1730,6 +1749,14 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		return err
 	}
 
+	// Create an dynamic OpenShift client for non regular objects
+	dynclientset, err := dynamic.NewForConfig(config)
+	if err != nil {
+		log.Logger.Error("Error creating OCP client", "error", err, "name", account.Name)
+		account.SetStatus("error")
+		return err
+	}
+
 	// Check if the namespace exists
 	_, err = clientset.CoreV1().Namespaces().Get(context.TODO(), account.Namespace, metav1.GetOptions{})
 	if err != nil {
@@ -1767,6 +1794,21 @@ func (account *OcpSandboxWithCreds) Delete() error {
 	if _, err := clientset.RbacV1().RoleBindings("cnv-images").Get(context.TODO(), rbName, metav1.GetOptions{}); err == nil {
 		if err := clientset.RbacV1().RoleBindings("cnv-images").Delete(context.TODO(), rbName, metav1.DeleteOptions{}); err != nil {
 			log.Logger.Error("Error deleting rolebinding on cnv-images", "error", err)
+			account.SetStatus("error")
+			return err
+		}
+	}
+
+	// Delete the cephBlockPoolRadosNamespace from the openshift-storage namespace
+	// Define the CephBlockPoolRadosNamespace GroupVersionResource
+	cephBlockPoolRadosNamespaceGVR := schema.GroupVersionResource{
+		Group:    "ceph.rook.io",
+		Version:  "v1",
+		Resource: "cephblockpoolradosnamespaces",
+	}
+	if _, err := dynclientset.Resource(cephBlockPoolRadosNamespaceGVR).Namespace("openshift-storage").Get(context.TODO(), account.Namespace, metav1.GetOptions{}); err == nil {
+		if err := dynclientset.Resource(cephBlockPoolRadosNamespaceGVR).Namespace("openshift-storage").Delete(context.TODO(), account.Namespace, metav1.DeleteOptions{}); err != nil {
+			log.Logger.Error("Error deleting rolebinding on CephBlockPoolRadosNamespace", "error", err)
 			account.SetStatus("error")
 			return err
 		}

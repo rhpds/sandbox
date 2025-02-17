@@ -19,7 +19,7 @@ on:
 
 jobs:
   build-and-push:
-    if: contains('["fridim", "marcosmamorim", "jkupfere", "rut31337", "aleixhub"]', github.actor)
+    if: contains('["agonzalezrh", "fridim", "marcosmamorim", "jkupfere", "rut31337", "aleixhub"]', github.actor)
 
     uses: ./.github/workflows/build-push.yml
     secrets:

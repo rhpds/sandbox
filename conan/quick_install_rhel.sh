@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 sudo adduser opentlc-mgr
 
-sudo dnf install -y vim git wget rush kerberos krb5-workstation ipa-client python3-pip
+sudo dnf install -y vim git wget rush python3-pip
 
 sudo -u opentlc-mgr mkdir -p -m 700 \
     ~opentlc-mgr/.aws/ \
@@ -25,8 +25,6 @@ sudo -u opentlc-mgr git clone https://github.com/rhpds/sandbox.git ~opentlc-mgr/
 sudo -u opentlc-mgr ln -s ~opentlc-mgr/pool_management/sandbox/ ~opentlc-mgr/pool_management/aws-sandbox
 
 echo "Edit ~opentlc-mgr/.aws/credentials"
-echo "Setup IPA access (ipa-client-install)"
-echo "copy secret: hostadmin.keytab into ~opentlc-mgr/secrets/"
 echo "copy secret: infra-sandbox-vault into ~opentlc-mgr/secrets/"
 
 sudo cp ~opentlc-mgr/pool_management/sandbox/conan/conan.service /etc/systemd/system/

@@ -18,7 +18,7 @@ sandbox-list -all --sort name |tail
 
 # .create 10 AWS sandbox accounts: sandbox3001 .. sandbox3010
 # You can use 'IPA opentlc.com hostadmin for conan' for the kerberos creds
-./create_range.yml -e account_num_start=3001 -e account_count=10 -e kerberos_user=... -e kerberos_password=...
+./create_range.yml -e account_num_start=3001 -e account_count=10 -e ddns_key_name=... -e ddns_key_secret=... -e ddns_server=...
 
 # Add GOLD IMAGES to the new accounts
 # Generate the list of new sandboxes

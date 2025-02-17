@@ -19,6 +19,8 @@ settings:
     DisableDeletionProtection: true
   QLDBLedger:
     DisableDeletionProtection: true
+  DynamoDBTable:
+    DisableDeletionProtection: true
 
 accounts:
   "{{ account_id }}":
@@ -28,23 +30,34 @@ resource-types:
   excludes:
     # don't nuke OpenSearch Packages, see https://github.com/rebuy-de/aws-nuke/issues/1123
     - AmazonML
-    - Cloud9Environment
-    - CloudSearchDomain
-    - CodeStarProject
-    - FMSNotificationChannel
-    - FMSPolicy
-    - MachineLearningBranchPrediction
-    - MachineLearningDataSource
-    - MachineLearningEvaluation
-    - MachineLearningMLModel
-    - OSPackage
+    - Cloud9Environment # Deprecated service
+    - CloudSearchDomain # Deprecated service
+    - CodeStarConnection # Deprecated service
+    - CodeStarNotification # Deprecated service
+    - CodeStarProject # Deprecated service
+    - FMSNotificationChannel # Excluded because it's not available
+    - FMSPolicy # Excluded because it's not available
+    - MachineLearningBranchPrediction # Excluded due to ML being unavailable
+    - MachineLearningDataSource # Excluded due to ML being unavailable
+    - MachineLearningEvaluation # Excluded due to ML being unavailable
+    - MachineLearningMLModel # Excluded due to ML being unavailable
     - OpsWorksApp
-    - OpsWorksCMBackup
-    - OpsWorksCMServer
-    - OpsWorksCMServerState
-    - OpsWorksInstance
-    - OpsWorksLayer
-    - OpsWorksUserProfile
+    - OpsWorksApp # Deprecated service
+    - OpsWorksCMBackup # Deprecated service
+    - OpsWorksCMServer # Deprecated service
+    - OpsWorksCMServerState # Deprecated service
+    - OpsWorksInstance # Deprecated service
+    - OpsWorksLayer # Deprecated service
+    - OpsWorksUserProfile # Deprecated service
+    - RedshiftServerlessNamespace # Deprecated service
+    - RedshiftServerlessSnapshot # Deprecated service
+    - RedshiftServerlessWorkgroup # Deprecated service
+    - RoboMakerDeploymentJob # Deprecated Service
+    - RoboMakerFleet # Deprecated Service
+    - RoboMakerRobot # Deprecated Service
     - RoboMakerRobotApplication
     - RoboMakerSimulationApplication
     - RoboMakerSimulationJob
+    - S3Object # Excluded because S3 bucket removal handles removing all S3Objects
+    - ServiceCatalogTagOption # Excluded due to https://github.com/rebuy-de/aws-nuke/issues/515
+    - ServiceCatalogTagOptionPortfolioAttachment # Excluded due to https://github.com/rebuy-de/aws-nuke/issues/515

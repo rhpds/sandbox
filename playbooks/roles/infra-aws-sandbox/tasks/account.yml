@@ -21,52 +21,95 @@
     account_id: "{{ _getaccountid.stdout }}"
     account_already_exists: true
 
-- when:
-    - all_accounts is not defined
-    - operation == 'CREATE' or account_id is not defined
-  block:
-    - name: List all accounts in the organization.
-      command: >-
-        {{ aws_cli }} --profile {{ aws_master_profile }}
-        organizations list-accounts
-        --query 'Accounts[].{Name: Name, Id: Id}'
-      register: _listaccounts
-      changed_when: false
-
-    - set_fact:
-        all_accounts: "{{_listaccounts.stdout|from_json}}"
-
-- when:
-    - operation == 'CREATE' or account_id is not defined
-    - account_name not in all_accounts|json_query('[].Name')
-  name: Create New account.
+- name: List all accounts in the organization.
   command: >-
     {{ aws_cli }} --profile {{ aws_master_profile }}
-    organizations create-account
-    --email {{ account_email }}
-    --account-name "{{ account_name }}"
-    --role-name "{{ aws_role_name }}"
-    --query 'CreateAccountStatus.[Id]'
-    --output text
-  register: _createaccount
+    organizations list-accounts
+    --query 'Accounts[].{Name: Name, Id: Id, Email: Email, Status: Status}'
+  register: _listaccounts
+  changed_when: false
+  when:
+    - check_account_list | bool
+    - all_accounts is not defined
+    - operation == 'CREATE' or account_id is not defined
 
 - when:
+    - check_account_list | bool
     - operation == 'CREATE' or account_id is not defined
-    - account_name in all_accounts|json_query('[].Name')
   block:
-    - name: Find and set the account_id (existing account)
+    - set_fact:
+        all_active_accounts: >-
+          {{
+          _listaccounts.stdout
+          | from_json
+          | json_query('[?Status==`ACTIVE`].{Name: Name, Id: Id}') }}
+
+    - name: Fail if the account name exists multiple times
+      vars:
+        selected_accounts: >-
+          {{
+          all_active_accounts
+          | json_query('[?Name==`'~ account_name ~'`]')
+          | list
+          }}
+      fail:
+        msg: |-
+          Account name exists multiple times in the organization.
+          {{ selected_accounts }}
+      when: selected_accounts | length > 1
+
+    - name: Reuse the existing account if one exists
+      vars:
+        selected_accounts: >-
+          {{
+          all_active_accounts
+          | json_query('[?Name==`'~ account_name ~'`]')
+          | list
+          }}
+      when: selected_accounts | length == 1
       set_fact:
         account_id: >-
-          {{
-          (
-          all_accounts
-          |selectattr('Name', 'equalto', account_name)
-          |first
-          )['Id']
-          }}
+          {{ all_active_accounts
+          | json_query('[?Name==`' ~ account_name ~ '`].Id')
+          | first }}
 
-    - debug:
-        var: account_id
+- when: account_id is defined
+  debug:
+    msg: "Reusing existing account with id {{ account_id }}"
+
+- when:
+    - operation == 'CREATE'
+    - account_id is not defined
+  block:
+  - name: Save status of the sandbox
+    when: update_stage
+    vars:
+      step1: "1 - Account Creation Started"
+      _data:
+        name:
+          S: "{{ account_name }}"
+    command: >-
+      {{ aws_cli }} --profile {{ dynamodb_profile }}
+      --region {{ dynamodb_region }}
+      dynamodb update-item
+      --table-name {{ dynamodb_table }}
+      --key '{{ _data | to_json }}'
+      --update-expression 'SET stage = :val'
+      --expression-attribute-values '{":val": {"S": "{{ step1 }}"}}'
+
+  - name: Create New account.
+    command: >-
+      {{ aws_cli }} --profile {{ aws_master_profile }}
+      organizations create-account
+      --email {{ account_email }}
+      --account-name "{{ account_name }}"
+      --role-name "{{ aws_role_name }}"
+      --query 'CreateAccountStatus.[Id]'
+      --output text
+    register: _createaccount
+    retries: 10
+    # Make this especially long to avoid the issue with too many requests
+    delay: 120
 
 - when:
     - _createaccount is not skipped
@@ -85,9 +128,37 @@
       retries: 40
       changed_when: false
 
-    - fail:
-        msg: The creation of the account failed.
-      when: _describestatus.stdout == 'FAILED'
+    - when: update_stage and _describestatus.stdout == 'FAILED'
+      block:
+        - name: Save failed status of the sandbox
+          command: >-
+            {{ aws_cli }} --profile {{ aws_master_profile }}
+            organizations describe-create-account-status
+            --create-account-request-id {{ _createaccount.stdout }}
+            --output json
+          register: _describestatus2
+          changed_when: false
+
+        - name: Save failed status of the sandbox
+          vars:
+            step1: "1 - Account Creation Failed"
+            _data:
+              name:
+                S: "{{ account_name }}"
+          command: >-
+            {{ aws_cli }} --profile {{ dynamodb_profile }}
+            --region {{ dynamodb_region }}
+            dynamodb update-item
+            --table-name {{ dynamodb_table }}
+            --key '{{ _data | to_json }}'
+            --update-expression 'SET stage = :val'
+            --expression-attribute-values '{":val": {"S": "{{ step1 }}"}}'
+
+        - debug:
+            var: _describestatus2
+
+        - fail:
+            msg: The creation of the account failed.
 
     - name: Get the account ID
       command: >-
@@ -107,8 +178,97 @@
   fail:
     msg: Account Id not defined
 
+- name: Save status of the sandbox
+  vars:
+    step1: "1 - Account Creation Succeeded"
+    _data:
+      name:
+        S: "{{ account_name }}"
+    _expr:
+      ":val":
+        "S": "{{ step1 }}"
+      ":accountid":
+        "S": "{{ account_id }}"
+  command: >-
+    {{ aws_cli }} --profile {{ dynamodb_profile }}
+    --region {{ dynamodb_region }}
+    dynamodb update-item
+    --table-name {{ dynamodb_table }}
+    --key '{{ _data | to_json }}'
+    --update-expression 'SET stage = :val, account_id = :accountid'
+    --expression-attribute-values '{{ _expr | to_json }}'
+
 - name: Add Account Id to the report
   lineinfile:
     path: "{{ output_dir }}/{{ account_name }}_report.txt"
     line: "account_id: {{ account_id }}"
     create: true
+
+- name: Load environment variables for SECURITY contact
+  set_fact:
+    security_email: "{{ lookup('env', 'SECURITY_EMAIL') }}"
+    security_name: "{{ lookup('env', 'SECURITY_NAME') }}"
+    security_phone: "{{ lookup('env', 'SECURITY_PHONE') }}"
+    security_title: "{{ lookup('env', 'SECURITY_TITLE') }}"
+
+- name: Set SECURITY alternate contact
+  when:
+    - security_email != ''
+    - security_name  != ''
+    - security_phone != ''
+    - security_title != ''
+  command: >-
+    aws --profile {{ aws_master_profile | quote }}
+    account put-alternate-contact
+    --account-id {{ account_id | quote }}
+    --alternate-contact-type=SECURITY
+    --email-address {{ security_email | quote }}
+    --name {{ security_name | quote }}
+    --phone-number {{ security_phone | quote }}
+    --title {{ security_title | quote }}
+
+- name: Load environment variables for OPERATIONS contact
+  set_fact:
+    operations_email: "{{ lookup('env', 'OPERATIONS_EMAIL') }}"
+    operations_name: "{{ lookup('env', 'OPERATIONS_NAME') }}"
+    operations_phone: "{{ lookup('env', 'OPERATIONS_PHONE') }}"
+    operations_title: "{{ lookup('env', 'OPERATIONS_TITLE') }}"
+
+- name: Set OPERATIONS alternate contact
+  when:
+    - operations_email != ''
+    - operations_name  != ''
+    - operations_phone != ''
+    - operations_title != ''
+  command: >-
+    aws --profile {{ aws_master_profile | quote }}
+    account put-alternate-contact
+    --account-id {{ account_id | quote }}
+    --alternate-contact-type=OPERATIONS
+    --email-address {{ operations_email | quote }}
+    --name {{ operations_name | quote }}
+    --phone-number {{ operations_phone | quote }}
+    --title {{ operations_title | quote }}
+
+- name: Load environment variables for BILLING contact
+  set_fact:
+    billing_email: "{{ lookup('env', 'BILLING_EMAIL') }}"
+    billing_name: "{{ lookup('env', 'BILLING_NAME') }}"
+    billing_phone: "{{ lookup('env', 'BILLING_PHONE') }}"
+    billing_title: "{{ lookup('env', 'BILLING_TITLE') }}"
+
+- name: Set BILLING alternate contact
+  when:
+    - billing_email != ''
+    - billing_name  != ''
+    - billing_phone != ''
+    - billing_title != ''
+  command: >-
+    aws --profile {{ aws_master_profile | quote }}
+    account put-alternate-contact
+    --account-id {{ account_id | quote }}
+    --alternate-contact-type=BILLING
+    --email-address {{ billing_email | quote }}
+    --name {{ billing_name | quote }}
+    --phone-number {{ billing_phone | quote }}
+    --title {{ billing_title | quote }}
