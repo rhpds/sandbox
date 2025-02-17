@@ -33,6 +33,7 @@ type BaseHandler struct {
 	oaRouter           oarouters.Router
 	awsAccountProvider models.AwsAccountProvider
 	OcpSandboxProvider models.OcpSandboxProvider
+	IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider
 }
 
 type AdminHandler struct {
@@ -40,7 +41,7 @@ type AdminHandler struct {
 	tokenAuth *jwtauth.JWTAuth
 }
 
-func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider models.OcpSandboxProvider) *BaseHandler {
+func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider models.OcpSandboxProvider, IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider) *BaseHandler {
 	return &BaseHandler{
 		svc:                svc,
 		dbpool:             dbpool,
@@ -48,6 +49,7 @@ func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.
 		oaRouter:           oaRouter,
 		awsAccountProvider: awsAccountProvider,
 		OcpSandboxProvider: OcpSandboxProvider,
+		IBMResourceGroupSandboxProvider: IBMResourceGroupSandboxProvider,
 	}
 }
 
@@ -60,6 +62,7 @@ func NewAdminHandler(b *BaseHandler, tokenAuth *jwtauth.JWTAuth) *AdminHandler {
 			oaRouter:           b.oaRouter,
 			awsAccountProvider: b.awsAccountProvider,
 			OcpSandboxProvider: b.OcpSandboxProvider,
+			IBMResourceGroupSandboxProvider: b.IBMResourceGroupSandboxProvider,
 		},
 		tokenAuth: tokenAuth,
 	}
@@ -291,6 +294,57 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			}
 			resources = append(resources, account)
 
+		case "IBMResourceGroupSandbox":
+			account, err := h.IBMResourceGroupSandboxProvider.Request(
+				placementRequest.ServiceUuid,
+				request.CloudSelector,
+				placementRequest.Annotations.Merge(request.Annotations),
+				r.Context(),
+			)
+			if err != nil {
+				// Cleanup previous accounts
+				go func() {
+					for _, account := range tocleanup {
+						if err := account.Delete(); err != nil {
+							log.Logger.Error("Error deleting account", "error", err)
+						}
+					}
+				}()
+				if strings.Contains(err.Error(), "already exists") {
+					w.WriteHeader(http.StatusConflict)
+					render.Render(w, r, &v1.Error{
+						Err:            err,
+						HTTPStatusCode: http.StatusConflict,
+						Message:        "IBM resource group sandbox already exists",
+						ErrorMultiline: []string{err.Error()},
+					})
+					return
+				}
+
+				if err == models.IBMErrNoSchedule {
+					w.WriteHeader(http.StatusNotFound)
+					render.Render(w, r, &v1.Error{
+						Err:            err,
+						HTTPStatusCode: http.StatusNotFound,
+						Message:        "No IBM resource group account configuration found",
+						ErrorMultiline: []string{err.Error()},
+					})
+					return
+				}
+
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					ErrorMultiline: []string{err.Error()},
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error creating placement in IBM resource group",
+				})
+				log.Logger.Error("CreatePlacementHandler", "error", err)
+				return
+			}
+			tocleanup = append(tocleanup, &account)
+			resources = append(resources, account)
+
+
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 			render.Render(w, r, &v1.Error{
@@ -414,7 +468,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 		log.Logger.Error("GetPlacementHandler", "error", err)
 		return
 	}
-	if err := placement.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpSandboxProvider); err != nil {
+	if err := placement.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpSandboxProvider, h.IBMResourceGroupSandboxProvider); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
 			Err:            err,
@@ -472,7 +526,7 @@ func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	placement.SetStatus("deleting")
-	go placement.Delete(h.awsAccountProvider, h.OcpSandboxProvider)
+	go placement.Delete(h.awsAccountProvider, h.OcpSandboxProvider, h.IBMResourceGroupSandboxProvider)
 
 	w.WriteHeader(http.StatusAccepted)
 	render.Render(w, r, &v1.SimpleMessage{

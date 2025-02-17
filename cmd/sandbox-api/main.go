@@ -133,6 +133,12 @@ func main() {
 	OcpSandboxProvider := models.NewOcpSandboxProvider(dbPool, vaultSecret)
 
 	// ---------------------------------------------------------------------
+	// IBMResourceGroup
+	// ---------------------------------------------------------------------
+	IBMResourceGroupSandboxProvider := models.NewIBMResourceGroupSandboxProvider(dbPool, vaultSecret)
+
+
+	// ---------------------------------------------------------------------
 	// Setup JWT
 	// ---------------------------------------------------------------------
 
@@ -152,10 +158,10 @@ func main() {
 	// to the handler maker.
 	// When we need to migrate to Postgresql, we can pass a different "Provider" which will
 	// implement the same interface.
-	accountHandler := NewAccountHandler(awsAccountProvider, OcpSandboxProvider)
+	accountHandler := NewAccountHandler(awsAccountProvider, OcpSandboxProvider, IBMResourceGroupSandboxProvider)
 
 	// Factory for handlers which need connections to both databases
-	baseHandler := NewBaseHandler(awsAccountProvider.Svc, dbPool, doc, oaRouter, awsAccountProvider, OcpSandboxProvider)
+	baseHandler := NewBaseHandler(awsAccountProvider.Svc, dbPool, doc, oaRouter, awsAccountProvider, OcpSandboxProvider, IBMResourceGroupSandboxProvider)
 
 	// Admin handler adds tokenAuth to the baseHandler
 	adminHandler := NewAdminHandler(baseHandler, tokenAuth)
@@ -273,6 +279,17 @@ func main() {
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/enable", baseHandler.EnableOcpSharedClusterConfigurationHandler)
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/update", baseHandler.UpdateOcpSharedClusterConfigurationHandler)
 		r.Delete("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.DeleteOcpSharedClusterConfigurationHandler)
+
+		// ---------------------------------
+		// IBM resource group
+		// ---------------------------------
+		r.Post("/api/v1/ibm-resource-group-configurations", baseHandler.CreateIBMResourceGroupSandboxConfigurationHandler)
+		r.Get("/api/v1/ibm-resource-group-configurations", baseHandler.GetIBMResourceGroupSandboxConfigurationsHandler)
+		r.Get("/api/v1/ibm-resource-group-configurations/{name}", baseHandler.GetIBMResourceGroupSandboxConfigurationHandler)
+		r.Put("/api/v1/ibm-resource-group-configurations/{name}/disable", baseHandler.DisableIBMResourceGroupSandboxConfigurationHandler)
+		r.Put("/api/v1/ibm-resource-group-configurations/{name}/enable", baseHandler.EnableIBMResourceGroupSandboxConfigurationHandler)
+		r.Put("/api/v1/ibm-resource-group-configurations/{name}/update", baseHandler.UpdateIBMResourceGroupSandboxConfigurationHandler)
+		r.Delete("/api/v1/ibm-resource-group-configurations/{name}", baseHandler.DeleteIBMResourceGroupSandboxConfigurationHandler)
 
 		// Reservations
 		r.Post("/api/v1/reservations", baseHandler.CreateReservationHandler)
