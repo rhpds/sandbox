@@ -6,7 +6,7 @@ CREATE TABLE dns_account_configurations (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL UNIQUE,
     aws_access_key_id VARCHAR(255) NOT NULL, -- AWS Access key ID
-    aws_secret_access_key VARCHAR(255) NOT NULL, -- AWS Secret access key
+    aws_secret_access_key BYTEA NOT NULL, -- AWS Secret access key
     zone VARCHAR(255) NOT NULL, -- DNS domain
     hosted_zone_id VARCHAR(32) NOT NULL, -- Hosted Zone ID
     additional_vars JSONB DEFAULT '{}'::jsonb NOT NULL, -- Additional variables for the cluster
