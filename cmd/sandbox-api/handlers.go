@@ -18,16 +18,13 @@ import (
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 
-  "github.com/PaesslerAG/gval"
+	"github.com/PaesslerAG/gval"
 
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
-
 )
-
-
 
 type BaseHandler struct {
 	dbpool             *pgxpool.Pool
@@ -42,7 +39,6 @@ type AdminHandler struct {
 	BaseHandler
 	tokenAuth *jwtauth.JWTAuth
 }
-
 
 func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider models.OcpSandboxProvider) *BaseHandler {
 	return &BaseHandler{
@@ -83,52 +79,50 @@ func multipleKind(resources []v1.ResourceRequest, kind string) bool {
 }
 
 func parseClusterCondition(clusterCondition string) []models.ClusterRelation {
-  // Define a custom language with tracking logic for relations
+	// Define a custom language with tracking logic for relations
 	var relations []models.ClusterRelation
-  language := gval.NewLanguage(gval.Parentheses(), gval.PropositionalLogic(),
-    gval.Function("same", func(args ...interface{}) (interface{}, error) {
-      if len(args) != 1 {
-        return nil, fmt.Errorf("same() requires exactly 1 argument")
-      }
-      ref := fmt.Sprintf("%v", args[0])
-      relations = append(relations, models.ClusterRelation{
-        Relation:  "same",
-        Reference: ref,
-      })
-      return true, nil
-    }),
-    gval.Function("different", func(args ...interface{}) (interface{}, error) {
-      if len(args) != 1 {
-        return nil, fmt.Errorf("same() requires exactly 1 argument")
-      }
-      ref := fmt.Sprintf("%v", args[0])
-      relations = append(relations, models.ClusterRelation{
-        Relation:  "different",
-        Reference: ref,
-      })
-      return true, nil
-    }),
-    gval.Function("child", func(args ...interface{}) (interface{}, error) {
-      if len(args) != 1 {
-        return nil, fmt.Errorf("same() requires exactly 1 argument")
-      }
-      ref := fmt.Sprintf("%v", args[0])
-      relations = append(relations, models.ClusterRelation{
-        Relation:  "child",
-        Reference: ref,
-      })
-      return true, nil
-    }),
-
-  )
-  _, err := language.Evaluate(clusterCondition, map[string]interface{}{})
-  if err != nil {
-	  log.Logger.Error("Error evaluating cluster condition", "error", err)
-    return []models.ClusterRelation{}
-  }
+	language := gval.NewLanguage(gval.Parentheses(), gval.PropositionalLogic(),
+		gval.Function("same", func(args ...interface{}) (interface{}, error) {
+			if len(args) != 1 {
+				return nil, fmt.Errorf("same() requires exactly 1 argument")
+			}
+			ref := fmt.Sprintf("%v", args[0])
+			relations = append(relations, models.ClusterRelation{
+				Relation:  "same",
+				Reference: ref,
+			})
+			return true, nil
+		}),
+		gval.Function("different", func(args ...interface{}) (interface{}, error) {
+			if len(args) != 1 {
+				return nil, fmt.Errorf("same() requires exactly 1 argument")
+			}
+			ref := fmt.Sprintf("%v", args[0])
+			relations = append(relations, models.ClusterRelation{
+				Relation:  "different",
+				Reference: ref,
+			})
+			return true, nil
+		}),
+		gval.Function("child", func(args ...interface{}) (interface{}, error) {
+			if len(args) != 1 {
+				return nil, fmt.Errorf("same() requires exactly 1 argument")
+			}
+			ref := fmt.Sprintf("%v", args[0])
+			relations = append(relations, models.ClusterRelation{
+				Relation:  "child",
+				Reference: ref,
+			})
+			return true, nil
+		}),
+	)
+	_, err := language.Evaluate(clusterCondition, map[string]interface{}{})
+	if err != nil {
+		log.Logger.Error("Error evaluating cluster condition", "error", err)
+		return []models.ClusterRelation{}
+	}
 	return relations
 }
-
 
 func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Request) {
 	placementRequest := &v1.PlacementRequest{}
@@ -235,7 +229,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			} else {
 				clusterRelation = request.ClusterRelation
 			}
-		  log.Logger.Info("ClusterRelation", "alias", request.Alias, "clusterRelation", request.ClusterRelation)
+			log.Logger.Info("ClusterRelation", "alias", request.Alias, "clusterRelation", request.ClusterRelation)
 			var async_request bool = request.Alias == ""
 			account, err := h.OcpSandboxProvider.Request(
 				placementRequest.ServiceUuid,
@@ -1329,5 +1323,3 @@ func (h *BaseHandler) GetReservationResourcesHandler(w http.ResponseWriter, r *h
 		HTTPStatusCode: http.StatusOK,
 	})
 }
-
-
