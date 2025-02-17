@@ -168,7 +168,7 @@ func (p *DNSAccountConfiguration) Save() error {
 			annotations,
 			valid,
 			additional_vars)
-			VALUES ($1, pgp_sym_encrypt($2::text, $4), pgp_sym_encrypt($3::text, $4), $5, $6, $7, $8, $9)
+			VALUES ($1, $2, pgp_sym_encrypt($3::text, $4), $5, $6, $7, $8, $9)
 			RETURNING id`,
 		p.Name,
 		p.AwsAccessKeyID,
@@ -195,7 +195,7 @@ func (p *DNSAccountConfiguration) Update() error {
 		context.Background(),
 		`UPDATE dns_account_configurations
 		 SET name = $1,
-			 aws_access_key_id = pgp_sym_encrypt($2::text, $4),
+			 aws_access_key_id = $2,
 			 aws_secret_access_key = pgp_sym_encrypt($3::text, $4),
 			 annotations = $5,
 			 valid = $6,
@@ -261,7 +261,7 @@ func (p *DNSSandboxProvider) GetDNSAccountConfigurationByName(name string) (DNSA
 		`SELECT
 			id,
 			name,
-			pgp_sym_decrypt(aws_access_key_id::bytea, $1),
+			aws_access_key_id,
 			pgp_sym_decrypt(aws_secret_access_key::bytea, $1),
 			zone,
 			hosted_zone_id,
@@ -305,7 +305,7 @@ func (p *DNSSandboxProvider) GetDNSAccountConfigurations() (DNSAccountConfigurat
 		`SELECT
 			id,
 			name,
-			pgp_sym_decrypt(aws_access_key_id::bytea, $1),
+			aws_access_key_id,
 			pgp_sym_decrypt(aws_secret_access_key::bytea, $1),
 			zone,
 			hosted_zone_id,
