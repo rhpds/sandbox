@@ -11,7 +11,7 @@
       register: _regions
       changed_when: false
       retries: 5
-      delay: "{{ 30|random(start=3, step=1) }}"
+      delay: 15
       until: _regions is succeeded
 
     - set_fact:

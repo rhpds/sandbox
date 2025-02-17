@@ -8,6 +8,11 @@ account_user: student
 
 operation: CREATE
 
+# Listing all accounts in the organization is a costly operation
+# it takes currently 47s to execute.
+# Check the account only in certain scenario, like for a retry
+check_account_list: false
+
 available_after_reset: true
 available_after_create: false
 alias_suffix: '-gpte'
@@ -73,10 +78,12 @@ aws_nuke_filters_default:
     - AWSServiceRoleForSupport
     - AWSServiceRoleForTrustedAdvisor
     - CloudabilityRole_OU
+    - redhat-HCC-role
 
   IAMRolePolicy:
     - "OrganizationAccountAccessRole -> AdministratorAccess"
     - config-rule-role -> config-rule-policy
+    - redhat-HCC-role -> redhat-HCC-policy
     - CloudabilityRole_OU -> CloudabilityAutomationPolicy
     - CloudabilityRole_OU -> CloudabilityMonitorResourcesPolicy
     - CloudabilityRole_OU -> CloudabilityVerificationPolicy
@@ -98,6 +105,8 @@ aws_nuke_filters_default:
 
   IAMPolicy:
     - arn:aws:iam::{{ account_id }}:policy/config-rule-policy
+    - arn:aws:iam::{{ account_id }}:policy/redhat-HCC-policy
+    - redhat-HCC-policy
 
   EC2KeyPair:
     - opentlc_admin_backdoor
@@ -168,5 +177,6 @@ dynamodb_region: us-east-1
 account_altready_exists: false
 
 force_create: false
+update_stage: false
 
 aws_cli: aws

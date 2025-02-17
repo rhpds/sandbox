@@ -1,5 +1,8 @@
 ---
 - name: Get temporary token for the sandbox (Assume Role)
+  environment:
+    AWS_ACCESS_KEY_ID: ""
+    AWS_SECRET_ACCESS_KEY: ""
   sts_assume_role:
     profile: "{{ aws_master_profile }}"
     role_arn: "arn:aws:iam::{{ account_id }}:role/OrganizationAccountAccessRole"
@@ -7,5 +10,5 @@
     region: aws-global
   register: assumed_role
   retries: 5
-  delay: "{{ 30|random(start=3, step=1) }}"
+  delay: 15
   until: assumed_role is succeeded

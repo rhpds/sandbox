@@ -1,14 +1,23 @@
 ---
 - name: Create IAM role using Cloudformation
+  environment:
+    AWS_ACCESS_KEY_ID: ""
+    AWS_SECRET_ACCESS_KEY: ""
   cloudformation:
     profile: "{{ account_profile }}"
     template_body: "{{ lookup('file', 'CF-IAM.json') }}"
     region: "{{ aws_region }}"
     stack_name: roles
+  retries: 50
+  delay: 2
   register: r_cf
-  ignore_errors: yes
+  until: r_cf is succeeded
+  ignore_errors: true
 
 - when: r_cf is failed
+  environment:
+    AWS_ACCESS_KEY_ID: ""
+    AWS_SECRET_ACCESS_KEY: ""
   block:
     - name: Delete IAM role Cloudformation stack
       cloudformation:

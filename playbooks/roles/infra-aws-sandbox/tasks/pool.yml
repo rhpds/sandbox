@@ -37,7 +37,7 @@
     --table-name {{ dynamodb_table }}
     --item '{{ _data | to_json }}'
   register: _putaccount
-  when: _getaccount.stdout == '' or force_create
+  when: _getaccount.stdout == '' or force_create or update_stage
 
 - debug:
     var: _putaccount
@@ -64,11 +64,33 @@
       set_fact:
         sandbox_reservation: "{{ r_get_reservation.stdout }}"
 
+    - name: Get external_id
+      vars:
+        _data:
+          name:
+            S: "{{ account_name }}"
+      command: >-
+        {{ aws_cli }} --profile {{ dynamodb_profile | quote }}
+        --region {{ dynamodb_region | quote }}
+        dynamodb get-item
+        --table-name {{ dynamodb_table }}
+        --key '{{ _data | to_json }}'
+        --query 'Item.external_id'
+        --output text
+      register: r_get_external_id
+      changed_when: false
+
+    - name: Save some values for after cleanup
+      set_fact:
+        external_id: "{{ r_get_external_id.stdout }}"
+
     - when: sandbox_reservation | default("", true) not in ["", "None", "null"]
       set_fact:
         additional_data:
           reservation:
             S: "{{ sandbox_reservation }}"
+          external_id:
+            S: "{{ external_id }}"
 
     - when: sandbox_reservation | default("", true) in ["", "None", "null"]
       set_fact:

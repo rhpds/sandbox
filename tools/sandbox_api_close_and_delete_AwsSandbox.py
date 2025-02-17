@@ -26,7 +26,11 @@ def main():
 
     sandbox = sys.argv[1]
 
-    answer = input(f"Are you sure you want to permanently delete the sandbox {sandbox}? [y/N] ")
+    # Detect if it's a tty
+    if sys.stdin.isatty():
+        answer = input(f"Are you sure you want to permanently delete the sandbox {sandbox}? [y/N] ")
+    else:
+        answer = 'y'
     if answer.lower() != 'y':
         print("Aborted.")
         sys.exit(1)
