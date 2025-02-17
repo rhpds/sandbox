@@ -210,3 +210,14 @@ type UpdateOcpSharedConfigurationRequest struct {
 func (j *UpdateOcpSharedConfigurationRequest) Bind(r *http.Request) error {
 	return nil
 }
+
+type UpdateDNSAccountConfigurationRequest struct {
+	Annotations        *models.Annotations `json:"annotations,omitempty"`
+	AwsAccessKeyID     string              `json:"aws_access_key_id"`
+	AwsSecretAccessKey string              `json:"aws_secret_access_key"`
+	AdditionalVars     map[string]any      `json:"additional_vars,omitempty"`
+}
+
+func (j *UpdateDNSAccountConfigurationRequest) Bind(r *http.Request) error {
+	return nil
+}
