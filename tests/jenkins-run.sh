@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+
+source "${CREDENTIALS_FILE}"
+
+tmpdir=$(mktemp -d)
+apilog=$PWD/api.log
+
+# trap function
+_on_exit() {
+    local exit_status=${1:-$?}
+    rm -rf $tmpdir
+    exit $exit_status
+}
+
+trap "_on_exit" EXIT
+
+
+set -e -o pipefail
+unset DBUS_SESSION_BUS_ADDRESS
+
+# Ensure binaries are installed
+mandatory_commands=(jq podman)
+
+for cmd in "${mandatory_commands[@]}"; do
+    if ! command -v $cmd &> /dev/null; then
+        echo "$cmd could not be found"
+        exit 1
+    fi
+done
+
+# Pull needed images
+podman pull --quiet quay.io/rhpds/sandbox-admin:latest
+podman pull --quiet docker.io/library/postgres:16-bullseye
+podman pull --quiet docker.io/bitwarden/bws:0.5.0
+
+# Run the local postgresql instance
+make run-local-pg
+
+# DB migrations
+sleep 2
+make migrate
+# ensure all .down.sql files are working
+(. ./.dev.pgenv && migrate -database "${DATABASE_URL}" -path db/migrations down -all )
+# Run migration again
+make migrate
+
+# Generate admin and app tokens
+make tokens
+
+# Run the API in background
+# Select a free port
+PORT=54379
+export PORT
+echo "Running sandbox API on port $PORT"
+make run-api &> $apilog &
+#(. ./.dev.pgenv && . ./.dev.jwtauth_env && cd cmd/sandbox-api && nohup go run . &> "$apilog" &)
+
+# Wait for the API to come up
+retries=0
+echo -n "Waiting for API to come up"
+while true; do
+    if [ $retries -gt 20 ]; then
+        echo "API not coming up"
+        exit 1
+    fi
+    if  [ "$(curl http://localhost:$PORT/ping -s)" == "." ]; then
+        break
+    fi
+
+    sleep 1
+    echo -n .
+    sync
+    retries=$((retries + 1))
+done
+echo
+
+source .dev.tokens_env
+
+# Install the cluster configuration
+for payload in ocp-shared-clusters-configs/ocpvdev01*.json; do
+    if [[ $payload =~ create.json$ ]]; then
+        cluster=$(cat $payload | jq -r ".name")
+    elif [[ $payload =~ update.json$ ]]; then
+        # take the name from the file name
+        cluster=$(basename $payload | sed 's/\.update\.json$//')
+    fi
+    [ -z "$cluster" ] && echo "Cluster name not found in $payload" && exit 1
+    payload2=$tmpdir/$(basename $payload)
+    token=$(podman run --rm \
+            -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+            -e PROJECT_ID=$BWS_PROJECT_ID \
+            bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
+            | KEYVALUE="${cluster}.token" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
+
+    jq  --arg token $token '(.token = $token)'  < "$payload" > "$payload2"
+
+    # In bash, files in a * are sorted alphabetically by default
+    # so a create will always happen before an update.
+    if [[ $payload =~ create.json$ ]]; then
+        echo "Creating cluster $cluster"
+        hurl --variable login_token_admin=$admintoken \
+            --file-root $tmpdir \
+            --variable host=http://localhost:$PORT \
+            --variable ocp_cluster_def=$payload2 \
+            ./tools/ocp_shared_cluster_configuration_create.hurl
+    elif [[ $payload =~ update.json$ ]]; then
+        echo "Updating cluster $cluster"
+        hurl --variable login_token_admin=$admintoken \
+            --file-root $tmpdir \
+            --variable host=http://localhost:$PORT \
+            --variable payload=$payload2 \
+            --variable cluster=$cluster \
+            ./tools/ocp_shared_cluster_configuration_update.hurl
+    fi
+done
+
+uuid=$(uuidgen -r)
+export uuid
+cd tests/
+
+hurl --test \
+  --variable login_token=$apptoken \
+  --variable login_token_admin=$admintoken \
+  --variable host=http://localhost:$PORT \
+  --variable uuid=$uuid \
+  --jobs 1 \
+  ./*.hurl
