@@ -20,6 +20,8 @@ import (
 
 	"github.com/PaesslerAG/gval"
 
+	"github.com/PaesslerAG/gval"
+
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
@@ -127,6 +129,52 @@ func parseClusterCondition(clusterCondition string) []models.ClusterRelation {
 	return relations
 }
 
+func parseClusterCondition(clusterCondition string) []models.ClusterRelation {
+	// Define a custom language with tracking logic for relations
+	var relations []models.ClusterRelation
+	language := gval.NewLanguage(gval.Parentheses(), gval.PropositionalLogic(),
+		gval.Function("same", func(args ...interface{}) (interface{}, error) {
+			if len(args) != 1 {
+				return nil, fmt.Errorf("same() requires exactly 1 argument")
+			}
+			ref := fmt.Sprintf("%v", args[0])
+			relations = append(relations, models.ClusterRelation{
+				Relation:  "same",
+				Reference: ref,
+			})
+			return true, nil
+		}),
+		gval.Function("different", func(args ...interface{}) (interface{}, error) {
+			if len(args) != 1 {
+				return nil, fmt.Errorf("same() requires exactly 1 argument")
+			}
+			ref := fmt.Sprintf("%v", args[0])
+			relations = append(relations, models.ClusterRelation{
+				Relation:  "different",
+				Reference: ref,
+			})
+			return true, nil
+		}),
+		gval.Function("child", func(args ...interface{}) (interface{}, error) {
+			if len(args) != 1 {
+				return nil, fmt.Errorf("same() requires exactly 1 argument")
+			}
+			ref := fmt.Sprintf("%v", args[0])
+			relations = append(relations, models.ClusterRelation{
+				Relation:  "child",
+				Reference: ref,
+			})
+			return true, nil
+		}),
+	)
+	_, err := language.Evaluate(clusterCondition, map[string]interface{}{})
+	if err != nil {
+		log.Logger.Error("Error evaluating cluster condition", "error", err)
+		return []models.ClusterRelation{}
+	}
+	return relations
+}
+
 func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Request) {
 	placementRequest := &v1.PlacementRequest{}
 	if err := render.Bind(r, placementRequest); err != nil {
@@ -181,6 +229,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 	resources := []any{}
 	multipleOcp := multipleKind(placementRequest.Resources, "OcpSandbox")
 	multipleOcpAccounts := []models.MultipleOcpAccount{}
+	multipleOcpAccounts := []models.MultipleOcpAccount{}
 	for _, request := range placementRequest.Resources {
 		switch request.Kind {
 		case "AwsSandbox", "AwsAccount", "aws_account":
@@ -234,6 +283,14 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			}
 			log.Logger.Info("ClusterRelation", "alias", request.Alias, "clusterRelation", request.ClusterRelation)
 			var async_request bool = request.Alias == ""
+			var clusterRelation []models.ClusterRelation
+			if request.ClusterCondition != "" {
+				clusterRelation = parseClusterCondition(request.ClusterCondition)
+			} else {
+				clusterRelation = request.ClusterRelation
+			}
+			log.Logger.Info("ClusterRelation", "alias", request.Alias, "clusterRelation", request.ClusterRelation)
+			var async_request bool = request.Alias == ""
 			account, err := h.OcpSandboxProvider.Request(
 				placementRequest.ServiceUuid,
 				request.CloudSelector,
@@ -242,7 +299,11 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				request.LimitRange,
 				multipleOcp,
 				multipleOcpAccounts,
+				multipleOcpAccounts,
 				r.Context(),
+				async_request,
+				request.Alias,
+				clusterRelation,
 				async_request,
 				request.Alias,
 				clusterRelation,
@@ -288,6 +349,66 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			tocleanup = append(tocleanup, &account)
+			if multipleOcp && request.Alias != "" {
+				maccount, _ := h.OcpSandboxProvider.FetchByName(account.Name)
+				multipleOcpAccounts = append(multipleOcpAccounts, models.MultipleOcpAccount{Alias: request.Alias, Account: maccount})
+			}
+			resources = append(resources, account)
+
+		case "DNSSandbox":
+			// Create the placement in DNS Account
+			account, err := h.DNSSandboxProvider.Request(
+				placementRequest.ServiceUuid,
+				request.CloudSelector,
+				placementRequest.Annotations.Merge(request.Annotations),
+				multipleDNS,
+				r.Context(),
+			)
+			if err != nil {
+				// Cleanup previous accounts
+				go func() {
+					for _, account := range tocleanup {
+						if err := account.Delete(); err != nil {
+							log.Logger.Error("Error deleting account", "error", err)
+						}
+					}
+				}()
+				if strings.Contains(err.Error(), "already exists") {
+					w.WriteHeader(http.StatusConflict)
+					render.Render(w, r, &v1.Error{
+						Err:            err,
+						HTTPStatusCode: http.StatusConflict,
+						Message:        "DNS sandbox already exists",
+						ErrorMultiline: []string{err.Error()},
+					})
+					return
+				}
+
+				if err == models.DNSErrNoSchedule {
+					w.WriteHeader(http.StatusNotFound)
+					render.Render(w, r, &v1.Error{
+						Err:            err,
+						HTTPStatusCode: http.StatusNotFound,
+						Message:        "No DNS account configuration found",
+						ErrorMultiline: []string{err.Error()},
+					})
+					return
+				}
+
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					ErrorMultiline: []string{err.Error()},
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error creating placement in DNS",
+				})
+				log.Logger.Error("CreatePlacementHandler", "error", err)
+				return
+			}
+			tocleanup = append(tocleanup, &account)
+			if multipleOcp && request.Alias != "" {
+				maccount, _ := h.OcpSandboxProvider.FetchByName(account.Name)
+				multipleOcpAccounts = append(multipleOcpAccounts, models.MultipleOcpAccount{Alias: request.Alias, Account: maccount})
+			}
 			if multipleOcp && request.Alias != "" {
 				maccount, _ := h.OcpSandboxProvider.FetchByName(account.Name)
 				multipleOcpAccounts = append(multipleOcpAccounts, models.MultipleOcpAccount{Alias: request.Alias, Account: maccount})
