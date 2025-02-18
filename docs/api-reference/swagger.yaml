@@ -1901,7 +1901,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Message"
               example:
-                message: OCP shared cluster configuration deleted
+                message: DNS account deleted
         '404':
           description: deleteDNSAccountConfiguration DNSAccountConfiguration not found
           content:
@@ -1945,7 +1945,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Message"
               example:
-                message: OCP shared cluster configuration enabled
+                message: DNS Account enabled
         '404':
           description: enableDNSAccountConfiguration DNSAccountConfiguration not found
           content:
