@@ -426,11 +426,8 @@ paths:
             - OcpSandbox
             - dns
             - DNSSandbox
-<<<<<<< HEAD
             - ibmrg
             - IBMResourceGroupSandbox
-=======
->>>>>>> 3017ef7 (Adding IBM resource group)
       - name: available
         in: query
         description: Boolean to filter if available or taken.
@@ -482,11 +479,8 @@ paths:
             - OcpSandbox
             - dns
             - DNSSandbox
-<<<<<<< HEAD
             - ibmrg
             - IBMResourceGroupSandbox
-=======
->>>>>>> 3017ef7 (Adding IBM resource group)
       - name: name
         in: path
         required: true
@@ -585,11 +579,8 @@ paths:
             - OcpSandbox
             - dns
             - DNSSandbox
-<<<<<<< HEAD
             - ibmrg
             - IBMResourceGroupSandbox
-=======
->>>>>>> 3017ef7 (Adding IBM resource group)
       - name: name
         in: path
         required: true
@@ -649,11 +640,8 @@ paths:
             - OcpSandbox
             - dns
             - DNSSandbox
-<<<<<<< HEAD
             - ibmrg
             - IBMResourceGroupSandbox
-=======
->>>>>>> 3017ef7 (Adding IBM resource group)
       - name: name
         in: path
         required: true
@@ -710,11 +698,8 @@ paths:
             - OcpSandbox
             - dns
             - DNSSandbox
-<<<<<<< HEAD
             - ibmrg
             - IBMResourceGroupSandbox
-=======
->>>>>>> 3017ef7 (Adding IBM resource group)
       - name: name
         in: path
         required: true
@@ -771,11 +756,8 @@ paths:
             - OcpSandbox
             - dns
             - DNSSandbox
-<<<<<<< HEAD
             - ibmrg
             - IBMResourceGroupSandbox
-=======
->>>>>>> 3017ef7 (Adding IBM resource group)
       - name: name
         in: path
         required: true
@@ -2515,6 +2497,7 @@ components:
         - $ref: '#/components/schemas/AzureAccount'
         - $ref: '#/components/schemas/OcpSandbox'
         - $ref: '#/components/schemas/DNSSandbox'
+        - $ref: '#/components/schemas/IBMResourceGroupSandbox'
       discriminator:
         propertyName: kind
         mapping:
@@ -2525,16 +2508,14 @@ components:
         - $ref: '#/components/schemas/AwsAccountWithCreds'
         - $ref: '#/components/schemas/OcpSandboxWithCreds'
         - $ref: '#/components/schemas/DNSSandboxWithCreds'
+        - $ref: '#/components/schemas/IBMResourceGroupSandboxWithCreds'
       discriminator:
         propertyName: kind
         mapping:
           AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
           OcpSandbox: '#/components/schemas/OcpSandboxWithCreds'
           DNSSandbox: '#/components/schemas/DNSSandboxWithCreds'
-<<<<<<< HEAD
           IBMResourceGroupSandbox: '#/components/schemas/IBMResourceGroupSandboxWithCreds'
-=======
->>>>>>> 3017ef7 (Adding IBM resource group)
 
     Resource:
       type: object
@@ -2569,6 +2550,7 @@ components:
           AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
           OcpSandbox: '#/components/schemas/OcpSandboxWithCreds'
           DNSSandbox: '#/components/schemas/DNSSandboxWithCreds'
+          IBMResourceGroupSandbox: '#/components/schemas/IBMResourceGroupSandboxWithCreds'
 
     Resources:
       type: array
@@ -2581,16 +2563,14 @@ components:
         - $ref: '#/components/schemas/AwsIamKey'
         - $ref: '#/components/schemas/OcpServiceAccount'
         - $ref: '#/components/schemas/DNSSandboxCreds'
+        - $ref: '#/components/schemas/IBMResourceGroupServiceAccount'
       discriminator:
         propertyName: kind
         mapping:
           aws_iam_key: '#/components/schemas/AwsIamKey'
           ServiceAccount: '#/components/schemas/OcpServiceAccount'
           DNSSandboxCreds: '#/components/schemas/DNSSandboxCreds'
-<<<<<<< HEAD
           IBMResourceGroupServiceAccount: '#/components/schemas/IBMResourceGroupServiceAccount'
-=======
->>>>>>> 3017ef7 (Adding IBM resource group)
 
     # Credential for OcpSandbox
     OcpServiceAccount:
@@ -2637,7 +2617,6 @@ components:
           type: string
           example: Z0
 
-<<<<<<< HEAD
     # Credential for IBMResourceGroupSandbox
     IBMResourceGroupServiceAccount:
       type: object
@@ -2651,8 +2630,6 @@ components:
         apikey:
           type: string
           example: 1234567890abcdefghij
-=======
->>>>>>> 3017ef7 (Adding IBM resource group)
 
     Credentials:
       type: array
@@ -2721,11 +2698,7 @@ components:
           example: IAM key
         aws_access_key_id:
           type: string
-<<<<<<< HEAD
           example: redacted
-=======
-          example: AKIAR2AI7M4QU6KCVIWJ
->>>>>>> 3017ef7 (Adding IBM resource group)
         aws_secret_access_key:
           type: string
           example: 1234567890abcdefghij
@@ -2847,7 +2820,6 @@ components:
               items:
                 $ref: '#/components/schemas/Credentials'
 
-<<<<<<< HEAD
     IBMResourceGroupSandbox:
       type: object
       required:
@@ -2889,8 +2861,6 @@ components:
               items:
                 $ref: '#/components/schemas/Credentials'
 
-=======
->>>>>>> 3017ef7 (Adding IBM resource group)
     Accounts:
       type: array
       items:
@@ -2986,6 +2956,7 @@ components:
         - AwsSandbox
         - OcpSandbox
         - DNSSandbox
+        - IBMResourceGroupSandbox
 
     Reservation:
       description: Reservation record
@@ -3314,7 +3285,6 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/DNSAccountConfiguration'
-<<<<<<< HEAD
 
     IBMResourceGroupSandboxConfiguration:
       description: IBMResourceGroupSandboxConfiguration is a record of an IBM Account
@@ -3356,5 +3326,3 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/IBMResourceGroupSandboxConfiguration'
-=======
->>>>>>> 3017ef7 (Adding IBM resource group)
