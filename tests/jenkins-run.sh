@@ -77,7 +77,7 @@ echo
 source .dev.tokens_env
 
 # Install the cluster configuration
-for payload in ocp-shared-clusters-configs/ocpvdev01*.json; do
+for payload in sandbox-api-configs/ocp-shared-clusters-configs/ocpvdev01*.json; do
     if [[ $payload =~ create.json$ ]]; then
         cluster=$(cat $payload | jq -r ".name")
     elif [[ $payload =~ update.json$ ]]; then
@@ -111,6 +111,50 @@ for payload in ocp-shared-clusters-configs/ocpvdev01*.json; do
             --variable payload=$payload2 \
             --variable cluster=$cluster \
             ./tools/ocp_shared_cluster_configuration_update.hurl
+    fi
+done
+
+# Install the dns account configuration
+for payload in sandbox-api-configs/dns-accounts-configs/dev*.json; do
+    if [[ $payload =~ create.json$ ]]; then
+        account=$(cat $payload | jq -r ".zone")
+    elif [[ $payload =~ update.json$ ]]; then
+        # take the name from the file name
+        account=$(basename $payload | sed 's/\.update\.json$//')
+    fi
+    [ -z "$account" ] && echo "Account name not found in $payload" && exit 1
+    payload2=$tmpdir/$(basename $payload)
+    ACCESS_KEY_ID=$(podman run --rm \
+            -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+            -e PROJECT_ID=$BWS_PROJECT_ID \
+            bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
+            | KEYVALUE="${account}.access_key_id" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
+    SECRET_ACCESS_KEY=$(podman run --rm \
+            -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+            -e PROJECT_ID=$BWS_PROJECT_ID \
+            bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
+            | KEYVALUE="${account}.secret_access_key" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
+
+    jq  --arg access_key_id $ACCESS_KEY_ID --arg secret_access_key $SECRET_ACCESS_KEY= '(.aws_access_key_id = $access_key_id | .aws_secret_access_key = $secret_access_key)'  < $payload > $payload2
+
+    # In bash, files in a * are sorted alphabetically by default
+    # so a create will always happen before an update.
+    if [[ $payload =~ create.json$ ]]; then
+        echo "Creating account $account"
+        hurl --variable login_token_admin=$admintoken \
+            --file-root $tmpdir \
+            --variable host=http://localhost:$PORT \
+            --variable dns_account_def=$payload2 \
+            ./tools/dns_account_configuration_create.hurl
+    elif [[ $payload =~ update.json$ ]]; then
+        echo "Updating account $account"
+        account2="${account//./-}"
+        hurl --variable login_token_admin=$admintoken \
+            --file-root $tmpdir \
+            --variable host=http://localhost:$PORT \
+            --variable payload=$payload2 \
+            --variable account=$account2 \
+            ./tools/dns_account_configuration_update.hurl
     fi
 done
 
