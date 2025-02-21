@@ -9,12 +9,12 @@ pipeline {
     stages {
         stage('Test') {
             steps {
-                // Load the private repo git@github.com:rhpds/ocp-shared-clusters-configs.git
+                // Load the private repo git@github.com:rhpds/sandbox-api-configs.git
 
                 dir('ocp-shared-clusters-configs') {
                     git branch: 'main',
                         credentialsId: 'ssh-key-ocp-shared-clusters-config',
-                        url: 'git@github.com:rhpds/ocp-shared-clusters-configs.git'
+                        url: 'git@github.com:rhpds/sandbox-api-configs.git'
                 }
 
                 
