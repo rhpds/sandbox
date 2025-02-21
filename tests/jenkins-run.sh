@@ -117,6 +117,7 @@ done
 
 # Install the dns account configuration
 for payload in sandbox-api-configs/dns-accounts-configs/dev*.json; do
+    echo "Reading file $payload"
     if [[ $payload =~ create.json$ ]]; then
         account=$(cat $payload | jq -r ".zone")
     elif [[ $payload =~ update.json$ ]]; then
@@ -136,7 +137,7 @@ for payload in sandbox-api-configs/dns-accounts-configs/dev*.json; do
             bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
             | KEYVALUE="${account}.secret_access_key" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 
-    jq  --arg access_key_id $ACCESS_KEY_ID --arg secret_access_key $SECRET_ACCESS_KEY= '(.aws_access_key_id = $access_key_id | .aws_secret_access_key = $secret_access_key)'  < $payload > $payload2
+    jq  --arg access_key_id $ACCESS_KEY_ID --arg secret_access_key $SECRET_ACCESS_KEY '(.aws_access_key_id = $access_key_id | .aws_secret_access_key = $secret_access_key)'  < $payload > $payload2
 
     # In bash, files in a * are sorted alphabetically by default
     # so a create will always happen before an update.
