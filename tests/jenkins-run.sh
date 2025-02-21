@@ -138,7 +138,6 @@ for payload in sandbox-api-configs/dns-accounts-configs/dev*.json; do
             | KEYVALUE="${account}.secret_access_key" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 
     jq  --arg access_key_id $ACCESS_KEY_ID --arg secret_access_key $SECRET_ACCESS_KEY '(.aws_access_key_id = $access_key_id | .aws_secret_access_key = $secret_access_key)'  < $payload > $payload2 
-    cat $payload2
     # In bash, files in a * are sorted alphabetically by default
     # so a create will always happen before an update.
     if [[ $payload =~ create.json$ ]]; then
