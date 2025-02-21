@@ -77,7 +77,7 @@ echo
 source .dev.tokens_env
 
 # Install the cluster configuration
-for payload in sandbox-api-configs/ocp-shared-clusters-configs/ocpvdev01*.json; do
+for payload in sandbox-api-configs/ocp-shared-cluster-configurations/ocpvdev01*.json; do
     echo "Reading file $payload"
     if [[ $payload =~ create.json$ ]]; then
         cluster=$(cat $payload | jq -r ".name")
@@ -116,7 +116,7 @@ for payload in sandbox-api-configs/ocp-shared-clusters-configs/ocpvdev01*.json; 
 done
 
 # Install the dns account configuration
-for payload in sandbox-api-configs/dns-accounts-configs/dev*.json; do
+for payload in sandbox-api-configs/dns-account-configurations/dev*.json; do
     echo "Reading file $payload"
     if [[ $payload =~ create.json$ ]]; then
         account=$(cat $payload | jq -r ".zone")
