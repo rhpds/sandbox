@@ -11,7 +11,7 @@ pipeline {
             steps {
                 // Load the private repo git@github.com:rhpds/sandbox-api-configs.git
 
-                dir('ocp-shared-clusters-configs') {
+                dir('sandbox-api-configs') {
                     git branch: 'main',
                         credentialsId: 'ssh-key-ocp-shared-clusters-config',
                         url: 'git@github.com:rhpds/sandbox-api-configs.git'
