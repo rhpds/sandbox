@@ -78,6 +78,7 @@ source .dev.tokens_env
 
 # Install the cluster configuration
 for payload in sandbox-api-configs/ocp-shared-clusters-configs/ocpvdev01*.json; do
+    echo "Reading file $payload"
     if [[ $payload =~ create.json$ ]]; then
         cluster=$(cat $payload | jq -r ".name")
     elif [[ $payload =~ update.json$ ]]; then
