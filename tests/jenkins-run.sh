@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+cat $CREDENTIALS_FILE
 source "${CREDENTIALS_FILE}"
 
 tmpdir=$(mktemp -d)
