@@ -184,7 +184,7 @@ for payload in sandbox-api-configs/ibm-resource-group-configurations/dev*.json; 
         hurl --variable login_token_admin=$admintoken \
             --file-root $tmpdir \
             --variable host=http://localhost:$PORT \
-            --variable dns_account_def=$payload2 \
+            --variable ibm_resource_group_account_def=$payload2 \
             ./tools/ibm_resource_group_account_configuration_create.hurl
     elif [[ $payload =~ update.json$ ]]; then
         echo "Updating account $account"
