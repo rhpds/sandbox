@@ -1,0 +1,6 @@
+BEGIN;
+
+DROP TRIGGER IF EXISTS ibm_resource_group_account_configurations_updated_at ON ibm_resource_group_account_configurations;
+DROP TABLE IF EXISTS ibm_resource_group_account_configurations;
+
+COMMIT;
