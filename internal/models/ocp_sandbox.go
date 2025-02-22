@@ -955,7 +955,20 @@ func anySchedulableNodes(nodes []v1.Node) bool {
 	return false
 }
 
-func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, requestedQuota *v1.ResourceList, requestedLimitRange *v1.LimitRange, multiple bool, multipleAccounts []MultipleOcpAccount, ctx context.Context, asyncRequest bool, alias string, clusterRelation []ClusterRelation) (OcpSandboxWithCreds, error) {
+func (a *OcpSandboxProvider) Request(
+	serviceUuid string,
+	cloud_selector map[string]string,
+	annotations map[string]string,
+	requestedQuota *v1.ResourceList,
+	requestedLimitRange *v1.LimitRange,
+	multiple bool,
+	multipleAccounts []MultipleOcpAccount,
+	ctx context.Context,
+	asyncRequest bool,
+	alias string,
+	clusterRelation []ClusterRelation,
+) (OcpSandboxWithCreds, error) {
+
 	var selectedCluster OcpSharedClusterConfiguration
 	var possibleClusters []string
 	var excludeClusters []string
@@ -981,7 +994,12 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			}
 		}
 	}
-	log.Logger.Info("Alias", alias, "clusters", "possibleClusters", possibleClusters, "excludeClusters", excludeClusters, "childClusters", childClusters)
+	log.Logger.Info("Relation",
+		"alias", alias,
+		"possibleClusters", possibleClusters,
+		"excludeClusters", excludeClusters,
+		"childClusters", childClusters,
+	)
 
 	// Version with OcpSharedClusterConfiguration methods
 	candidateClusters, err := a.GetSchedulableClusters(cloud_selector, possibleClusters, excludeClusters, childClusters)
@@ -1116,7 +1134,7 @@ func (a *OcpSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 				"CPU% Usage", clusterCpuUsage,
 				"Memory% Usage", clusterMemoryUsage,
 			)
-			if clusterMemoryUsage < cluster.MaxMemoryUsagePercentage && clusterCpuUsage < cluster.MaxCpuUsagePercentage  && (selectedClusterMemoryUsage == -1 || clusterMemoryUsage < selectedClusterMemoryUsage) {
+			if clusterMemoryUsage < cluster.MaxMemoryUsagePercentage && clusterCpuUsage < cluster.MaxCpuUsagePercentage && (selectedClusterMemoryUsage == -1 || clusterMemoryUsage < selectedClusterMemoryUsage) {
 
 				selectedCluster = cluster
 				log.Logger.Info("selectedCluster", "cluster", selectedCluster.Name)
