@@ -160,7 +160,7 @@ for payload in sandbox-api-configs/dns-account-configurations/dev*.json; do
 done
 
 # Install the dns account configuration
-for payload in sandbox-api-configs/ibm-resource-group-configurations/ibm-dev*.json; do
+for payload in sandbox-api-configs/ibm-resource-group-configurations/dev*.json; do
     echo "Reading file $payload"
     if [[ $payload =~ create.json$ ]]; then
         account=$(cat $payload | jq -r ".zone")
