@@ -163,10 +163,10 @@ done
 for payload in sandbox-api-configs/ibm-resource-group-configurations/dev*.json; do
     echo "Reading file $payload"
     if [[ $payload =~ create.json$ ]]; then
-        account=$(cat $payload | jq -r ".zone")
+        account=$(cat $payload | jq -r ".name")
     elif [[ $payload =~ update.json$ ]]; then
         # take the name from the file name
-        account=$(basename $payload | sed 's/\.update\.json$//')
+        account=ibm-$(basename $payload | sed 's/\.update\.json$//')
     fi
     [ -z "$account" ] && echo "Account name not found in $payload" && exit 1
     payload2=$tmpdir/$(basename $payload)
