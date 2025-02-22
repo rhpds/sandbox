@@ -28,6 +28,12 @@ jsonpath "$.access_token_exp" isString
 # Create a new placement, with two relations using same
 #################################################################################
 
+DELETE {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 40
+HTTP 404
+
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
 {

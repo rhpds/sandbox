@@ -120,7 +120,10 @@ Authorization: Bearer {{access_token}}
   "service_uuid": "{{uuid}}",
   "resources": [
     {
-      "kind": "OcpSandbox"
+      "kind": "OcpSandbox",
+      "cloud_selector": {
+        "quota": "yes"
+      }
     }
   ],
   "annotations": {
@@ -157,7 +160,7 @@ jsonpath "$.resources[0].credentials" count >= 1
 jsonpath "$.resources[0].credentials[0].kind" == "ServiceAccount"
 jsonpath "$.resources[0].credentials[0].token" isString
 # Default quota should be applied
-jsonpath "$.resources[0].quota['requests.memory']" == "20Gi"
+jsonpath "$.resources[0].quota['requests.memory']" == "1280Gi"
 
 #################################################################################
 # Delete placement
@@ -188,6 +191,9 @@ Authorization: Bearer {{access_token}}
             "requests.memory": "10Gi",
             "cnv.storageclass.storage.k8s.io/requests.storage": "500Gi",
             "requests.cpu": "40"
+        },
+        "cloud_selector": {
+            "quota": "yes"
         }
     }
   ],

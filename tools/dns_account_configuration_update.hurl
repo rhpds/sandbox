@@ -12,13 +12,10 @@ jsonpath "$.access_token" isString
 jsonpath "$.access_token_exp" isString
 
 #################################################################################
-# Update the OcpClusterConfiguration
+# Update the DNSAccountConfiguration
 #################################################################################
 # Set quota_required to true
-PUT {{host}}/api/v1/ocp-shared-cluster-configurations/{{cluster}}/update
+PUT {{host}}/api/v1/dns-account-configurations/{{account}}/update
 Authorization: Bearer {{ access_token_admin }}
 Content-Type: application/json
 file,{{payload}};
-HTTP 200
-[Asserts]
-jsonpath "$.message" == "OCP shared cluster configuration updated"

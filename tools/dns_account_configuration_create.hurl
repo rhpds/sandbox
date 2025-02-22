@@ -12,13 +12,12 @@ jsonpath "$.access_token" isString
 jsonpath "$.access_token_exp" isString
 
 #################################################################################
-# Update the OcpClusterConfiguration
+# Create a DNS Account that is going to be useful for the test
 #################################################################################
-# Set quota_required to true
-PUT {{host}}/api/v1/ocp-shared-cluster-configurations/{{cluster}}/update
-Authorization: Bearer {{ access_token_admin }}
+POST {{host}}/api/v1/dns-account-configurations
+Authorization: Bearer {{access_token_admin}}
 Content-Type: application/json
-file,{{payload}};
-HTTP 200
+file,{{dns_account_def}};
+HTTP 201
 [Asserts]
-jsonpath "$.message" == "OCP shared cluster configuration updated"
+jsonpath "$.message" == "DNS account configuration created"

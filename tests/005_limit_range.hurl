@@ -123,7 +123,10 @@ Authorization: Bearer {{access_token}}
   "service_uuid": "{{uuid}}",
   "resources": [
     {
-      "kind": "OcpSandbox"
+      "kind": "OcpSandbox",
+      "cloud_selector": {
+        "quota": "yes"
+      }
     }
   ],
   "annotations": {
@@ -160,7 +163,7 @@ jsonpath "$.resources[0].credentials" count >= 1
 jsonpath "$.resources[0].credentials[0].kind" == "ServiceAccount"
 jsonpath "$.resources[0].credentials[0].token" isString
 jsonpath "$.resources[0].limit_range.spec.limits" count == 1
-jsonpath "$.resources[0].limit_range.spec.limits[0].default.cpu" == "1"
+jsonpath "$.resources[0].limit_range.spec.limits[0].default.cpu" == "2"
 
 #################################################################################
 # Delete placement
@@ -198,6 +201,9 @@ Authorization: Bearer {{access_token}}
   "resources": [
     {
       "kind": "OcpSandbox",
+      "cloud_selector": {
+        "quota": "yes"
+      },
       "limit_range": {
         "spec": {
           "limits": [
