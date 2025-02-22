@@ -822,7 +822,7 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]st
 				if err := rows.Scan(&clusterName); err != nil {
 					return OcpSharedClusterConfigurations{}, err
 				}
-				if len(possibleClusters) > 0 && !slices.Contains(possibleClusters, clusterName) {
+				if slices.Contains(possibleClusters, clusterName) {
 					continue
 				}
 				possibleClusters = append(possibleClusters, clusterName)
