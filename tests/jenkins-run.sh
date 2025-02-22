@@ -203,7 +203,7 @@ uuid=$(uuidgen -r)
 export uuid
 cd tests/
 
-hurl --test \
+hurl --very-verbose --test \
   --variable login_token=$apptoken \
   --variable login_token_admin=$admintoken \
   --variable host=http://localhost:$PORT \
