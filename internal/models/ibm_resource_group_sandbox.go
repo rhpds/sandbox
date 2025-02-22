@@ -795,7 +795,7 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 
 		result, response, err := iamPolicyManagementService.CreatePolicy(policyAll)
 		if err != nil {
-			log.Logger.Error("Failed to create policy: %v\nResponse: %v", err, response)
+			log.Logger.Error("Failed to create policy", "error",  err, "response", response)
 			rnew.SetStatus("error")
 			return
 		}
@@ -804,7 +804,7 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 
 		result, response, err = iamPolicyManagementService.CreatePolicy(policyRG)
 		if err != nil {
-			log.Logger.Error("Failed to create policy: %v\nResponse: %v", err, response)
+			log.Logger.Error("Failed to create policy", "error",  err, "response", response)
 			rnew.SetStatus("error")
 			return
 		}
