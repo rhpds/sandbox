@@ -574,7 +574,7 @@ func (a *IBMResourceGroupSandboxProvider) GetSchedulableAccounts(cloud_selector 
 	// Get resource from 'ibm_resource_group_account_configurations' table
 	rows, err := a.DbPool.Query(
 		context.Background(),
-		`SELECT name FROM ibm_resource_group_account_configurations WHERE annotations @> $1 and valid=true ORDER BY random()`,
+		`SELECT name FROM ibm_resource_group_account_configurations WHERE annotations @> $1 and valid=true ORDER BY random() limit 1`,
 		cloud_selector,
 	)
 
