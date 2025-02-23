@@ -348,14 +348,6 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			tocleanup = append(tocleanup, &account)
-			if multipleOcp && request.Alias != "" {
-				maccount, _ := h.OcpSandboxProvider.FetchByName(account.Name)
-				multipleOcpAccounts = append(multipleOcpAccounts, models.MultipleOcpAccount{Alias: request.Alias, Account: maccount})
-			}
-			if multipleOcp && request.Alias != "" {
-				maccount, _ := h.OcpSandboxProvider.FetchByName(account.Name)
-				multipleOcpAccounts = append(multipleOcpAccounts, models.MultipleOcpAccount{Alias: request.Alias, Account: maccount})
-			}
 			resources = append(resources, account)
 
 		case "IBMResourceGroupSandbox":
