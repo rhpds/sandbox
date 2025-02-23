@@ -235,8 +235,34 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusOK)
 		render.Render(w, r, &sandbox)
 		return
+
+	case "DNSSandbox", "dns":
+		sandbox, err := h.DNSSandboxProvider.FetchByName(accountName)
+		if err != nil {
+			if err == models.ErrAccountNotFound {
+				log.Logger.Warn("GET account", "error", err)
+				w.WriteHeader(http.StatusNotFound)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusNotFound,
+					Message:        "Account not found",
+				})
+				return
+			}
+			log.Logger.Error("GET account", "error", err)
+
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: 500,
+				Message:        "Error reading account",
+			})
+			return
+		}
+		// Print account using JSON
+		w.WriteHeader(http.StatusOK)
+		render.Render(w, r, &sandbox)
+		return
+
 	case "IBMResourceGroupSandbox", "ibmrg":
-		// Get the account from DynamoDB
 		sandbox, err := h.IBMResourceGroupSandboxProvider.FetchByName(accountName)
 		if err != nil {
 			if err == models.ErrAccountNotFound {
