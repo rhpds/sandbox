@@ -34,6 +34,14 @@ podman pull --quiet docker.io/library/postgres:16-bullseye
 podman pull --quiet docker.io/bitwarden/bws:0.5.0
 
 # Run the local postgresql instance
+set +o pipefail
+POSTGRESQL_PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq)  | shuf  | head -n 1 )
+if [ -z "$POSTGRESQL_PORT" ]; then
+    echo "No free port found"
+    exit 1
+fi
+set -o pipefail
+export POSTGRESQL_PORT
 make run-local-pg
 
 # DB migrations
@@ -49,8 +57,16 @@ make tokens
 
 # Run the API in background
 # Select a free port
-PORT=54379
+#PORT=54379
+set +o pipefail
+PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq)  | shuf  | head -n 1 )
+if [ -z "$PORT" ]; then
+    echo "No free port found"
+    exit 1
+fi
+set -o pipefail
 export PORT
+
 echo "Running sandbox API on port $PORT"
 make run-api &> $apilog &
 #(. ./.dev.pgenv && . ./.dev.jwtauth_env && cd cmd/sandbox-api && nohup go run . &> "$apilog" &)
