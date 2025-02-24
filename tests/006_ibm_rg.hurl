@@ -219,7 +219,7 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "test": "placement with multiple Ocp",
+    "test": "placement with multiple IBM",
     "guid": "testg",
     "env_type": "ocp4-cluster-blablablabla"
   }
@@ -271,7 +271,7 @@ retry: 40
 HTTP 404
 
 #################################################################################
-# Create a failed placement with a multiple Ocp and make sure cleanup works
+# Create a failed placement with a multiple IBM and make sure cleanup works
 #################################################################################
 
 POST {{host}}/api/v1/placements
@@ -293,7 +293,7 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "test": "failed placement with multiple Ocp with one that cannot schedule",
+    "test": "failed placement with multiple IBM with one that cannot schedule",
     "guid": "testg",
     "env_type": "ocp4-cluster-blablablabla"
   }
@@ -497,7 +497,7 @@ retry: 40
 HTTP 404
 
 #################################################################################
-# Create a new placement With AWS + OCP
+# Create a new placement With AWS + IBM
 #################################################################################
 
 POST {{host}}/api/v1/placements
@@ -509,7 +509,7 @@ Authorization: Bearer {{access_token}}
     {"kind": "AwsSandbox", "annotations":{"purpose":"aws"}}
   ],
   "annotations": {
-    "test": "Placement with both AWS + OCP",
+    "test": "Placement with both AWS + IBM",
     "guid": "testg",
     "env_type": "ocp4-cluster-blablablabla"
   }
