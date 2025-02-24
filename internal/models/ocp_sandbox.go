@@ -568,20 +568,6 @@ func (a *OcpSandboxWithCreds) Render(w http.ResponseWriter, r *http.Request) err
 	return nil
 }
 
-func (a *OcpSandbox) Save(dbpool *pgxpool.Pool) error {
-	// Check if resource already exists in the DB
-	if err := dbpool.QueryRow(
-		context.Background(),
-		`INSERT INTO resources
-		 (resource_name, resource_type, service_uuid, resource_data, status, cleanup_count)
-		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		a.Name, a.Kind, a.ServiceUuid, a, a.Status, a.CleanupCount).Scan(&a.ID); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func (a *OcpSandboxWithCreds) Update() error {
 
 	if a.ID == 0 {

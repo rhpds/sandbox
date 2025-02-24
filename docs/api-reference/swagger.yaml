@@ -426,6 +426,8 @@ paths:
             - OcpSandbox
             - dns
             - DNSSandbox
+            - ibmrg
+            - IBMResourceGroupSandbox
       - name: available
         in: query
         description: Boolean to filter if available or taken.
@@ -477,6 +479,8 @@ paths:
             - OcpSandbox
             - dns
             - DNSSandbox
+            - ibmrg
+            - IBMResourceGroupSandbox
       - name: name
         in: path
         required: true
@@ -575,6 +579,8 @@ paths:
             - OcpSandbox
             - dns
             - DNSSandbox
+            - ibmrg
+            - IBMResourceGroupSandbox
       - name: name
         in: path
         required: true
@@ -634,6 +640,8 @@ paths:
             - OcpSandbox
             - dns
             - DNSSandbox
+            - ibmrg
+            - IBMResourceGroupSandbox
       - name: name
         in: path
         required: true
@@ -690,6 +698,8 @@ paths:
             - OcpSandbox
             - dns
             - DNSSandbox
+            - ibmrg
+            - IBMResourceGroupSandbox
       - name: name
         in: path
         required: true
@@ -746,6 +756,8 @@ paths:
             - OcpSandbox
             - dns
             - DNSSandbox
+            - ibmrg
+            - IBMResourceGroupSandbox
       - name: name
         in: path
         required: true
@@ -2055,6 +2067,276 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /ibm-resource-group-configurations:
+    post:
+      summary: Create a new IBMResourceGroupSandboxConfiguration
+      operationId: createIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      requestBody:
+        description: JSON object to specify the IBMResourceGroupSandboxConfiguration.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IBMResourceGroupSandboxConfiguration"
+            example:
+              name: development
+              apikey: '...'
+              annotations:
+                purpose: dev
+      responses:
+        '201':
+          description: IBMResourceGroupSandboxConfiguration created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM resource group account configuration created
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: createIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      summary: Get all IBMResourceGroupSandboxConfigurations
+      operationId: getIBMResourceGroupSandboxConfigurations
+      tags:
+        - admin
+      responses:
+        '200':
+          description: The list of IBMResourceGroupSandboxConfigurations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IBMResourceGroupSandboxConfigurations"
+        default:
+          description: getIBMResourceGroupSandboxConfigurations unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ibm-resource-group-configurations/{name}:
+    get:
+      summary: Get information about an IBMResourceGroupSandboxConfiguration
+      operationId: getIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMResourceGroupSandboxConfiguration
+          schema:
+            type: string
+          example: development
+      responses:
+        '200':
+          description: The IBMResourceGroupSandboxConfiguration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IBMResourceGroupSandboxConfiguration"
+        '404':
+          description: getIBMResourceGroupSandboxConfiguration IBMResourceGroupSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete an IBMResourceGroupSandboxConfiguration
+      operationId: deleteIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMResourceGroupSandboxConfiguration
+          schema:
+            type: string
+          example: development
+      responses:
+        '200':
+          description: The IBMResourceGroupSandboxConfiguration is deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM resource group account configuration deleted
+        '404':
+          description: deleteIBMResourceGroupSandboxConfiguration IBMResourceGroupSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: |-
+            IBMResourceGroupSandboxConfiguration is not deletable. Usually because it has
+            resources attached to it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: deleteIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ibm-resource-group-configurations/{name}/enable:
+    put:
+      summary: Enable an IBMResourceGroupSandboxConfiguration
+      operationId: enableIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMResourceGroupSandboxConfiguration
+          schema:
+            type: string
+          example: development
+      responses:
+        '200':
+          description: The IBMResourceGroupSandboxConfiguration is enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM resource group account configuration enabled
+        '404':
+          description: enableIBMResourceGroupSandboxConfiguration IBMResourceGroupSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: enableIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ibm-resource-group-configurations/{name}/disable:
+    put:
+      summary: Disable an IBMResourceGroupSandboxConfiguration
+      operationId: disableIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMResourceGroupSandboxConfiguration
+          schema:
+            type: string
+            example: development
+          example: development
+      responses:
+        '200':
+          description: The IBMResourceGroupSandboxConfiguration is disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM resource group account configuration disabled
+        '404':
+          description: disableIBMResourceGroupSandboxConfiguration IBMResourceGroupSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: disableIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ibm-resource-group-configurations/{name}/update:
+    put:
+      summary: Update quota conf for an IBMResourceGroupSandboxConfiguration
+      operationId: updateIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMResourceGroupSandboxConfiguration changes
+          schema:
+            type: string
+            example: development
+      requestBody:
+        description: JSON object to specify the IBMResourceGroupSandboxConfiguration.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                apikey:
+                  type: string
+                annotations:
+                  $ref: "#/components/schemas/Annotations"
+                additional_vars:
+                  type: object
+            example:
+              apikey: '...'
+              additional_vars:
+                fordeployer: '...'
+              annotations:
+                purpose: dev
+      responses:
+        '200':
+          description: The IBMResourceGroupSandboxConfiguration is updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM resource group account configuration updated
+        '404':
+          description: updateIBMResourceGroupSandboxConfiguration IBMResourceGroupSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: updateIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
 
 components:
   schemas:
@@ -2215,6 +2497,7 @@ components:
         - $ref: '#/components/schemas/AzureAccount'
         - $ref: '#/components/schemas/OcpSandbox'
         - $ref: '#/components/schemas/DNSSandbox'
+        - $ref: '#/components/schemas/IBMResourceGroupSandbox'
       discriminator:
         propertyName: kind
         mapping:
@@ -2225,12 +2508,14 @@ components:
         - $ref: '#/components/schemas/AwsAccountWithCreds'
         - $ref: '#/components/schemas/OcpSandboxWithCreds'
         - $ref: '#/components/schemas/DNSSandboxWithCreds'
+        - $ref: '#/components/schemas/IBMResourceGroupSandboxWithCreds'
       discriminator:
         propertyName: kind
         mapping:
           AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
           OcpSandbox: '#/components/schemas/OcpSandboxWithCreds'
           DNSSandbox: '#/components/schemas/DNSSandboxWithCreds'
+          IBMResourceGroupSandbox: '#/components/schemas/IBMResourceGroupSandboxWithCreds'
 
     Resource:
       type: object
@@ -2265,6 +2550,7 @@ components:
           AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
           OcpSandbox: '#/components/schemas/OcpSandboxWithCreds'
           DNSSandbox: '#/components/schemas/DNSSandboxWithCreds'
+          IBMResourceGroupSandbox: '#/components/schemas/IBMResourceGroupSandboxWithCreds'
 
     Resources:
       type: array
@@ -2277,12 +2563,14 @@ components:
         - $ref: '#/components/schemas/AwsIamKey'
         - $ref: '#/components/schemas/OcpServiceAccount'
         - $ref: '#/components/schemas/DNSSandboxCreds'
+        - $ref: '#/components/schemas/IBMResourceGroupServiceAccount'
       discriminator:
         propertyName: kind
         mapping:
           aws_iam_key: '#/components/schemas/AwsIamKey'
           ServiceAccount: '#/components/schemas/OcpServiceAccount'
           DNSSandboxCreds: '#/components/schemas/DNSSandboxCreds'
+          IBMResourceGroupServiceAccount: '#/components/schemas/IBMResourceGroupServiceAccount'
 
     # Credential for OcpSandbox
     OcpServiceAccount:
@@ -2329,6 +2617,19 @@ components:
           type: string
           example: Z0
 
+    # Credential for IBMResourceGroupSandbox
+    IBMResourceGroupServiceAccount:
+      type: object
+      required:
+        - name
+        - apikey
+      properties:
+        name:
+          type: string
+          example: guid-uuid
+        apikey:
+          type: string
+          example: 1234567890abcdefghij
 
     Credentials:
       type: array
@@ -2397,7 +2698,7 @@ components:
           example: IAM key
         aws_access_key_id:
           type: string
-          example: AKIAR2AI7M4QU6KCVIWJ
+          example: redacted
         aws_secret_access_key:
           type: string
           example: 1234567890abcdefghij
@@ -2519,6 +2820,47 @@ components:
               items:
                 $ref: '#/components/schemas/Credentials'
 
+    IBMResourceGroupSandbox:
+      type: object
+      required:
+        - name
+        - service_uuid
+      properties:
+        name:
+          type: string
+          example: sandbox123
+        resourcegroupnam:
+          type: string
+          example: sandbox-GUID-UUID
+        service_uuid:
+          $ref: '#/components/schemas/UUID'
+        annotations:
+          $ref: '#/components/schemas/Annotations'
+        status:
+          type: string
+          enum:
+            - initializing
+            - scheduling
+            - success
+            - error
+            - deleting
+        account_additional_vars:
+          type: object
+          example:
+            deployer:
+              account_nfs_path: /IBMfoobar/data01
+              account_nfs_server: fsf-region.domain.com
+
+    IBMResourceGroupSandboxWithCreds:
+      allOf:
+        - $ref: '#/components/schemas/IBMResourceGroupSandbox'
+        - type: object
+          properties:
+            credentials:
+              type: array
+              items:
+                $ref: '#/components/schemas/Credentials'
+
     Accounts:
       type: array
       items:
@@ -2614,6 +2956,7 @@ components:
         - AwsSandbox
         - OcpSandbox
         - DNSSandbox
+        - IBMResourceGroupSandbox
 
     Reservation:
       description: Reservation record
@@ -2942,3 +3285,44 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/DNSAccountConfiguration'
+
+    IBMResourceGroupSandboxConfiguration:
+      description: IBMResourceGroupSandboxConfiguration is a record of an IBM Account
+      type: object
+      required:
+        - name
+        - apikey
+        - annotations
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: The name of the account
+          example: development
+        valid:
+          type: boolean
+          description: true if the account is valid
+          example: true
+          default: true
+        apikey:
+          type: string
+        annotations:
+          $ref: "#/components/schemas/Annotations"
+        additional_vars:
+          type: object
+          description: Additional variables for the account
+          example:
+            deployer:
+              openshift_cnv_nfs_path: /IBMfoobar/data01
+              openshift_cnv_nfs_server: fsf-region.domain.com
+
+      example:
+        name: development
+        apikey: '...'
+        annotations:
+          purpose: dev
+    IBMResourceGroupSandboxConfigurations:
+      description: The list of IBMResourceGroupSandboxConfigurations
+      type: array
+      items:
+        $ref: '#/components/schemas/IBMResourceGroupSandboxConfiguration'

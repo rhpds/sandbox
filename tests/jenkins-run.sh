@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+cat $CREDENTIALS_FILE
 source "${CREDENTIALS_FILE}"
 
 tmpdir=$(mktemp -d)
@@ -158,6 +159,46 @@ for payload in sandbox-api-configs/dns-account-configurations/dev*.json; do
             ./tools/dns_account_configuration_update.hurl
     fi
 done
+
+# Install the dns account configuration
+for payload in sandbox-api-configs/ibm-resource-group-configurations/dev*.json; do
+    echo "Reading file $payload"
+    if [[ $payload =~ create.json$ ]]; then
+        account=$(cat $payload | jq -r ".name")
+    elif [[ $payload =~ update.json$ ]]; then
+        # take the name from the file name
+        account=ibm-$(basename $payload | sed 's/\.update\.json$//')
+    fi
+    [ -z "$account" ] && echo "Account name not found in $payload" && exit 1
+    payload2=$tmpdir/$(basename $payload)
+    APIKEY=$(podman run --rm \
+            -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+            -e PROJECT_ID=$BWS_PROJECT_ID \
+            bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
+            | KEYVALUE="${account}.apikey" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
+
+    jq  --arg apikey $APIKEY '(.apikey = $apikey)'  < $payload > $payload2 
+    # In bash, files in a * are sorted alphabetically by default
+    # so a create will always happen before an update.
+    if [[ $payload =~ create.json$ ]]; then
+        echo "Creating account $account"
+        hurl --variable login_token_admin=$admintoken \
+            --file-root $tmpdir \
+            --variable host=http://localhost:$PORT \
+            --variable ibm_resource_group_account_def=$payload2 \
+            ./tools/ibm_resource_group_account_configuration_create.hurl
+    elif [[ $payload =~ update.json$ ]]; then
+        echo "Updating account $account"
+        hurl --variable login_token_admin=$admintoken \
+            --file-root $tmpdir \
+            --variable host=http://localhost:$PORT \
+            --variable payload=$payload2 \
+            --variable account=$account \
+            ./tools/ibm_resource_group_account_configuration_update.hurl
+    fi
+done
+
+
 
 uuid=$(uuidgen -r)
 export uuid
