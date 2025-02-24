@@ -25,7 +25,6 @@ type IBMResourceGroupSandboxProvider struct {
 	DbPool      *pgxpool.Pool `json:"-"`
 	VaultSecret string        `json:"-"`
 }
-
 type IBMResourceGroupSandboxConfiguration struct {
 	ID             int               `json:"id"`
 	Name           string            `json:"name"`
@@ -337,20 +336,6 @@ func (a *IBMResourceGroupSandbox) Render(w http.ResponseWriter, r *http.Request)
 }
 
 func (a *IBMResourceGroupSandboxWithCreds) Render(w http.ResponseWriter, r *http.Request) error {
-	return nil
-}
-
-func (a *IBMResourceGroupSandbox) Save(dbpool *pgxpool.Pool) error {
-	// Check if resource already exists in the DB
-	if err := dbpool.QueryRow(
-		context.Background(),
-		`INSERT INTO resources
-		 (resource_name, resource_type, service_uuid, resource_data, status, cleanup_count)
-		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		a.Name, a.Kind, a.ServiceUuid, a, a.Status, a.CleanupCount).Scan(&a.ID); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -795,7 +780,7 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 
 		result, response, err := iamPolicyManagementService.CreatePolicy(policyAll)
 		if err != nil {
-			log.Logger.Error("Failed to create policy", "error",  err, "response", response)
+			log.Logger.Error("Failed to create policy", "error", err, "response", response)
 			rnew.SetStatus("error")
 			return
 		}
@@ -804,7 +789,7 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 
 		result, response, err = iamPolicyManagementService.CreatePolicy(policyRG)
 		if err != nil {
-			log.Logger.Error("Failed to create policy", "error",  err, "response", response)
+			log.Logger.Error("Failed to create policy", "error", err, "response", response)
 			rnew.SetStatus("error")
 			return
 		}
