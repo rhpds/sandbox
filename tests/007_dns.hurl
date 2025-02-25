@@ -24,6 +24,7 @@ access_token_admin: jsonpath "$.access_token"
 jsonpath "$.access_token" isString
 jsonpath "$.access_token_exp" isString
 
+
 #################################################################################
 # Add an DNS configuration
 #################################################################################
@@ -175,6 +176,15 @@ HTTP 404
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
 HTTP 404
+
+#################################################################################
+# Ensure the DNS account 'testdns' doesn't exist
+#################################################################################
+DELETE {{host}}/api/v1/dns/testdns
+Authorization: Bearer {{access_token_admin}}
+HTTP 404
+[Options]
+retry: 10
 
 #################################################################################
 # Create a new placement with a  cloud_selector too restrictive

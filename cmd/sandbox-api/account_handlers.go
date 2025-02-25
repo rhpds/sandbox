@@ -576,6 +576,44 @@ func (h *BaseHandler) DeleteAccountHandler(w http.ResponseWriter, r *http.Reques
 			Message: "Account deleted",
 		})
 		return
+	case "dns", "DNSSandbox":
+		account, err := h.DNSSandboxProvider.FetchByName(accountName)
+
+		if err != nil {
+			if err == models.ErrNotFound {
+				w.WriteHeader(http.StatusNotFound)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusNotFound,
+					Message:        "DNS sandbox not found",
+				})
+				return
+			}
+
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				Err:            err,
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Error getting DNS sandbox",
+			})
+			log.Logger.Error("DeleteDnsSandboxHandler", "error", err)
+			return
+		}
+
+		if err := account.Delete(); err != nil {
+			log.Logger.Error("Error deleting DNS sandbox", "error", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				Err:            err,
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Error deleting DNS sandbox",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		render.Render(w, r, &v1.SimpleMessage{
+			Message: "DNS sandbox deleted",
+		})
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		render.Render(w, r, &v1.Error{
