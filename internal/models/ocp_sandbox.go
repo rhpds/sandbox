@@ -973,9 +973,7 @@ func (a *OcpSandboxProvider) Request(
 	if _, exists := annotations["guid"]; !exists {
 		return OcpSandboxWithCreds{}, errors.New("guid not found in annotations")
 	}
-	if _, exists := annotations["service_uuid"]; !exists {
-		return OcpSandboxWithCreds{}, errors.New("service_uuid not found in annotations")
-	}
+
 	for _, relation := range clusterRelation {
 		if multipleAccounts != nil {
 			for _, maccount := range multipleAccounts {
