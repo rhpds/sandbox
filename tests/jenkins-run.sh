@@ -14,7 +14,9 @@ _on_exit() {
     rm -rf $tmpdir
     cd $jobdir
 
-    (. ./.dev.pgenv && psql -d "${DATABASE_URL}" > $dbdump )
+    (. ./.dev.pgenv && pg_dump -d "${DATABASE_URL}" -f $dbdump )
+    gzip $dbdump
+    gzip $apilog
 
     make clean
     exit $exit_status
