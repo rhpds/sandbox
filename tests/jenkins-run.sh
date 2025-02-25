@@ -14,9 +14,15 @@ _on_exit() {
     rm -rf $tmpdir
     cd $jobdir
 
-    (. ./.dev.pgenv && pg_dump -d "${DATABASE_URL}" -f $dbdump )
-    gzip $dbdump
-    gzip $apilog
+    (. ./.dev.pgenv ;
+     podman run --rm \
+         --net=host \
+         -v $(pwd):/backup:z \
+         postgres:16-bullseye \
+         pg_dump "${DATABASE_URL}" -f /backup/db_dump.sql
+    )
+    gzip -f $dbdump
+    gzip -f $apilog
 
     make clean
     exit $exit_status
