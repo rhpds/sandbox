@@ -758,6 +758,7 @@ func (a *DNSSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		cfg,
 		func(o *iam.Options) {
 			o.Credentials = accountCreds
+			o.RetryMaxAttempts = 20
 		},
 	)
 
@@ -1180,6 +1181,7 @@ func (sandbox *DNSSandboxWithCreds) Delete() error {
 		cfg,
 		func(o *iam.Options) {
 			o.Credentials = sandboxCreds
+			o.RetryMaxAttempts = 20
 		},
 	)
 
