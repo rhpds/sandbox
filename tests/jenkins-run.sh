@@ -5,6 +5,7 @@ source "${CREDENTIALS_FILE}"
 
 tmpdir=$(mktemp -d)
 apilog=$PWD/api.log
+dbdump=$PWD/db_dump.sql
 jobdir=$PWD
 
 # trap function
@@ -12,6 +13,9 @@ _on_exit() {
     local exit_status=${1:-$?}
     rm -rf $tmpdir
     cd $jobdir
+
+    (. ./.dev.pgenv && psql -d "${DATABASE_URL}" -f $dbdump )
+
     make clean
     exit $exit_status
 }

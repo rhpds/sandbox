@@ -711,6 +711,7 @@ func (a *DNSSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		cfg,
 		func(o *route53.Options) {
 			o.Credentials = accountCreds
+			o.RetryMaxAttempts = 10
 		},
 	)
 	domain := guid + "." + selectedAccount.Zone
@@ -1065,6 +1066,7 @@ func (sandbox *DNSSandboxWithCreds) Delete() error {
 		cfg,
 		func(o *route53.Options) {
 			o.Credentials = sandboxCreds
+			o.RetryMaxAttempts = 10
 		},
 	)
 
