@@ -81,6 +81,13 @@ type OcpSharedClusterConfiguration struct {
 	// This allows to set the default limit and request for pods
 	// see https://kubernetes.io/docs/concepts/policy/limit-range/
 	LimitRange *v1.LimitRange `json:"limit_range,omitempty"`
+
+	// Weight is used to sort the OcpSharedClusterConfiguration
+	// Higher value means the cluster will be prioritized
+	// The cloud_preference field in the ResourceRequest will increase
+	// the value if the labels match. More matching labels means higher weight.
+	// The clusters with the highest weight will be selected first.
+	Weight int `json:"weight,omitempty"`
 }
 
 type OcpSharedClusterConfigurations []OcpSharedClusterConfiguration
@@ -783,7 +790,7 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 
 var ErrNoSchedule error = errors.New("No OCP shared cluster configuration found")
 
-func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]string, possibleClusters []string, excludeClusters []string, childClusters []string) (OcpSharedClusterConfigurations, error) {
+func (a *OcpSandboxProvider) GetSchedulableClusters(cloudSelector map[string]string, possibleClusters []string, excludeClusters []string, childClusters []string) (OcpSharedClusterConfigurations, error) {
 	clusters := OcpSharedClusterConfigurations{}
 	// Get resource from 'ocp_shared_cluster_configurations' table
 	var err error
@@ -793,14 +800,14 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]st
 		rows, err = a.DbPool.Query(
 			context.Background(),
 			`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true ORDER BY random()`,
-			cloud_selector,
+			cloudSelector,
 		)
 	} else {
 		if len(childClusters) > 0 {
 			rows, err = a.DbPool.Query(
 				context.Background(),
 				`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and annotations->>'parent' = ANY($2::text[]) and valid=true ORDER BY random()`,
-				cloud_selector, childClusters,
+				cloudSelector, childClusters,
 			)
 			for rows.Next() {
 				var clusterName string
@@ -819,21 +826,21 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(cloud_selector map[string]st
 			rows, err = a.DbPool.Query(
 				context.Background(),
 				`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and name = ANY($2::text[]) ORDER BY random()`,
-				cloud_selector, possibleClusters,
+				cloudSelector, possibleClusters,
 			)
 		} else {
 			if len(possibleClusters) == 0 && len(excludeClusters) > 0 {
 				rows, err = a.DbPool.Query(
 					context.Background(),
 					`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and name != ALL($2::text[]) ORDER BY random()`,
-					cloud_selector, excludeClusters,
+					cloudSelector, excludeClusters,
 				)
 
 			} else {
 				rows, err = a.DbPool.Query(
 					context.Background(),
 					`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and name = ANY($2::text[]) and name != ALL($3::text[]) ORDER BY random()`,
-					cloud_selector, possibleClusters, excludeClusters,
+					cloudSelector, possibleClusters, excludeClusters,
 				)
 			}
 		}
@@ -943,7 +950,8 @@ func anySchedulableNodes(nodes []v1.Node) bool {
 
 func (a *OcpSandboxProvider) Request(
 	serviceUuid string,
-	cloud_selector map[string]string,
+	cloudSelector map[string]string,
+	cloudPreference map[string]string,
 	annotations map[string]string,
 	requestedQuota *v1.ResourceList,
 	requestedLimitRange *v1.LimitRange,
@@ -964,6 +972,9 @@ func (a *OcpSandboxProvider) Request(
 	// Ensure annotation has guid
 	if _, exists := annotations["guid"]; !exists {
 		return OcpSandboxWithCreds{}, errors.New("guid not found in annotations")
+	}
+	if _, exists := annotations["service_uuid"]; !exists {
+		return OcpSandboxWithCreds{}, errors.New("service_uuid not found in annotations")
 	}
 	for _, relation := range clusterRelation {
 		if multipleAccounts != nil {
@@ -988,14 +999,23 @@ func (a *OcpSandboxProvider) Request(
 	)
 
 	// Version with OcpSharedClusterConfiguration methods
-	candidateClusters, err := a.GetSchedulableClusters(cloud_selector, possibleClusters, excludeClusters, childClusters)
+	candidateClusters, err := a.GetSchedulableClusters(cloudSelector, possibleClusters, excludeClusters, childClusters)
 	if err != nil {
 		log.Logger.Error("Error getting schedulable clusters", "error", err)
 		return OcpSandboxWithCreds{}, err
 	}
 	if len(candidateClusters) == 0 {
-		log.Logger.Error("No OCP shared cluster configuration found", "cloud_selector", cloud_selector)
+		log.Logger.Error("No OCP shared cluster configuration found", "cloudSelector", cloudSelector)
 		return OcpSandboxWithCreds{}, ErrNoSchedule
+	}
+
+	// Apply priorities using CloudPreference
+	if len(cloudPreference) > 0 {
+		candidateClusters = ApplyPriorityWeight(
+			candidateClusters,
+			cloudPreference,
+			1
+		)
 	}
 
 	// Determine guid, auto increment the guid if there are multiple resources
@@ -1360,7 +1380,7 @@ func (a *OcpSandboxProvider) Request(
 		}
 
 		// Assign ClusterRole sandbox-hcp (created with gitops) to the SA if hcp option was selected
-		if value, exists := cloud_selector["hcp"]; exists && (value == "yes" || value == "true") {
+		if value, exists := cloudSelector["hcp"]; exists && (value == "yes" || value == "true") {
 			_, err = clientset.RbacV1().RoleBindings(namespaceName).Create(context.TODO(), &rbacv1.RoleBinding{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: serviceAccountName + "-hcp",
@@ -1426,8 +1446,8 @@ func (a *OcpSandboxProvider) Request(
 		// 	return
 		// }
 
-		// if cloud_selector has enabled the virt flag, then we give permission to cnv-images namespace
-		if value, exists := cloud_selector["virt"]; exists && (value == "yes" || value == "true") {
+		// if cloudSelector has enabled the virt flag, then we give permission to cnv-images namespace
+		if value, exists := cloudSelector["virt"]; exists && (value == "yes" || value == "true") {
 			// Look if namespace 'cnv-images' exists
 			if _, err := clientset.CoreV1().Namespaces().Get(context.TODO(), "cnv-images", metav1.GetOptions{}); err == nil {
 

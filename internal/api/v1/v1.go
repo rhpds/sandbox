@@ -103,15 +103,16 @@ func (p *PlacementResponse) Render(w http.ResponseWriter, r *http.Request) error
 }
 
 type ResourceRequest struct {
-	Kind             string                   `json:"kind"`
-	Count            int                      `json:"count"`
 	Alias            string                   `json:"alias,omitempty"`
-	ClusterRelation  []models.ClusterRelation `json:"cluster_relation,omitempty"`
-	ClusterCondition string                   `json:"cluster_condition,omitempty"`
 	Annotations      models.Annotations       `json:"annotations,omitempty"`
+	CloudPreference  models.Annotations       `json:"cloud_preference,omitempty"`
 	CloudSelector    models.Annotations       `json:"cloud_selector,omitempty"`
-	Quota            *v1.ResourceList         `json:"quota,omitempty"`
+	ClusterCondition string                   `json:"cluster_condition,omitempty"`
+	ClusterRelation  []models.ClusterRelation `json:"cluster_relation,omitempty"`
+	Count            int                      `json:"count"`
+	Kind             string                   `json:"kind"`
 	LimitRange       *v1.LimitRange           `json:"limit_range,omitempty"`
+	Quota            *v1.ResourceList         `json:"quota,omitempty"`
 	RequestedQuota   *v1.ResourceQuota        `json:"-"` // plumbing
 }
 
@@ -140,6 +141,9 @@ func (p *PlacementRequest) Bind(r *http.Request) error {
 		if p.Resources[i].CloudSelector == nil {
 			p.Resources[i].CloudSelector = make(models.Annotations)
 		}
+		if p.Resources[i].CloudPreference == nil {
+			p.Resources[i].CloudPreference = make(models.Annotations)
+		}
 		if p.Resources[i].Quota == nil {
 			p.Resources[i].Quota = &v1.ResourceList{}
 		}
@@ -161,6 +165,15 @@ func (p *PlacementRequest) Bind(r *http.Request) error {
 				if v == "false" {
 					resourceRequest.CloudSelector[k] = "no"
 				}
+			}
+		}
+
+		for k, v := range resourceRequest.CloudPreference {
+			if v == "true" {
+				resourceRequest.CloudPreference[k] = "yes"
+			}
+			if v == "false" {
+				resourceRequest.CloudPreference[k] = "no"
 			}
 		}
 
