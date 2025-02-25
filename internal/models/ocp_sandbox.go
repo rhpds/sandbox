@@ -1014,7 +1014,7 @@ func (a *OcpSandboxProvider) Request(
 		candidateClusters = ApplyPriorityWeight(
 			candidateClusters,
 			cloudPreference,
-			1
+			1,
 		)
 	}
 
