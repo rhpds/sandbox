@@ -5,11 +5,14 @@ source "${CREDENTIALS_FILE}"
 
 tmpdir=$(mktemp -d)
 apilog=$PWD/api.log
+jobdir=$PWD
 
 # trap function
 _on_exit() {
     local exit_status=${1:-$?}
     rm -rf $tmpdir
+    cd $jobdir
+    make clean
     exit $exit_status
 }
 
@@ -43,6 +46,8 @@ if [ -z "$POSTGRESQL_PORT" ]; then
 fi
 set -o pipefail
 export POSTGRESQL_PORT
+POSTGRESQL_POD=localpg$$
+export POSTGRESQL_POD
 make run-local-pg
 
 # DB migrations
@@ -70,7 +75,6 @@ export PORT
 
 echo "Running sandbox API on port $PORT"
 make run-api &> $apilog &
-#(. ./.dev.pgenv && . ./.dev.jwtauth_env && cd cmd/sandbox-api && nohup go run . &> "$apilog" &)
 
 # Wait for the API to come up
 retries=0
@@ -221,9 +225,9 @@ export uuid
 cd tests/
 
 hurl --test \
-  --variable login_token=$apptoken \
-  --variable login_token_admin=$admintoken \
-  --variable host=http://localhost:$PORT \
-  --variable uuid=$uuid \
-  --jobs 1 \
-  ./*.hurl
+    --variable login_token=$apptoken \
+    --variable login_token_admin=$admintoken \
+    --variable host=http://localhost:$PORT \
+    --variable uuid=$uuid \
+    --jobs 1 \
+    ./*.hurl
