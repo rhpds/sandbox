@@ -14,7 +14,7 @@ _on_exit() {
     rm -rf $tmpdir
     cd $jobdir
 
-    (. ./.dev.pgenv && psql -d "${DATABASE_URL}" -f $dbdump )
+    (. ./.dev.pgenv && psql -d "${DATABASE_URL}" > $dbdump )
 
     make clean
     exit $exit_status

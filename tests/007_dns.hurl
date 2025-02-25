@@ -182,9 +182,9 @@ HTTP 404
 #################################################################################
 DELETE {{host}}/api/v1/dns/testdns
 Authorization: Bearer {{access_token_admin}}
-HTTP 404
 [Options]
 retry: 10
+HTTP 404
 
 #################################################################################
 # Create a new placement with a  cloud_selector too restrictive

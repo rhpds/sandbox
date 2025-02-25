@@ -580,7 +580,7 @@ func (h *BaseHandler) DeleteAccountHandler(w http.ResponseWriter, r *http.Reques
 		account, err := h.DNSSandboxProvider.FetchByName(accountName)
 
 		if err != nil {
-			if err == models.ErrNotFound {
+			if err == pgx.ErrNoRows {
 				w.WriteHeader(http.StatusNotFound)
 				render.Render(w, r, &v1.Error{
 					HTTPStatusCode: http.StatusNotFound,

@@ -960,6 +960,14 @@ func (a *DNSSandboxProvider) FetchAll() ([]DNSSandbox, error) {
 	return sandboxes, nil
 }
 
+func (sandbox *DNSSandbox) Delete() error {
+	// create a sandbox with creds based on sandbox and call the Delete method
+	sandboxWithCreds := DNSSandboxWithCreds{
+		DNSSandbox: *sandbox,
+	}
+	return sandboxWithCreds.Delete()
+}
+
 func (sandbox *DNSSandboxWithCreds) Delete() error {
 
 	if sandbox.ID == 0 {
