@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-cat $CREDENTIALS_FILE
 source "${CREDENTIALS_FILE}"
 
 tmpdir=$(mktemp -d)
@@ -64,13 +63,11 @@ make run-local-pg
 
 # DB migrations
 sleep 2
-set +x
 make migrate
 # ensure all .down.sql files are working
 (. ./.dev.pgenv && migrate -database "${DATABASE_URL}" -path db/migrations down -all )
 # Run migration again
 make migrate
-set -x
 
 # Generate admin and app tokens
 make tokens
