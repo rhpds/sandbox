@@ -24,6 +24,6 @@ CREATE TRIGGER dns_account_configurations_updated_at
 
 -- Add type resource_type as enum
 
-ALTER TYPE resource_type_enum ADD VALUE 'DNSSandbox';
+ALTER TYPE resource_type_enum ADD VALUE IF NOT EXISTS 'DNSSandbox';
 
 COMMIT;

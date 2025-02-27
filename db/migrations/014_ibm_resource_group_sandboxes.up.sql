@@ -19,6 +19,6 @@ CREATE TRIGGER ibm_resource_group_account_configurations_updated_at
   WHEN (OLD.* IS DISTINCT FROM NEW.*)
   EXECUTE FUNCTION updated_at_column();
 
-ALTER TYPE resource_type_enum ADD VALUE 'IBMResourceGroupSandbox';
+ALTER TYPE resource_type_enum ADD VALUE IF NOT EXISTS 'IBMResourceGroupSandbox';
 
 COMMIT;
