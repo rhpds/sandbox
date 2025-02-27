@@ -1,15 +1,29 @@
 #!/usr/bin/env bash
 
-cat $CREDENTIALS_FILE
 source "${CREDENTIALS_FILE}"
 
 tmpdir=$(mktemp -d)
 apilog=$PWD/api.log
+dbdump=$PWD/db_dump.sql
+jobdir=$PWD
 
 # trap function
 _on_exit() {
     local exit_status=${1:-$?}
     rm -rf $tmpdir
+    cd $jobdir
+
+    (. ./.dev.pgenv ;
+     podman run --rm \
+         --net=host \
+         -v $(pwd):/backup:z \
+         postgres:16-bullseye \
+         pg_dump "${DATABASE_URL}" -f /backup/db_dump.sql
+    )
+    gzip -f $dbdump
+    gzip -f $apilog
+
+    make clean
     exit $exit_status
 }
 
@@ -43,6 +57,8 @@ if [ -z "$POSTGRESQL_PORT" ]; then
 fi
 set -o pipefail
 export POSTGRESQL_PORT
+POSTGRESQL_POD=localpg$$
+export POSTGRESQL_POD
 make run-local-pg
 
 # DB migrations
@@ -70,7 +86,6 @@ export PORT
 
 echo "Running sandbox API on port $PORT"
 make run-api &> $apilog &
-#(. ./.dev.pgenv && . ./.dev.jwtauth_env && cd cmd/sandbox-api && nohup go run . &> "$apilog" &)
 
 # Wait for the API to come up
 retries=0
@@ -221,9 +236,9 @@ export uuid
 cd tests/
 
 hurl --test \
-  --variable login_token=$apptoken \
-  --variable login_token_admin=$admintoken \
-  --variable host=http://localhost:$PORT \
-  --variable uuid=$uuid \
-  --jobs 1 \
-  ./*.hurl
+    --variable login_token=$apptoken \
+    --variable login_token_admin=$admintoken \
+    --variable host=http://localhost:$PORT \
+    --variable uuid=$uuid \
+    --jobs 1 \
+    ./*.hurl

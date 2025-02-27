@@ -241,6 +241,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			account, err := h.OcpSandboxProvider.Request(
 				placementRequest.ServiceUuid,
 				request.CloudSelector,
+				request.CloudPreference,
 				placementRequest.Annotations.Merge(request.Annotations),
 				request.Quota,
 				request.LimitRange,

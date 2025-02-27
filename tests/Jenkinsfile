@@ -33,11 +33,14 @@ pipeline {
     post {
         always {
             // This block will run regardless of success, failure, or abort
-            archiveArtifacts artifacts: 'api.log'
+            archiveArtifacts artifacts: 'api.log.gz'
+            archiveArtifacts artifacts: 'db_dump.sql.gz'
             script {
-                def artifactUrl = "${env.BUILD_URL}artifact/api.log"
+                def artifactUrlAPI = "${env.BUILD_URL}artifact/api.log.gz"
+                def artifactUrlDB = "${env.BUILD_URL}artifact/db_dump.sql.gz"
 
-                echo "API logs: ${artifactUrl}"
+                echo "API logs: ${artifactUrlAPI}"
+                echo "DB Dump: ${artifactUrlDB}"
             }
         }
     }

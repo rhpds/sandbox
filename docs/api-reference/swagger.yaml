@@ -2389,6 +2389,8 @@ components:
                       type: string
               cloud_selector:
                 $ref: "#/components/schemas/Annotations"
+              cloud_preference:
+                $ref: "#/components/schemas/Annotations"
               annotations:
                 $ref: "#/components/schemas/Annotations"
               quota:

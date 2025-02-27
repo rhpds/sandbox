@@ -711,6 +711,7 @@ func (a *DNSSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		cfg,
 		func(o *route53.Options) {
 			o.Credentials = accountCreds
+			o.RetryMaxAttempts = 10
 		},
 	)
 	domain := guid + "." + selectedAccount.Zone
@@ -758,6 +759,7 @@ func (a *DNSSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		cfg,
 		func(o *iam.Options) {
 			o.Credentials = accountCreds
+			o.RetryMaxAttempts = 20
 		},
 	)
 
@@ -958,6 +960,14 @@ func (a *DNSSandboxProvider) FetchAll() ([]DNSSandbox, error) {
 	return sandboxes, nil
 }
 
+func (sandbox *DNSSandbox) Delete() error {
+	// create a sandbox with creds based on sandbox and call the Delete method
+	sandboxWithCreds := DNSSandboxWithCreds{
+		DNSSandbox: *sandbox,
+	}
+	return sandboxWithCreds.Delete()
+}
+
 func (sandbox *DNSSandboxWithCreds) Delete() error {
 
 	if sandbox.ID == 0 {
@@ -1064,6 +1074,7 @@ func (sandbox *DNSSandboxWithCreds) Delete() error {
 		cfg,
 		func(o *route53.Options) {
 			o.Credentials = sandboxCreds
+			o.RetryMaxAttempts = 10
 		},
 	)
 
@@ -1180,6 +1191,7 @@ func (sandbox *DNSSandboxWithCreds) Delete() error {
 		cfg,
 		func(o *iam.Options) {
 			o.Credentials = sandboxCreds
+			o.RetryMaxAttempts = 20
 		},
 	)
 

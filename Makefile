@@ -9,6 +9,7 @@ VERSION ?= $(shell git describe --tags 2>/dev/null | cut -c 2-)
 COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null)
 DATE ?= $(shell date -u)
 POSTGRESQL_PORT ?= 5432
+POSTGRESQL_POD ?= localpg
 export CGO_ENABLED=0
 
 build: sandbox-list sandbox-metrics sandbox-api sandbox-issue-jwt sandbox-rotate-vault
@@ -27,13 +28,13 @@ run-air: cmd/sandbox-api/assets/swagger.yaml .dev.pgenv .dev.jwtauth_env
 	. ./.dev.pgenv && . ./.dev.jwtauth_env && cd cmd/sandbox-api && air
 
 rm-local-pg:
-	@podman kill localpg || true
-	@podman rm localpg || true
+	@podman kill $${POSTGRESQL_POD} || true
+	@podman rm $${POSTGRESQL_POD} || true
 	@rm -f .dev.pg_password .dev.pgenv .dev.tokens_env .dev.admin_token .dev.app_token || true
 
 run-local-pg: rm-local-pg .dev.pg_password
 	@echo "Running local postgres..."
-	@podman run  --rm -p $${POSTGRESQL_PORT}:5432 --name localpg -e POSTGRES_PASSWORD=$(shell cat .dev.pg_password) -d postgres:16-bullseye
+	@podman run  --rm -p $${POSTGRESQL_PORT}:5432 --name $${POSTGRESQL_POD} -e POSTGRES_PASSWORD=$(shell cat .dev.pg_password) -d postgres:16-bullseye
 # See full list of parameters here:
 # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
 
