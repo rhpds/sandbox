@@ -117,9 +117,21 @@ type ResourceRequest struct {
 }
 
 type ReservationResponse struct {
-	HTTPStatusCode int                `json:"http_code,omitempty"` // http response status code
-	Message        string             `json:"message"`
-	Reservation    models.Reservation `json:"reservation"`
+	HTTPStatusCode int                 `json:"http_code,omitempty"` // http response status code
+	Message        string              `json:"message"`
+	Reservation    *models.Reservation `json:"reservation"`
+}
+
+type ReservationRenameRequest struct {
+	NewName string `json:"new_name"`
+}
+
+func (p *ReservationRenameRequest) Bind(r *http.Request) error {
+	return nil
+}
+
+func (p *ReservationRenameRequest) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
 }
 
 func (p *PlacementRequest) Bind(r *http.Request) error {

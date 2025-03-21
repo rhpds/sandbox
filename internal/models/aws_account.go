@@ -94,6 +94,7 @@ type AwsAccountProvider interface {
 	Request(service_uuid string, reservation string, count int, annotations Annotations) ([]AwsAccountWithCreds, error)
 	Reserve(reservation string, count int) ([]AwsAccount, error)
 	ScaleDownReservation(reservation string, count int) error
+	RenameReservation(oldName, newName string) error
 }
 
 type Sortable interface {
