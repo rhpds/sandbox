@@ -1180,6 +1180,88 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /reservations/{name}/rename:
+    put:
+      operationId: renameReservation
+      summary: Rename a reservation
+      description: |-
+        Rename a reservation by its name.
+
+        All accounts marked as part of the reservation are updated. The accounts will **not** be marked for cleanup, they are retained intacted. Only the 'reservation' field of those accounts is cleared.
+      tags:
+        - admin
+      parameters:
+        - in: header
+          name: Authorization
+          description: Access JTW Token
+          required: true
+          schema:
+            type: string
+          example: Bearer <ACCESS_TOKEN>
+        - name: name
+          in: path
+          required: true
+          description: The name of the reservation
+          schema:
+            type: string
+            pattern: '^[\w\d_-]+$'
+          example: summit
+      requestBody:
+        description: JSON object to specify the new name of the reservation.
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - new_name
+              properties:
+                new_name:
+                  type: string
+                  example: summit2
+      responses:
+        '202':
+          description: Request is successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: reservation rename request created
+
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Reservation already exists
+                http_code: 409
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /admin/jwt:
     parameters:
       - in: header

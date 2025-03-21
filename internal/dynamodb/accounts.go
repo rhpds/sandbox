@@ -741,6 +741,52 @@ func (a *AwsAccountDynamoDBProvider) ScaleDownReservation(reservation string, co
 	return nil
 }
 
+// RenameReservation rename a reservation
+// It renames all the accounts from the old reservation to the new reservation
+func (a *AwsAccountDynamoDBProvider) RenameReservation(oldReservation string, newReservation string) error {
+	accounts, err := a.FetchAllByReservation(oldReservation)
+
+	if err != nil {
+		return err
+	}
+
+	for _, account := range accounts {
+		_, err := a.Svc.UpdateItem(&dynamodb.UpdateItemInput{
+			TableName: aws.String(os.Getenv("dynamodb_table")),
+			Key: map[string]*dynamodb.AttributeValue{
+				"name": {
+					S: aws.String(account.Name),
+				},
+			},
+			UpdateExpression: aws.String("SET reservation = :nr"),
+			ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+				":nr": {
+					S: aws.String(newReservation),
+				},
+			},
+		})
+		if err != nil {
+			log.Logger.Error("error renaming the reservation",
+				"oldReservation", oldReservation,
+				"newReservation", newReservation,
+				"kind", "AwsSandbox",
+				"name", account.Name,
+				"error", err,
+			)
+			return err
+		}
+
+		log.Logger.Info("Reservation renamed for account",
+			"name", account.Name,
+			"oldReservation", oldReservation,
+			"newReservation", newReservation,
+			"kind", "AwsSandbox",
+		)
+	}
+
+	return nil
+}
+
 func (a *AwsAccountDynamoDBProvider) MarkForCleanup(name string) error {
 	_, err := a.Svc.UpdateItem(&dynamodb.UpdateItemInput{
 		TableName: aws.String(os.Getenv("dynamodb_table")),

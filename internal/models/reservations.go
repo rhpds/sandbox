@@ -115,9 +115,26 @@ func (o Reservations) Render(w http.ResponseWriter, r *http.Request) error {
 // For that, see the Initialize and Synchronize methods
 func (r *Reservation) Save(dbpool *pgxpool.Pool) error {
 
+	if r.ID != 0 {
+		// UPDATE
+		ct, err := dbpool.Exec(
+			context.Background(),
+			"UPDATE reservations SET reservation_name = $1, status = $2, request = $3 WHERE id = $4",
+			r.Name, r.Status, r.Request, r.ID,
+		)
+		if err != nil {
+			return err
+		}
+		if ct.RowsAffected() != 1 {
+			return errors.New("no rows affected")
+		}
+
+		return nil
+	}
+
 	var id int
 
-	// Check if the placement already exists
+	// Check if the reservation already exists
 	err := dbpool.QueryRow(
 		context.Background(),
 		"SELECT id FROM reservations WHERE reservation_name = $1",
@@ -129,10 +146,7 @@ func (r *Reservation) Save(dbpool *pgxpool.Pool) error {
 	}
 
 	if id != 0 {
-		if r.ID != 0 && r.ID != id {
-			return errors.New("id mismatch")
-		}
-
+		r.ID = id
 		ct, err := dbpool.Exec(
 			context.Background(),
 			"UPDATE reservations SET status = $1, request = $2 WHERE id = $3",
@@ -179,8 +193,8 @@ func (r *Reservation) Delete(dbpool *pgxpool.Pool) error {
 
 // GetReservationByName fetches a reservation by its name
 // returns the reservation and an error
-func GetReservationByName(dbpool *pgxpool.Pool, name string) (Reservation, error) {
-	var reservation Reservation
+func GetReservationByName(dbpool *pgxpool.Pool, name string) (*Reservation, error) {
+	reservation := &Reservation{}
 
 	err := dbpool.QueryRow(
 		context.Background(),
@@ -205,6 +219,7 @@ func GetReservationByName(dbpool *pgxpool.Pool, name string) (Reservation, error
 
 // UpdateStatus updates the status of a reservation
 func (r *Reservation) UpdateStatus(dbpool *pgxpool.Pool, status string) error {
+	log.Logger.Info("updating status", "status", status, "reservation", r)
 	r.Status = status
 
 	// Ensure id is set
@@ -250,7 +265,7 @@ func (r *Reservation) Initialize(dbpool *pgxpool.Pool, a AwsAccountProvider) {
 // Delete deletes a reservation
 // This is an async operation that goes through all the reserved resources
 // and unmark them.
-// Then the reservation is deleted from the DB is all goes well.
+// Then the reservation is deleted from the DB if all goes well.
 // If something goes wrong, the reservation is marked as 'error'
 func (r *Reservation) Remove(dbpool *pgxpool.Pool, a AwsAccountProvider) {
 	// Loop through the Request.Resources and try to update the resources
@@ -301,4 +316,62 @@ func (r *Reservation) Update(dbpool *pgxpool.Pool, a AwsAccountProvider, req Res
 		}
 	}
 	r.UpdateStatus(dbpool, "success")
+}
+
+// Rename renames a reservation
+// This is an async operation that goes through all the reserved resources
+// and unmark them.
+// Then the reservation is renamed in the DB if all goes well.
+// If something goes wrong, the reservation is marked as 'error'
+// and the name is not changed.
+// The name must be unique.
+
+func (r *Reservation) Rename(dbpool *pgxpool.Pool, a AwsAccountProvider, name string) {
+
+	// Ensure id is set
+	if r.ID == 0 {
+		log.Logger.Error("rename reservation", "error", "id is required")
+		return
+	}
+
+	r.UpdateStatus(dbpool, "updating")
+
+	// Check if the new name is already taken
+	var id int
+	err := dbpool.QueryRow(
+		context.Background(),
+		"SELECT id FROM reservations WHERE reservation_name = $1",
+		name,
+	).Scan(&id)
+
+	if err != nil && err != pgx.ErrNoRows {
+		log.Logger.Error("rename reservation", "error", err)
+		r.UpdateStatus(dbpool, "error")
+		return
+	}
+
+	if id != 0 {
+		log.Logger.Error("rename reservation", "error", "name already taken")
+		return
+	}
+
+	if err := a.RenameReservation(r.Name, name); err != nil {
+		log.Logger.Error("rename reservation", "error", err)
+		r.UpdateStatus(dbpool, "error")
+		return
+	}
+
+	r.Name = name
+	r.Request.Name = name
+	if err := r.Save(dbpool); err != nil {
+		log.Logger.Error("rename reservation", "error", err)
+		r.UpdateStatus(dbpool, "error")
+		return
+	}
+
+	log.Logger.Info("rename reservation", "reservation", r)
+
+	if err := r.UpdateStatus(dbpool, "success"); err != nil {
+		log.Logger.Error("rename reservation, update status", "error", err)
+	}
 }
