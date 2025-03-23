@@ -80,7 +80,7 @@ type ResourcesResponse struct {
 	HTTPStatusCode int    `json:"http_code,omitempty"` // http response status code
 	Message        string `json:"message"`
 	Resources      []any  `json:"resources,omitempty"`
-	Count          int    `json:"count,omitempty"`
+	Count          int    `json:"count"`
 }
 
 func (o *ResourcesResponse) Render(w http.ResponseWriter, r *http.Request) error {

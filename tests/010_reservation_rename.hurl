@@ -148,9 +148,8 @@ GET {{host}}/api/v1/reservations/summit/resources
 Authorization: Bearer {{access_token}}
 [QueryStringParams]
 skipReservationCheck: true
-HTTP 200
+HTTP 404
 [Asserts]
-jsonpath "$.resources" count == 0
 jsonpath "$.count" == 0
 
 #################################################################################

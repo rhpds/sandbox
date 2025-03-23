@@ -10,16 +10,23 @@ COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null)
 DATE ?= $(shell date -u)
 POSTGRESQL_PORT ?= 5432
 POSTGRESQL_POD ?= localpg
+VACUUM_VERSION ?= latest
+export VACUUM_VERSION
 export CGO_ENABLED=0
 
 build: sandbox-list sandbox-metrics sandbox-api sandbox-issue-jwt sandbox-rotate-vault
 
-test:
+test: cmd/sandbox-api/assets/swagger.yaml
 	@echo "Running tests..."
 	@echo "VERSION: $(VERSION)"
 	@go test -v ./...
+	@go vet ./...
 	@echo "Validating swagger.yaml..."
-	@go run github.com/daveshanley/vacuum@latest lint -d docs/api-reference/swagger.yaml
+	@if command -v vacuum > /dev/null; then \
+      vacuum lint docs/api-reference/swagger.yaml \
+	; else \
+      go run github.com/daveshanley/vacuum@$${VACUUM_VERSION} lint docs/api-reference/swagger.yaml \
+	; fi
 
 run-api: cmd/sandbox-api/assets/swagger.yaml .dev.pgenv .dev.jwtauth_env #migrate
 	. ./.dev.pgenv && . ./.dev.jwtauth_env && cd cmd/sandbox-api && go run .

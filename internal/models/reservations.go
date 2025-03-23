@@ -219,7 +219,6 @@ func GetReservationByName(dbpool *pgxpool.Pool, name string) (*Reservation, erro
 
 // UpdateStatus updates the status of a reservation
 func (r *Reservation) UpdateStatus(dbpool *pgxpool.Pool, status string) error {
-	log.Logger.Info("updating status", "status", status, "reservation", r)
 	r.Status = status
 
 	// Ensure id is set

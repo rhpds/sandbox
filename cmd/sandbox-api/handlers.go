@@ -1464,7 +1464,7 @@ func (h *BaseHandler) GetReservationResourcesHandler(w http.ResponseWriter, r *h
 
 	skipReservationCheck := r.URL.Query().Get("skipReservationCheck")
 
-	if skipReservationCheck == "false" {
+	if skipReservationCheck != "true" {
 		reservation, err := models.GetReservationByName(h.dbpool, name)
 
 		if err != nil {
