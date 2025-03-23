@@ -1146,6 +1146,13 @@ paths:
             type: string
             pattern: '^[\w\d_-]+$'
           example: summit
+        - name: skipReservationCheck
+          in: query
+          required: false
+          description: Skip the reservation check
+          schema:
+            type: boolean
+          example: true
 
       responses:
         '200':

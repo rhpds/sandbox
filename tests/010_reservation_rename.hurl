@@ -141,6 +141,19 @@ Authorization: Bearer {{access_token}}
 HTTP 404
 
 #################################################################################
+# Ensure the previous reservation has no resource listed
+#################################################################################
+
+GET {{host}}/api/v1/reservations/summit/resources
+Authorization: Bearer {{access_token}}
+[QueryStringParams]
+skipReservationCheck: true
+HTTP 200
+[Asserts]
+jsonpath "$.resources" count == 0
+jsonpath "$.count" == 0
+
+#################################################################################
 # Ensure it has 2 resources actually listed
 #################################################################################
 

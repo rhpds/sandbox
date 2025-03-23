@@ -1462,29 +1462,42 @@ func (h *BaseHandler) GetReservationHandler(w http.ResponseWriter, r *http.Reque
 func (h *BaseHandler) GetReservationResourcesHandler(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
-	reservation, err := models.GetReservationByName(h.dbpool, name)
+	skipReservationCheck := r.URL.Query().Get("skipReservationCheck")
 
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			w.WriteHeader(http.StatusNotFound)
+	if skipReservationCheck == "false" {
+		reservation, err := models.GetReservationByName(h.dbpool, name)
+
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				w.WriteHeader(http.StatusNotFound)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusNotFound,
+					Message:        "Reservation not found",
+				})
+				return
+			}
+
+			w.WriteHeader(http.StatusInternalServerError)
 			render.Render(w, r, &v1.Error{
-				HTTPStatusCode: http.StatusNotFound,
-				Message:        "Reservation not found",
+				Err:            err,
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Error getting reservation",
 			})
+			log.Logger.Error("GetReservationHandler", "error", err)
 			return
 		}
 
-		w.WriteHeader(http.StatusInternalServerError)
-		render.Render(w, r, &v1.Error{
-			Err:            err,
-			HTTPStatusCode: http.StatusInternalServerError,
-			Message:        "Error getting reservation",
-		})
-		log.Logger.Error("GetReservationHandler", "error", err)
-		return
+		if name != reservation.Name {
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Reservation name mismatch",
+			})
+			return
+		}
 	}
 
-	accounts, err := h.awsAccountProvider.FetchAllByReservation(reservation.Name)
+	accounts, err := h.awsAccountProvider.FetchAllByReservation(name)
 
 	if err != nil {
 		log.Logger.Error("GET accounts", "error", err)
