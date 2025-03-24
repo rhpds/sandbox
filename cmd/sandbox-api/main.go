@@ -310,6 +310,7 @@ func main() {
 		r.Post("/api/v1/reservations", baseHandler.CreateReservationHandler)
 		r.Put("/api/v1/reservations/{name}", baseHandler.UpdateReservationHandler)
 		r.Delete("/api/v1/reservations/{name}", baseHandler.DeleteReservationHandler)
+		r.Put("/api/v1/reservations/{name}/rename", baseHandler.RenameReservationHandler)
 	})
 
 	// ---------------------------------------------------------------------

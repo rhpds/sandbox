@@ -1176,7 +1176,7 @@ func (h *BaseHandler) CreateReservationHandler(w http.ResponseWriter, r *http.Re
 	}
 
 	// Create the reservation
-	reservation := models.Reservation{
+	reservation := &models.Reservation{
 		Name:    name,
 		Request: reservationRequest,
 		Status:  "new",
@@ -1214,6 +1214,89 @@ func (h *BaseHandler) CreateReservationHandler(w http.ResponseWriter, r *http.Re
 	render.Render(w, r, &v1.ReservationResponse{
 		Reservation:    reservation,
 		Message:        "Reservation request created",
+		HTTPStatusCode: http.StatusAccepted,
+	})
+}
+
+// RenameReservationHandler renames a reservation
+func (h *BaseHandler) RenameReservationHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	reservation, err := models.GetReservationByName(h.dbpool, name)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Reservation not found",
+			})
+			return
+		}
+	}
+
+	// Get the new name from the request body
+	// Decode the request body
+	RenameRequest := v1.ReservationRenameRequest{}
+
+	if err := render.Bind(r, &RenameRequest); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Error decoding request body",
+			ErrorMultiline: []string{err.Error()},
+		})
+		log.Logger.Error("RenameReservationHandler", "error", err)
+		return
+	}
+
+	newName := RenameRequest.NewName
+
+	// Ensure name is in the acceptable format (only alpha-numeric)
+	if !nameRegex.MatchString(newName) {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid name",
+		})
+		log.Logger.Error("Invalid name", "name", newName)
+		return
+	}
+
+	// If the reservation already exists, return a 409 Status Conflict
+	_, err = models.GetReservationByName(h.dbpool, newName)
+
+	if err != pgx.ErrNoRows {
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				Err:            err,
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Error checking for existing reservation",
+			})
+			log.Logger.Error("RenameReservationHandler", "error", err)
+			return
+		}
+
+		// Reservation already exists
+		// Return a 409 Status Conflict
+		w.WriteHeader(http.StatusConflict)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusConflict,
+			Message:        "Reservation already exists",
+		})
+		return
+	}
+
+	reservation.UpdateStatus(h.dbpool, "updating")
+	// Rename the reservation, call reservation.Rename (async)
+	go reservation.Rename(h.dbpool, h.awsAccountProvider, newName)
+
+	w.WriteHeader(http.StatusAccepted)
+	render.Render(w, r, &v1.ReservationResponse{
+		Reservation:    reservation,
+		Message:        "Reservation rename request created",
 		HTTPStatusCode: http.StatusAccepted,
 	})
 }
@@ -1379,29 +1462,42 @@ func (h *BaseHandler) GetReservationHandler(w http.ResponseWriter, r *http.Reque
 func (h *BaseHandler) GetReservationResourcesHandler(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
-	reservation, err := models.GetReservationByName(h.dbpool, name)
+	skipReservationCheck := r.URL.Query().Get("skipReservationCheck")
 
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			w.WriteHeader(http.StatusNotFound)
+	if skipReservationCheck != "true" {
+		reservation, err := models.GetReservationByName(h.dbpool, name)
+
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				w.WriteHeader(http.StatusNotFound)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusNotFound,
+					Message:        "Reservation not found",
+				})
+				return
+			}
+
+			w.WriteHeader(http.StatusInternalServerError)
 			render.Render(w, r, &v1.Error{
-				HTTPStatusCode: http.StatusNotFound,
-				Message:        "Reservation not found",
+				Err:            err,
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Error getting reservation",
 			})
+			log.Logger.Error("GetReservationHandler", "error", err)
 			return
 		}
 
-		w.WriteHeader(http.StatusInternalServerError)
-		render.Render(w, r, &v1.Error{
-			Err:            err,
-			HTTPStatusCode: http.StatusInternalServerError,
-			Message:        "Error getting reservation",
-		})
-		log.Logger.Error("GetReservationHandler", "error", err)
-		return
+		if name != reservation.Name {
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Reservation name mismatch",
+			})
+			return
+		}
 	}
 
-	accounts, err := h.awsAccountProvider.FetchAllByReservation(reservation.Name)
+	accounts, err := h.awsAccountProvider.FetchAllByReservation(name)
 
 	if err != nil {
 		log.Logger.Error("GET accounts", "error", err)

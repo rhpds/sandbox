@@ -56,6 +56,7 @@ if [ -z "$POSTGRESQL_PORT" ]; then
     exit 1
 fi
 set -o pipefail
+
 export POSTGRESQL_PORT
 POSTGRESQL_POD=localpg$$
 export POSTGRESQL_POD
@@ -71,6 +72,10 @@ make migrate
 
 # Generate admin and app tokens
 make tokens
+
+
+# Ensure it compiles and passes the tests first
+make test
 
 # Run the API in background
 # Select a free port
