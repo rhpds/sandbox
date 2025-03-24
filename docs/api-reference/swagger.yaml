@@ -424,6 +424,10 @@ paths:
             - AwsSandbox
             - ocp
             - OcpSandbox
+            - dns
+            - DNSSandbox
+            - ibmrg
+            - IBMResourceGroupSandbox
       - name: available
         in: query
         description: Boolean to filter if available or taken.
@@ -473,6 +477,10 @@ paths:
             - AwsSandbox
             - ocp
             - OcpSandbox
+            - dns
+            - DNSSandbox
+            - ibmrg
+            - IBMResourceGroupSandbox
       - name: name
         in: path
         required: true
@@ -569,6 +577,10 @@ paths:
             - AwsSandbox
             - ocp
             - OcpSandbox
+            - dns
+            - DNSSandbox
+            - ibmrg
+            - IBMResourceGroupSandbox
       - name: name
         in: path
         required: true
@@ -626,6 +638,10 @@ paths:
             - AwsSandbox
             - ocp
             - OcpSandbox
+            - dns
+            - DNSSandbox
+            - ibmrg
+            - IBMResourceGroupSandbox
       - name: name
         in: path
         required: true
@@ -680,6 +696,10 @@ paths:
             - AwsSandbox
             - ocp
             - OcpSandbox
+            - dns
+            - DNSSandbox
+            - ibmrg
+            - IBMResourceGroupSandbox
       - name: name
         in: path
         required: true
@@ -734,6 +754,10 @@ paths:
             - AwsSandbox
             - ocp
             - OcpSandbox
+            - dns
+            - DNSSandbox
+            - ibmrg
+            - IBMResourceGroupSandbox
       - name: name
         in: path
         required: true
@@ -1122,6 +1146,13 @@ paths:
             type: string
             pattern: '^[\w\d_-]+$'
           example: summit
+        - name: skipReservationCheck
+          in: query
+          required: false
+          description: Skip the reservation check
+          schema:
+            type: boolean
+          example: true
 
       responses:
         '200':
@@ -1150,6 +1181,88 @@ paths:
               example:
                 message: unauthorized
                 http_code: 401
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /reservations/{name}/rename:
+    put:
+      operationId: renameReservation
+      summary: Rename a reservation
+      description: |-
+        Rename a reservation by its name.
+
+        All accounts marked as part of the reservation are updated. The accounts will **not** be marked for cleanup, they are retained intacted. Only the 'reservation' field of those accounts is cleared.
+      tags:
+        - admin
+      parameters:
+        - in: header
+          name: Authorization
+          description: Access JTW Token
+          required: true
+          schema:
+            type: string
+          example: Bearer <ACCESS_TOKEN>
+        - name: name
+          in: path
+          required: true
+          description: The name of the reservation
+          schema:
+            type: string
+            pattern: '^[\w\d_-]+$'
+          example: summit
+      requestBody:
+        description: JSON object to specify the new name of the reservation.
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - new_name
+              properties:
+                new_name:
+                  type: string
+                  example: summit2
+      responses:
+        '202':
+          description: Request is successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: reservation rename request created
+
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Reservation already exists
+                http_code: 409
         default:
           description: unexpected error
           content:
@@ -1641,6 +1754,8 @@ paths:
                 max_cpu_usage_percentage:
                   type: number
                   format: float
+                usage_node_selector:
+                  type: string
                 token:
                   type: string
                 annotations:
@@ -1673,6 +1788,7 @@ paths:
               skip_quota: false
               max_memory_usage_percentage: 70
               max_cpu_usage_percentage: 80
+              usage_node_selector: 'node-role.kubernetes.io/compute='
               token: '...'
               additional_vars:
                 fordeployer: '...'
@@ -1761,6 +1877,556 @@ paths:
                 message: Internal server error
                 http_code: 500
 
+  /dns-account-configurations:
+    post:
+      summary: Create a new DNSAccountConfiguration
+      operationId: createDNSAccountConfiguration
+      tags:
+        - admin
+      requestBody:
+        description: JSON object to specify the DNSAccountConfiguration.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DNSAccountConfiguration"
+            example:
+              name: devaccount
+              aws_access_key_id: redacted
+              aws_secret_access_key: redacted
+              zone: devzone
+              hosted_zone_id: Z0
+              annotations:
+                purpose: dev
+      responses:
+        '201':
+          description: DNSAccountConfiguration created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: DNS account configuration created
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: createDNSAccountConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      summary: Get all DNSAccountConfigurations
+      operationId: getDNSAccountConfigurations
+      tags:
+        - admin
+      responses:
+        '200':
+          description: The list of DNSAccountConfigurations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DNSAccountConfigurations"
+        default:
+          description: getDNSAccountConfigurations unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /dns-account-configurations/{name}:
+    get:
+      summary: Get information about an DNSAccountConfiguration
+      operationId: getDNSAccountConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the DNSAccountConfiguration
+          schema:
+            type: string
+          example: devaccount
+      responses:
+        '200':
+          description: The DNSAccountConfiguration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DNSAccountConfiguration"
+        '404':
+          description: getDNSAccountConfiguration DNSAccountConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getDNSAccountConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete an DNSAccountConfiguration
+      operationId: deleteDNSAccountConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the DNSAccountConfiguration
+          schema:
+            type: string
+          example: devaccount
+      responses:
+        '200':
+          description: The DNSAccountConfiguration is deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: DNS account deleted
+        '404':
+          description: deleteDNSAccountConfiguration DNSAccountConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: |-
+            DNSAccountConfiguration is not deletable. Usually because it has
+            resources attached to it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: deleteDNSAccountConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /dns-account-configurations/{name}/enable:
+    put:
+      summary: Enable an DNSAccountConfiguration
+      operationId: enableDNSAccountConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the DNSAccountConfiguration
+          schema:
+            type: string
+          example: development
+      responses:
+        '200':
+          description: The DNSAccountConfiguration is enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: DNS Account enabled
+        '404':
+          description: enableDNSAccountConfiguration DNSAccountConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: enableDNSAccountConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /dns-account-configurations/{name}/disable:
+    put:
+      summary: Disable an DNSAccountConfiguration
+      operationId: disableDNSAccountConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the DNSAccountConfiguration
+          schema:
+            type: string
+            example: devaccount
+          example: devaccount
+      responses:
+        '200':
+          description: The DNSAccountConfiguration is disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: DNS Account cluster configuration disabled
+        '404':
+          description: disableDNSAccountConfiguration DNSAccountConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: disableDNSAccountConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /dns-account-configurations/{name}/update:
+    put:
+      summary: Update quota conf for an DNSAccountConfiguration
+      operationId: updateDNSAccountConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the DNSAccountConfiguration changes
+          schema:
+            type: string
+            example: devaccount
+      requestBody:
+        description: JSON object to specify the DNSAccountConfiguration.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                aws_access_key_id:
+                  type: string
+                aws_secret_access_key:
+                  type: string
+                annotations:
+                  $ref: "#/components/schemas/Annotations"
+                additional_vars:
+                  type: object
+            example:
+              aws_access_key_id: string
+              aws_secret_access_key: string
+              additional_vars:
+                fordeployer: '...'
+              annotations:
+                virt: available
+                cloud: ibm
+                purpose: dev
+      responses:
+        '200':
+          description: The DNSAccountConfiguration is updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: DNS Account configuration updated
+        '404':
+          description: updateDNSAccountConfiguration DNSAccountConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: updateDNSAccountConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /ibm-resource-group-configurations:
+    post:
+      summary: Create a new IBMResourceGroupSandboxConfiguration
+      operationId: createIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      requestBody:
+        description: JSON object to specify the IBMResourceGroupSandboxConfiguration.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IBMResourceGroupSandboxConfiguration"
+            example:
+              name: development
+              apikey: '...'
+              annotations:
+                purpose: dev
+      responses:
+        '201':
+          description: IBMResourceGroupSandboxConfiguration created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM resource group account configuration created
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: createIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      summary: Get all IBMResourceGroupSandboxConfigurations
+      operationId: getIBMResourceGroupSandboxConfigurations
+      tags:
+        - admin
+      responses:
+        '200':
+          description: The list of IBMResourceGroupSandboxConfigurations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IBMResourceGroupSandboxConfigurations"
+        default:
+          description: getIBMResourceGroupSandboxConfigurations unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ibm-resource-group-configurations/{name}:
+    get:
+      summary: Get information about an IBMResourceGroupSandboxConfiguration
+      operationId: getIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMResourceGroupSandboxConfiguration
+          schema:
+            type: string
+          example: development
+      responses:
+        '200':
+          description: The IBMResourceGroupSandboxConfiguration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IBMResourceGroupSandboxConfiguration"
+        '404':
+          description: getIBMResourceGroupSandboxConfiguration IBMResourceGroupSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete an IBMResourceGroupSandboxConfiguration
+      operationId: deleteIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMResourceGroupSandboxConfiguration
+          schema:
+            type: string
+          example: development
+      responses:
+        '200':
+          description: The IBMResourceGroupSandboxConfiguration is deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM resource group account configuration deleted
+        '404':
+          description: deleteIBMResourceGroupSandboxConfiguration IBMResourceGroupSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: |-
+            IBMResourceGroupSandboxConfiguration is not deletable. Usually because it has
+            resources attached to it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: deleteIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ibm-resource-group-configurations/{name}/enable:
+    put:
+      summary: Enable an IBMResourceGroupSandboxConfiguration
+      operationId: enableIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMResourceGroupSandboxConfiguration
+          schema:
+            type: string
+          example: development
+      responses:
+        '200':
+          description: The IBMResourceGroupSandboxConfiguration is enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM resource group account configuration enabled
+        '404':
+          description: enableIBMResourceGroupSandboxConfiguration IBMResourceGroupSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: enableIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ibm-resource-group-configurations/{name}/disable:
+    put:
+      summary: Disable an IBMResourceGroupSandboxConfiguration
+      operationId: disableIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMResourceGroupSandboxConfiguration
+          schema:
+            type: string
+            example: development
+          example: development
+      responses:
+        '200':
+          description: The IBMResourceGroupSandboxConfiguration is disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM resource group account configuration disabled
+        '404':
+          description: disableIBMResourceGroupSandboxConfiguration IBMResourceGroupSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: disableIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ibm-resource-group-configurations/{name}/update:
+    put:
+      summary: Update quota conf for an IBMResourceGroupSandboxConfiguration
+      operationId: updateIBMResourceGroupSandboxConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the IBMResourceGroupSandboxConfiguration changes
+          schema:
+            type: string
+            example: development
+      requestBody:
+        description: JSON object to specify the IBMResourceGroupSandboxConfiguration.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                apikey:
+                  type: string
+                annotations:
+                  $ref: "#/components/schemas/Annotations"
+                additional_vars:
+                  type: object
+            example:
+              apikey: '...'
+              additional_vars:
+                fordeployer: '...'
+              annotations:
+                purpose: dev
+      responses:
+        '200':
+          description: The IBMResourceGroupSandboxConfiguration is updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: IBM resource group account configuration updated
+        '404':
+          description: updateIBMResourceGroupSandboxConfiguration IBMResourceGroupSandboxConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: updateIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+
 components:
   schemas:
     UUID:
@@ -1793,7 +2459,26 @@ components:
                 minimum: 1
                 default: 1
                 example: 1
+              alias:
+                type: string
+              cluster_condition:
+                type: string
+              cluster_relation:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    relation:
+                      type: string
+                      enum:
+                        - same
+                        - different
+                        - child
+                    reference:
+                      type: string
               cloud_selector:
+                $ref: "#/components/schemas/Annotations"
+              cloud_preference:
                 $ref: "#/components/schemas/Annotations"
               annotations:
                 $ref: "#/components/schemas/Annotations"
@@ -1902,6 +2587,8 @@ components:
         - $ref: '#/components/schemas/AwsAccount'
         - $ref: '#/components/schemas/AzureAccount'
         - $ref: '#/components/schemas/OcpSandbox'
+        - $ref: '#/components/schemas/DNSSandbox'
+        - $ref: '#/components/schemas/IBMResourceGroupSandbox'
       discriminator:
         propertyName: kind
         mapping:
@@ -1911,11 +2598,15 @@ components:
       oneOf:
         - $ref: '#/components/schemas/AwsAccountWithCreds'
         - $ref: '#/components/schemas/OcpSandboxWithCreds'
+        - $ref: '#/components/schemas/DNSSandboxWithCreds'
+        - $ref: '#/components/schemas/IBMResourceGroupSandboxWithCreds'
       discriminator:
         propertyName: kind
         mapping:
           AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
           OcpSandbox: '#/components/schemas/OcpSandboxWithCreds'
+          DNSSandbox: '#/components/schemas/DNSSandboxWithCreds'
+          IBMResourceGroupSandbox: '#/components/schemas/IBMResourceGroupSandboxWithCreds'
 
     Resource:
       type: object
@@ -1949,6 +2640,8 @@ components:
         mapping:
           AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
           OcpSandbox: '#/components/schemas/OcpSandboxWithCreds'
+          DNSSandbox: '#/components/schemas/DNSSandboxWithCreds'
+          IBMResourceGroupSandbox: '#/components/schemas/IBMResourceGroupSandboxWithCreds'
 
     Resources:
       type: array
@@ -1960,11 +2653,15 @@ components:
       oneOf:
         - $ref: '#/components/schemas/AwsIamKey'
         - $ref: '#/components/schemas/OcpServiceAccount'
+        - $ref: '#/components/schemas/DNSSandboxCreds'
+        - $ref: '#/components/schemas/IBMResourceGroupServiceAccount'
       discriminator:
         propertyName: kind
         mapping:
           aws_iam_key: '#/components/schemas/AwsIamKey'
           ServiceAccount: '#/components/schemas/OcpServiceAccount'
+          DNSSandboxCreds: '#/components/schemas/DNSSandboxCreds'
+          IBMResourceGroupServiceAccount: '#/components/schemas/IBMResourceGroupServiceAccount'
 
     # Credential for OcpSandbox
     OcpServiceAccount:
@@ -1981,6 +2678,47 @@ components:
           type: string
           example: guid-uuid
         token:
+          type: string
+          example: 1234567890abcdefghij
+
+
+    # Credential for DNSAccount
+    DNSSandboxCreds:
+      type: object
+      required:
+        - kind
+        - aws_access_key_id
+        - aws_secret_access_key
+        - zone
+        - hosted_zone_id
+      properties:
+        kind:
+          type: string
+          example: ServiceAccount
+        aws_access_key_id:
+          type: string
+          example: A..
+        aws_secret_access_key:
+          type: string
+          example: ey..
+        zone:
+          type: string
+          example: dev..
+        hosted_zone_id:
+          type: string
+          example: Z0
+
+    # Credential for IBMResourceGroupSandbox
+    IBMResourceGroupServiceAccount:
+      type: object
+      required:
+        - name
+        - apikey
+      properties:
+        name:
+          type: string
+          example: guid-uuid
+        apikey:
           type: string
           example: 1234567890abcdefghij
 
@@ -2051,7 +2789,7 @@ components:
           example: IAM key
         aws_access_key_id:
           type: string
-          example: AKIAR2AI7M4QU6KCVIWJ
+          example: redacted
         aws_secret_access_key:
           type: string
           example: 1234567890abcdefghij
@@ -2123,6 +2861,97 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/Credentials'
+
+    DNSSandbox:
+      type: object
+      required:
+        - kind
+        - aws_access_key_id
+        - aws_secret_access_key
+        - zone
+        - hosted_zone_id
+      properties:
+        kind:
+          type: string
+          example: ServiceAccount
+        aws_access_key_id:
+          type: string
+          example: A..
+        aws_secret_access_key:
+          type: string
+          example: ey..
+        zone:
+          type: string
+          example: dev..
+        hosted_zone_id:
+          type: string
+          example: Z0
+        status:
+          type: string
+          enum:
+            - initializing
+            - scheduling
+            - success
+            - error
+            - deleting
+        cluster_additional_vars:
+          type: object
+          example:
+            deployer:
+              openshift_cnv_nfs_path: /IBMfoobar/data01
+              openshift_cnv_nfs_server: fsf-region.domain.com
+
+    DNSSandboxWithCreds:
+      allOf:
+        - $ref: '#/components/schemas/OcpSandbox'
+        - type: object
+          properties:
+            credentials:
+              type: array
+              items:
+                $ref: '#/components/schemas/Credentials'
+
+    IBMResourceGroupSandbox:
+      type: object
+      required:
+        - name
+        - service_uuid
+      properties:
+        name:
+          type: string
+          example: sandbox123
+        resourcegroupnam:
+          type: string
+          example: sandbox-GUID-UUID
+        service_uuid:
+          $ref: '#/components/schemas/UUID'
+        annotations:
+          $ref: '#/components/schemas/Annotations'
+        status:
+          type: string
+          enum:
+            - initializing
+            - scheduling
+            - success
+            - error
+            - deleting
+        account_additional_vars:
+          type: object
+          example:
+            deployer:
+              account_nfs_path: /IBMfoobar/data01
+              account_nfs_server: fsf-region.domain.com
+
+    IBMResourceGroupSandboxWithCreds:
+      allOf:
+        - $ref: '#/components/schemas/IBMResourceGroupSandbox'
+        - type: object
+          properties:
+            credentials:
+              type: array
+              items:
+                $ref: '#/components/schemas/Credentials'
+
     Accounts:
       type: array
       items:
@@ -2218,6 +3047,8 @@ components:
         - AwsSandbox
         - OcpSandbox
         - AzureSandbox
+        - DNSSandbox
+        - IBMResourceGroupSandbox
 
     Reservation:
       description: Reservation record
@@ -2370,6 +3201,11 @@ components:
           description: The maximum memory usage percentage for a cluster to be considered healthy
           example: 80
           default: 90
+        usage_node_selector:
+          type: string
+          description: Specify the nodeSelector value to calculate the current usage percentage
+          example: "node-role.kubernetes.io/compute="
+          default: "node-role.kubernetes.io/worker="
         max_cpu_usage_percentage:
           type: integer
           description: The maximum CPU usage percentage for a cluster to be considered healthy
@@ -2482,3 +3318,103 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/OcpSharedClusterConfiguration'
+
+    DNSAccountConfiguration:
+      description: DNSAccountConfiguration is a record of an DNS Account
+      type: object
+      required:
+        - name
+        - aws_access_key_id
+        - aws_secret_access_key
+        - zone
+        - hosted_zone_id
+        - annotations
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: The name of the account, must be alphanumeric or dash
+          example: devaccount
+        aws_access_key_id:
+          type: string
+          description: The access key id to access the AWS Account
+          example: AKI..
+        aws_secret_access_key:
+          type: string
+          description: The secret access key to access the AWS Account
+          example: ey..
+        valid:
+          type: boolean
+          description: true if the cluster is valid
+          example: true
+          default: true
+        zone:
+          type: string
+          example: dev.domain
+        hosted_zone_id:
+          type: string
+          example: Z0
+        annotations:
+          $ref: "#/components/schemas/Annotations"
+        additional_vars:
+          type: object
+          description: Additional variables for the cluster
+          example:
+            deployer:
+              openshift_cnv_nfs_path: /IBMfoobar/data01
+              openshift_cnv_nfs_server: fsf-region.domain.com
+      example:
+        name: devaccount
+        aws_access_key_id: REDACTED
+        aws_secret_access_key: REDACTED
+        zone: dev.domain.com
+        hosted_zone_id: Z0redacted
+        annotations:
+          purpose: dev
+
+    DNSAccountConfigurations:
+      description: The list of DNSAccountConfigurations
+      type: array
+      items:
+        $ref: '#/components/schemas/DNSAccountConfiguration'
+
+    IBMResourceGroupSandboxConfiguration:
+      description: IBMResourceGroupSandboxConfiguration is a record of an IBM Account
+      type: object
+      required:
+        - name
+        - apikey
+        - annotations
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: The name of the account
+          example: development
+        valid:
+          type: boolean
+          description: true if the account is valid
+          example: true
+          default: true
+        apikey:
+          type: string
+        annotations:
+          $ref: "#/components/schemas/Annotations"
+        additional_vars:
+          type: object
+          description: Additional variables for the account
+          example:
+            deployer:
+              openshift_cnv_nfs_path: /IBMfoobar/data01
+              openshift_cnv_nfs_server: fsf-region.domain.com
+
+      example:
+        name: development
+        apikey: '...'
+        annotations:
+          purpose: dev
+    IBMResourceGroupSandboxConfigurations:
+      description: The list of IBMResourceGroupSandboxConfigurations
+      type: array
+      items:
+        $ref: '#/components/schemas/IBMResourceGroupSandboxConfiguration'

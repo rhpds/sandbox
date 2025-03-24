@@ -33,6 +33,9 @@
   include_tasks: unvault.yml
 
 - name: Validate AWS access
+  environment:
+    AWS_ACCESS_KEY_ID: ""
+    AWS_SECRET_ACCESS_KEY: ""
   aws_caller_info:
     aws_access_key: "{{ sandbox_aws_access_key_id }}"
     aws_secret_key: "{{ sandbox_aws_secret_access_key }}"
@@ -47,7 +50,7 @@
     hosted_zone_id: "{{ sandbox_hosted_zone_id }}"
   register: _route53facts
   retries: 5
-  delay: "{{ 60|random(start=3, step=1) }}"
+  delay: 30
   until: _route53facts is succeeded
 
 - name: Validate route53 zone
@@ -67,12 +70,20 @@
 
   assert:
     that: ns_entries == ns_entries_route53
+  retries: 60
+  delay: 1
 
 - name: Ensure Red Hat GOLD AMI are accessible from within the sandbox
   ec2_ami_info:
     aws_access_key: "{{ sandbox_aws_access_key_id }}"
     aws_secret_key: "{{ sandbox_aws_secret_access_key }}"
-    region: us-east-1
+    region: >-
+      {{
+      ['us-east-1',
+      'us-east-2',
+      'us-west-1',
+      'us-west-2'
+      ] | shuffle | first }}
     # Red Hat official
     owner: 309956199498
     filters:
@@ -80,6 +91,10 @@
       name: RHEL-9.0*Access*
       is-public: "false"
   register: r_image
+  # Try for 15m
+  retries: 150
+  delay: 6
+  until: r_image is succeeded and r_image.images | length > 0
 
 - assert:
     that: >-
@@ -89,3 +104,6 @@
       or
       r_image.images[0].platform_details == 'Red Hat BYOL Linux'
       )
+
+- when: operation == 'VALIDATE' or operation == 'validate'
+  meta: end_play

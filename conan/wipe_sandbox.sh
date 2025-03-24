@@ -18,7 +18,9 @@ debug=${debug:-false}
 : "${aws_profile:?"aws_profile is unset or empty"}"
 : "${aws_nuke_binary_path:?"aws_nuke_binary_path is unset or empty"}"
 : "${lock_timeout:?"lock_timeout is unset or empty"}"
-: "${kerberos_user:?"kerberos_user is unset or empty"}"
+: "${ddns_server:?"ddns_server is unset or empty"}"
+: "${ddns_key_name:?"ddns_key_name is unset or empty"}"
+: "${ddns_key_secret:?"ddns_key_secret is unset or empty"}"
 : "${vault_file:?"vault_file is unset or empty"}"
 : "${workdir:?"workdir is unset or empty"}"
 
@@ -224,7 +226,6 @@ sandbox_reset() {
         ANSIBLE_PYTHON_INTERPRETER=$(which python3)
         export ANSIBLE_PYTHON_INTERPRETER
     fi
-
     if ansible-playbook -i localhost, \
         -e _account_num="${s}" \
         -e aws_master_profile="${aws_profile}" \
@@ -236,9 +237,11 @@ sandbox_reset() {
         -e output_dir="${workdir}/output_dir_sandbox" \
         -e vault_file="${vault_file}" \
         -e aws_cli="${AWSCLI}" \
-        -e kerberos_keytab="${kerberos_keytab:-}" \
-        -e kerberos_user="${kerberos_user}" \
-        -e kerberos_password="${kerberos_password:-}" \
+        -e ddns_key_algorithm="${ddns_key_algorithm}" \
+        -e ddns_server="${ddns_server}" \
+        -e ddns_key_name="${ddns_key_name}" \
+        -e ddns_key_secret="${ddns_key_secret}" \
+        -e ddns_ttl="${ddns_ttl}" \
         -e run_aws_nuke_legacy="${run_aws_nuke_legacy:-false}" \
         reset_single.yml > "${logfile}"; then
         echo "$(date -uIs) ${sandbox} reset OK"
@@ -249,9 +252,9 @@ sandbox_reset() {
         echo "$(date -uIs) ${sandbox} $(grep -Eo 'Nuke complete: [^"]+' "${logfile}")"
 
         if [ "${debug}" = "true" ]; then
-            echo "$(date -uIs) =========BEGIN========== ${logfile}"
+            echo "$(date -uIs) =========BEGIN========== ${HOSTNAME} ${logfile}"
             cat "${logfile}"
-            echo "$(date -uIs) =========END============ ${logfile}"
+            echo "$(date -uIs) =========END============ ${HOSTNAME} ${logfile}"
         fi
 
         rm "${eventlog}"
@@ -262,9 +265,9 @@ sandbox_reset() {
         echo "$(date -uIs) ${sandbox} reset took $((duration / 60))m$((duration % 60))s"
 
         echo "$(date -uIs) ${sandbox} reset FAILED." >&2
-        echo "$(date -uIs) =========BEGIN========== ${logfile}" >&2
+        echo "$(date -uIs) =========BEGIN========== ${HOSTNAME} ${logfile}" >&2
         cat "${logfile}" >&2
-        echo "$(date -uIs) =========END============ ${logfile}" >&2
+        echo "$(date -uIs) =========END============ ${HOSTNAME} ${logfile}" >&2
         sandbox_increase_conan_cleanup_count "${sandbox}"
         echo "$(date -uIs) ${sandbox} cleanup count: $(get_conan_cleanup_count "${sandbox}")"
         sync

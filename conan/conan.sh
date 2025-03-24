@@ -45,17 +45,16 @@ workdir=${workdir:-~/pool_management}
 # Vault file
 vault_file=${vault_file:-~/secrets/infra-sandbox-vault}
 
-# Kerberos
-kerberos_keytab=${kerberos_keytab:-~/secrets/hostadmin.keytab}
-kerberos_user=${kerberos_user:-hostadmin}
-kerberos_password=${kerberos_password:-}
+# Dynamic DNS
+ddns_server=${ddns_server:-"ipaserver"}
+ddns_key_name=${ddns_key_name:-mydynamickey}
+ddns_key_algorithm=${ddns_key_algorithm:-"hmac-sha512"}
+ddns_key_secret=${ddns_key_secret:-}
+ddns_ttl=${ddns_ttl:-600}
 
 # Pattern to filter the sandboxes to cleanup
 sandbox_filter=${sandbox_filter:-}
 
-if [ -n "${kerberos_password}" ]; then
-    unset kerberos_keytab
-fi
 
 # Lock timeout:  the number of hours after which a lock on a sandbox expires.
 # For ex: '2': a conan process will have 2h to cleanup the sandbox before another
@@ -82,9 +81,11 @@ export conan_instance
 export dynamodb_profile
 export dynamodb_region
 export dynamodb_table
-export kerberos_keytab
-export kerberos_password
-export kerberos_user
+export ddns_server
+export ddns_key_name
+export ddns_key_algorithm
+export ddns_key_secret
+export ddns_ttl
 export lock_timeout
 export max_retries
 export aws_nuke_retries

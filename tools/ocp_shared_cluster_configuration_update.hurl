@@ -19,3 +19,6 @@ PUT {{host}}/api/v1/ocp-shared-cluster-configurations/{{cluster}}/update
 Authorization: Bearer {{ access_token_admin }}
 Content-Type: application/json
 file,{{payload}};
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "OCP shared cluster configuration updated"

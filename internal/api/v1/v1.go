@@ -80,7 +80,7 @@ type ResourcesResponse struct {
 	HTTPStatusCode int    `json:"http_code,omitempty"` // http response status code
 	Message        string `json:"message"`
 	Resources      []any  `json:"resources,omitempty"`
-	Count          int    `json:"count,omitempty"`
+	Count          int    `json:"count"`
 }
 
 func (o *ResourcesResponse) Render(w http.ResponseWriter, r *http.Request) error {
@@ -103,19 +103,35 @@ func (p *PlacementResponse) Render(w http.ResponseWriter, r *http.Request) error
 }
 
 type ResourceRequest struct {
-	Kind           string             `json:"kind"`
-	Count          int                `json:"count"`
-	Annotations    models.Annotations `json:"annotations,omitempty"`
-	CloudSelector  models.Annotations `json:"cloud_selector,omitempty"`
-	Quota          *v1.ResourceList   `json:"quota,omitempty"`
-	LimitRange     *v1.LimitRange     `json:"limit_range,omitempty"`
-	RequestedQuota *v1.ResourceQuota  `json:"-"` // plumbing
+	Alias            string                   `json:"alias,omitempty"`
+	Annotations      models.Annotations       `json:"annotations,omitempty"`
+	CloudPreference  models.Annotations       `json:"cloud_preference,omitempty"`
+	CloudSelector    models.Annotations       `json:"cloud_selector,omitempty"`
+	ClusterCondition string                   `json:"cluster_condition,omitempty"`
+	ClusterRelation  []models.ClusterRelation `json:"cluster_relation,omitempty"`
+	Count            int                      `json:"count"`
+	Kind             string                   `json:"kind"`
+	LimitRange       *v1.LimitRange           `json:"limit_range,omitempty"`
+	Quota            *v1.ResourceList         `json:"quota,omitempty"`
+	RequestedQuota   *v1.ResourceQuota        `json:"-"` // plumbing
 }
 
 type ReservationResponse struct {
-	HTTPStatusCode int                `json:"http_code,omitempty"` // http response status code
-	Message        string             `json:"message"`
-	Reservation    models.Reservation `json:"reservation"`
+	HTTPStatusCode int                 `json:"http_code,omitempty"` // http response status code
+	Message        string              `json:"message"`
+	Reservation    *models.Reservation `json:"reservation"`
+}
+
+type ReservationRenameRequest struct {
+	NewName string `json:"new_name"`
+}
+
+func (p *ReservationRenameRequest) Bind(r *http.Request) error {
+	return nil
+}
+
+func (p *ReservationRenameRequest) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
 }
 
 func (p *PlacementRequest) Bind(r *http.Request) error {
@@ -137,8 +153,17 @@ func (p *PlacementRequest) Bind(r *http.Request) error {
 		if p.Resources[i].CloudSelector == nil {
 			p.Resources[i].CloudSelector = make(models.Annotations)
 		}
+		if p.Resources[i].CloudPreference == nil {
+			p.Resources[i].CloudPreference = make(models.Annotations)
+		}
 		if p.Resources[i].Quota == nil {
 			p.Resources[i].Quota = &v1.ResourceList{}
+		}
+		if p.Resources[i].ClusterRelation == nil {
+			p.Resources[i].ClusterRelation = []models.ClusterRelation{}
+		}
+		if p.Resources[i].ClusterCondition == "" {
+			p.Resources[i].ClusterCondition = ""
 		}
 		if resourceRequest.CloudSelector != nil {
 			for k, v := range resourceRequest.CloudSelector {
@@ -152,6 +177,15 @@ func (p *PlacementRequest) Bind(r *http.Request) error {
 				if v == "false" {
 					resourceRequest.CloudSelector[k] = "no"
 				}
+			}
+		}
+
+		for k, v := range resourceRequest.CloudPreference {
+			if v == "true" {
+				resourceRequest.CloudPreference[k] = "yes"
+			}
+			if v == "false" {
+				resourceRequest.CloudPreference[k] = "no"
 			}
 		}
 
@@ -194,9 +228,31 @@ type UpdateOcpSharedConfigurationRequest struct {
 	AdditionalVars            map[string]any      `json:"additional_vars,omitempty"`
 	MaxMemoryUsagePercentage  *float64            `json:"max_memory_usage_percentage,omitempty"`
 	MaxCpuUsagePercentage     *float64            `json:"max_cpu_usage_percentage,omitempty"`
+	UsageNodeSelector         *string             `json:"usage_node_selector,omitempty"`
 	LimitRange                *v1.LimitRange      `json:"limit_range,omitempty"`
 }
 
 func (j *UpdateOcpSharedConfigurationRequest) Bind(r *http.Request) error {
+	return nil
+}
+
+type UpdateDNSAccountConfigurationRequest struct {
+	Annotations        *models.Annotations `json:"annotations,omitempty"`
+	AwsAccessKeyID     string              `json:"aws_access_key_id"`
+	AwsSecretAccessKey string              `json:"aws_secret_access_key"`
+	AdditionalVars     map[string]any      `json:"additional_vars,omitempty"`
+}
+
+func (j *UpdateDNSAccountConfigurationRequest) Bind(r *http.Request) error {
+	return nil
+}
+
+type UpdateIBMResourceGroupSandboxConfigurationRequest struct {
+	Annotations    *models.Annotations `json:"annotations,omitempty"`
+	APIKey         *string             `json:"apikey,omitempty"`
+	AdditionalVars map[string]any      `json:"additional_vars,omitempty"`
+}
+
+func (j *UpdateIBMResourceGroupSandboxConfigurationRequest) Bind(r *http.Request) error {
 	return nil
 }

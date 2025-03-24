@@ -28,6 +28,12 @@ jsonpath "$.access_token_exp" isString
 # Create a new placement, with HCP enabled
 #################################################################################
 
+DELETE {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 40
+HTTP 404
+
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
 {
@@ -36,7 +42,7 @@ Authorization: Bearer {{access_token}}
     {
       "kind": "OcpSandbox",
       "cloud_selector": {
-        "hcp": "true"
+        "hcp": "yes"
       }
     }
   ],

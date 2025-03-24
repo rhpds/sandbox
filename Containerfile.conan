@@ -9,7 +9,7 @@ RUN make sandbox-list
 FROM registry.access.redhat.com/ubi8/ubi:latest
     MAINTAINER Guillaume Coré <gucore@redhat.com>
 
-ARG AWSNUKE_VERSION=v3.26.0
+ARG AWSNUKE_VERSION=v3.35.2
 ARG AWSNUKE_LEGACY_VERSION=v2.25.0
 ARG RUSH_VERSION=v0.5.4
 
@@ -18,6 +18,7 @@ USER root
 COPY --from=builder /sandbox/build/sandbox-list /usr/local/bin/sandbox-list
 COPY conan/requirements.txt /tmp/requirements.txt
 COPY conan/requirements.yml /tmp/requirements.yml
+COPY conan/ansible.cfg /etc/ansible/ansible.cfg
 
 RUN mkdir -p -m 770  /home/opentlc-mgr/pool_management/output_dir_sandbox \
     && chmod -R 770 /home/opentlc-mgr \
