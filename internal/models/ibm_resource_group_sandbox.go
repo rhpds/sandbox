@@ -778,23 +778,64 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 		},
 		)
 
-		for _,serviceName := range [5]string{"iam-identity","internet-svcs","cloud-object-storage", "is", "containers-kubernetes"} {
+		for _,serviceName := range [6]string{"iam-identity","internet-svcs","cloud-object-storage", "is", "containers-kubernetes","iam-svcs"} {
+			roles := []iampolicymanagementv1.PolicyRole{
+          {
+            RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Editor"),
+          },
+          {
+            RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Operator"),
+          },
+          {
+            RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Viewer"),
+          },
+          {
+            RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Administrator"),
+          },
+          {
+            RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::serviceRole:Manager"),
+          },
+          {
+            RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::serviceRole:Reader"),
+          },
+          {
+            RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::serviceRole:Writer"),
+          },
+        }
+			if serviceName == "iam-svcs" {
+				roles = []iampolicymanagementv1.PolicyRole{
+						{
+							RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Editor"),
+						},
+						{
+							RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Operator"),
+						},
+						{
+							RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Viewer"),
+						},
+						{
+							RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Administrator"),
+						},
+					}
+			}
+			if serviceName == "iam-identity" {
+				roles = []iampolicymanagementv1.PolicyRole{
+						{
+							RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Administrator"),
+						},
+						{
+							RoleID: core.StringPtr("crn:v1:bluemix:public:iam-identity::::serviceRole:ServiceIdCreator"),
+						},
+				}
+			}
+			if serviceName == "cloud-object-storage" {
+				roles = append(roles,iampolicymanagementv1.PolicyRole{RoleID: core.StringPtr("crn:v1:bluemix:public:cloud-object-storage::::serviceRole:ObjectReader")})
+				roles = append(roles,iampolicymanagementv1.PolicyRole{RoleID: core.StringPtr("crn:v1:bluemix:public:cloud-object-storage::::serviceRole:ContentReader")})
+		  	roles = append(roles,iampolicymanagementv1.PolicyRole{RoleID: core.StringPtr("crn:v1:bluemix:public:cloud-object-storage::::serviceRole:ObjectWriter")})
+			}
 			iamPolicies = append(iamPolicies, iampolicymanagementv1.CreatePolicyOptions{
 				Type: core.StringPtr("access"),
-				Roles: []iampolicymanagementv1.PolicyRole{
-					{
-						RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Editor"),
-					},
-					{
-						RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Operator"),
-					},
-					{
-						RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Viewer"),
-					},
-					{
-						RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Administrator"),
-					},
-				},
+				Roles: roles,
 				Resources: []iampolicymanagementv1.PolicyResource{
 					{
 						Attributes: []iampolicymanagementv1.ResourceAttribute{
@@ -831,7 +872,7 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 		for _, policy := range iamPolicies {
 			result, response, err := iamPolicyManagementService.CreatePolicy(&policy)
 			if err != nil {
-				log.Logger.Error("Failed to create policy", "error", err, "response", response)
+				log.Logger.Error("Failed to create policy", "error", err, "response", response, "policy", policy)
 				rnew.SetStatus("error")
 				return
 			}
