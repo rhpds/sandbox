@@ -757,6 +757,47 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 							Value:    core.StringPtr("resource-group"),
 							Operator: core.StringPtr("stringEquals"),
 						},
+						{
+							Name:     core.StringPtr("resource"),
+							Value:    resourceGroupId,
+							Operator: core.StringPtr("stringEquals"),
+						},
+					},
+				},
+			},
+			Subjects: []iampolicymanagementv1.PolicySubject{
+				{
+					Attributes: []iampolicymanagementv1.SubjectAttribute{
+						{
+							Name:  core.StringPtr("iam_id"),
+							Value: &iamID,
+						},
+					},
+				},
+			},
+		},
+		)
+
+		iamPolicies = append(iamPolicies, iampolicymanagementv1.CreatePolicyOptions{
+			Type: core.StringPtr("access"),
+			Roles: []iampolicymanagementv1.PolicyRole{
+				{
+					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Editor"),
+				},
+			},
+			Resources: []iampolicymanagementv1.PolicyResource{
+				{
+					Attributes: []iampolicymanagementv1.ResourceAttribute{
+						{
+							Name:     core.StringPtr("accountId"),
+							Value:    accountID,
+							Operator: core.StringPtr("stringEquals"),
+						},
+						{
+							Name:     core.StringPtr("serviceType"),
+							Value:    core.StringPtr("platform_service"),
+							Operator: core.StringPtr("stringEquals"),
+						},
 /*						{
 							Name:     core.StringPtr("resource"),
 							Value:    resourceGroupId,
@@ -777,6 +818,7 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 			},
 		},
 		)
+
 
 		for _,serviceName := range [6]string{"iam-identity","internet-svcs","cloud-object-storage", "is", "containers-kubernetes","iam-svcs"} {
 			roles := []iampolicymanagementv1.PolicyRole{
