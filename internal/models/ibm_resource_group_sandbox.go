@@ -820,7 +820,7 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 		)
 
 
-		for _,serviceName := range [6]string{"iam-identity","internet-svcs","cloud-object-storage", "is", "containers-kubernetes","iam-svcs"} {
+		for _,serviceName := range [7]string{"iam-identity","internet-svcs","cloud-object-storage", "is", "containers-kubernetes","iam-svcs", "dns-svcs"} {
 			roles := []iampolicymanagementv1.PolicyRole{
           {
             RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Editor"),
