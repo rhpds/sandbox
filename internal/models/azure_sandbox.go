@@ -31,10 +31,9 @@ type AzureSandboxProvider struct {
 	dbPool      *pgxpool.Pool
 	vaultSecret string
 
-	azureTenantId      string
-	azureClientId      string
-	azureSecret        string
-	azurePoolApiSecret string
+	azureTenantId string
+	azureClientId string
+	azureSecret   string
 
 	poolMutex sync.Mutex
 }
@@ -81,10 +80,6 @@ func NewAzureSandboxProvider(
 
 	if provider.azureSecret = os.Getenv("AZURE_SECRET"); provider.azureSecret == "" {
 		return nil, fmt.Errorf("AZURE_SECRET is not set")
-	}
-
-	if provider.azurePoolApiSecret = os.Getenv("AZURE_POOL_API_SECRET"); provider.azurePoolApiSecret == "" {
-		return nil, fmt.Errorf("AZURE_POOL_API_SECRET is not set")
 	}
 
 	return provider, nil
