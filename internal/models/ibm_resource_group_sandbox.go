@@ -1,7 +1,7 @@
 package models
 
 import (
-  "bytes"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -682,7 +682,6 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 		createAPIKeyOptions.SetDescription("Created by sandbox-api for allow deploy RHOIC")
 		_, _, _ = iamIdentityService.CreateAPIKey(createAPIKeyOptions)
 
-
 		resourceManagerClientOptions := &resourcemanagerv2.ResourceManagerV2Options{Authenticator: authenticator}
 		resourceManagerClient, err := resourcemanagerv2.NewResourceManagerV2UsingExternalConfig(resourceManagerClientOptions)
 		resourceGroupCreate := resourcemanagerv2.CreateResourceGroupOptions{
@@ -712,20 +711,20 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 			rnew.SetStatus("error")
 			return
 		}
-	// Get the IAM token
+		// Get the IAM token
 		iamToken, err := authenticator.RequestToken()
 		if err != nil {
 			log.Logger.Error("Error getting IAM token", "error", err)
 			rnew.SetStatus("error")
 			return
 		}
-		req.Header.Set("Authorization", "Bearer " + iamToken.AccessToken)
+		req.Header.Set("Authorization", "Bearer "+iamToken.AccessToken)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json")
-    //region, exists := annotations["region"]
-    //if !exists {
-    //    region = "us-south"
-    //}
+		//region, exists := annotations["region"]
+		//if !exists {
+		//    region = "us-south"
+		//}
 		//req.Header.Set("X-Region", region)
 		req.Header.Set("X-Auth-Resource-Group", *resCreateResourceGroup.ID)
 
@@ -742,55 +741,55 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 
 		// This Policy is too open, we will create only for 1 hour
 		tempPolicy := iampolicymanagementv1.CreateV2PolicyOptions{
-				Type: core.StringPtr("access"),
-				Control: &iampolicymanagementv1.Control{
-						Grant: &iampolicymanagementv1.Grant{
-								Roles: []iampolicymanagementv1.Roles{
-										{
-												RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Editor"),
-										},
-								},
-						},
-				},
-				Resource: &iampolicymanagementv1.V2PolicyResource{
-						Attributes: []iampolicymanagementv1.V2PolicyResourceAttribute{
-								{
-										Key:      core.StringPtr("accountId"),
-										Operator: core.StringPtr("stringEquals"),
-										Value:    accountID,
-								},
-								{
-										Key:      core.StringPtr("serviceType"),
-										Operator: core.StringPtr("stringEquals"),
-										Value:    core.StringPtr("platform_service"),
-								},
-						},
-				},
-				Subject: &iampolicymanagementv1.V2PolicySubject{
-						Attributes: []iampolicymanagementv1.V2PolicySubjectAttribute{ // Corrected struct type
-								{
-										Key:   core.StringPtr("iam_id"),
-										Operator: core.StringPtr("stringEquals"),
-										Value: &iamID,
-								},
-						},
-				},
-				Pattern: core.StringPtr("time-based-conditions:once"),
-				Rule: &iampolicymanagementv1.V2PolicyRule{
-					Operator: core.StringPtr("and"),
-					Conditions: []iampolicymanagementv1.NestedConditionIntf{
-						&iampolicymanagementv1.NestedCondition{
-							Key:      core.StringPtr("{{environment.attributes.current_date_time}}"),
-							Operator: core.StringPtr("dateTimeGreaterThanOrEquals"),
-							Value:    core.StringPtr(time.Now().Format(time.RFC3339)),
-						},
-						&iampolicymanagementv1.NestedCondition{
-							Key:      core.StringPtr("{{environment.attributes.current_date_time}}"),
-							Operator: core.StringPtr("dateTimeLessThanOrEquals"),
-							Value:    core.StringPtr(time.Now().Add(1 * time.Hour).Format(time.RFC3339)),
+			Type: core.StringPtr("access"),
+			Control: &iampolicymanagementv1.Control{
+				Grant: &iampolicymanagementv1.Grant{
+					Roles: []iampolicymanagementv1.Roles{
+						{
+							RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Editor"),
 						},
 					},
 				},
+			},
+			Resource: &iampolicymanagementv1.V2PolicyResource{
+				Attributes: []iampolicymanagementv1.V2PolicyResourceAttribute{
+					{
+						Key:      core.StringPtr("accountId"),
+						Operator: core.StringPtr("stringEquals"),
+						Value:    accountID,
+					},
+					{
+						Key:      core.StringPtr("serviceType"),
+						Operator: core.StringPtr("stringEquals"),
+						Value:    core.StringPtr("platform_service"),
+					},
+				},
+			},
+			Subject: &iampolicymanagementv1.V2PolicySubject{
+				Attributes: []iampolicymanagementv1.V2PolicySubjectAttribute{ // Corrected struct type
+					{
+						Key:      core.StringPtr("iam_id"),
+						Operator: core.StringPtr("stringEquals"),
+						Value:    &iamID,
+					},
+				},
+			},
+			Pattern: core.StringPtr("time-based-conditions:once"),
+			Rule: &iampolicymanagementv1.V2PolicyRule{
+				Operator: core.StringPtr("and"),
+				Conditions: []iampolicymanagementv1.NestedConditionIntf{
+					&iampolicymanagementv1.NestedCondition{
+						Key:      core.StringPtr("{{environment.attributes.current_date_time}}"),
+						Operator: core.StringPtr("dateTimeGreaterThanOrEquals"),
+						Value:    core.StringPtr(time.Now().UTC().Format("2006-01-02T15:04:05-07:00")),
+					},
+					&iampolicymanagementv1.NestedCondition{
+						Key:      core.StringPtr("{{environment.attributes.current_date_time}}"),
+						Operator: core.StringPtr("dateTimeLessThanOrEquals"),
+						Value:    core.StringPtr(time.Now().UTC().Add(1 * time.Hour).Format("2006-01-02T15:04:05-07:00")),
+					},
+				},
+			},
 		}
 		result, response, err := iamPolicyManagementService.CreateV2Policy(&tempPolicy)
 		if err != nil {
@@ -843,63 +842,63 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 		},
 		)
 
-		for _,serviceName := range [7]string{"iam-identity","internet-svcs","cloud-object-storage", "is", "containers-kubernetes","iam-svcs", "dns-svcs"} {
+		for _, serviceName := range [7]string{"iam-identity", "internet-svcs", "cloud-object-storage", "is", "containers-kubernetes", "iam-svcs", "dns-svcs"} {
 			roles := []iampolicymanagementv1.PolicyRole{
-          {
-            RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Editor"),
-          },
-          {
-            RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Operator"),
-          },
-          {
-            RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Viewer"),
-          },
-          {
-            RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Administrator"),
-          },
-          {
-            RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::serviceRole:Manager"),
-          },
-          {
-            RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::serviceRole:Reader"),
-          },
-          {
-            RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::serviceRole:Writer"),
-          },
-        }
+				{
+					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Editor"),
+				},
+				{
+					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Operator"),
+				},
+				{
+					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Viewer"),
+				},
+				{
+					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Administrator"),
+				},
+				{
+					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::serviceRole:Manager"),
+				},
+				{
+					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::serviceRole:Reader"),
+				},
+				{
+					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::serviceRole:Writer"),
+				},
+			}
 			if serviceName == "iam-svcs" {
 				roles = []iampolicymanagementv1.PolicyRole{
-						{
-							RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Editor"),
-						},
-						{
-							RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Operator"),
-						},
-						{
-							RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Viewer"),
-						},
-						{
-							RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Administrator"),
-						},
-					}
+					{
+						RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Editor"),
+					},
+					{
+						RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Operator"),
+					},
+					{
+						RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Viewer"),
+					},
+					{
+						RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Administrator"),
+					},
+				}
 			}
 			if serviceName == "iam-identity" {
 				roles = []iampolicymanagementv1.PolicyRole{
-						{
-							RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Administrator"),
-						},
-						{
-							RoleID: core.StringPtr("crn:v1:bluemix:public:iam-identity::::serviceRole:ServiceIdCreator"),
-						},
+					{
+						RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Administrator"),
+					},
+					{
+						RoleID: core.StringPtr("crn:v1:bluemix:public:iam-identity::::serviceRole:ServiceIdCreator"),
+					},
 				}
 			}
 			if serviceName == "cloud-object-storage" {
-				roles = append(roles,iampolicymanagementv1.PolicyRole{RoleID: core.StringPtr("crn:v1:bluemix:public:cloud-object-storage::::serviceRole:ObjectReader")})
-				roles = append(roles,iampolicymanagementv1.PolicyRole{RoleID: core.StringPtr("crn:v1:bluemix:public:cloud-object-storage::::serviceRole:ContentReader")})
-		  	roles = append(roles,iampolicymanagementv1.PolicyRole{RoleID: core.StringPtr("crn:v1:bluemix:public:cloud-object-storage::::serviceRole:ObjectWriter")})
+				roles = append(roles, iampolicymanagementv1.PolicyRole{RoleID: core.StringPtr("crn:v1:bluemix:public:cloud-object-storage::::serviceRole:ObjectReader")})
+				roles = append(roles, iampolicymanagementv1.PolicyRole{RoleID: core.StringPtr("crn:v1:bluemix:public:cloud-object-storage::::serviceRole:ContentReader")})
+				roles = append(roles, iampolicymanagementv1.PolicyRole{RoleID: core.StringPtr("crn:v1:bluemix:public:cloud-object-storage::::serviceRole:ObjectWriter")})
 			}
 			iamPolicies = append(iamPolicies, iampolicymanagementv1.CreatePolicyOptions{
-				Type: core.StringPtr("access"),
+				Type:  core.StringPtr("access"),
 				Roles: roles,
 				Resources: []iampolicymanagementv1.PolicyResource{
 					{
@@ -1269,8 +1268,8 @@ func (account *IBMResourceGroupSandboxWithCreds) Delete() error {
 					}
 				}
 				deleteResourceInstanceOptions := &resourcecontrollerv2.DeleteResourceInstanceOptions{
-					ID: instance.ID,
-					Recursive:  core.BoolPtr(true),
+					ID:        instance.ID,
+					Recursive: core.BoolPtr(true),
 				}
 
 				_, err := resourceControllerService.DeleteResourceInstance(deleteResourceInstanceOptions)
