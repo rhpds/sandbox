@@ -739,66 +739,6 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 		iamPolicyManagementServiceOptions := &iampolicymanagementv1.IamPolicyManagementV1Options{Authenticator: authenticator}
 		iamPolicyManagementService, err := iampolicymanagementv1.NewIamPolicyManagementV1UsingExternalConfig(iamPolicyManagementServiceOptions)
 
-		// This Policy is too open, we will create only for 1 hour
-		tempPolicy := iampolicymanagementv1.CreateV2PolicyOptions{
-			Type: core.StringPtr("access"),
-			Control: &iampolicymanagementv1.Control{
-				Grant: &iampolicymanagementv1.Grant{
-					Roles: []iampolicymanagementv1.Roles{
-						{
-							RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Editor"),
-						},
-					},
-				},
-			},
-			Resource: &iampolicymanagementv1.V2PolicyResource{
-				Attributes: []iampolicymanagementv1.V2PolicyResourceAttribute{
-					{
-						Key:      core.StringPtr("accountId"),
-						Operator: core.StringPtr("stringEquals"),
-						Value:    accountID,
-					},
-					{
-						Key:      core.StringPtr("serviceType"),
-						Operator: core.StringPtr("stringEquals"),
-						Value:    core.StringPtr("platform_service"),
-					},
-				},
-			},
-			Subject: &iampolicymanagementv1.V2PolicySubject{
-				Attributes: []iampolicymanagementv1.V2PolicySubjectAttribute{ // Corrected struct type
-					{
-						Key:      core.StringPtr("iam_id"),
-						Operator: core.StringPtr("stringEquals"),
-						Value:    &iamID,
-					},
-				},
-			},
-			Pattern: core.StringPtr("time-based-conditions:once"),
-			Rule: &iampolicymanagementv1.V2PolicyRule{
-				Operator: core.StringPtr("and"),
-				Conditions: []iampolicymanagementv1.NestedConditionIntf{
-					&iampolicymanagementv1.NestedCondition{
-						Key:      core.StringPtr("{{environment.attributes.current_date_time}}"),
-						Operator: core.StringPtr("dateTimeGreaterThanOrEquals"),
-						Value:    core.StringPtr(time.Now().UTC().Format("2006-01-02T15:04:05-07:00")),
-					},
-					&iampolicymanagementv1.NestedCondition{
-						Key:      core.StringPtr("{{environment.attributes.current_date_time}}"),
-						Operator: core.StringPtr("dateTimeLessThanOrEquals"),
-						Value:    core.StringPtr(time.Now().UTC().Add(1 * time.Hour).Format("2006-01-02T15:04:05-07:00")),
-					},
-				},
-			},
-		}
-		result, response, err := iamPolicyManagementService.CreateV2Policy(&tempPolicy)
-		if err != nil {
-			log.Logger.Error("Failed to create policy", "error", err, "response", response, "policy", tempPolicy)
-			rnew.SetStatus("error")
-			return
-		}
-		log.Logger.Info("IBM policy created correctly", "ID", *result.ID)
-
 		iamPolicies := []iampolicymanagementv1.CreatePolicyOptions{}
 
 		iamPolicies = append(iamPolicies, iampolicymanagementv1.CreatePolicyOptions{
