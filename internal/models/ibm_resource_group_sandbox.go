@@ -696,6 +696,24 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 			return
 		}
 
+		var defaultRGID *string
+
+		// List the resource groups to find the 'Default' resource group
+		listResourceGroupsOptions := &resourcemanagerv2.ListResourceGroupsOptions{}
+		listResourceGroupsOptions.SetName("Default")
+		listResourceGroupsOptions.SetAccountID(*accountID)
+		listResourceGroupsOptions.SetDefault(true)
+
+		resourceGroups, response, err := resourceManagerClient.ListResourceGroups(listResourceGroupsOptions)
+		if err != nil {
+			log.Logger.Error("Error listing resource groups", "error", err)
+			rnew.SetStatus("error")
+			return
+		}
+		if len(resourceGroups.Resources) == 1 {
+			defaultRGID = resourceGroups.Resources[0].ID
+		}
+
 		iamPolicyManagementServiceOptions := &iampolicymanagementv1.IamPolicyManagementV1Options{Authenticator: authenticator}
 		iamPolicyManagementService, err := iampolicymanagementv1.NewIamPolicyManagementV1UsingExternalConfig(iamPolicyManagementServiceOptions)
 
@@ -778,6 +796,47 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 			},
 		}
 
+		// Add viewer permission to Default resource group
+		policyDefaultRG := &iampolicymanagementv1.CreatePolicyOptions{
+			Type: core.StringPtr("access"),
+			Roles: []iampolicymanagementv1.PolicyRole{
+				{
+					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Viewer"),
+				},
+			},
+			Resources: []iampolicymanagementv1.PolicyResource{
+				{
+					Attributes: []iampolicymanagementv1.ResourceAttribute{
+						{
+							Name:     core.StringPtr("accountId"),
+							Value:    accountID,
+							Operator: core.StringPtr("stringEquals"),
+						},
+						{
+							Name:     core.StringPtr("resourceType"),
+							Value:    core.StringPtr("resource-group"),
+							Operator: core.StringPtr("stringEquals"),
+						},
+						{
+							Name:     core.StringPtr("resource"),
+							Value:    defaultRGID,
+							Operator: core.StringPtr("stringEquals"),
+						},
+					},
+				},
+			},
+			Subjects: []iampolicymanagementv1.PolicySubject{
+				{
+					Attributes: []iampolicymanagementv1.SubjectAttribute{
+						{
+							Name:  core.StringPtr("iam_id"),
+							Value: &iamID,
+						},
+					},
+				},
+			},
+		}
+
 		result, response, err := iamPolicyManagementService.CreatePolicy(policyAll)
 		if err != nil {
 			log.Logger.Error("Failed to create policy", "error", err, "response", response)
@@ -795,6 +854,16 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 		}
 
 		log.Logger.Info("IBM policy created correctly", "ID", *result.ID)
+
+		if defaultRGID != nil {
+			result, response, err = iamPolicyManagementService.CreatePolicy(policyDefaultRG)
+			if err != nil {
+				log.Logger.Error("Failed to create policy", "error", err, "response", response)
+				rnew.SetStatus("error")
+				return
+			}
+			log.Logger.Info("IBM policy created correctly", "ID", *result.ID)
+		}
 
 		creds := []any{
 			IBMResourceGroupServiceAccount{
