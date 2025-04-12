@@ -796,12 +796,15 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 			},
 		}
 
-		// Add viewer permission to Default resource group
+		// Add viewer permission to Default resource group for 'is'
 		policyDefaultRG := &iampolicymanagementv1.CreatePolicyOptions{
 			Type: core.StringPtr("access"),
 			Roles: []iampolicymanagementv1.PolicyRole{
 				{
 					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Viewer"),
+				},
+				{
+					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::serviceRole:Reader"),
 				},
 			},
 			Resources: []iampolicymanagementv1.PolicyResource{
@@ -817,9 +820,15 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 							Value:    core.StringPtr("resource-group"),
 							Operator: core.StringPtr("stringEquals"),
 						},
+
 						{
 							Name:     core.StringPtr("resource"),
 							Value:    defaultRGID,
+							Operator: core.StringPtr("stringEquals"),
+						},
+						{
+							Name:     core.StringPtr("serviceName"),
+							Value:    core.StringPtr("is"),
 							Operator: core.StringPtr("stringEquals"),
 						},
 					},
