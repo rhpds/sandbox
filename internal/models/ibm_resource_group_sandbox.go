@@ -816,13 +816,7 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 							Operator: core.StringPtr("stringEquals"),
 						},
 						{
-							Name:     core.StringPtr("resourceType"),
-							Value:    core.StringPtr("resource-group"),
-							Operator: core.StringPtr("stringEquals"),
-						},
-
-						{
-							Name:     core.StringPtr("resource"),
+							Name:     core.StringPtr("resourceGroupId"),
 							Value:    defaultRGID,
 							Operator: core.StringPtr("stringEquals"),
 						},
