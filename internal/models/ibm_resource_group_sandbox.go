@@ -796,8 +796,48 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 			},
 		}
 
-		// Add viewer permission to images resource group for 'is'
 		policyImagesRG := &iampolicymanagementv1.CreatePolicyOptions{
+			Type: core.StringPtr("access"),
+			Roles: []iampolicymanagementv1.PolicyRole{
+				{
+					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Viewer"),
+				},
+			},
+			Resources: []iampolicymanagementv1.PolicyResource{
+				{
+					Attributes: []iampolicymanagementv1.ResourceAttribute{
+						{
+							Name:     core.StringPtr("accountId"),
+							Value:    accountID,
+							Operator: core.StringPtr("stringEquals"),
+						},
+						{
+							Name:     core.StringPtr("resourceType"),
+							Value:    core.StringPtr("resource-group"),
+							Operator: core.StringPtr("stringEquals"),
+						},
+						{
+							Name:     core.StringPtr("resource"),
+							Value:    imagesRGID,
+							Operator: core.StringPtr("stringEquals"),
+						},
+					},
+				},
+			},
+			Subjects: []iampolicymanagementv1.PolicySubject{
+				{
+					Attributes: []iampolicymanagementv1.SubjectAttribute{
+						{
+							Name:  core.StringPtr("iam_id"),
+							Value: &iamID,
+						},
+					},
+				},
+			},
+		}
+
+		// Add viewer permission to images resource group for 'is'
+		policyImagesIs := &iampolicymanagementv1.CreatePolicyOptions{
 			Type: core.StringPtr("access"),
 			Roles: []iampolicymanagementv1.PolicyRole{
 				{
@@ -847,7 +887,7 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 			return
 		}
 
-		log.Logger.Info("IBM policy created correctly", "ID", *result.ID)
+		log.Logger.Info("IBM policy created correctly", "ID", *result.ID, "purpose", "RG all admin")
 
 		result, response, err = iamPolicyManagementService.CreatePolicy(policyRG)
 		if err != nil {
@@ -856,16 +896,24 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 			return
 		}
 
-		log.Logger.Info("IBM policy created correctly", "ID", *result.ID)
+		log.Logger.Info("IBM policy created correctly", "ID", *result.ID, "purpose", "RG viewer")
 
 		if imagesRGID != nil {
+			result, response, err = iamPolicyManagementService.CreatePolicy(policyImagesIs)
+			if err != nil {
+				log.Logger.Error("Failed to create policy", "error", err, "response", response)
+				rnew.SetStatus("error")
+				return
+			}
+			log.Logger.Info("IBM policy created correctly", "purpose", "RG images 'infra service' viewer", "ID", *result.ID)
+
 			result, response, err = iamPolicyManagementService.CreatePolicy(policyImagesRG)
 			if err != nil {
 				log.Logger.Error("Failed to create policy", "error", err, "response", response)
 				rnew.SetStatus("error")
 				return
 			}
-			log.Logger.Info("IBM policy created correctly", "ID", *result.ID)
+			log.Logger.Info("IBM policy created correctly", "purpose", "RG images viewer", "ID", *result.ID)
 		}
 
 		creds := []any{
