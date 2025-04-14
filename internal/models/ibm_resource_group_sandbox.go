@@ -696,11 +696,11 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 			return
 		}
 
-		var defaultRGID *string
+		var imagesRGID *string
 
-		// List the resource groups to find the 'Default' resource group
+		// List the resource groups to find the 'images' resource group
 		listResourceGroupsOptions := &resourcemanagerv2.ListResourceGroupsOptions{}
-		listResourceGroupsOptions.SetName("Default")
+		listResourceGroupsOptions.SetName("images")
 		listResourceGroupsOptions.SetAccountID(*accountID)
 		listResourceGroupsOptions.SetDefault(true)
 
@@ -711,7 +711,7 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 			return
 		}
 		if len(resourceGroups.Resources) == 1 {
-			defaultRGID = resourceGroups.Resources[0].ID
+			imagesRGID = resourceGroups.Resources[0].ID
 		}
 
 		iamPolicyManagementServiceOptions := &iampolicymanagementv1.IamPolicyManagementV1Options{Authenticator: authenticator}
@@ -796,8 +796,8 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 			},
 		}
 
-		// Add viewer permission to Default resource group for 'is'
-		policyDefaultRG := &iampolicymanagementv1.CreatePolicyOptions{
+		// Add viewer permission to images resource group for 'is'
+		policyImagesRG := &iampolicymanagementv1.CreatePolicyOptions{
 			Type: core.StringPtr("access"),
 			Roles: []iampolicymanagementv1.PolicyRole{
 				{
@@ -817,7 +817,7 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 						},
 						{
 							Name:     core.StringPtr("resourceGroupId"),
-							Value:    defaultRGID,
+							Value:    imagesRGID,
 							Operator: core.StringPtr("stringEquals"),
 						},
 						{
@@ -858,8 +858,8 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 
 		log.Logger.Info("IBM policy created correctly", "ID", *result.ID)
 
-		if defaultRGID != nil {
-			result, response, err = iamPolicyManagementService.CreatePolicy(policyDefaultRG)
+		if imagesRGID != nil {
+			result, response, err = iamPolicyManagementService.CreatePolicy(policyImagesRG)
 			if err != nil {
 				log.Logger.Error("Failed to create policy", "error", err, "response", response)
 				rnew.SetStatus("error")
