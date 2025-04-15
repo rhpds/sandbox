@@ -844,9 +844,6 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Viewer"),
 				},
 				{
-					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::serviceRole:Reader"),
-				},
-				{
 					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Operator"),
 				},
 			},
