@@ -844,7 +844,7 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Viewer"),
 				},
 				{
-					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::serviceRole:Reader"),
+					RoleID: core.StringPtr("crn:v1:bluemix:public:iam::::role:Operator"),
 				},
 			},
 			Resources: []iampolicymanagementv1.PolicyResource{
@@ -863,6 +863,11 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 						{
 							Name:     core.StringPtr("serviceName"),
 							Value:    core.StringPtr("is"),
+							Operator: core.StringPtr("stringEquals"),
+						},
+						{
+							Name:     core.StringPtr("resourceType"),
+							Value:    core.StringPtr("image"),
 							Operator: core.StringPtr("stringEquals"),
 						},
 					},
