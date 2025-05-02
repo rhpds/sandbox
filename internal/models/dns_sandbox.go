@@ -956,7 +956,6 @@ func (a *DNSSandboxProvider) Request(serviceUuid string, create_certs bool, cert
 					SecretAccessKey: *accesskey.SecretAccessKey,
 					HostedZoneID: strings.Split(*responseCreate.HostedZone.Id, "/")[2],
 					MaxRetries: 5,
-					PrivateZone: false,
 					WaitForRecordSetsChanged: true,
 					TTL: 10,
 					PropagationTimeout: 2*time.Minute,
