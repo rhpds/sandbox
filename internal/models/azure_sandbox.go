@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"sync"
+//	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v4"
@@ -35,7 +35,7 @@ type AzureSandboxProvider struct {
 	azureClientId string
 	azureSecret   string
 
-	poolMutex sync.Mutex
+	//poolMutex sync.Mutex
 }
 
 type AzureSandboxWithCreds struct {
@@ -151,8 +151,9 @@ func (a *AzureSandboxProvider) initNewAzureSandbox(serviceUuid string, annotatio
 	// Multiple Azure sandboxes can be initialize concurently
 	// and we should be sure that we are getting correct values
 	// for the new AzureSandboxWithCreds structure
-	a.poolMutex.Lock()
-	defer a.poolMutex.Unlock()
+  // agonzalez: TODO
+	//a.poolMutex.Lock()
+	//defer a.poolMutex.Unlock()
 
 	azureSandbox := AzureSandboxWithCreds{
 		AzureSandbox: AzureSandbox{
