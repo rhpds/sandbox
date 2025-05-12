@@ -41,7 +41,7 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "guid": "test"
+    "guid": "testg"
   }
 }
 HTTP 200
@@ -51,7 +51,7 @@ account: jsonpath "$.Placement.resources[0].subscription_name"
 jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 jsonpath "$.Placement.resources" count == 1
-jsonpath "$.Placement.resources[0].annotations.guid" == "test"
+jsonpath "$.Placement.resources[0].annotations.guid" == "testg"
 jsonpath "$.Placement.resources[0].annotations.purpose" == "backend"
 
 

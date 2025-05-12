@@ -59,9 +59,6 @@ func (g *graphClient) getUser(spName string) (*user, error) {
 
   log.Logger.Info("Entering getUser5", "email", spName)
 	switch response.StatusCode {
-	case http.StatusNotFound:
-		log.Logger.Info("Entering getUser6", "responseData", responseData)
-		return nil,nil
 	case http.StatusOK:
 		log.Logger.Info("Entering getUser6a", "responseData", responseData)
 		userDetails := struct {
