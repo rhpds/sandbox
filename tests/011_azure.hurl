@@ -62,7 +62,8 @@ jsonpath "$.Placement.resources[0].annotations.purpose" == "backend"
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
 [Options]
-retry: 10
+retry: 20
+retry-interval: 2s
 HTTP 200
 [Asserts]
 jsonpath "$.resources[0].credentials" count >= 1
