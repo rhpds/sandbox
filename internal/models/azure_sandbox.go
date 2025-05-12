@@ -97,7 +97,7 @@ func (a *AzureSandboxProvider) allocateSubscription() (string, error) {
 
 	rows, err := a.dbPool.Query(
 		context.Background(),
-		`SELECT resource_data ->> 'subscription_name' FROM resources WHERE status = 'success'`,
+		`SELECT resource_data ->> 'subscription_name' FROM resources WHERE status = 'success' and resource_type='AzureSandbox'`,
 	)
 	if err != nil {
 		return "", fmt.Errorf("can't get retrieve about allocated pools")
@@ -204,6 +204,54 @@ func (a *AzureSandboxProvider) Request(
 
 	return *azureSandbox, nil
 }
+
+func (a *AzureSandboxProvider) FetchAllByServiceUuid(serviceUuid string) ([]AzureSandbox, error) {
+	sandboxes := []AzureSandbox{}
+	// Get resource from above 'resources' table
+	rows, err := a.dbPool.Query(
+		context.Background(),
+		`SELECT
+			resource_data,
+			id,
+			resource_name,
+			resource_type,
+			status,
+			cleanup_count
+		FROM
+			resources
+		WHERE service_uuid = $1 AND resource_type = 'AzureSandbox'`,
+		serviceUuid,
+	)
+	if err != nil {
+		fmt.Printf("\n\nSQL error: %s\n\n", err)
+		if err == pgx.ErrNoRows {
+			log.Logger.Info("No account found", "service_uuid", serviceUuid)
+		}
+		return sandboxes, err
+	}
+
+	for rows.Next() {
+		var sandbox AzureSandbox
+
+		if err := rows.Scan(
+			&sandbox,
+			&sandbox.Id,
+			&sandbox.Name,
+			&sandbox.Kind,
+			&sandbox.Status,
+			&sandbox.CleanupCount,
+		); err != nil {
+			return sandboxes, err
+		}
+
+		sandbox.ServiceUuid = serviceUuid
+
+		sandboxes = append(sandboxes, sandbox)
+	}
+
+	return sandboxes, nil
+}
+
 
 func (a *AzureSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) ([]AzureSandboxWithCreds, error) {
 	sandboxes := []AzureSandboxWithCreds{}

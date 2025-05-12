@@ -1,4 +1,7 @@
 package azure
+import (
+	"github.com/rhpds/sandbox/internal/log"
+)
 
 const (
 	sandboxRoleName    = "Custom-Owner (Block Billing and Subscription deletion)"
@@ -56,41 +59,55 @@ func (sc *SandboxClient) CreateSandboxEnvironment(
 ) (*SandboxInfo, error) {
 	adUser, err := sc.graphClient.getUser(requestorEmail)
 	if err != nil {
+		log.Logger.Error("Error sc.graphClient.getUser", "email", requestorEmail)
 		return nil, err
 	}
+  log.Logger.Info("Step1")
 
 	subscription, err := sc.managementClient.getSubscription(subscriptionName)
 	if err != nil {
+		log.Logger.Error("Error getSub")
 		return nil, err
 	}
+  log.Logger.Info("Step2")
 
 	err = sc.setSandboxTags(guid, requestorEmail, costCenter, subscription.SubscriptionFQID)
 	if err != nil {
+		log.Logger.Error("Error Tags")
 		return nil, err
 	}
+  log.Logger.Info("Step3")
 
 	err = sc.createRoleAssignment(subscription.SubscriptionFQID, adUser.Id, "User")
 	if err != nil {
+		log.Logger.Error("Error Role")
 		return nil, err
 	}
+  log.Logger.Info("Step4")
 
 	rgName, err := sc.createResourceGroup(subscription.SubscriptionId, guid)
 	if err != nil {
+		log.Logger.Error("Error RG")
 		return nil, err
 	}
+  log.Logger.Info("Step5")
 
 	err = sc.createDNSZone(subscription.SubscriptionId, guid, rgName, zoneDomain)
 	if err != nil {
+		log.Logger.Error("Error DNSZo")
 		return nil, err
 	}
+  log.Logger.Info("Step6")
 
 	appDetails, err := sc.registerApplication(
 		subscription.SubscriptionFQID,
 		defaultAppPrefix+guid)
 	if err != nil {
+		log.Logger.Error("Error RegisterApp")
 		return nil, err
 	}
 
+  log.Logger.Info("Created correctly", "email", requestorEmail)
 	return &SandboxInfo{
 		SubscriptionName:  subscriptionName,
 		SubscriptionId:    subscription.SubscriptionId,
