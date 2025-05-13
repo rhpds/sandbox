@@ -41,7 +41,7 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "guid": "st6zn"
+    "guid": "testg"
   }
 }
 HTTP 200
@@ -51,7 +51,7 @@ account: jsonpath "$.Placement.resources[0].subscription_name"
 jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 jsonpath "$.Placement.resources" count == 1
-jsonpath "$.Placement.resources[0].annotations.guid" == "st6zn"
+jsonpath "$.Placement.resources[0].annotations.guid" == "testg"
 jsonpath "$.Placement.resources[0].annotations.purpose" == "backend"
 
 
@@ -61,6 +61,9 @@ jsonpath "$.Placement.resources[0].annotations.purpose" == "backend"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+[Options]
+retry: 20
+retry-interval: 2s
 HTTP 200
 [Asserts]
 jsonpath "$.resources[0].credentials" count >= 1

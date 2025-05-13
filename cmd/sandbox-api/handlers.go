@@ -562,7 +562,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	// TODO: Add Azure provider
-	if err := placement.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider); err != nil {
+	if err := placement.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider, h.azureSandboxProvider); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
 			Err:            err,

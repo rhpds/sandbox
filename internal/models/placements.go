@@ -40,7 +40,7 @@ func (p *Placement) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) error {
+func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider, azureSandbox AzureSandboxProvider) error {
 
 	accounts, err := awsProvider.FetchAllByServiceUuid(p.ServiceUuid)
 	if err != nil {
@@ -108,6 +108,22 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 		}
 	}
 
+	azureSandboxes, err := azureSandbox.FetchAllByServiceUuid(p.ServiceUuid)
+	if err != nil {
+		return err
+	}
+
+	for _, account := range azureSandboxes {
+		p.Resources = append(p.Resources, account)
+		if account.Status != "success" {
+			// update final status only if it's not already an error
+			// propagate the status of the first error
+			if status != "error" {
+				status = account.Status
+			}
+		}
+	}
+
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
 	if p.Status != "error" && p.Status != "deleting" {
@@ -119,7 +135,7 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 	return nil
 }
 
-func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) error {
+func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider, azureProvider *AzureSandboxProvider) error {
 
 	accounts, err := awsProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
 	if err != nil {
@@ -184,6 +200,24 @@ func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpPr
 		}
 	}
 
+	azureSandboxes, err := azureProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
+
+	if err != nil {
+		return err
+	}
+
+	for _, account := range azureSandboxes {
+		p.Resources = append(p.Resources, account)
+		if account.Status != "success" {
+			// update final status only if it's not already an error
+			// propagate the status of the first error
+			if status != "error" {
+				status = account.Status
+			}
+		}
+	}
+	
+
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
 	if p.Status != "error" && p.Status != "deleting" {
@@ -210,7 +244,7 @@ func (p *Placement) LoadActiveResources(awsProvider AwsAccountProvider) error {
 	return nil
 }
 
-func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) error {
+func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider, azureProvider *AzureSandboxProvider) error {
 
 	accounts, err := awsProvider.FetchAllActiveByServiceUuidWithCreds(p.ServiceUuid)
 	if err != nil {
@@ -274,6 +308,24 @@ func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider,
 			}
 		}
 	}
+
+	azureSandboxes, err := azureProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
+
+	if err != nil {
+		return err
+	}
+
+	for _, account := range azureSandboxes {
+		p.Resources = append(p.Resources, account)
+		if account.Status != "success" {
+			// update final status only if it's not already an error
+			// propagate the status of the first error
+			if status != "error" {
+				status = account.Status
+			}
+		}
+	}
+
 
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
@@ -389,7 +441,7 @@ func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider OcpSa
 	// NOTE: This will done automatically by the SQL constraints when we move to Postgresql instead of
 	// dynamodb for the accounts.
 
-	if err := p.LoadResources(accountProvider, ocpProvider, dnsProvider, ibmProvider); err != nil {
+	if err := p.LoadResources(accountProvider, ocpProvider, dnsProvider, ibmProvider, *azureProvider); err != nil {
 		log.Logger.Error("Error loading resources",
 			"serviceUuid", p.ServiceUuid,
 			"error", err,

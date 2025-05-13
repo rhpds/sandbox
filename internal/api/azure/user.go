@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/rhpds/sandbox/internal/log"
 )
 
 type user struct {
@@ -18,6 +20,7 @@ type user struct {
 func (g *graphClient) getUser(spName string) (*user, error) {
 	err := g.refreshToken()
 	if err != nil {
+		log.Logger.Error("Error refreshToken", "email", spName)
 		return nil, err
 	}
 
@@ -28,22 +31,25 @@ func (g *graphClient) getUser(spName string) (*user, error) {
 	req, err := http.NewRequest(
 		"GET",
 		fmt.Sprintf(
-			"https://graph.microsoft.com/v1.0/users('%s')?$select=displayName,userPrincipalName,id",
+			"https://graph.microsoft.com/v1.0/users/%s?$select=displayName,userPrincipalName,id",
 			spName),
 		nil)
 	if err != nil {
+		log.Logger.Error("Error NewRequest.getUser", "email", spName)
 		return nil, err
 	}
 	req.Header.Add("Authorization", "Bearer "+g.token.AccessToken)
 
 	response, err := restClient.Do(req)
 	if err != nil {
+		log.Logger.Error("Error getUser", "respnonse", response)
 		return nil, err
 	}
 	defer response.Body.Close()
 
 	responseData, err := io.ReadAll(response.Body)
 	if err != nil {
+		log.Logger.Error("Error getUser", "respnonse", responseData)
 		return nil, err
 	}
 
