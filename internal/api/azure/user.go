@@ -18,7 +18,6 @@ type user struct {
 
 // getUser retrieves user information.
 func (g *graphClient) getUser(spName string) (*user, error) {
-  log.Logger.Info("Entering getUser", "email", spName)
 	err := g.refreshToken()
 	if err != nil {
 		log.Logger.Error("Error refreshToken", "email", spName)
@@ -29,7 +28,6 @@ func (g *graphClient) getUser(spName string) (*user, error) {
 		Timeout: 10 * time.Second,
 	}
 
-  log.Logger.Info("Entering getUser2", "email", spName)
 	req, err := http.NewRequest(
 		"GET",
 		fmt.Sprintf(
@@ -41,7 +39,6 @@ func (g *graphClient) getUser(spName string) (*user, error) {
 		return nil, err
 	}
 	req.Header.Add("Authorization", "Bearer "+g.token.AccessToken)
-  log.Logger.Info("Entering getUser3", "email", spName)
 
 	response, err := restClient.Do(req)
 	if err != nil {
@@ -50,17 +47,14 @@ func (g *graphClient) getUser(spName string) (*user, error) {
 	}
 	defer response.Body.Close()
 
-  log.Logger.Info("Entering getUser4", "email", spName)
 	responseData, err := io.ReadAll(response.Body)
 	if err != nil {
 		log.Logger.Error("Error getUser", "respnonse", responseData)
 		return nil, err
 	}
 
-  log.Logger.Info("Entering getUser5", "email", spName)
 	switch response.StatusCode {
 	case http.StatusOK:
-		log.Logger.Info("Entering getUser6a", "responseData", responseData)
 		userDetails := struct {
 			DisplayName       string `json:"displayName"`
 			UserPrincipalName string `json:"userPrincipalName"`
@@ -81,13 +75,11 @@ func (g *graphClient) getUser(spName string) (*user, error) {
 		// It's not clear what to do in this case. Graph API documentation
 		// does not provide much information about this status code. So just
 		// return nil and an error.
-		log.Logger.Info("Entering getUser6b", "responseData", responseData)
 		return nil, fmt.Errorf(
 			"request was accepted by the Azure Graph API but no data"+
 				"was returned for ServicePrincipal %s", spName)
 
 	default:
-		log.Logger.Info("Entering getUser6c", "responseData", responseData, "response", fmt.Sprintf("%v", response))
 		errorResponse := struct {
 			Error struct {
 				Code    string `json:"code"`
