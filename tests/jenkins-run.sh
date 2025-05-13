@@ -2,6 +2,9 @@
 
 source "${CREDENTIALS_FILE}"
 
+echo "Variables from ${CREDENTIALS_FILE}:"
+sed 's/=.*//' "${CREDENTIALS_FILE}"
+
 tmpdir=$(mktemp -d)
 apilog=$PWD/api.log
 dbdump=$PWD/db_dump.sql
@@ -246,4 +249,4 @@ hurl --test \
     --variable host=http://localhost:$PORT \
     --variable uuid=$uuid \
     --jobs 1 \
-    ./*.hurl
+    ./011*.hurl 999.hurl

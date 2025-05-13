@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PaesslerAG/gval"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/getkin/kin-openapi/openapi3"
 	oarouters "github.com/getkin/kin-openapi/routers"
@@ -17,8 +18,6 @@ import (
 	"github.com/go-chi/render"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
-
-	"github.com/PaesslerAG/gval"
 
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/config"
@@ -35,6 +34,7 @@ type BaseHandler struct {
 	OcpSandboxProvider              models.OcpSandboxProvider
 	DNSSandboxProvider              models.DNSSandboxProvider
 	IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider
+	azureSandboxProvider            *models.AzureSandboxProvider
 }
 
 type AdminHandler struct {
@@ -42,7 +42,17 @@ type AdminHandler struct {
 	tokenAuth *jwtauth.JWTAuth
 }
 
-func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider models.OcpSandboxProvider, DNSSandboxProvider models.DNSSandboxProvider, IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider) *BaseHandler {
+func NewBaseHandler(
+	svc *dynamodb.DynamoDB,
+	dbpool *pgxpool.Pool,
+	doc *openapi3.T,
+	oaRouter oarouters.Router,
+	awsAccountProvider models.AwsAccountProvider,
+	OcpSandboxProvider models.OcpSandboxProvider,
+	DNSSandboxProvider models.DNSSandboxProvider,
+	IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider,
+	azureSandboxProvider *models.AzureSandboxProvider,
+) *BaseHandler {
 	return &BaseHandler{
 		svc:                             svc,
 		dbpool:                          dbpool,
@@ -52,6 +62,7 @@ func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.
 		OcpSandboxProvider:              OcpSandboxProvider,
 		DNSSandboxProvider:              DNSSandboxProvider,
 		IBMResourceGroupSandboxProvider: IBMResourceGroupSandboxProvider,
+		azureSandboxProvider:            azureSandboxProvider,
 	}
 }
 
@@ -401,6 +412,33 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			tocleanup = append(tocleanup, &account)
 			resources = append(resources, account)
 
+		case "AzureSandbox":
+			azureSandbox, err := h.azureSandboxProvider.Request(
+				placementRequest.ServiceUuid,
+				placementRequest.Annotations.Merge(request.Annotations),
+			)
+			if err != nil {
+				// Cleanup previous Azure sandboxes
+				go func() {
+					for _, sandbox := range tocleanup {
+						if err := sandbox.Delete(); err != nil {
+							log.Logger.Error("Error deleting account", "error", err)
+						}
+					}
+				}()
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					Err:            err,
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error creating placement in Azure",
+				})
+				log.Logger.Error("CreatePlacementHandler", "error", err)
+				return
+			}
+
+			tocleanup = append(tocleanup, &azureSandbox)
+			resources = append(resources, azureSandbox)
+
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 			render.Render(w, r, &v1.Error{
@@ -483,7 +521,6 @@ func (h *BaseHandler) HealthHandler(w http.ResponseWriter, r *http.Request) {
 
 // Get All placements
 func (h *BaseHandler) GetPlacementsHandler(w http.ResponseWriter, r *http.Request) {
-
 	placements, err := models.GetAllPlacements(h.dbpool)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -524,7 +561,8 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 		log.Logger.Error("GetPlacementHandler", "error", err)
 		return
 	}
-	if err := placement.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider); err != nil {
+	// TODO: Add Azure provider
+	if err := placement.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider, h.azureSandboxProvider); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
 			Err:            err,
@@ -582,7 +620,7 @@ func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	placement.SetStatus("deleting")
-	go placement.Delete(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider)
+	go placement.Delete(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider, h.azureSandboxProvider)
 
 	w.WriteHeader(http.StatusAccepted)
 	render.Render(w, r, &v1.SimpleMessage{
@@ -802,7 +840,6 @@ func (h *BaseHandler) GetStatusPlacementHandler(w http.ResponseWriter, r *http.R
 }
 
 func (h *BaseHandler) GetJWTHandler(w http.ResponseWriter, r *http.Request) {
-
 	tokens, err := models.FetchAllTokens(h.dbpool)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -818,6 +855,7 @@ func (h *BaseHandler) GetJWTHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	render.Render(w, r, &tokens)
 }
+
 func (h *AdminHandler) IssueLoginJWTHandler(w http.ResponseWriter, r *http.Request) {
 	request := v1.TokenRequest{}
 
@@ -1043,7 +1081,6 @@ func (h *BaseHandler) GetStatusRequestHandler(w http.ResponseWriter, r *http.Req
 
 	// Get the request from the DB
 	job, err := models.GetLifecyclePlacementJobByRequestID(h.dbpool, RequestID)
-
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			// No placement request found, try any resource request
@@ -1089,7 +1126,6 @@ func (h *BaseHandler) GetStatusRequestHandler(w http.ResponseWriter, r *http.Req
 
 	// Get the status of the request
 	status, err := job.GlobalStatus()
-
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
@@ -1306,7 +1342,6 @@ func (h *BaseHandler) DeleteReservationHandler(w http.ResponseWriter, r *http.Re
 	name := chi.URLParam(r, "name")
 
 	reservation, err := models.GetReservationByName(h.dbpool, name)
-
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			w.WriteHeader(http.StatusNotFound)
@@ -1353,7 +1388,6 @@ func (h *BaseHandler) UpdateReservationHandler(w http.ResponseWriter, r *http.Re
 	name := chi.URLParam(r, "name")
 
 	reservation, err := models.GetReservationByName(h.dbpool, name)
-
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			w.WriteHeader(http.StatusNotFound)
@@ -1429,7 +1463,6 @@ func (h *BaseHandler) GetReservationHandler(w http.ResponseWriter, r *http.Reque
 	name := chi.URLParam(r, "name")
 
 	reservation, err := models.GetReservationByName(h.dbpool, name)
-
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			w.WriteHeader(http.StatusNotFound)
