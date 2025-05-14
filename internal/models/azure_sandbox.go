@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-//	"sync"
+	"strconv"
+	//	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v4"
@@ -16,9 +17,6 @@ import (
 )
 
 const (
-	subscriptionNamePrefix = "pool-01-"
-	subscriptionCount      = 10
-
 	// Sand box can be in state when deletion is not possible
 	// (e.g initializating). Those two constants controls
 	// how long delay process will last until error occurs
@@ -35,6 +33,11 @@ type AzureSandboxProvider struct {
 	azureClientId string
 	azureSecret   string
 
+	subscriptionNamePrefix string
+	subscriptionRangeStart int
+	subscriptionRangeEnd   int
+
+	SandboxClient *azure.SandboxClient
 	//poolMutex sync.Mutex
 }
 
@@ -70,6 +73,8 @@ func NewAzureSandboxProvider(
 		vaultSecret: vaultSecret,
 	}
 
+	// TODO: move this to configuration from a new table
+
 	if provider.azureTenantId = os.Getenv("AZURE_TENANT_ID"); provider.azureTenantId == "" {
 		return nil, fmt.Errorf("AZURE_TENANT_ID is not set")
 	}
@@ -82,6 +87,44 @@ func NewAzureSandboxProvider(
 		return nil, fmt.Errorf("AZURE_SECRET is not set")
 	}
 
+	if provider.subscriptionNamePrefix = os.Getenv("AZURE_SUBSCRIPTION_NAME_PREFIX"); provider.subscriptionNamePrefix == "" {
+		provider.subscriptionNamePrefix = "pool-01-"
+	}
+
+	if os.Getenv("AZURE_SUBSCRIPTION_RANGE_START") == "" {
+		provider.subscriptionRangeStart = 1
+	} else {
+		subscriptionRangeStart, err := strconv.Atoi(os.Getenv("AZURE_SUBSCRIPTION_RANGE_START"))
+		if err != nil {
+			return nil, fmt.Errorf("AZURE_SUBSCRIPTION_RANGE_START is not a number")
+		}
+		provider.subscriptionRangeStart = subscriptionRangeStart
+	}
+
+	if os.Getenv("AZURE_SUBSCRIPTION_RANGE_END") == "" {
+		provider.subscriptionRangeEnd = 10
+	} else {
+		subscriptionRangeEnd, err := strconv.Atoi(os.Getenv("AZURE_SUBSCRIPTION_RANGE_END"))
+		if err != nil {
+			return nil, fmt.Errorf("AZURE_SUBSCRIPTION_RANGE_END is not a number")
+		}
+		provider.subscriptionRangeEnd = subscriptionRangeEnd
+	}
+
+	sandboxClient := azure.InitSandboxClient(
+		azure.AzureCredentials{
+			TenantID: provider.azureTenantId,
+			ClientID: provider.azureClientId,
+			Secret:   provider.azureSecret,
+		},
+	)
+
+	if sandboxClient == nil {
+		return nil, fmt.Errorf("failed to initialize Azure sandbox client")
+	}
+
+	provider.SandboxClient = sandboxClient
+
 	return provider, nil
 }
 
@@ -91,8 +134,8 @@ func (a *AzureSandboxProvider) allocateSubscription() (string, error) {
 	// Subscription names are not defined but used to get Subscription ID
 	// using Azure API calls. For simplicity we are using the subscriptionCount
 	// subscriptions starting from pool-01-001.
-	for i := 1; i <= subscriptionCount; i++ {
-		SubscriptionNames[fmt.Sprintf("%s%d", subscriptionNamePrefix, i)] = false
+	for i := a.subscriptionRangeStart; i <= a.subscriptionRangeEnd; i++ {
+		SubscriptionNames[fmt.Sprintf("%s%d", a.subscriptionNamePrefix, i)] = false
 	}
 
 	rows, err := a.dbPool.Query(
@@ -151,7 +194,7 @@ func (a *AzureSandboxProvider) initNewAzureSandbox(serviceUuid string, annotatio
 	// Multiple Azure sandboxes can be initialize concurently
 	// and we should be sure that we are getting correct values
 	// for the new AzureSandboxWithCreds structure
-  // agonzalez: TODO
+	// agonzalez: TODO
 	//a.poolMutex.Lock()
 	//defer a.poolMutex.Unlock()
 
@@ -252,7 +295,6 @@ func (a *AzureSandboxProvider) FetchAllByServiceUuid(serviceUuid string) ([]Azur
 
 	return sandboxes, nil
 }
-
 
 func (a *AzureSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) ([]AzureSandboxWithCreds, error) {
 	sandboxes := []AzureSandboxWithCreds{}
@@ -511,15 +553,7 @@ func (sb *AzureSandboxWithCreds) Delete() error {
 }
 
 func (sb *AzureSandboxWithCreds) requestAzureSandbox() (*azure.SandboxInfo, error) {
-	sandboxClient := azure.InitSandboxClient(
-		azure.AzureCredentials{
-			TenantID: sb.Provider.azureTenantId,
-			ClientID: sb.Provider.azureClientId,
-			Secret:   sb.Provider.azureSecret,
-		},
-	)
-
-	sandboxInfo, err := sandboxClient.CreateSandboxEnvironment(
+	sandboxInfo, err := sb.Provider.SandboxClient.CreateSandboxEnvironment(
 		sb.SubscriptionName,
 		sb.Annotations["requester"],
 		sb.Annotations["guid"],
@@ -534,15 +568,7 @@ func (sb *AzureSandboxWithCreds) requestAzureSandbox() (*azure.SandboxInfo, erro
 }
 
 func (sb *AzureSandboxWithCreds) cleanupAzureSandbox() error {
-	sandboxClient := azure.InitSandboxClient(
-		azure.AzureCredentials{
-			TenantID: sb.Provider.azureTenantId,
-			ClientID: sb.Provider.azureClientId,
-			Secret:   sb.Provider.azureSecret,
-		},
-	)
-
-	err := sandboxClient.CleanupSandboxEnvironment(
+	err := sb.Provider.SandboxClient.CleanupSandboxEnvironment(
 		sb.SubscriptionName,
 		sb.Annotations["guid"],
 	)

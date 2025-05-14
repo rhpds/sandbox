@@ -1,4 +1,5 @@
 package azure
+
 import (
 	"github.com/rhpds/sandbox/internal/log"
 )
@@ -62,42 +63,42 @@ func (sc *SandboxClient) CreateSandboxEnvironment(
 		log.Logger.Error("Error sc.graphClient.getUser", "email", requestorEmail)
 		return nil, err
 	}
-  log.Logger.Info("Step1")
+	log.Logger.Info("Step1")
 
 	subscription, err := sc.managementClient.getSubscription(subscriptionName)
 	if err != nil {
 		log.Logger.Error("Error getSub")
 		return nil, err
 	}
-  log.Logger.Info("Step2")
+	log.Logger.Info("subscription", "subscription", subscription)
 
 	err = sc.setSandboxTags(guid, requestorEmail, costCenter, subscription.SubscriptionFQID)
 	if err != nil {
 		log.Logger.Error("Error Tags")
 		return nil, err
 	}
-  log.Logger.Info("Step3")
+	log.Logger.Info("Step3")
 
 	err = sc.createRoleAssignment(subscription.SubscriptionFQID, adUser.Id, "User")
 	if err != nil {
 		log.Logger.Error("Error Role")
 		return nil, err
 	}
-  log.Logger.Info("Step4")
+	log.Logger.Info("Step4")
 
 	rgName, err := sc.createResourceGroup(subscription.SubscriptionId, guid)
 	if err != nil {
 		log.Logger.Error("Error RG")
 		return nil, err
 	}
-  log.Logger.Info("Step5")
+	log.Logger.Info("Step5")
 
 	err = sc.createDNSZone(subscription.SubscriptionId, guid, rgName, zoneDomain)
 	if err != nil {
 		log.Logger.Error("Error DNSZo")
 		return nil, err
 	}
-  log.Logger.Info("Step6")
+	log.Logger.Info("Step6")
 
 	appDetails, err := sc.registerApplication(
 		subscription.SubscriptionFQID,
@@ -107,7 +108,7 @@ func (sc *SandboxClient) CreateSandboxEnvironment(
 		return nil, err
 	}
 
-  log.Logger.Info("Created correctly", "email", requestorEmail)
+	log.Logger.Info("Created correctly", "email", requestorEmail)
 	return &SandboxInfo{
 		SubscriptionName:  subscriptionName,
 		SubscriptionId:    subscription.SubscriptionId,
@@ -155,7 +156,9 @@ func (sc *SandboxClient) setSandboxTags(
 ) error {
 	tags := make(map[string]string)
 	tags["GUID"] = guid
+	tags["guid"] = guid
 	tags["EMAIL"] = requestorEmail
+	tags["email"] = requestorEmail
 	tags["cost-center"] = costCenter
 
 	err := sc.managementClient.setTags(scope, tags)
@@ -169,7 +172,9 @@ func (sc *SandboxClient) setSandboxTags(
 func (sc *SandboxClient) deleteSandboxTags(scope string) error {
 	tags := make(map[string]string)
 	tags["GUID"] = ""
+	tags["guid"] = ""
 	tags["EMAIL"] = ""
+	tags["email"] = ""
 	err := sc.managementClient.updateTags(scope, tags, "delete")
 	if err != nil {
 		return err
@@ -227,6 +232,7 @@ func (sc *SandboxClient) deleteRoleAssignments(scope string) error {
 func (sc *SandboxClient) createResourceGroup(subscriptionId string, guid string) (string, error) {
 	rgTags := make(map[string]string)
 	rgTags["GUID"] = guid
+	rgTags["guid"] = guid
 	rgParams := resourceGroupParameters{
 		SubscriptionId:    subscriptionId,
 		ResourceGroupName: rgNamePrefix + guid,
