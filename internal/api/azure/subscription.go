@@ -12,6 +12,7 @@ type subscription struct {
 	SubscriptionId   string
 	SubscriptionFQID string
 	DisplayName      string
+	Tags             map[string]string
 }
 
 // Retrieves the subscription details for the given subscription name.
@@ -53,6 +54,8 @@ func (g *managementClient) getSubscription(name string) (*subscription, error) {
 			Id             string `json:"id"`
 			SubscriptionId string `json:"subscriptionId"`
 			DisplayName    string `json:"displayName"`
+			// Tags
+			Tags map[string]string `json:"tags"`
 		} `json:"value"`
 	}{}
 	err = json.Unmarshal(responseData, &subscriptions)
@@ -66,6 +69,7 @@ func (g *managementClient) getSubscription(name string) (*subscription, error) {
 				SubscriptionId:   sub.SubscriptionId,
 				SubscriptionFQID: sub.Id,
 				DisplayName:      sub.DisplayName,
+				Tags:             sub.Tags,
 			}, nil
 		}
 	}
