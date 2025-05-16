@@ -202,7 +202,8 @@ func (g *managementClient) createRoleAssignment(
 			return nil, err
 		}
 
-		return nil, fmt.Errorf("error: %s, %s",
+		return nil, fmt.Errorf("error creating RoleDefinitionID %s: %s, %s",
+		  roleDefinitionId,	
 			errorResponse.Error.Code,
 			errorResponse.Error.Message)
 
