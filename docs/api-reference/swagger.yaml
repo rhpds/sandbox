@@ -3119,7 +3119,7 @@ components:
         name:
           type: string
           example: sandbox123
-        tenant1:
+        tenant_id:
           type: string
           example: redhat0
         client_id:
