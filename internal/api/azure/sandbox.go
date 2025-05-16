@@ -70,7 +70,7 @@ func (sc *SandboxClient) CreateSandboxEnvironment(
 		log.Logger.Error("Error getSub")
 		return nil, err
 	}
-	log.Logger.Info("subscription", "subscription", subscription)
+	log.Logger.Info("Step2")
 
 	err = sc.setSandboxTags(guid, requestorEmail, costCenter, subscription.SubscriptionFQID)
 	if err != nil {
@@ -156,9 +156,7 @@ func (sc *SandboxClient) setSandboxTags(
 ) error {
 	tags := make(map[string]string)
 	tags["GUID"] = guid
-	tags["guid"] = guid
 	tags["EMAIL"] = requestorEmail
-	tags["email"] = requestorEmail
 	tags["cost-center"] = costCenter
 
 	err := sc.managementClient.setTags(scope, tags)
@@ -172,9 +170,7 @@ func (sc *SandboxClient) setSandboxTags(
 func (sc *SandboxClient) deleteSandboxTags(scope string) error {
 	tags := make(map[string]string)
 	tags["GUID"] = ""
-	tags["guid"] = ""
 	tags["EMAIL"] = ""
-	tags["email"] = ""
 	err := sc.managementClient.updateTags(scope, tags, "delete")
 	if err != nil {
 		return err
@@ -232,7 +228,6 @@ func (sc *SandboxClient) deleteRoleAssignments(scope string) error {
 func (sc *SandboxClient) createResourceGroup(subscriptionId string, guid string) (string, error) {
 	rgTags := make(map[string]string)
 	rgTags["GUID"] = guid
-	rgTags["guid"] = guid
 	rgParams := resourceGroupParameters{
 		SubscriptionId:    subscriptionId,
 		ResourceGroupName: rgNamePrefix + guid,

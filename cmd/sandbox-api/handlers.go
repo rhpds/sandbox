@@ -34,7 +34,7 @@ type BaseHandler struct {
 	OcpSandboxProvider              models.OcpSandboxProvider
 	DNSSandboxProvider              models.DNSSandboxProvider
 	IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider
-	azureSandboxProvider            *models.AzureSandboxProvider
+	AzureSandboxProvider            models.AzureSandboxProvider
 }
 
 type AdminHandler struct {
@@ -51,7 +51,7 @@ func NewBaseHandler(
 	OcpSandboxProvider models.OcpSandboxProvider,
 	DNSSandboxProvider models.DNSSandboxProvider,
 	IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider,
-	azureSandboxProvider *models.AzureSandboxProvider,
+	AzureSandboxProvider models.AzureSandboxProvider,
 ) *BaseHandler {
 	return &BaseHandler{
 		svc:                             svc,
@@ -62,7 +62,7 @@ func NewBaseHandler(
 		OcpSandboxProvider:              OcpSandboxProvider,
 		DNSSandboxProvider:              DNSSandboxProvider,
 		IBMResourceGroupSandboxProvider: IBMResourceGroupSandboxProvider,
-		azureSandboxProvider:            azureSandboxProvider,
+		AzureSandboxProvider:            AzureSandboxProvider,
 	}
 }
 
@@ -413,9 +413,12 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			resources = append(resources, account)
 
 		case "AzureSandbox":
-			azureSandbox, err := h.azureSandboxProvider.Request(
+			AzureSandbox, err := h.AzureSandboxProvider.Request(
 				placementRequest.ServiceUuid,
+				request.CloudSelector,
 				placementRequest.Annotations.Merge(request.Annotations),
+				multipleDNS,
+				r.Context(),
 			)
 			if err != nil {
 				// Cleanup previous Azure sandboxes
@@ -436,8 +439,8 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				return
 			}
 
-			tocleanup = append(tocleanup, &azureSandbox)
-			resources = append(resources, azureSandbox)
+			tocleanup = append(tocleanup, &AzureSandbox)
+			resources = append(resources, AzureSandbox)
 
 		default:
 			w.WriteHeader(http.StatusBadRequest)
@@ -562,7 +565,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	// TODO: Add Azure provider
-	if err := placement.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider, h.azureSandboxProvider); err != nil {
+	if err := placement.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider, h.AzureSandboxProvider); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
 			Err:            err,
@@ -620,7 +623,7 @@ func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	placement.SetStatus("deleting")
-	go placement.Delete(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider, h.azureSandboxProvider)
+	go placement.Delete(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider, h.AzureSandboxProvider)
 
 	w.WriteHeader(http.StatusAccepted)
 	render.Render(w, r, &v1.SimpleMessage{

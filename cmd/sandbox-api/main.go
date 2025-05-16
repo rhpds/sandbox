@@ -135,11 +135,11 @@ func main() {
 	// ---------------------------------------------------------------------
 	// Azure
 	// ---------------------------------------------------------------------
-	azureSandboxProvider, err := models.NewAzureSandboxProvider(dbPool, vaultSecret)
-	if err != nil {
-		log.Logger.Error("Error creating AzureSandboxProvider", "error", err)
-		os.Exit(1)
-	}
+	//AzureSandboxProvider, err := models.NewAzureSandboxProvider(dbPool, vaultSecret)
+	//if err != nil {
+	//	log.Logger.Error("Error creating AzureSandboxProvider", "error", err)
+	//  os.Exit(1)
+	//}
 
 	// ---------------------------------------------------------------------
 	// DNS
@@ -150,6 +150,11 @@ func main() {
 	// IBMResourceGroup
 	// ---------------------------------------------------------------------
 	IBMResourceGroupSandboxProvider := models.NewIBMResourceGroupSandboxProvider(dbPool, vaultSecret)
+
+	// ---------------------------------------------------------------------
+	// Azure
+	// ---------------------------------------------------------------------
+	AzureSandboxProvider := models.NewAzureSandboxProvider(dbPool, vaultSecret)
 
 	// ---------------------------------------------------------------------
 	// Setup JWT
@@ -171,7 +176,7 @@ func main() {
 	// to the handler maker.
 	// When we need to migrate to Postgresql, we can pass a different "Provider" which will
 	// implement the same interface.
-	accountHandler := NewAccountHandler(awsAccountProvider, OcpSandboxProvider, DNSSandboxProvider, IBMResourceGroupSandboxProvider)
+	accountHandler := NewAccountHandler(awsAccountProvider, OcpSandboxProvider, DNSSandboxProvider, IBMResourceGroupSandboxProvider, AzureSandboxProvider)
 
 	// Factory for handlers which need connections to both databases
 	baseHandler := NewBaseHandler(
@@ -183,7 +188,7 @@ func main() {
 		OcpSandboxProvider,
 		DNSSandboxProvider,
 		IBMResourceGroupSandboxProvider,
-		azureSandboxProvider,
+		AzureSandboxProvider,
 	)
 
 	// Admin handler adds tokenAuth to the baseHandler
@@ -302,6 +307,17 @@ func main() {
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/enable", baseHandler.EnableOcpSharedClusterConfigurationHandler)
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/update", baseHandler.UpdateOcpSharedClusterConfigurationHandler)
 		r.Delete("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.DeleteOcpSharedClusterConfigurationHandler)
+
+		// ---------------------------------
+		// Azure
+		// ---------------------------------
+		r.Post("/api/v1/azure-account-configurations", baseHandler.CreateAzureAccountConfigurationHandler)
+		r.Get("/api/v1/azure-account-configurations", baseHandler.GetAzureAccountConfigurationsHandler)
+		r.Get("/api/v1/azure-account-configurations/{name}", baseHandler.GetAzureAccountConfigurationHandler)
+		r.Put("/api/v1/azure-account-configurations/{name}/disable", baseHandler.DisableAzureAccountConfigurationHandler)
+		r.Put("/api/v1/azure-account-configurations/{name}/enable", baseHandler.EnableAzureAccountConfigurationHandler)
+		r.Put("/api/v1/azure-account-configurations/{name}/update", baseHandler.UpdateAzureAccountConfigurationHandler)
+		r.Delete("/api/v1/azure-account-configurations/{name}", baseHandler.DeleteAzureAccountConfigurationHandler)
 
 		// ---------------------------------
 		// DNS

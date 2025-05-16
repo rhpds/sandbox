@@ -237,7 +237,55 @@ for payload in sandbox-api-configs/ibm-resource-group-configurations/dev*.json; 
     fi
 done
 
+for payload in sandbox-api-configs/azure-configurations/dev*.json; do
+    echo "Reading file $payload"
+    if [[ $payload =~ create.json$ ]]; then
+        account=$(cat $payload | jq -r ".name")
+    elif [[ $payload =~ update.json$ ]]; then
+        # take the name from the file name
+        account=azure-$(basename $payload | sed 's/\.update\.json$//')
+    fi
+    [ -z "$account" ] && echo "Account name not found in $payload" && exit 1
+    payload2=$tmpdir/$(basename $payload)
+    SECRET_ID=$(podman run --rm \
+            -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+            -e PROJECT_ID=$BWS_PROJECT_ID \
+            bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
+            | KEYVALUE="${account}.secret_id" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
+    TENANT_ID=$(podman run --rm \
+            -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+            -e PROJECT_ID=$BWS_PROJECT_ID \
+            bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
+            | KEYVALUE="${account}.tenant_id" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 
+    CLIENT_ID=$(podman run --rm \
+            -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+            -e PROJECT_ID=$BWS_PROJECT_ID \
+            bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
+            | KEYVALUE="${account}.client_id" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
+
+    echo $payload
+    echo $payload2
+    jq  --arg secret_id $SECRET_ID --arg tenant_id $TENANT_ID --arg client_id $CLIENT_ID '(.secret = $secret_id | .client_id = $client_id | .tenant_id = $tenant_id)'  < $payload > $payload2
+    # In bash, files in a * are sorted alphabetically by default
+    # so a create will always happen before an update.
+    if [[ $payload =~ create.json$ ]]; then
+        echo "Creating account $account"
+        hurl --variable login_token_admin=$admintoken \
+            --file-root $tmpdir \
+            --variable host=http://localhost:$PORT \
+            --variable azure_account_def=$payload2 \
+            ./tools/azure_account_configuration_create.hurl
+    elif [[ $payload =~ update.json$ ]]; then
+        echo "Updating account $account"
+        hurl --variable login_token_admin=$admintoken \
+            --file-root $tmpdir \
+            --variable host=http://localhost:$PORT \
+            --variable payload=$payload2 \
+            --variable account=$account \
+            ./tools/azure_account_configuration_update.hurl
+    fi
+done
 
 uuid=$(uuidgen -r)
 export uuid

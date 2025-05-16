@@ -135,7 +135,7 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 	return nil
 }
 
-func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider, azureProvider *AzureSandboxProvider) error {
+func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider, azureProvider AzureSandboxProvider) error {
 
 	accounts, err := awsProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
 	if err != nil {
@@ -216,7 +216,6 @@ func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpPr
 			}
 		}
 	}
-	
 
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
@@ -244,7 +243,7 @@ func (p *Placement) LoadActiveResources(awsProvider AwsAccountProvider) error {
 	return nil
 }
 
-func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider, azureProvider *AzureSandboxProvider) error {
+func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider, azureProvider AzureSandboxProvider) error {
 
 	accounts, err := awsProvider.FetchAllActiveByServiceUuidWithCreds(p.ServiceUuid)
 	if err != nil {
@@ -326,7 +325,6 @@ func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider,
 		}
 	}
 
-
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
 	if p.Status != "error" && p.Status != "deleting" {
@@ -384,7 +382,7 @@ func (p *Placement) Create() error {
 }
 
 // Delete deletes a placement
-func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider, azureProvider *AzureSandboxProvider) {
+func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider, azureProvider AzureSandboxProvider) {
 	if err := p.SetStatus("deleting"); err != nil {
 		log.Logger.Error("error setting status for placement",
 			"serviceUuid", p.ServiceUuid,
@@ -441,7 +439,7 @@ func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider OcpSa
 	// NOTE: This will done automatically by the SQL constraints when we move to Postgresql instead of
 	// dynamodb for the accounts.
 
-	if err := p.LoadResources(accountProvider, ocpProvider, dnsProvider, ibmProvider, *azureProvider); err != nil {
+	if err := p.LoadResources(accountProvider, ocpProvider, dnsProvider, ibmProvider, azureProvider); err != nil {
 		log.Logger.Error("Error loading resources",
 			"serviceUuid", p.ServiceUuid,
 			"error", err,
@@ -628,7 +626,7 @@ func DeletePlacementByServiceUuid(
 	ocpProvider OcpSandboxProvider,
 	dnsProvider DNSSandboxProvider,
 	ibmProvider IBMResourceGroupSandboxProvider,
-	azureProvider *AzureSandboxProvider,
+	azureProvider AzureSandboxProvider,
 	serviceUuid string,
 ) error {
 	placement, err := GetPlacementByServiceUuid(dbpool, serviceUuid)

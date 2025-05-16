@@ -630,7 +630,7 @@ func (a *DNSSandboxProvider) GetSchedulableAccounts(cloud_selector map[string]st
 	)
 
 	if err != nil {
-		log.Logger.Error("Error querying ocp accounts", "error", err)
+		log.Logger.Error("Error querying dns accounts", "error", err)
 		return DNSAccountConfigurations{}, err
 	}
 

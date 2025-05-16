@@ -256,3 +256,15 @@ type UpdateIBMResourceGroupSandboxConfigurationRequest struct {
 func (j *UpdateIBMResourceGroupSandboxConfigurationRequest) Bind(r *http.Request) error {
 	return nil
 }
+
+type UpdateAzureAccountConfigurationRequest struct {
+	Annotations    *models.Annotations `json:"annotations,omitempty"`
+	ClientID       string              `json:"client_id"`
+	TenantID       string              `json:"tenant_id"`
+	Secret         string              `json:"secret"`
+	AdditionalVars map[string]any      `json:"additional_vars,omitempty"`
+}
+
+func (j *UpdateAzureAccountConfigurationRequest) Bind(r *http.Request) error {
+	return nil
+}
