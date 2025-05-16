@@ -428,6 +428,8 @@ paths:
             - DNSSandbox
             - ibmrg
             - IBMResourceGroupSandbox
+            - azure
+            - AzureSandbox
       - name: available
         in: query
         description: Boolean to filter if available or taken.
@@ -481,6 +483,8 @@ paths:
             - DNSSandbox
             - ibmrg
             - IBMResourceGroupSandbox
+            - azure
+            - AzureSandbox
       - name: name
         in: path
         required: true
@@ -581,6 +585,8 @@ paths:
             - DNSSandbox
             - ibmrg
             - IBMResourceGroupSandbox
+            - azure
+            - AzureSandbox
       - name: name
         in: path
         required: true
@@ -642,6 +648,8 @@ paths:
             - DNSSandbox
             - ibmrg
             - IBMResourceGroupSandbox
+            - azure
+            - AzureSandbox
       - name: name
         in: path
         required: true
@@ -700,6 +708,8 @@ paths:
             - DNSSandbox
             - ibmrg
             - IBMResourceGroupSandbox
+            - azure
+            - AzureSandbox
       - name: name
         in: path
         required: true
@@ -758,6 +768,8 @@ paths:
             - DNSSandbox
             - ibmrg
             - IBMResourceGroupSandbox
+            - azure
+            - AzureSandbox
       - name: name
         in: path
         required: true
@@ -1876,6 +1888,298 @@ paths:
               example:
                 message: Internal server error
                 http_code: 500
+  /azure-account-configurations:
+    post:
+      summary: Create a new AzureAccountConfiguration
+      operationId: createAzureAccountConfiguration
+      tags:
+        - admin
+      requestBody:
+        description: JSON object to specify the AzureAccountConfiguration.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AzureAccountConfiguration"
+            example:
+              name: devaccount
+              tenant_id: REDACTED
+              client_id: REDACTED
+              secret: REDACTED
+              sub_name_prefix: dev-pool-
+              sub_range_start: 100
+              sub_range_end: 110
+              valid: true
+              annotations:
+                purpose: dev
+      responses:
+        '201':
+          description: AzureAccountConfiguration created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: Azure account configuration created
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: createAzureAccountConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      summary: Get all AzureAccountConfigurations
+      operationId: getAzureAccountConfigurations
+      tags:
+        - admin
+      responses:
+        '200':
+          description: The list of AzureAccountConfigurations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AzureAccountConfigurations"
+        default:
+          description: getAzureAccountConfigurations unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /azure-account-configurations/{name}:
+    get:
+      summary: Get information about an AzureAccountConfiguration
+      operationId: getAzureAccountConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the AzureAccountConfiguration
+          schema:
+            type: string
+          example: devaccount
+      responses:
+        '200':
+          description: The AzureAccountConfiguration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AzureAccountConfiguration"
+        '404':
+          description: getAzureAccountConfiguration AzureAccountConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getAzureAccountConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete an AzureAccountConfiguration
+      operationId: deleteAzureAccountConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the AzureAccountConfiguration
+          schema:
+            type: string
+          example: devaccount
+      responses:
+        '200':
+          description: The AzureAccountConfiguration is deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: Azure account deleted
+        '404':
+          description: deleteAzureAccountConfiguration AzureAccountConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: |-
+            AzureAccountConfiguration is not deletable. Usually because it has
+            resources attached to it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: deleteAzureAccountConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /azure-account-configurations/{name}/enable:
+    put:
+      summary: Enable an AzureAccountConfiguration
+      operationId: enableAzureAccountConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the AzureAccountConfiguration
+          schema:
+            type: string
+          example: development
+      responses:
+        '200':
+          description: The AzureAccountConfiguration is enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: Azure Account enabled
+        '404':
+          description: enableAzureAccountConfiguration AzureAccountConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: enableAzureAccountConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /azure-account-configurations/{name}/disable:
+    put:
+      summary: Disable an AzureAccountConfiguration
+      operationId: disableAzureAccountConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the AzureAccountConfiguration
+          schema:
+            type: string
+            example: devaccount
+          example: devaccount
+      responses:
+        '200':
+          description: The AzureAccountConfiguration is disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: Azure Account cluster configuration disabled
+        '404':
+          description: disableAzureAccountConfiguration AzureAccountConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: disableAzureAccountConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /azure-account-configurations/{name}/update:
+    put:
+      summary: Update quota conf for an AzureAccountConfiguration
+      operationId: updateAzureAccountConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the AzureAccountConfiguration changes
+          schema:
+            type: string
+            example: devaccount
+      requestBody:
+        description: JSON object to specify the AzureAccountConfiguration.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                tenant_id:
+                  type: string
+                client_id:
+                  type: string
+                secret:
+                  type: string
+                sub_name_prefix:
+                  type: string
+                sub_range_start:
+                  type: integer
+                sub_range_end:
+                  type: integer
+                annotations:
+                  $ref: "#/components/schemas/Annotations"
+                additional_vars:
+                  type: object
+            example:
+              tenant_id: string
+              client_id: string
+              secret: string
+              sub_name_prefix: string
+              sub_range_start: 100
+              sub_range_end: 110
+              additional_vars:
+                fordeployer: '...'
+              annotations:
+                purpose: dev
+      responses:
+        '200':
+          description: The AzureAccountConfiguration is updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: Azure Account configuration updated
+        '404':
+          description: updateAzureAccountConfiguration AzureAccountConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: updateAzureAccountConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
 
   /dns-account-configurations:
     post:
@@ -2585,7 +2889,7 @@ components:
     Account:
       oneOf:
         - $ref: '#/components/schemas/AwsAccount'
-        - $ref: '#/components/schemas/AzureAccount'
+        - $ref: '#/components/schemas/AzureSandbox'
         - $ref: '#/components/schemas/OcpSandbox'
         - $ref: '#/components/schemas/DNSSandbox'
         - $ref: '#/components/schemas/IBMResourceGroupSandbox'
@@ -2597,6 +2901,7 @@ components:
     AccountWithCreds:
       oneOf:
         - $ref: '#/components/schemas/AwsAccountWithCreds'
+        - $ref: '#/components/schemas/AzureSandboxWithCreds'
         - $ref: '#/components/schemas/OcpSandboxWithCreds'
         - $ref: '#/components/schemas/DNSSandboxWithCreds'
         - $ref: '#/components/schemas/IBMResourceGroupSandboxWithCreds'
@@ -2604,6 +2909,7 @@ components:
         propertyName: kind
         mapping:
           AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
+          AzureSandbox: '#/components/schemas/AzureSandboxWithCreds'
           OcpSandbox: '#/components/schemas/OcpSandboxWithCreds'
           DNSSandbox: '#/components/schemas/DNSSandboxWithCreds'
           IBMResourceGroupSandbox: '#/components/schemas/IBMResourceGroupSandboxWithCreds'
@@ -2639,6 +2945,7 @@ components:
         propertyName: kind
         mapping:
           AwsSandbox: '#/components/schemas/AwsAccountWithCreds'
+          AzureSandbox: '#/components/schemas/AzureSandboxWithCreds'
           OcpSandbox: '#/components/schemas/OcpSandboxWithCreds'
           DNSSandbox: '#/components/schemas/DNSSandboxWithCreds'
           IBMResourceGroupSandbox: '#/components/schemas/IBMResourceGroupSandboxWithCreds'
@@ -2652,6 +2959,7 @@ components:
     Credential:
       oneOf:
         - $ref: '#/components/schemas/AwsIamKey'
+        - $ref: '#/components/schemas/AzureAccount'
         - $ref: '#/components/schemas/OcpServiceAccount'
         - $ref: '#/components/schemas/DNSSandboxCreds'
         - $ref: '#/components/schemas/IBMResourceGroupServiceAccount'
@@ -2659,6 +2967,7 @@ components:
         propertyName: kind
         mapping:
           aws_iam_key: '#/components/schemas/AwsIamKey'
+          AzureAccount: '#/components/schemas/AzureAccount'
           ServiceAccount: '#/components/schemas/OcpServiceAccount'
           DNSSandboxCreds: '#/components/schemas/DNSSandboxCreds'
           IBMResourceGroupServiceAccount: '#/components/schemas/IBMResourceGroupServiceAccount'
@@ -2727,12 +3036,7 @@ components:
       items:
         $ref: '#/components/schemas/Credential'
 
-    AzureAccount:
-      type: object
-      properties:
-        name:
-          type: string
-          example: sandbox123
+
     AwsAccount:
       type: object
       required:
@@ -2804,6 +3108,71 @@ components:
               items:
                 $ref: '#/components/schemas/Credentials'
 
+    AzureAccount:
+      type: object
+      required:
+        - name
+        - tenant_id
+        - client_id
+        - secret
+      properties:
+        name:
+          type: string
+          example: sandbox123
+        tenant1:
+          type: string
+          example: redhat0
+        client_id:
+          type: string
+          example: abcd
+        secret:
+          type: string
+          example: 1234567890abcdefghij
+
+    AzureSandbox:
+      type: object
+      required:
+        - kind
+        - subscription_name
+        - subscription_id
+        - resource_group_name
+      properties:
+        kind:
+          type: string
+          example: ServiceAccount
+        subscription_name:
+          type: string
+          example: A..
+        subscription_id:
+          type: string
+          example: uuid-uuid-uuid
+        resource_group_name:
+          type: string
+          example: openenv-guid
+        status:
+          type: string
+          enum:
+            - initializing
+            - scheduling
+            - success
+            - error
+            - deleting
+        sandbox_additional_vars:
+          type: object
+          example:
+            deployer:
+              openshift_cnv_nfs_path: /IBMfoobar/data01
+              openshift_cnv_nfs_server: fsf-region.domain.com
+
+    AzureSandboxWithCreds:
+      allOf:
+        - $ref: '#/components/schemas/AzureSandbox'
+        - type: object
+          properties:
+            credentials:
+              type: array
+              items:
+                $ref: '#/components/schemas/Credentials'
 
     OcpSandbox:
       type: object
@@ -3372,11 +3741,82 @@ components:
         annotations:
           purpose: dev
 
+
     DNSAccountConfigurations:
       description: The list of DNSAccountConfigurations
       type: array
       items:
         $ref: '#/components/schemas/DNSAccountConfiguration'
+
+    AzureAccountConfiguration:
+      description: AzureAccountConfiguration is a record of an DNS Account
+      type: object
+      required:
+        - name
+        - tenant_id
+        - client_id
+        - secret
+        - valid
+        - annotations
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: The name of the account, must be alphanumeric or dash
+          example: devaccount
+        tenant_id:
+          type: string
+          description: The tenant id to access the Azure Account
+          example: redhat0...
+        client_id:
+          type: string
+          description: The client id to access the Azure Account
+          example: ac..
+        secret:
+          type: string
+          description: The secret to access the Azure Account
+          example: IU..
+        sub_name_prefix:
+          type: string
+          description: Subscription name prefix for Azure Account
+          example: dev-pool-
+        sub_range_start:
+          type: integer
+          description: Subscription start range for Azure Account
+          example: 1
+        sub_range_end:
+          type: integer
+          description: Subscription range end for Azure Account
+          example: 10
+        valid:
+          type: boolean
+          description: true if the cluster is valid
+          example: true
+          default: true
+        annotations:
+          $ref: "#/components/schemas/Annotations"
+        additional_vars:
+          type: object
+          description: Additional variables for the cluster
+          example:
+            deployer:
+              openshift_cnv_nfs_path: /IBMfoobar/data01
+              openshift_cnv_nfs_server: fsf-region.domain.com
+      example:
+        name: devaccount
+        tenant_id: REDACTED
+        client_id: REDACTED
+        secret: REDACTED
+        valid: true
+        annotations:
+          purpose: dev
+
+
+    AzureAccountConfigurations:
+      description: The list of AzureAccountConfigurations
+      type: array
+      items:
+        $ref: '#/components/schemas/AzureAccountConfiguration'
 
     IBMResourceGroupSandboxConfiguration:
       description: IBMResourceGroupSandboxConfiguration is a record of an IBM Account
