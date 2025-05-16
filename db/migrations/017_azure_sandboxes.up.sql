@@ -25,7 +25,7 @@ CREATE TRIGGER azure_account_configurations_updated_at
   EXECUTE FUNCTION updated_at_column();
 
 -- Add AzureSandbox value to the resource_type_enum
--- ALTER TYPE resource_type_enum ADD VALUE 'AzureSandbox';
+ALTER TYPE resource_type_enum ADD VALUE 'AzureSandbox';
 
 COMMIT;
 
