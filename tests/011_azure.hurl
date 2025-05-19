@@ -41,7 +41,7 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "guid": "testg"
+    "guid": "testaz-{{uuid}}"
   }
 }
 HTTP 200
@@ -51,7 +51,75 @@ account: jsonpath "$.Placement.resources[0].subscription_name"
 jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 jsonpath "$.Placement.resources" count == 1
-jsonpath "$.Placement.resources[0].annotations.guid" == "testg"
+jsonpath "$.Placement.resources[0].annotations.guid" == "testaz-{{uuid}}"
+jsonpath "$.Placement.resources[0].annotations.purpose" == "backend"
+
+
+#################################################################################
+# Get placement and ensure credentials are present
+#################################################################################
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 20
+retry-interval: 2s
+HTTP 200
+[Asserts]
+jsonpath "$.resources[0].credentials" count >= 1
+
+
+#################################################################################
+# Delete the placement
+#################################################################################
+
+DELETE {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+HTTP 202
+
+#################################################################################
+# Get placement ensuring doesnt exist
+#################################################################################
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 20
+retry-interval: 5s
+HTTP 404
+
+
+#################################################################################
+# Create a new placement
+#################################################################################
+
+POST {{host}}/api/v1/placements
+Authorization: Bearer {{access_token}}
+{
+  "service_uuid": "{{uuid}}",
+  "resources": [
+    {
+      "kind": "AzureSandbox",
+      "annotations": {
+        "purpose": "backend",
+        "requester": "{{requester}}",
+        "cost_center": "{{cost_center}}",
+        "domain": "{{domain}}"
+      }
+    }
+  ],
+  "annotations": {
+    "guid": "testaz-{{uuid}}-2"
+  }
+}
+HTTP 200
+[Captures]
+account: jsonpath "$.Placement.resources[0].subscription_name"
+[Asserts]
+jsonpath "$.message" == "Placement Created"
+jsonpath "$.Placement.service_uuid" == "{{uuid}}"
+jsonpath "$.Placement.resources" count == 1
+jsonpath "$.Placement.resources[0].annotations.guid" == "testaz-{{uuid}}-2"
 jsonpath "$.Placement.resources[0].annotations.purpose" == "backend"
 
 
