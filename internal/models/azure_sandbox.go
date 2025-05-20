@@ -110,7 +110,7 @@ func (a *AzureSandboxProvider) allocateSubscription() (string, error) {
 	// Subscription names are not defined but used to get Subscription ID
 	// using Azure API calls. For simplicity we are using the subscriptionCount
 	// subscriptions starting from pool-01-001.
-	for i := 1; i <= subscriptionCount; i++ {
+	for i := 100; i <= 100+subscriptionCount; i++ {
 		SubscriptionNames[fmt.Sprintf("%s%d", subscriptionNamePrefix, i)] = false
 	}
 
