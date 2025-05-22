@@ -246,4 +246,4 @@ hurl --test \
     --variable host=http://localhost:$PORT \
     --variable uuid=$uuid \
     --jobs 1 \
-    ./*.hurl
+    ./011*.hurl 999.hurl

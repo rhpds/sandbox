@@ -42,7 +42,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "Simple OcpSandbox placement with keycloak user",
-    "guid": "testg",
+    "guid": "testkeycloak",
     "env_type": "ocp4-cluster-foo"
   }
 }
