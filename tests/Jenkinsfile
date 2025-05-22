@@ -6,6 +6,11 @@ pipeline {
         disableConcurrentBuilds()
     }
 
+
+    parameters {
+        string(name: 'tests', defaultValue: '*.hurl', description: 'what tests to run')
+    }
+
     stages {
         stage('Test') {
             steps {
@@ -24,7 +29,7 @@ pipeline {
                     string(credentialsId: 'bw-ocp-shared-clusters-config-token', variable: 'BWS_ACCESS_TOKEN'),
                     string(credentialsId: 'bw-ocp-shared-clusters-config-project-id', variable: 'BWS_PROJECT_ID'),
                 ]) {
-                    sh 'tests/jenkins-run.sh'
+                    sh "tests/jenkins-run.sh '${params.tests}'"
                 }
             }
         }
