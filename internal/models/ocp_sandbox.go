@@ -2,6 +2,8 @@ package models
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -125,6 +127,13 @@ type OcpServiceAccount struct {
 	Token string `json:"token"`
 }
 
+// Credential for keycloak account
+type KeycloakCredential struct {
+	Kind     string `json:"kind"` // "KeycloakCredential"
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
 type OcpSandboxes []OcpSandbox
 
 type MultipleOcpAccount struct {
@@ -137,6 +146,15 @@ type TokenResponse struct {
 }
 
 var nameRegex = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
+
+// GenerateRandomPassword generates a random password of specified length.
+func generateRandomPassword(length int) (string, error) {
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(bytes), nil
+}
 
 // MakeOcpSharedClusterConfiguration creates a new OcpSharedClusterConfiguration
 // with default values
@@ -1376,6 +1394,101 @@ func (a *OcpSandboxProvider) Request(
 			rnew.SetStatus("error")
 			return
 		}
+		creds := []any{}
+		// Create an user if the keycloak option was enabled
+		if value, exists := cloudSelector["keycloak"]; exists && (value == "yes" || value == "true") {
+			// Generate a random password for the Keycloak user
+			userAccountName := "sandbox-" + guid
+			password, err := generateRandomPassword(16)
+			if err != nil {
+				log.Logger.Error("Error generating password", "error", err)
+			}
+
+			// Define the KeycloakUser GroupVersionResource
+			keycloakUserGVR := schema.GroupVersionResource{
+				Group:    "keycloak.org",
+				Version:  "v1alpha1",
+				Resource: "keycloakusers",
+			}
+
+			// Create the KeycloakUser object as an unstructured object
+			keycloakUser := &unstructured.Unstructured{
+				Object: map[string]any{
+					"apiVersion": "keycloak.org/v1alpha1",
+					"kind":       "KeycloakUser",
+					"metadata": map[string]any{
+						"name":      userAccountName,
+						"namespace": "rhsso", // The namespace where Keycloak is installed
+					},
+					"spec": map[string]any{
+						"user": map[string]any{
+							"username": userAccountName,
+							"enabled":  true,
+							"credentials": []any{
+								map[string]any{
+									"type":      "password",
+									"value":     password,
+									"temporary": false,
+								},
+							},
+						},
+						"realmSelector": map[string]any{
+							"matchLabels": map[string]any{
+								"app": "sso", // The label selector for the Keycloak realm
+							},
+						},
+					},
+				},
+			}
+
+			// Create the KeycloakUser resource in the specified namespace
+			namespace := "rhsso"
+			_, err = dynclientset.Resource(keycloakUserGVR).Namespace(namespace).Create(context.TODO(), keycloakUser, metav1.CreateOptions{})
+			if err != nil {
+				log.Logger.Error("Error creating KeycloakUser", "error", err)
+			}
+
+			log.Logger.Debug("KeycloakUser created successfully")
+
+			creds = append(creds, KeycloakCredential{
+				Kind:     "KeycloakUser",
+				Username: userAccountName,
+				Password: password,
+			})
+
+			// Create RoleBind for the Service Account in the Namespace
+			_, err = clientset.RbacV1().RoleBindings(namespaceName).Create(context.TODO(), &rbacv1.RoleBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: userAccountName,
+					Labels: map[string]string{
+						"serviceUuid": serviceUuid,
+						"guid":        annotations["guid"],
+					},
+				},
+				RoleRef: rbacv1.RoleRef{
+					APIGroup: rbacv1.GroupName,
+					Kind:     "ClusterRole",
+					Name:     "admin",
+				},
+				Subjects: []rbacv1.Subject{
+					{
+						Kind:      "User",
+						Name:      userAccountName,
+						Namespace: namespaceName,
+					},
+				},
+			}, metav1.CreateOptions{})
+
+			if err != nil {
+				log.Logger.Error("Error creating OCP RoleBind", "error", err)
+				if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+					log.Logger.Error("Error cleaning up the namespace", "error", err)
+				}
+				rnew.SetStatus("error")
+				return
+			}
+
+		}
 
 		// Assign ClusterRole sandbox-hcp (created with gitops) to the SA if hcp option was selected
 		if value, exists := cloudSelector["hcp"]; exists && (value == "yes" || value == "true") {
@@ -1578,13 +1691,12 @@ func (a *OcpSandboxProvider) Request(
 			// Sleep before retrying
 			time.Sleep(sleepDuration)
 		}
-		creds := []any{
+		creds = append(creds,
 			OcpServiceAccount{
 				Kind:  "ServiceAccount",
 				Name:  serviceAccountName,
 				Token: string(saSecret.Data["token"]),
-			},
-		}
+			})
 		rnew.Credentials = creds
 		rnew.Status = "success"
 

@@ -240,10 +240,15 @@ uuid=$(uuidgen -r)
 export uuid
 cd tests/
 
+tests=$1
+if [ -z "$tests" ]; then
+    tests='*.hurl'
+fi
+
 hurl --test \
     --variable login_token=$apptoken \
     --variable login_token_admin=$admintoken \
     --variable host=http://localhost:$PORT \
     --variable uuid=$uuid \
     --jobs 1 \
-    ./*.hurl
+    $tests
