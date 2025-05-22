@@ -1396,7 +1396,7 @@ func (a *OcpSandboxProvider) Request(
 		}
 		creds := []any{}
 		// Create an user if the keycloak option was enabled
-		if value, exists := cloud_selector["keycloak"]; exists && (value == "yes" || value == "true") {
+		if value, exists := cloudSelector["keycloak"]; exists && (value == "yes" || value == "true") {
 			// Generate a random password for the Keycloak user
 			userAccountName := "sandbox-" + guid
 			password, err := generateRandomPassword(16)
@@ -1487,7 +1487,6 @@ func (a *OcpSandboxProvider) Request(
 				rnew.SetStatus("error")
 				return
 			}
-
 
 		}
 

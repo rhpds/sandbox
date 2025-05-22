@@ -331,23 +331,6 @@ func main() {
 	})
 
 	// ---------------------------------------------------------------------
-	// Profiling
-	// ---------------------------------------------------------------------
-	router.Group(func(r chi.Router) {
-		// ---------------------------------
-		// Admin auth but no OpenAPI validation
-		// ---------------------------------
-		r.Use(jwtauth.Verifier(tokenAuth))
-		r.Use(AuthenticatorAdmin)
-		// Profiling
-		r.Get("/debug/pprof/", pprof.Index)
-		r.Get("/debug/pprof/profile", pprof.Profile)
-		r.Get("/debug/pprof/trace", pprof.Trace)
-		r.Get("/debug/pprof/cmdline", pprof.Cmdline)
-		r.Get("/debug/pprof/symbol", pprof.Symbol)
-	})
-
-	// ---------------------------------------------------------------------
 	// Login Routes
 	// ---------------------------------------------------------------------
 	router.Group(func(r chi.Router) {
