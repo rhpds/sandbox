@@ -1,4 +1,5 @@
 ---
+namespace: babylon-sandbox-conan
 deployment:
   image: quay.io/rhpds/sandbox-conan
   tag: latest

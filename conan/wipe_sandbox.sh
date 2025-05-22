@@ -7,6 +7,7 @@ max_retries=${max_retries:-2}
 aws_nuke_retries=${aws_nuke_retries:-0}
 # retry after 48h
 TTL_EVENTLOG=$((3600*24))
+debug=${debug:-false}
 
 
 # Mandatory ENV variables
@@ -74,7 +75,7 @@ get_conan_cleanup_count() {
         exit 1
     fi
 
-    if [ "${conan_cleanup_count}" = "null" ]; then
+    if [ "${conan_cleanup_count}" = "null" ] || [ -z "${conan_cleanup_count}" ]; then
         conan_cleanup_count=0
     fi
 
@@ -119,13 +120,19 @@ EOM
 
         # check if max_retries is reached
         if [ "$(get_conan_cleanup_count "${sandbox}")" -ge "${max_retries}" ]; then
-            echo "$(date -uIs) ${sandbox} max_retries reached, skipping for now, will retry after 24h"
+            # print info only once.
+            if [ ! -e "/tmp/${sandbox}_max_retries" ]; then
+                echo "$(date -uIs) ${sandbox} max_retries reached, skipping for now, will retry after 24h"
+                touch "/tmp/${sandbox}_max_retries"
+            fi
             rm "${errlog}"
             return 1
         fi
 
         if grep -q ConditionalCheckFailedException "${errlog}"; then
-            echo "$(date -uIs) Another process is already cleaning up ${sandbox}: skipping"
+            if [ "${debug}" = "true" ]; then
+                echo "$(date -uIs) Another process is already cleaning up ${sandbox}: skipping"
+            fi
             rm "${errlog}"
             return 1
         else
@@ -135,7 +142,6 @@ EOM
             exit 1
         fi
     fi
-
 
     # If anything happens, unlock the sandbox
     trap "_on_exit" EXIT
@@ -201,6 +207,7 @@ sandbox_reset() {
     echo "$(date -uIs) reset sandbox${s}" >> "${eventlog}"
 
     echo "$(date -uIs) ${sandbox} reset starting..."
+    start_time=$(date +%s)
 
     export ANSIBLE_NO_TARGET_SYSLOG=True
 
@@ -232,10 +239,28 @@ sandbox_reset() {
         -e kerberos_keytab="${kerberos_keytab:-}" \
         -e kerberos_user="${kerberos_user}" \
         -e kerberos_password="${kerberos_password:-}" \
+        -e run_aws_nuke_legacy="${run_aws_nuke_legacy:-false}" \
         reset_single.yml > "${logfile}"; then
         echo "$(date -uIs) ${sandbox} reset OK"
+        end_time=$(date +%s)
+        duration=$((end_time - start_time))
+        # Calculate the time it took
+        echo "$(date -uIs) ${sandbox} reset took $((duration / 60))m$((duration % 60))s"
+        echo "$(date -uIs) ${sandbox} $(grep -Eo 'Nuke complete: [^"]+' "${logfile}")"
+
+        if [ "${debug}" = "true" ]; then
+            echo "$(date -uIs) =========BEGIN========== ${logfile}"
+            cat "${logfile}"
+            echo "$(date -uIs) =========END============ ${logfile}"
+        fi
+
         rm "${eventlog}"
     else
+        end_time=$(date +%s)
+        duration=$((end_time - start_time))
+        # Calculate the time it took
+        echo "$(date -uIs) ${sandbox} reset took $((duration / 60))m$((duration % 60))s"
+
         echo "$(date -uIs) ${sandbox} reset FAILED." >&2
         echo "$(date -uIs) =========BEGIN========== ${logfile}" >&2
         cat "${logfile}" >&2
