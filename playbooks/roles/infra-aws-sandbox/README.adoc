@@ -21,8 +21,9 @@ ansible localhost \
 ansible -i admin-dev, admin-dev \
 -m include_role -a "name=infra-aws-sandbox" \
 -e ansible_user=gucore-redhat.com \
--e kerberos_user=gucore-redhat.com \
--e kerberos_password=... \
+-e ddns_server=ipaserver \
+-e ddns_key_name=mydynamickey \
+-e ddns_key_secret=... \
 -e aws_master_profile=pool-manager-admin \
 -e account_name=sandbox2 \
 -e account_email=sandbox2@opentlc.com \
@@ -33,7 +34,7 @@ ansible -i admin-dev, admin-dev \
 .Example with playbook, create_all.yml
 [source,yaml]
 ----
-# ansible-playbook -i admin-dev,  -e @~/secrets/ipa.yml create_all.yml
+# ansible-playbook -i admin-dev,  -e @~/secrets/ddns.yml create_all.yml
 - hosts: all
   gather_facts: no
   run_once: yes
@@ -58,8 +59,9 @@ ansible -i admin-dev, admin-dev \
 ansible -i admin-dev, admin-dev \
 -m include_role -a "name=infra-aws-sandbox" \
 -e ansible_user=gucore-redhat.com \
--e kerberos_user=gucore-redhat.com \
--e kerberos_password=... \
+-e ddns_server=ipaserver \
+-e ddns_key_name=mydynamickey \
+-e ddns_key_secret=... \
 -e aws_master_profile=pool-manager-admin \
 -e account_name=sandbox2 \
 -e account_email=sandbox2@opentlc.com \

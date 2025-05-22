@@ -40,3 +40,9 @@ Authorization: Bearer {{access_token_admin}}
 [Options]
 retry: 40
 HTTP 404
+
+DELETE {{host}}/api/v1/reservations/summit2
+Authorization: Bearer {{access_token_admin}}
+[Options]
+retry: 40
+HTTP 404

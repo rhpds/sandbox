@@ -133,6 +133,16 @@ func main() {
 	OcpSandboxProvider := models.NewOcpSandboxProvider(dbPool, vaultSecret)
 
 	// ---------------------------------------------------------------------
+	// DNS
+	// ---------------------------------------------------------------------
+	DNSSandboxProvider := models.NewDNSSandboxProvider(dbPool, vaultSecret)
+
+	// ---------------------------------------------------------------------
+	// IBMResourceGroup
+	// ---------------------------------------------------------------------
+	IBMResourceGroupSandboxProvider := models.NewIBMResourceGroupSandboxProvider(dbPool, vaultSecret)
+
+	// ---------------------------------------------------------------------
 	// Setup JWT
 	// ---------------------------------------------------------------------
 
@@ -152,10 +162,10 @@ func main() {
 	// to the handler maker.
 	// When we need to migrate to Postgresql, we can pass a different "Provider" which will
 	// implement the same interface.
-	accountHandler := NewAccountHandler(awsAccountProvider, OcpSandboxProvider)
+	accountHandler := NewAccountHandler(awsAccountProvider, OcpSandboxProvider, DNSSandboxProvider, IBMResourceGroupSandboxProvider)
 
 	// Factory for handlers which need connections to both databases
-	baseHandler := NewBaseHandler(awsAccountProvider.Svc, dbPool, doc, oaRouter, awsAccountProvider, OcpSandboxProvider)
+	baseHandler := NewBaseHandler(awsAccountProvider.Svc, dbPool, doc, oaRouter, awsAccountProvider, OcpSandboxProvider, DNSSandboxProvider, IBMResourceGroupSandboxProvider)
 
 	// Admin handler adds tokenAuth to the baseHandler
 	adminHandler := NewAdminHandler(baseHandler, tokenAuth)
@@ -274,10 +284,50 @@ func main() {
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/update", baseHandler.UpdateOcpSharedClusterConfigurationHandler)
 		r.Delete("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.DeleteOcpSharedClusterConfigurationHandler)
 
+		// ---------------------------------
+		// DNS
+		// ---------------------------------
+		r.Post("/api/v1/dns-account-configurations", baseHandler.CreateDNSAccountConfigurationHandler)
+		r.Get("/api/v1/dns-account-configurations", baseHandler.GetDNSAccountConfigurationsHandler)
+		r.Get("/api/v1/dns-account-configurations/{name}", baseHandler.GetDNSAccountConfigurationHandler)
+		r.Put("/api/v1/dns-account-configurations/{name}/disable", baseHandler.DisableDNSAccountConfigurationHandler)
+		r.Put("/api/v1/dns-account-configurations/{name}/enable", baseHandler.EnableDNSAccountConfigurationHandler)
+		r.Put("/api/v1/dns-account-configurations/{name}/update", baseHandler.UpdateDNSAccountConfigurationHandler)
+		r.Delete("/api/v1/dns-account-configurations/{name}", baseHandler.DeleteDNSAccountConfigurationHandler)
+
+		// ---------------------------------
+		// IBM resource group
+		// ---------------------------------
+		r.Post("/api/v1/ibm-resource-group-configurations", baseHandler.CreateIBMResourceGroupSandboxConfigurationHandler)
+		r.Get("/api/v1/ibm-resource-group-configurations", baseHandler.GetIBMResourceGroupSandboxConfigurationsHandler)
+		r.Get("/api/v1/ibm-resource-group-configurations/{name}", baseHandler.GetIBMResourceGroupSandboxConfigurationHandler)
+		r.Put("/api/v1/ibm-resource-group-configurations/{name}/disable", baseHandler.DisableIBMResourceGroupSandboxConfigurationHandler)
+		r.Put("/api/v1/ibm-resource-group-configurations/{name}/enable", baseHandler.EnableIBMResourceGroupSandboxConfigurationHandler)
+		r.Put("/api/v1/ibm-resource-group-configurations/{name}/update", baseHandler.UpdateIBMResourceGroupSandboxConfigurationHandler)
+		r.Delete("/api/v1/ibm-resource-group-configurations/{name}", baseHandler.DeleteIBMResourceGroupSandboxConfigurationHandler)
+
 		// Reservations
 		r.Post("/api/v1/reservations", baseHandler.CreateReservationHandler)
 		r.Put("/api/v1/reservations/{name}", baseHandler.UpdateReservationHandler)
 		r.Delete("/api/v1/reservations/{name}", baseHandler.DeleteReservationHandler)
+		r.Put("/api/v1/reservations/{name}/rename", baseHandler.RenameReservationHandler)
+	})
+
+	// ---------------------------------------------------------------------
+	// Profiling
+	// ---------------------------------------------------------------------
+	router.Group(func(r chi.Router) {
+		// ---------------------------------
+		// Admin auth but no OpenAPI validation
+		// ---------------------------------
+		r.Use(jwtauth.Verifier(tokenAuth))
+		r.Use(AuthenticatorAdmin)
+		// Profiling
+		r.Get("/debug/pprof/", pprof.Index)
+		r.Get("/debug/pprof/profile", pprof.Profile)
+		r.Get("/debug/pprof/trace", pprof.Trace)
+		r.Get("/debug/pprof/cmdline", pprof.Cmdline)
+		r.Get("/debug/pprof/symbol", pprof.Symbol)
 	})
 
 	// ---------------------------------------------------------------------

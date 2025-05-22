@@ -8,16 +8,25 @@ SHELL = /bin/sh
 VERSION ?= $(shell git describe --tags 2>/dev/null | cut -c 2-)
 COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null)
 DATE ?= $(shell date -u)
+POSTGRESQL_PORT ?= 5432
+POSTGRESQL_POD ?= localpg
+VACUUM_VERSION ?= latest
+export VACUUM_VERSION
 export CGO_ENABLED=0
 
 build: sandbox-list sandbox-metrics sandbox-api sandbox-issue-jwt sandbox-rotate-vault
 
-test:
+test: cmd/sandbox-api/assets/swagger.yaml
 	@echo "Running tests..."
 	@echo "VERSION: $(VERSION)"
 	@go test -v ./...
+	@go vet ./...
 	@echo "Validating swagger.yaml..."
-	@go run github.com/daveshanley/vacuum@latest lint -d docs/api-reference/swagger.yaml
+	@if command -v vacuum > /dev/null; then \
+      vacuum lint docs/api-reference/swagger.yaml \
+	; else \
+      go run github.com/daveshanley/vacuum@$${VACUUM_VERSION} lint docs/api-reference/swagger.yaml \
+	; fi
 
 run-api: cmd/sandbox-api/assets/swagger.yaml .dev.pgenv .dev.jwtauth_env #migrate
 	. ./.dev.pgenv && . ./.dev.jwtauth_env && cd cmd/sandbox-api && go run .
@@ -26,13 +35,13 @@ run-air: cmd/sandbox-api/assets/swagger.yaml .dev.pgenv .dev.jwtauth_env
 	. ./.dev.pgenv && . ./.dev.jwtauth_env && cd cmd/sandbox-api && air
 
 rm-local-pg:
-	@podman kill localpg || true
-	@podman rm localpg || true
+	@podman kill $${POSTGRESQL_POD} || true
+	@podman rm $${POSTGRESQL_POD} || true
 	@rm -f .dev.pg_password .dev.pgenv .dev.tokens_env .dev.admin_token .dev.app_token || true
 
 run-local-pg: rm-local-pg .dev.pg_password
 	@echo "Running local postgres..."
-	@podman run  -p 5432:5432 --name localpg -e POSTGRES_PASSWORD=$(shell cat .dev.pg_password) -d postgres:16-bullseye
+	@podman run  --rm -p $${POSTGRESQL_PORT}:5432 --name $${POSTGRESQL_POD} -e POSTGRES_PASSWORD=$(shell cat .dev.pg_password) -d postgres:16-bullseye
 # See full list of parameters here:
 # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
 
@@ -46,11 +55,13 @@ migrate: .dev.pgenv
 # Print a message with the database URL and ask for confirmation
 # Remove password from the URL before printing
 	@. ./.dev.pgenv && echo "Database URL: $$(echo $${DATABASE_URL} | sed -E 's/:[^@]+@/:<password>@/g')"
-	@read -p "Are you sure [y/n]? " -n 1 -r; \
+# Detect if it's TTYS and ask for confirmation
+	@tty -s && \
+	read -p "Are you sure [y/n]? " -n 1 -r && \
 	if [[ ! $$REPLY =~ ^[Yy]$$ ]]; then \
 		echo "Aborting."; \
 		exit 1; \
-	fi
+	fi || true
 	@echo "Running migrations..."
 	@. ./.dev.pgenv && migrate -database "$${DATABASE_URL}" -path db/migrations up
 
@@ -104,7 +115,7 @@ cmd/sandbox-api/assets/swagger.yaml: docs/api-reference/swagger.yaml
 	@uuidgen -r > .dev.pg_password
 
 .dev.pgenv: .dev.pg_password
-	@echo "export DATABASE_URL=\"postgres://postgres:$(shell cat .dev.pg_password)@127.0.0.1:5432/postgres?sslmode=disable\"" > .dev.pgenv
+	@echo "export DATABASE_URL=\"postgres://postgres:$(shell cat .dev.pg_password)@127.0.0.1:$${POSTGRESQL_PORT}/postgres?sslmode=disable\"" > .dev.pgenv
 
 .dev.jwtauth_secret:
 	@uuidgen -r > .dev.jwtauth_secret

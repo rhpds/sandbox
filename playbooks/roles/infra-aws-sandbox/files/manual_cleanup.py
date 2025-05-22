@@ -21,6 +21,24 @@ clientlaticce = boto3.client('vpc-lattice')
 
 client = boto3.client('ec2')
 
+# Stop all instances to save costs
+
+try:
+    response = client.describe_instances()
+
+    for reservation in response['Reservations']:
+        for instance in reservation['Instances']:
+            if instance['State']['Name'] == 'running':
+                client.stop_instances(
+                    InstanceIds=[
+                        instance['InstanceId']
+                    ]
+                )
+                print("Stopping instance: " + instance['InstanceId'])
+                changed = True
+except botocore.exceptions.ClientError as e:
+    print(e)
+
 try:
     response = client.describe_vpcs()
 

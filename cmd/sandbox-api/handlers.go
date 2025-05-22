@@ -18,6 +18,8 @@ import (
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 
+	"github.com/PaesslerAG/gval"
+
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
@@ -25,12 +27,14 @@ import (
 )
 
 type BaseHandler struct {
-	dbpool             *pgxpool.Pool
-	svc                *dynamodb.DynamoDB
-	doc                *openapi3.T
-	oaRouter           oarouters.Router
-	awsAccountProvider models.AwsAccountProvider
-	OcpSandboxProvider models.OcpSandboxProvider
+	dbpool                          *pgxpool.Pool
+	svc                             *dynamodb.DynamoDB
+	doc                             *openapi3.T
+	oaRouter                        oarouters.Router
+	awsAccountProvider              models.AwsAccountProvider
+	OcpSandboxProvider              models.OcpSandboxProvider
+	DNSSandboxProvider              models.DNSSandboxProvider
+	IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider
 }
 
 type AdminHandler struct {
@@ -38,26 +42,30 @@ type AdminHandler struct {
 	tokenAuth *jwtauth.JWTAuth
 }
 
-func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider models.OcpSandboxProvider) *BaseHandler {
+func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider models.OcpSandboxProvider, DNSSandboxProvider models.DNSSandboxProvider, IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider) *BaseHandler {
 	return &BaseHandler{
-		svc:                svc,
-		dbpool:             dbpool,
-		doc:                doc,
-		oaRouter:           oaRouter,
-		awsAccountProvider: awsAccountProvider,
-		OcpSandboxProvider: OcpSandboxProvider,
+		svc:                             svc,
+		dbpool:                          dbpool,
+		doc:                             doc,
+		oaRouter:                        oaRouter,
+		awsAccountProvider:              awsAccountProvider,
+		OcpSandboxProvider:              OcpSandboxProvider,
+		DNSSandboxProvider:              DNSSandboxProvider,
+		IBMResourceGroupSandboxProvider: IBMResourceGroupSandboxProvider,
 	}
 }
 
 func NewAdminHandler(b *BaseHandler, tokenAuth *jwtauth.JWTAuth) *AdminHandler {
 	return &AdminHandler{
 		BaseHandler: BaseHandler{
-			svc:                b.svc,
-			dbpool:             b.dbpool,
-			doc:                b.doc,
-			oaRouter:           b.oaRouter,
-			awsAccountProvider: b.awsAccountProvider,
-			OcpSandboxProvider: b.OcpSandboxProvider,
+			svc:                             b.svc,
+			dbpool:                          b.dbpool,
+			doc:                             b.doc,
+			oaRouter:                        b.oaRouter,
+			awsAccountProvider:              b.awsAccountProvider,
+			OcpSandboxProvider:              b.OcpSandboxProvider,
+			DNSSandboxProvider:              b.DNSSandboxProvider,
+			IBMResourceGroupSandboxProvider: b.IBMResourceGroupSandboxProvider,
 		},
 		tokenAuth: tokenAuth,
 	}
@@ -74,6 +82,52 @@ func multipleKind(resources []v1.ResourceRequest, kind string) bool {
 		}
 	}
 	return false
+}
+
+func parseClusterCondition(clusterCondition string) []models.ClusterRelation {
+	// Define a custom language with tracking logic for relations
+	var relations []models.ClusterRelation
+	language := gval.NewLanguage(gval.Parentheses(), gval.PropositionalLogic(),
+		gval.Function("same", func(args ...interface{}) (interface{}, error) {
+			if len(args) != 1 {
+				return nil, fmt.Errorf("same() requires exactly 1 argument")
+			}
+			ref := fmt.Sprintf("%v", args[0])
+			relations = append(relations, models.ClusterRelation{
+				Relation:  "same",
+				Reference: ref,
+			})
+			return true, nil
+		}),
+		gval.Function("different", func(args ...interface{}) (interface{}, error) {
+			if len(args) != 1 {
+				return nil, fmt.Errorf("same() requires exactly 1 argument")
+			}
+			ref := fmt.Sprintf("%v", args[0])
+			relations = append(relations, models.ClusterRelation{
+				Relation:  "different",
+				Reference: ref,
+			})
+			return true, nil
+		}),
+		gval.Function("child", func(args ...interface{}) (interface{}, error) {
+			if len(args) != 1 {
+				return nil, fmt.Errorf("same() requires exactly 1 argument")
+			}
+			ref := fmt.Sprintf("%v", args[0])
+			relations = append(relations, models.ClusterRelation{
+				Relation:  "child",
+				Reference: ref,
+			})
+			return true, nil
+		}),
+	)
+	_, err := language.Evaluate(clusterCondition, map[string]interface{}{})
+	if err != nil {
+		log.Logger.Error("Error evaluating cluster condition", "error", err)
+		return []models.ClusterRelation{}
+	}
+	return relations
 }
 
 func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Request) {
@@ -129,7 +183,8 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 	tocleanup := []models.Deletable{}
 	resources := []any{}
 	multipleOcp := multipleKind(placementRequest.Resources, "OcpSandbox")
-
+	multipleDNS := multipleKind(placementRequest.Resources, "DNSSandbox")
+	multipleOcpAccounts := []models.MultipleOcpAccount{}
 	for _, request := range placementRequest.Resources {
 		switch request.Kind {
 		case "AwsSandbox", "AwsAccount", "aws_account":
@@ -175,14 +230,27 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			}
 		case "OcpSandbox":
 			// Create the placement in OCP
+			var clusterRelation []models.ClusterRelation
+			if request.ClusterCondition != "" {
+				clusterRelation = parseClusterCondition(request.ClusterCondition)
+			} else {
+				clusterRelation = request.ClusterRelation
+			}
+			log.Logger.Info("ClusterRelation", "alias", request.Alias, "clusterRelation", request.ClusterRelation)
+			var async_request bool = request.Alias == ""
 			account, err := h.OcpSandboxProvider.Request(
 				placementRequest.ServiceUuid,
 				request.CloudSelector,
+				request.CloudPreference,
 				placementRequest.Annotations.Merge(request.Annotations),
 				request.Quota,
 				request.LimitRange,
 				multipleOcp,
+				multipleOcpAccounts,
 				r.Context(),
+				async_request,
+				request.Alias,
+				clusterRelation,
 			)
 			if err != nil {
 				// Cleanup previous accounts
@@ -220,6 +288,112 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 					ErrorMultiline: []string{err.Error()},
 					HTTPStatusCode: http.StatusInternalServerError,
 					Message:        "Error creating placement in Ocp",
+				})
+				log.Logger.Error("CreatePlacementHandler", "error", err)
+				return
+			}
+			tocleanup = append(tocleanup, &account)
+			if multipleOcp && request.Alias != "" {
+				maccount, _ := h.OcpSandboxProvider.FetchByName(account.Name)
+				multipleOcpAccounts = append(multipleOcpAccounts, models.MultipleOcpAccount{Alias: request.Alias, Account: maccount})
+			}
+			resources = append(resources, account)
+
+		case "DNSSandbox":
+			// Create the placement in DNS Account
+			account, err := h.DNSSandboxProvider.Request(
+				placementRequest.ServiceUuid,
+				request.CloudSelector,
+				placementRequest.Annotations.Merge(request.Annotations),
+				multipleDNS,
+				r.Context(),
+			)
+			if err != nil {
+				// Cleanup previous accounts
+				go func() {
+					for _, account := range tocleanup {
+						if err := account.Delete(); err != nil {
+							log.Logger.Error("Error deleting account", "error", err)
+						}
+					}
+				}()
+				if strings.Contains(err.Error(), "already exists") {
+					w.WriteHeader(http.StatusConflict)
+					render.Render(w, r, &v1.Error{
+						Err:            err,
+						HTTPStatusCode: http.StatusConflict,
+						Message:        "DNS sandbox already exists",
+						ErrorMultiline: []string{err.Error()},
+					})
+					return
+				}
+
+				if err == models.DNSErrNoSchedule {
+					w.WriteHeader(http.StatusNotFound)
+					render.Render(w, r, &v1.Error{
+						Err:            err,
+						HTTPStatusCode: http.StatusNotFound,
+						Message:        "No DNS account configuration found",
+						ErrorMultiline: []string{err.Error()},
+					})
+					return
+				}
+
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					ErrorMultiline: []string{err.Error()},
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error creating placement in DNS",
+				})
+				log.Logger.Error("CreatePlacementHandler", "error", err)
+				return
+			}
+			tocleanup = append(tocleanup, &account)
+			resources = append(resources, account)
+
+		case "IBMResourceGroupSandbox":
+			account, err := h.IBMResourceGroupSandboxProvider.Request(
+				placementRequest.ServiceUuid,
+				request.CloudSelector,
+				placementRequest.Annotations.Merge(request.Annotations),
+				r.Context(),
+			)
+			if err != nil {
+				// Cleanup previous accounts
+				go func() {
+					for _, account := range tocleanup {
+						if err := account.Delete(); err != nil {
+							log.Logger.Error("Error deleting account", "error", err)
+						}
+					}
+				}()
+				if strings.Contains(err.Error(), "already exists") {
+					w.WriteHeader(http.StatusConflict)
+					render.Render(w, r, &v1.Error{
+						Err:            err,
+						HTTPStatusCode: http.StatusConflict,
+						Message:        "IBM resource group sandbox already exists",
+						ErrorMultiline: []string{err.Error()},
+					})
+					return
+				}
+
+				if err == models.IBMErrNoSchedule {
+					w.WriteHeader(http.StatusNotFound)
+					render.Render(w, r, &v1.Error{
+						Err:            err,
+						HTTPStatusCode: http.StatusNotFound,
+						Message:        "No IBM resource group account configuration found",
+						ErrorMultiline: []string{err.Error()},
+					})
+					return
+				}
+
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					ErrorMultiline: []string{err.Error()},
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error creating placement in IBM resource group",
 				})
 				log.Logger.Error("CreatePlacementHandler", "error", err)
 				return
@@ -350,7 +524,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 		log.Logger.Error("GetPlacementHandler", "error", err)
 		return
 	}
-	if err := placement.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpSandboxProvider); err != nil {
+	if err := placement.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
 			Err:            err,
@@ -408,7 +582,7 @@ func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	placement.SetStatus("deleting")
-	go placement.Delete(h.awsAccountProvider, h.OcpSandboxProvider)
+	go placement.Delete(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider)
 
 	w.WriteHeader(http.StatusAccepted)
 	render.Render(w, r, &v1.SimpleMessage{
@@ -1002,7 +1176,7 @@ func (h *BaseHandler) CreateReservationHandler(w http.ResponseWriter, r *http.Re
 	}
 
 	// Create the reservation
-	reservation := models.Reservation{
+	reservation := &models.Reservation{
 		Name:    name,
 		Request: reservationRequest,
 		Status:  "new",
@@ -1040,6 +1214,89 @@ func (h *BaseHandler) CreateReservationHandler(w http.ResponseWriter, r *http.Re
 	render.Render(w, r, &v1.ReservationResponse{
 		Reservation:    reservation,
 		Message:        "Reservation request created",
+		HTTPStatusCode: http.StatusAccepted,
+	})
+}
+
+// RenameReservationHandler renames a reservation
+func (h *BaseHandler) RenameReservationHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	reservation, err := models.GetReservationByName(h.dbpool, name)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Reservation not found",
+			})
+			return
+		}
+	}
+
+	// Get the new name from the request body
+	// Decode the request body
+	RenameRequest := v1.ReservationRenameRequest{}
+
+	if err := render.Bind(r, &RenameRequest); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Error decoding request body",
+			ErrorMultiline: []string{err.Error()},
+		})
+		log.Logger.Error("RenameReservationHandler", "error", err)
+		return
+	}
+
+	newName := RenameRequest.NewName
+
+	// Ensure name is in the acceptable format (only alpha-numeric)
+	if !nameRegex.MatchString(newName) {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid name",
+		})
+		log.Logger.Error("Invalid name", "name", newName)
+		return
+	}
+
+	// If the reservation already exists, return a 409 Status Conflict
+	_, err = models.GetReservationByName(h.dbpool, newName)
+
+	if err != pgx.ErrNoRows {
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				Err:            err,
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Error checking for existing reservation",
+			})
+			log.Logger.Error("RenameReservationHandler", "error", err)
+			return
+		}
+
+		// Reservation already exists
+		// Return a 409 Status Conflict
+		w.WriteHeader(http.StatusConflict)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusConflict,
+			Message:        "Reservation already exists",
+		})
+		return
+	}
+
+	reservation.UpdateStatus(h.dbpool, "updating")
+	// Rename the reservation, call reservation.Rename (async)
+	go reservation.Rename(h.dbpool, h.awsAccountProvider, newName)
+
+	w.WriteHeader(http.StatusAccepted)
+	render.Render(w, r, &v1.ReservationResponse{
+		Reservation:    reservation,
+		Message:        "Reservation rename request created",
 		HTTPStatusCode: http.StatusAccepted,
 	})
 }
@@ -1205,29 +1462,42 @@ func (h *BaseHandler) GetReservationHandler(w http.ResponseWriter, r *http.Reque
 func (h *BaseHandler) GetReservationResourcesHandler(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
-	reservation, err := models.GetReservationByName(h.dbpool, name)
+	skipReservationCheck := r.URL.Query().Get("skipReservationCheck")
 
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			w.WriteHeader(http.StatusNotFound)
+	if skipReservationCheck != "true" {
+		reservation, err := models.GetReservationByName(h.dbpool, name)
+
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				w.WriteHeader(http.StatusNotFound)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusNotFound,
+					Message:        "Reservation not found",
+				})
+				return
+			}
+
+			w.WriteHeader(http.StatusInternalServerError)
 			render.Render(w, r, &v1.Error{
-				HTTPStatusCode: http.StatusNotFound,
-				Message:        "Reservation not found",
+				Err:            err,
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Error getting reservation",
 			})
+			log.Logger.Error("GetReservationHandler", "error", err)
 			return
 		}
 
-		w.WriteHeader(http.StatusInternalServerError)
-		render.Render(w, r, &v1.Error{
-			Err:            err,
-			HTTPStatusCode: http.StatusInternalServerError,
-			Message:        "Error getting reservation",
-		})
-		log.Logger.Error("GetReservationHandler", "error", err)
-		return
+		if name != reservation.Name {
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Reservation name mismatch",
+			})
+			return
+		}
 	}
 
-	accounts, err := h.awsAccountProvider.FetchAllByReservation(reservation.Name)
+	accounts, err := h.awsAccountProvider.FetchAllByReservation(name)
 
 	if err != nil {
 		log.Logger.Error("GET accounts", "error", err)

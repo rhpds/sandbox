@@ -7,6 +7,7 @@ const headless = true;
 const username = process.env.USERNAME;
 const password = process.env.PASSWORD;
 const separator = / +/;
+const skipExistingImages = false
 
 class Job {
   constructor(id, cb) {
@@ -113,6 +114,28 @@ async function addAwsAccount({ browser }, { accountId, sandboxName }) {
   await page.close();
 }
 
+async function enableGoldenImageForAwsAccount({ browser }, { accountId, sandboxName }) {
+    const page = await browser.newPage();
+    console.log(`Enable AWS golden image for ${accountId}`);
+    await page.goto("https://access.redhat.com/management/cloud#cloud_accounts_AWS", { waitUntil: "networkidle0" });
+    await page.click('.cloud-accounts[href="#cloud_accounts_AWS"]');
+    await page.type("#cloud_accounts_filter_AWS", accountId);
+    await page.click('#cloud_accounts_table_AWS_wrapper .dropdown button.btn');
+    await page.click('#cloud_accounts_table_AWS_wrapper .dropdown .enable-gold');
+
+    try {
+      await page.waitForNavigation({ waitUntil: "networkidle0" });
+    } catch {}
+
+    const el = (await page.$('#rhsm-alerts .alert-success')) || null;
+    if (el) {
+        console.log(`Enable golden images account for ${accountId} added succesfully`);
+    } else {
+        console.error(`Error adding account ${accountId}`);
+    }
+    await page.close();
+  }
+
 async function linkAwsAccounts({ browser, page }) {
   await gotoPrivatePage({ page }, "https://access.redhat.com/management/cloud");
   await page.waitForFunction('[...document.querySelectorAll("a")].some(x => x.innerText.includes("AWS Accounts"))', {
@@ -144,6 +167,10 @@ async function linkAwsAccounts({ browser, page }) {
                 )
                 .then(() => {
                   console.log(`AWS Account ${account.accountId} already exists`);
+                  if (!skipExistingImages) {
+                    const job = new Job(account.accountId, async () => await enableGoldenImageForAwsAccount({ browser }, account));
+                    jobQueue.enqueue(job);
+                  }
                   resolve();
                 })
                 .catch(() => {
