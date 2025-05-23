@@ -1,6 +1,6 @@
 module github.com/rhpds/sandbox
 
-go 1.22.4
+go 1.22.5
 
 toolchain go1.22.12
 
@@ -19,7 +19,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/organizations v1.27.1
 	github.com/aws/aws-sdk-go-v2/service/route53 v1.48.6
 	github.com/aws/aws-sdk-go-v2/service/sts v1.28.4
-	github.com/getkin/kin-openapi v0.123.0
+	github.com/getkin/kin-openapi v0.131.0
 	github.com/go-chi/chi/v5 v5.0.12
 	github.com/go-chi/httplog/v2 v2.0.9
 	github.com/go-chi/jwtauth/v5 v5.3.1
@@ -73,7 +73,6 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect
-	github.com/invopop/yaml v0.2.0 // indirect
 	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
 	github.com/jackc/pgconn v1.14.3 // indirect
 	github.com/jackc/pgio v1.0.0 // indirect
@@ -97,6 +96,8 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/oasdiff/yaml v0.0.0-20250309154309-f31be36b4037 // indirect
+	github.com/oasdiff/yaml3 v0.0.0-20250309153720-d2182401db90 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/prometheus/client_model v0.6.0 // indirect
