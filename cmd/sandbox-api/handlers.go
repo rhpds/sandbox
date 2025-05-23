@@ -301,8 +301,11 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 
 		case "DNSSandbox":
 			// Create the placement in DNS Account
+			log.Logger.Info("Create Certs", "debug", request.CreateCerts)
 			account, err := h.DNSSandboxProvider.Request(
 				placementRequest.ServiceUuid,
+				request.CreateCerts,
+				request.CertsDomains,
 				request.CloudSelector,
 				placementRequest.Annotations.Merge(request.Annotations),
 				multipleDNS,

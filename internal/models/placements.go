@@ -367,7 +367,7 @@ func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider OcpSa
 	}
 
 	if err := dnsProvider.Release(p.ServiceUuid); err != nil {
-		log.Logger.Error("Error while releasing IBMResourceGroup sandboxes", "error", err)
+		log.Logger.Error("Error while releasing dnsProvider sandboxes", "error", err)
 		p.SetStatus("error")
 		return
 	}
