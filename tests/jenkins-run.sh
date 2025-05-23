@@ -114,7 +114,9 @@ echo
 source .dev.tokens_env
 
 # Install the cluster configuration
-for payload in sandbox-api-configs/ocp-shared-cluster-configurations/ocpvdev01*.json; do
+OCP_SHARED_CLUSTERS=${OCP_SHARED_CLUSTERS:-"ocpvdev01*.json"}
+
+for payload in sandbox-api-configs/ocp-shared-cluster-configurations/${OCP_SHARED_CLUSTERS}; do
     echo "Reading file $payload"
     if [[ $payload =~ create.json$ ]]; then
         cluster=$(cat $payload | jq -r ".name")

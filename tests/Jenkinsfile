@@ -9,6 +9,11 @@ pipeline {
 
     parameters {
         string(name: 'tests', defaultValue: '*.hurl', description: 'what tests to run')
+        string(name: 'sharedclusters', defaultValue: 'ocpvdev01*.json', description: 'what shared clusters to run the functional tests against')
+    }
+
+    environment {
+        OCP_SHARED_CLUSTERS = "${params.sharedclusters}"
     }
 
     stages {
