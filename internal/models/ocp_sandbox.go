@@ -2027,6 +2027,45 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		}
 	}
 
+	// Delete the Keycloak User
+	// Define the KeycloakUser GroupVersionResource
+	keycloakUserGVR := schema.GroupVersionResource{
+		Group:    "keycloak.org",
+		Version:  "v1alpha1",
+		Resource: "keycloakusers",
+	}
+
+	usernames := []string{}
+	for _, cred := range account.Credentials {
+		if m, ok := cred.(map[string]any); ok {
+			if m["kind"] == "KeycloakUser" {
+				if username, ok := m["username"].(string); ok {
+					usernames = append(usernames, username)
+				}
+			}
+		}
+	}
+
+	namespace := "rhsso"
+
+	for _, userAccountName := range usernames {
+
+		err = dynclientset.Resource(keycloakUserGVR).Namespace(namespace).Delete(context.TODO(), userAccountName, metav1.DeleteOptions{})
+		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				log.Logger.Info("Keycloak not found, move on", "name", account.Name)
+			} else {
+				log.Logger.Error("Error deleting KeycloadUser", "error", err, "name", account.Name)
+				account.SetStatus("error")
+				return err
+			}
+		}
+
+		log.Logger.Info("KeycloakUser deleted",
+			"cluster", account.OcpSharedClusterConfigurationName,
+			"name", account.Name, "user", userAccountName)
+	}
+
 	_, err = account.Provider.DbPool.Exec(
 		context.Background(),
 		"DELETE FROM resources WHERE id = $1",
