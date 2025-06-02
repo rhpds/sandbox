@@ -667,6 +667,11 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 		iamOptions := iamIdentityService.NewGetAPIKeysDetailsOptions()
 		iamOptions.SetIamAPIKey(selectedAccount.APIKey)
 		userdetails, _, err := iamIdentityService.GetAPIKeysDetails(iamOptions)
+		if err != nil {
+			log.Logger.Error("Error getting API key details", "error", err)
+			rnew.SetStatus("error")
+			return
+		}
 		accountID := userdetails.AccountID
 		createServiceIDOptions := iamIdentityService.NewCreateServiceIDOptions(*userdetails.AccountID, resourceGroupName)
 		serviceID, response, err := iamIdentityService.CreateServiceID(createServiceIDOptions)
