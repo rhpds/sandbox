@@ -4,6 +4,11 @@ pipeline {
     // disable concurrent builds
     options {
         disableConcurrentBuilds()
+        throttleJobProperty(
+            categories: ['sandbox-api-functional-test'],
+            throttleEnabled: true,
+            throttleOption: 'category'
+        )
     }
 
 
