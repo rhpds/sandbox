@@ -672,17 +672,36 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 			rnew.SetStatus("error")
 			return
 		}
+
 		accountID := userdetails.AccountID
 		createServiceIDOptions := iamIdentityService.NewCreateServiceIDOptions(*userdetails.AccountID, resourceGroupName)
 		serviceID, response, err := iamIdentityService.CreateServiceID(createServiceIDOptions)
+		if err != nil {
+			log.Logger.Error("Error creating Service ID", "error", err, "response", response)
+			rnew.SetStatus("error")
+			return
+		}
+
 		iamID := *serviceID.IamID
 		createAPIKeyOptions := iamIdentityService.NewCreateAPIKeyOptions("sandbox", *serviceID.IamID)
 		createAPIKeyOptions.SetDescription("Created by sandbox-api")
 		apiKey, response, err := iamIdentityService.CreateAPIKey(createAPIKeyOptions)
+		if err != nil {
+			log.Logger.Error("Error creating API Key", "error", err, "response", response)
+			rnew.SetStatus("error")
+			return
+		}
+
 		apiKeyValue := *apiKey.Apikey
 
 		resourceManagerClientOptions := &resourcemanagerv2.ResourceManagerV2Options{Authenticator: authenticator}
 		resourceManagerClient, err := resourcemanagerv2.NewResourceManagerV2UsingExternalConfig(resourceManagerClientOptions)
+		if err != nil {
+			log.Logger.Error("Error creating Resource Manager client", "error", err)
+			rnew.SetStatus("error")
+			return
+		}
+
 		resourceGroupCreate := resourcemanagerv2.CreateResourceGroupOptions{
 			Name: &resourceGroupName,
 		}
@@ -721,6 +740,11 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 
 		iamPolicyManagementServiceOptions := &iampolicymanagementv1.IamPolicyManagementV1Options{Authenticator: authenticator}
 		iamPolicyManagementService, err := iampolicymanagementv1.NewIamPolicyManagementV1UsingExternalConfig(iamPolicyManagementServiceOptions)
+		if err != nil {
+			log.Logger.Error("Error creating IAM Policy Management client", "error", err)
+			rnew.SetStatus("error")
+			return
+		}
 
 		// Define policies
 		policyAll := &iampolicymanagementv1.CreatePolicyOptions{
