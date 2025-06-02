@@ -662,8 +662,20 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 			SetApiKey(selectedAccount.APIKey).
 			Build()
 
+		if err != nil {
+			log.Logger.Error("Error creating IAM authenticator", "error", err)
+			rnew.SetStatus("error")
+			return
+		}
+
 		iamIdentityServiceOptions := &iamidentityv1.IamIdentityV1Options{Authenticator: authenticator}
 		iamIdentityService, err := iamidentityv1.NewIamIdentityV1UsingExternalConfig(iamIdentityServiceOptions)
+		if err != nil {
+			log.Logger.Error("Error creating IAM Identity Service client", "error", err)
+			rnew.SetStatus("error")
+			return
+		}
+
 		iamOptions := iamIdentityService.NewGetAPIKeysDetailsOptions()
 		iamOptions.SetIamAPIKey(selectedAccount.APIKey)
 		userdetails, _, err := iamIdentityService.GetAPIKeysDetails(iamOptions)
