@@ -1212,11 +1212,30 @@ func (account *IBMResourceGroupSandboxWithCreds) Delete() error {
 		SetApiKey(ibmResourceGroupAccount.APIKey).
 		Build()
 
+	if err != nil {
+		log.Logger.Error("Error creating IAM authenticator", "error", err)
+		account.SetStatus("error")
+		return err
+	}
+
 	resourceControllerServiceOptions := &resourcecontrollerv2.ResourceControllerV2Options{Authenticator: authenticator}
 	resourceControllerService, err := resourcecontrollerv2.NewResourceControllerV2UsingExternalConfig(resourceControllerServiceOptions)
 
+	if err != nil {
+		log.Logger.Error("Error creating Resource Controller client", "error", err)
+		account.SetStatus("error")
+		return err
+	}
+
 	resourceManagerClientOptions := &resourcemanagerv2.ResourceManagerV2Options{Authenticator: authenticator}
 	resourceManagerClient, err := resourcemanagerv2.NewResourceManagerV2UsingExternalConfig(resourceManagerClientOptions)
+
+	if err != nil {
+		log.Logger.Error("Error creating Resource Manager client", "error", err)
+		account.SetStatus("error")
+		return err
+	}
+
 	resourceGroupOptions := resourcemanagerv2.ListResourceGroupsOptions{
 		Name: &account.ResourceGroup,
 	}
@@ -1321,9 +1340,20 @@ func (account *IBMResourceGroupSandboxWithCreds) Delete() error {
 	}
 	iamIdentityServiceOptions := &iamidentityv1.IamIdentityV1Options{Authenticator: authenticator}
 	iamIdentityService, err := iamidentityv1.NewIamIdentityV1UsingExternalConfig(iamIdentityServiceOptions)
+	if err != nil {
+		log.Logger.Error("Error creating IAM Identity Service client", "error", err)
+		account.SetStatus("error")
+		return err
+	}
+
 	iamOptions := iamIdentityService.NewGetAPIKeysDetailsOptions()
 	iamOptions.SetIamAPIKey(ibmResourceGroupAccount.APIKey)
 	userdetails, _, err := iamIdentityService.GetAPIKeysDetails(iamOptions)
+	if err != nil {
+		log.Logger.Error("Error getting API key details", "error", err)
+		account.SetStatus("error")
+		return err
+	}
 	accountID := userdetails.AccountID
 
 	listServiceIDOptions := &iamidentityv1.ListServiceIdsOptions{AccountID: accountID, Name: &account.ResourceGroup}
