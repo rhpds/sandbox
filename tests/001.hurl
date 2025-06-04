@@ -261,6 +261,8 @@ jsonpath "$.reservation.request.resources[0].count" == 5
 
 GET {{host}}/api/v1/reservations/summit/resources
 Authorization: Bearer {{access_token}}
+[Options]
+retry: 10
 HTTP 200
 [Asserts]
 jsonpath "$.resources" count == 5
