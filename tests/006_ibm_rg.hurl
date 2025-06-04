@@ -220,8 +220,8 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "placement with multiple IBM",
-    "guid": "testg",
-    "env_type": "ocp4-cluster-blablablabla"
+    "guid": "tt-multi",
+    "env_type": "multi"
   }
 }
 HTTP 200
