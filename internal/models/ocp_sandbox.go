@@ -1642,12 +1642,23 @@ func (a *OcpSandboxProvider) Request(
 
 		if err != nil {
 			log.Logger.Error("Error creating secret for SA", "error", err)
-			// Delete the namespace
-			if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
-				log.Logger.Error("Error creating OCP secret for SA", "error", err)
+
+			// If "status unknown for quota"  is in the error, sleep 1s + retry
+			if strings.Contains(err.Error(), "status unknown for quota") {
+				log.Logger.Warn("Status unknown for quota, sleeping 1s and retrying")
+				time.Sleep(time.Second)
+				_, err = clientset.CoreV1().Secrets(namespaceName).Create(context.TODO(), secret, metav1.CreateOptions{})
+				if err != nil {
+					log.Logger.Error("Error creating secret for SA after retry", "error", err)
+
+					// Delete the namespace
+					if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+						log.Logger.Error("Error deleting OCP secret for SA", "error", err)
+					}
+					rnew.SetStatus("error")
+					return
+				}
 			}
-			rnew.SetStatus("error")
-			return
 		}
 
 		maxRetries := 5

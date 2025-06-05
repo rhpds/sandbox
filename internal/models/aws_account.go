@@ -75,8 +75,9 @@ type AwsIamKey struct {
 // dynamodb and postgresql
 type AwsAccountProvider interface {
 	//Annotations(account AwsAccount) (map[string]string, error)
-	Count() (int, error)
-	CountAvailable(reservation string) (int, error)
+	CountAll() (int, error)
+	CountReservation(reservation string) (int, error)
+	CountReservationAvailable(reservation string) (int, error)
 	DecryptSecret(encrypted string) (string, error)
 	Delete(name string) error
 	FetchAll() ([]AwsAccount, error)

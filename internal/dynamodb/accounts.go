@@ -842,7 +842,7 @@ func (a *AwsAccountDynamoDBProvider) MarkForCleanupByServiceUuid(serviceUuid str
 	return nil
 }
 
-func (a *AwsAccountDynamoDBProvider) CountAvailable(reservation string) (int, error) {
+func (a *AwsAccountDynamoDBProvider) CountReservationAvailable(reservation string) (int, error) {
 	var filter expression.ConditionBuilder
 
 	if reservation == "" {
@@ -869,8 +869,29 @@ func (a *AwsAccountDynamoDBProvider) CountAvailable(reservation string) (int, er
 	return len(accounts), nil
 }
 
-func (a *AwsAccountDynamoDBProvider) Count() (int, error) {
+func (a *AwsAccountDynamoDBProvider) CountAll() (int, error) {
 	filter := expression.Name("name").AttributeExists()
+	accounts, err := GetAccounts(a.Svc, filter, -1)
+	if err != nil {
+		return 0, err
+	}
+	return len(accounts), nil
+}
+
+func (a *AwsAccountDynamoDBProvider) CountReservation(reservation string) (int, error) {
+	var filter expression.ConditionBuilder
+
+	if reservation == "" {
+		filter = expression.Name("name").AttributeExists().
+			And(expression.Name("reservation").AttributeNotExists().
+				Or(expression.Name("reservation").Equal(expression.Value(""))))
+
+	} else {
+		filter = expression.Name("name").AttributeExists().
+			And(expression.Name("reservation").AttributeExists()).
+			And(expression.Name("reservation").Equal(expression.Value(reservation)))
+
+	}
 	accounts, err := GetAccounts(a.Svc, filter, -1)
 	if err != nil {
 		return 0, err

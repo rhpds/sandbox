@@ -178,6 +178,9 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 
 	// Create the placement
 
+	// Print the placement request for debugging
+	log.Logger.Info("CreatePlacementHandler", "placementRequest", placementRequest)
+
 	// keep resources to cleanup in case something goes wrong while creating the placement
 	// useful only if multiple resources are created within a placement
 	tocleanup := []models.Deletable{}

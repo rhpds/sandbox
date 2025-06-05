@@ -52,11 +52,11 @@ func (r *ReservationRequest) Validate(h AwsAccountProvider) (string, error) {
 			done["AwsSandbox"] = true
 
 			// Get the current number of total and available accounts
-			available, err := h.CountAvailable("")
+			available, err := h.CountReservationAvailable("")
 			if err != nil {
 				return "", err
 			}
-			total, err := h.Count()
+			total, err := h.CountReservation("")
 			if err != nil {
 				return "", err
 			}

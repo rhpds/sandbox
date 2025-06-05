@@ -662,22 +662,58 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 			SetApiKey(selectedAccount.APIKey).
 			Build()
 
+		if err != nil {
+			log.Logger.Error("Error creating IAM authenticator", "error", err)
+			rnew.SetStatus("error")
+			return
+		}
+
 		iamIdentityServiceOptions := &iamidentityv1.IamIdentityV1Options{Authenticator: authenticator}
 		iamIdentityService, err := iamidentityv1.NewIamIdentityV1UsingExternalConfig(iamIdentityServiceOptions)
+		if err != nil {
+			log.Logger.Error("Error creating IAM Identity Service client", "error", err)
+			rnew.SetStatus("error")
+			return
+		}
+
 		iamOptions := iamIdentityService.NewGetAPIKeysDetailsOptions()
 		iamOptions.SetIamAPIKey(selectedAccount.APIKey)
 		userdetails, _, err := iamIdentityService.GetAPIKeysDetails(iamOptions)
+		if err != nil {
+			log.Logger.Error("Error getting API key details", "error", err)
+			rnew.SetStatus("error")
+			return
+		}
+
 		accountID := userdetails.AccountID
 		createServiceIDOptions := iamIdentityService.NewCreateServiceIDOptions(*userdetails.AccountID, resourceGroupName)
 		serviceID, response, err := iamIdentityService.CreateServiceID(createServiceIDOptions)
+		if err != nil {
+			log.Logger.Error("Error creating Service ID", "error", err, "response", response)
+			rnew.SetStatus("error")
+			return
+		}
+
 		iamID := *serviceID.IamID
 		createAPIKeyOptions := iamIdentityService.NewCreateAPIKeyOptions("sandbox", *serviceID.IamID)
 		createAPIKeyOptions.SetDescription("Created by sandbox-api")
 		apiKey, response, err := iamIdentityService.CreateAPIKey(createAPIKeyOptions)
+		if err != nil {
+			log.Logger.Error("Error creating API Key", "error", err, "response", response)
+			rnew.SetStatus("error")
+			return
+		}
+
 		apiKeyValue := *apiKey.Apikey
 
 		resourceManagerClientOptions := &resourcemanagerv2.ResourceManagerV2Options{Authenticator: authenticator}
 		resourceManagerClient, err := resourcemanagerv2.NewResourceManagerV2UsingExternalConfig(resourceManagerClientOptions)
+		if err != nil {
+			log.Logger.Error("Error creating Resource Manager client", "error", err)
+			rnew.SetStatus("error")
+			return
+		}
+
 		resourceGroupCreate := resourcemanagerv2.CreateResourceGroupOptions{
 			Name: &resourceGroupName,
 		}
@@ -716,6 +752,11 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 
 		iamPolicyManagementServiceOptions := &iampolicymanagementv1.IamPolicyManagementV1Options{Authenticator: authenticator}
 		iamPolicyManagementService, err := iampolicymanagementv1.NewIamPolicyManagementV1UsingExternalConfig(iamPolicyManagementServiceOptions)
+		if err != nil {
+			log.Logger.Error("Error creating IAM Policy Management client", "error", err)
+			rnew.SetStatus("error")
+			return
+		}
 
 		// Define policies
 		policyAll := &iampolicymanagementv1.CreatePolicyOptions{
@@ -1171,11 +1212,30 @@ func (account *IBMResourceGroupSandboxWithCreds) Delete() error {
 		SetApiKey(ibmResourceGroupAccount.APIKey).
 		Build()
 
+	if err != nil {
+		log.Logger.Error("Error creating IAM authenticator", "error", err)
+		account.SetStatus("error")
+		return err
+	}
+
 	resourceControllerServiceOptions := &resourcecontrollerv2.ResourceControllerV2Options{Authenticator: authenticator}
 	resourceControllerService, err := resourcecontrollerv2.NewResourceControllerV2UsingExternalConfig(resourceControllerServiceOptions)
 
+	if err != nil {
+		log.Logger.Error("Error creating Resource Controller client", "error", err)
+		account.SetStatus("error")
+		return err
+	}
+
 	resourceManagerClientOptions := &resourcemanagerv2.ResourceManagerV2Options{Authenticator: authenticator}
 	resourceManagerClient, err := resourcemanagerv2.NewResourceManagerV2UsingExternalConfig(resourceManagerClientOptions)
+
+	if err != nil {
+		log.Logger.Error("Error creating Resource Manager client", "error", err)
+		account.SetStatus("error")
+		return err
+	}
+
 	resourceGroupOptions := resourcemanagerv2.ListResourceGroupsOptions{
 		Name: &account.ResourceGroup,
 	}
@@ -1280,9 +1340,20 @@ func (account *IBMResourceGroupSandboxWithCreds) Delete() error {
 	}
 	iamIdentityServiceOptions := &iamidentityv1.IamIdentityV1Options{Authenticator: authenticator}
 	iamIdentityService, err := iamidentityv1.NewIamIdentityV1UsingExternalConfig(iamIdentityServiceOptions)
+	if err != nil {
+		log.Logger.Error("Error creating IAM Identity Service client", "error", err)
+		account.SetStatus("error")
+		return err
+	}
+
 	iamOptions := iamIdentityService.NewGetAPIKeysDetailsOptions()
 	iamOptions.SetIamAPIKey(ibmResourceGroupAccount.APIKey)
 	userdetails, _, err := iamIdentityService.GetAPIKeysDetails(iamOptions)
+	if err != nil {
+		log.Logger.Error("Error getting API key details", "error", err)
+		account.SetStatus("error")
+		return err
+	}
 	accountID := userdetails.AccountID
 
 	listServiceIDOptions := &iamidentityv1.ListServiceIdsOptions{AccountID: accountID, Name: &account.ResourceGroup}
