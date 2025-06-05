@@ -220,8 +220,8 @@ Authorization: Bearer {{access_token}}
    }
   ],
   "annotations": {
-    "tests": "Simple OcpSandbox placement",
-    "guid": "testg",
+    "tests": "OcpSandbox placement with relation different",
+    "guid": "tt-relation",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
