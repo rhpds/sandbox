@@ -384,7 +384,7 @@ jsonpath "$.reservation.status" == "deleting"
 GET {{host}}/api/v1/reservations/summit
 Authorization: Bearer {{access_token}}
 [Options]
-retry: 10
+retry: 30
 HTTP 404
 
 #################################################################################
