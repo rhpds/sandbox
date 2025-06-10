@@ -1229,7 +1229,7 @@ func (a *OcpSandboxProvider) Request(
 						"mutatevirtualmachines.kubemacpool.io": "ignore",
 						"serviceUuid":                          serviceUuid,
 						"guid":                                 annotations["guid"],
-						"created-by":                           "sandbox-api"
+						"created-by":                           "sandbox-api",
 					},
 				},
 			}, metav1.CreateOptions{})
