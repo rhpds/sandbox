@@ -110,6 +110,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	pgConfig.MaxConnIdleTime = 5 * time.Minute // Close idle connections after 5 minutes
+	pgConfig.MaxConnLifetime = time.Hour       // Close connections after 1 hour
+	pgConfig.HealthCheckPeriod = 30 * time.Second // Check health every 30 seconds
+
 	// Get shortname from CLUSTER_DOMAIN and hostname from system
 	clusterDomain := os.Getenv("CLUSTER_DOMAIN")
 	shortname := "unknown"
@@ -127,9 +131,6 @@ func main() {
 
 	// Configure application_name in shortname-hostname format
 	pgConfig.ConnConfig.RuntimeParams["application_name"] = fmt.Sprintf("%s-%s", shortname, hostname)
-
-	// Set session idle timeout to 5 minutes (300000 milliseconds)
-	pgConfig.ConnConfig.RuntimeParams["session_idle_timeout"] = "300000"
 
 	dbPool, err := pgxpool.ConnectConfig(context.Background(), pgConfig)
 	if err != nil {
