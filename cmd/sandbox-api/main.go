@@ -104,7 +104,7 @@ func main() {
 	connStr := os.Getenv("DATABASE_URL")
 
 	// Add connection parameters
-	config, err := pgxpool.ParseConfig(connStr)
+	pgConfig, err := pgxpool.ParseConfig(connStr)
 	if err != nil {
 		log.Logger.Error("Error parsing connection string", "error", err)
 		os.Exit(1)
@@ -126,12 +126,12 @@ func main() {
 	}
 
 	// Configure application_name in shortname-hostname format
-	config.ConnConfig.RuntimeParams["application_name"] = fmt.Sprintf("%s-%s", shortname, hostname)
+	pgConfig.ConnConfig.RuntimeParams["application_name"] = fmt.Sprintf("%s-%s", shortname, hostname)
 
 	// Set session idle timeout to 5 minutes (300000 milliseconds)
-	config.ConnConfig.RuntimeParams["session_idle_timeout"] = "300000"
+	pgConfig.ConnConfig.RuntimeParams["session_idle_timeout"] = "300000"
 
-	dbPool, err := pgxpool.ConnectConfig(context.Background(), config)
+	dbPool, err := pgxpool.ConnectConfig(context.Background(), pgConfig)
 	if err != nil {
 		log.Logger.Error("Error opening database connection", "error", err)
 		os.Exit(1)
