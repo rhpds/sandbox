@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	_ "embed"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/pprof"
@@ -102,7 +103,35 @@ func main() {
 	}
 	connStr := os.Getenv("DATABASE_URL")
 
-	dbPool, err := pgxpool.Connect(context.Background(), connStr)
+	// Add connection parameters
+	config, err := pgxpool.ParseConfig(connStr)
+	if err != nil {
+		log.Logger.Error("Error parsing connection string", "error", err)
+		os.Exit(1)
+	}
+
+	// Get shortname from CLUSTER_DOMAIN and hostname from system
+	clusterDomain := os.Getenv("CLUSTER_DOMAIN")
+	shortname := "unknown"
+	if clusterDomain != "" {
+		parts := strings.Split(clusterDomain, ".")
+		if len(parts) > 0 {
+			shortname = parts[0]
+		}
+	}
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "unknown"
+	}
+
+	// Configure application_name in shortname-hostname format
+	config.ConnConfig.RuntimeParams["application_name"] = fmt.Sprintf("%s-%s", shortname, hostname)
+
+	// Set session idle timeout to 5 minutes (300000 milliseconds)
+	config.ConnConfig.RuntimeParams["session_idle_timeout"] = "300000"
+
+	dbPool, err := pgxpool.ConnectConfig(context.Background(), config)
 	if err != nil {
 		log.Logger.Error("Error opening database connection", "error", err)
 		os.Exit(1)

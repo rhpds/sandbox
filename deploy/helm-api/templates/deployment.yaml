@@ -88,3 +88,11 @@ spec:
             secretKeyRef:
               name: sandbox-api-aws-assumerole
               key: assumerole_aws_secret_access_key
+
+        ##########################################
+        # CLUSTER DOMAIN (OPTIONAL)
+        ##########################################
+        {{- if .Values.clusterDomain }}
+        - name: CLUSTER_DOMAIN
+          value: {{ .Values.clusterDomain }}
+        {{- end }}
