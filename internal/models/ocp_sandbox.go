@@ -1009,8 +1009,8 @@ func (a *OcpSandboxProvider) Request(
 	var excludeClusters []string
 	var childClusters []string
 	var selectedClusterMemoryUsage float64 = -1
-	var egressIP string = "";
-	var egressSubnet string = "";
+	var egressIP string = ""
+	var egressSubnet string = ""
 
 	// Ensure annotation has guid
 	if _, exists := annotations["guid"]; !exists {
@@ -1265,7 +1265,7 @@ func (a *OcpSandboxProvider) Request(
 							"apiVersion": "k8s.ovn.org/v1",
 							"kind":       "EgressIP",
 							"metadata": map[string]any{
-								"name":      "egressip-" + guid,
+								"name": "egressip-" + guid,
 							},
 							"spec": map[string]any{
 								"egressIPs": []string{strings.Split(egressIPAvailable, "/")[0]},
@@ -1290,10 +1290,10 @@ func (a *OcpSandboxProvider) Request(
 			// Add serviceUuid as label to the namespace
 
 			if egressIPAvailable != "" {
-					egressIP = strings.Split(egressIPAvailable, "/")[0]
-					egressSubnet = strings.Split(egressIPAvailable, "/")[1]
-					rnew.Annotations["egressIP"] = egressIP
-					rnew.Annotations["egressSubnet"] = egressSubnet
+				egressIP = strings.Split(egressIPAvailable, "/")[0]
+				egressSubnet = strings.Split(egressIPAvailable, "/")[1]
+				rnew.Annotations["egressIP"] = egressIP
+				rnew.Annotations["egressSubnet"] = egressSubnet
 			}
 
 			_, err = clientset.CoreV1().Namespaces().Create(context.TODO(), &v1.Namespace{
@@ -1305,8 +1305,8 @@ func (a *OcpSandboxProvider) Request(
 						"serviceUuid":                          serviceUuid,
 						"guid":                                 annotations["guid"],
 						"created-by":                           "sandbox-api",
-						"egressIP":															egressIP,
-						"egressSubnet":												  egressSubnet,
+						"egressIP":                             egressIP,
+						"egressSubnet":                         egressSubnet,
 					},
 				},
 			}, metav1.CreateOptions{})
@@ -1734,7 +1734,7 @@ func (a *OcpSandboxProvider) Request(
 						log.Logger.Error("Error deleting OCP secret for SA", "error", err)
 					}
 					rnew.SetStatus("error")
-						return
+					return
 				}
 			}
 		}
@@ -2060,7 +2060,7 @@ func (account *OcpSandboxWithCreds) Delete() error {
 	}
 
 	// Check if the namespace exists
-  deletens, nserr := clientset.CoreV1().Namespaces().Get(context.TODO(), account.Namespace, metav1.GetOptions{})
+	deletens, nserr := clientset.CoreV1().Namespaces().Get(context.TODO(), account.Namespace, metav1.GetOptions{})
 	if nserr != nil {
 		// if error ends with 'not found', consider deletion a success
 		if strings.Contains(err.Error(), "not found") {
@@ -2077,9 +2077,9 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		account.SetStatus("error")
 		return nserr
 	} else {
-		egressIP, ok := deletens.Labels["egressIP"] 
+		egressIP, ok := deletens.Labels["egressIP"]
 		if ok {
-			err = netbox.ReleaseIP(cluster.NetboxApiUrl, cluster.NetboxToken, egressIP  + "/" + deletens.Labels["egressSubnet"] )
+			err = netbox.ReleaseIP(cluster.NetboxApiUrl, cluster.NetboxToken, egressIP+"/"+deletens.Labels["egressSubnet"])
 			if err != nil {
 				log.Logger.Error("Error deleting egressIP on netbox", egressIP, err)
 			}
@@ -2089,8 +2089,8 @@ func (account *OcpSandboxWithCreds) Delete() error {
 				Version:  "v1",
 				Resource: "egressips",
 			}
-			if _, err := dynclientset.Resource(egressIPGVR).Get(context.TODO(), "egressip-" + deletens.Labels["guid"], metav1.GetOptions{}); err == nil {
-				if err := dynclientset.Resource(egressIPGVR).Delete(context.TODO(), "egressip-" + deletens.Labels["guid"], metav1.DeleteOptions{}); err != nil {
+			if _, err := dynclientset.Resource(egressIPGVR).Get(context.TODO(), "egressip-"+deletens.Labels["guid"], metav1.GetOptions{}); err == nil {
+				if err := dynclientset.Resource(egressIPGVR).Delete(context.TODO(), "egressip-"+deletens.Labels["guid"], metav1.DeleteOptions{}); err != nil {
 					log.Logger.Error("Error deleting EgressIP on netbox", "error", err)
 				}
 			}
