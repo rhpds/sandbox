@@ -1009,6 +1009,8 @@ func (a *OcpSandboxProvider) Request(
 	var excludeClusters []string
 	var childClusters []string
 	var selectedClusterMemoryUsage float64 = -1
+	var egressIP string = "";
+	var egressSubnet string = "";
 
 	// Ensure annotation has guid
 	if _, exists := annotations["guid"]; !exists {
@@ -1195,7 +1197,6 @@ func (a *OcpSandboxProvider) Request(
 			rnew.SetStatus("error")
 			return
 		}
-		}
 
 		rnew.OcpApiUrl = selectedCluster.ApiUrl
 		rnew.OcpSharedClusterConfigurationName = selectedCluster.Name
@@ -1204,14 +1205,14 @@ func (a *OcpSandboxProvider) Request(
 		if err := rnew.Save(); err != nil {
 			log.Logger.Error("Error saving OCP account", "error", err)
 			rnew.SetStatus("error")
-			return OcpSandboxWithCreds{}, err
+			return
 		}
 
 		config, err := selectedCluster.CreateRestConfig()
 		if err != nil {
 			log.Logger.Error("Error creating OCP config", "error", err)
 			rnew.SetStatus("error")
-			return OcpSandboxWithCreds{}, err
+			return
 		}
 
 		// Create an OpenShift client
@@ -1219,7 +1220,7 @@ func (a *OcpSandboxProvider) Request(
 		if err != nil {
 			log.Logger.Error("Error creating OCP client", "error", err)
 			rnew.SetStatus("error")
-			return OcpSandboxWithCreds{}, err
+			return
 		}
 
 		// Create an dynamic OpenShift client for non regular objects
@@ -1227,7 +1228,7 @@ func (a *OcpSandboxProvider) Request(
 		if err != nil {
 			log.Logger.Error("Error creating OCP client", "error", err)
 			rnew.SetStatus("error")
-			return OcpSandboxWithCreds{}, err
+			return
 		}
 
 		serviceAccountName := "sandbox"
@@ -1246,7 +1247,7 @@ func (a *OcpSandboxProvider) Request(
 			var egressIPAvailable string = ""
 			if selectedCluster.NetboxApiUrl != "" && selectedCluster.NetboxToken != "" {
 				log.Logger.Info("selectedCluster", "egressconfig", selectedCluster.NetboxApiUrl)
-				egressIPAvailable, err = netbox.RequestIP(selectedCluster.NetboxApiUrl, selectedCluster.NetboxToken, rnew.Name)
+				egressIPAvailable, err = netbox.RequestIP(selectedCluster.NetboxApiUrl, selectedCluster.NetboxToken, rnew.ServiceUuid)
 				log.Logger.Info("selectedCluster", "egressip", egressIPAvailable)
 				if err != nil {
 					log.Logger.Error("Error creating EgressIP", "error", err)
@@ -1264,10 +1265,10 @@ func (a *OcpSandboxProvider) Request(
 							"apiVersion": "k8s.ovn.org/v1",
 							"kind":       "EgressIP",
 							"metadata": map[string]any{
-								"name":      "egress-ip" + guid,
+								"name":      "egressip-" + guid,
 							},
 							"spec": map[string]any{
-								"egressIPs": []string{egressIPAvailable},
+								"egressIPs": []string{strings.Split(egressIPAvailable, "/")[0]},
 								"namespaceSelector": map[string]any{
 									"matchLabels": map[string]any{
 										"guid": guid, // The label selector for the Keycloak realm
@@ -1284,11 +1285,16 @@ func (a *OcpSandboxProvider) Request(
 					log.Logger.Debug("EgressIP created successfully")
 
 				}
-
+			}
 			// Create the Namespace
 			// Add serviceUuid as label to the namespace
 
-
+			if egressIPAvailable != "" {
+					egressIP = strings.Split(egressIPAvailable, "/")[0]
+					egressSubnet = strings.Split(egressIPAvailable, "/")[1]
+					rnew.Annotations["egressIP"] = egressIP
+					rnew.Annotations["egressSubnet"] = egressSubnet
+			}
 
 			_, err = clientset.CoreV1().Namespaces().Create(context.TODO(), &v1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1299,7 +1305,8 @@ func (a *OcpSandboxProvider) Request(
 						"serviceUuid":                          serviceUuid,
 						"guid":                                 annotations["guid"],
 						"created-by":                           "sandbox-api",
-						"egressIP":															egressIPAvailable,
+						"egressIP":															egressIP,
+						"egressSubnet":												  egressSubnet,
 					},
 				},
 			}, metav1.CreateOptions{})
@@ -1311,7 +1318,7 @@ func (a *OcpSandboxProvider) Request(
 					delay = delay * 2
 					if delay > 60*time.Second {
 						rnew.SetStatus("error")
-						return OcpSandboxWithCreds{}, err
+						return
 					}
 
 					continue
@@ -1319,14 +1326,14 @@ func (a *OcpSandboxProvider) Request(
 
 				log.Logger.Error("Error creating OCP namespace", "error", err)
 				rnew.SetStatus("error")
-				return OcpSandboxWithCreds{}, err
+				return
 			}
 
 			rnew.Namespace = namespaceName
 			if err := rnew.Save(); err != nil {
 				log.Logger.Error("Error saving OCP account", "error", err)
 				rnew.SetStatus("error")
-				return OcpSandboxWithCreds{}, err
+				return
 			}
 			break
 		}
@@ -1353,7 +1360,7 @@ func (a *OcpSandboxProvider) Request(
 						log.Logger.Error("Error saving OCP account", "error", err)
 					}
 					rnew.SetStatus("error")
-					return OcpSandboxWithCreds{}, err
+					return
 				}
 			}
 
@@ -1371,7 +1378,7 @@ func (a *OcpSandboxProvider) Request(
 			if err := rnew.Save(); err != nil {
 				log.Logger.Error("Error saving OCP account", "error", err)
 				rnew.SetStatus("error")
-				return OcpSandboxWithCreds{}, err
+				return
 			}
 
 			_, err = clientset.CoreV1().ResourceQuotas(namespaceName).Create(context.TODO(), quota, metav1.CreateOptions{})
@@ -1381,7 +1388,7 @@ func (a *OcpSandboxProvider) Request(
 					log.Logger.Error("Error cleaning up the namespace", "error", err)
 				}
 				rnew.SetStatus("error")
-				return OcpSandboxWithCreds{}, err
+				return
 			}
 
 			limitRange := &v1.LimitRange{}
@@ -1402,14 +1409,14 @@ func (a *OcpSandboxProvider) Request(
 						log.Logger.Error("Error cleaning up the namespace", "error", err)
 					}
 					rnew.SetStatus("error")
-					return OcpSandboxWithCreds{}, err
+					return
 				}
 
 				rnew.LimitRange = limitRange
 				if err := rnew.Save(); err != nil {
 					log.Logger.Error("Error saving OCP account", "error", err)
 					rnew.SetStatus("error")
-					return OcpSandboxWithCreds{}, err
+					return
 				}
 			}
 		}
@@ -1431,7 +1438,7 @@ func (a *OcpSandboxProvider) Request(
 				log.Logger.Error("Error cleaning up the namespace", "error", err)
 			}
 			rnew.SetStatus("error")
-			return OcpSandboxWithCreds{}, err
+			return
 		}
 
 		// Create RoleBind for the Service Account in the Namespace
@@ -1463,7 +1470,7 @@ func (a *OcpSandboxProvider) Request(
 				log.Logger.Error("Error cleaning up the namespace", "error", err)
 			}
 			rnew.SetStatus("error")
-			return OcpSandboxWithCreds{}, err
+			return
 		}
 		creds := []any{}
 		// Create an user if the keycloak option was enabled
@@ -1556,7 +1563,7 @@ func (a *OcpSandboxProvider) Request(
 					log.Logger.Error("Error cleaning up the namespace", "error", err)
 				}
 				rnew.SetStatus("error")
-				return OcpSandboxWithCreds{}, err
+				return
 			}
 
 		}
@@ -1591,7 +1598,7 @@ func (a *OcpSandboxProvider) Request(
 					log.Logger.Error("Error cleaning up the namespace", "error", err)
 				}
 				rnew.SetStatus("error")
-				return OcpSandboxWithCreds{}, err
+				return
 			}
 		}
 
@@ -1665,7 +1672,7 @@ func (a *OcpSandboxProvider) Request(
 							log.Logger.Error("Error cleaning up the namespace", "error", err)
 						}
 						rnew.SetStatus("error")
-						return OcpSandboxWithCreds{}, err
+						return
 					}
 				}
 			}
@@ -1727,7 +1734,7 @@ func (a *OcpSandboxProvider) Request(
 						log.Logger.Error("Error deleting OCP secret for SA", "error", err)
 					}
 					rnew.SetStatus("error")
-						return OcpSandboxWithCreds{}, err
+						return
 				}
 			}
 		}
@@ -1746,7 +1753,7 @@ func (a *OcpSandboxProvider) Request(
 					log.Logger.Error("Error creating OCP service account", "error", err)
 				}
 				rnew.SetStatus("error")
-				return OcpSandboxWithCreds{}, err
+				return
 			}
 
 			for _, secret := range secrets.Items {
@@ -1767,7 +1774,7 @@ func (a *OcpSandboxProvider) Request(
 			if retryCount >= maxRetries {
 				log.Logger.Error("Max retries reached, service account secret not found")
 				rnew.SetStatus("error")
-				return OcpSandboxWithCreds{}, err
+				return
 			}
 
 			// Sleep before retrying
@@ -2053,8 +2060,8 @@ func (account *OcpSandboxWithCreds) Delete() error {
 	}
 
 	// Check if the namespace exists
-	_, err = clientset.CoreV1().Namespaces().Get(context.TODO(), account.Namespace, metav1.GetOptions{})
-	if err != nil {
+  deletens, nserr := clientset.CoreV1().Namespaces().Get(context.TODO(), account.Namespace, metav1.GetOptions{})
+	if nserr != nil {
 		// if error ends with 'not found', consider deletion a success
 		if strings.Contains(err.Error(), "not found") {
 			log.Logger.Info("Namespace not found, consider deletion a success", "name", account.Name)
@@ -2063,12 +2070,31 @@ func (account *OcpSandboxWithCreds) Delete() error {
 				"DELETE FROM resources WHERE id = $1",
 				account.ID,
 			)
-			return err
+			return nserr
 		}
 
-		log.Logger.Error("Error getting OCP namespace", "error", err, "name", account.Name)
+		log.Logger.Error("Error getting OCP namespace", "error", nserr, "name", account.Name)
 		account.SetStatus("error")
-		return err
+		return nserr
+	} else {
+		egressIP, ok := deletens.Labels["egressIP"] 
+		if ok {
+			err = netbox.ReleaseIP(cluster.NetboxApiUrl, cluster.NetboxToken, egressIP  + "/" + deletens.Labels["egressSubnet"] )
+			if err != nil {
+				log.Logger.Error("Error deleting egressIP on netbox", egressIP, err)
+			}
+			// Delete the EgressIP object
+			egressIPGVR := schema.GroupVersionResource{
+				Group:    "k8s.ovn.org",
+				Version:  "v1",
+				Resource: "egressips",
+			}
+			if _, err := dynclientset.Resource(egressIPGVR).Get(context.TODO(), "egressip-" + deletens.Labels["guid"], metav1.GetOptions{}); err == nil {
+				if err := dynclientset.Resource(egressIPGVR).Delete(context.TODO(), "egressip-" + deletens.Labels["guid"], metav1.DeleteOptions{}); err != nil {
+					log.Logger.Error("Error deleting EgressIP on netbox", "error", err)
+				}
+			}
+		}
 	}
 	// Delete the Namespace
 	err = clientset.CoreV1().Namespaces().Delete(context.TODO(), account.Namespace, metav1.DeleteOptions{})
