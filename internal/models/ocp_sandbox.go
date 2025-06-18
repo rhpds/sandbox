@@ -1010,7 +1010,7 @@ func (a *OcpSandboxProvider) Request(
 	var childClusters []string
 	var selectedClusterMemoryUsage float64 = -1
 	var egressIP string = ""
-	var egressSubnet string = ""
+	var egressNetmask string = ""
 
 	// Ensure annotation has guid
 	if _, exists := annotations["guid"]; !exists {
@@ -1291,9 +1291,9 @@ func (a *OcpSandboxProvider) Request(
 
 			if egressIPAvailable != "" {
 				egressIP = strings.Split(egressIPAvailable, "/")[0]
-				egressSubnet = strings.Split(egressIPAvailable, "/")[1]
+				egressNetmask = strings.Split(egressIPAvailable, "/")[1]
 				rnew.Annotations["egressIP"] = egressIP
-				rnew.Annotations["egressSubnet"] = egressSubnet
+				rnew.Annotations["egressNetmask"] = egressNetmask
 			}
 
 			_, err = clientset.CoreV1().Namespaces().Create(context.TODO(), &v1.Namespace{
@@ -1306,7 +1306,7 @@ func (a *OcpSandboxProvider) Request(
 						"guid":                                 annotations["guid"],
 						"created-by":                           "sandbox-api",
 						"egressIP":                             egressIP,
-						"egressSubnet":                         egressSubnet,
+						"egressNetmask":                         egressNetmask,
 					},
 				},
 			}, metav1.CreateOptions{})
@@ -2079,7 +2079,7 @@ func (account *OcpSandboxWithCreds) Delete() error {
 	} else {
 		egressIP, ok := deletens.Labels["egressIP"]
 		if ok {
-			err = netbox.ReleaseIP(cluster.NetboxApiUrl, cluster.NetboxToken, egressIP+"/"+deletens.Labels["egressSubnet"])
+			err = netbox.ReleaseIP(cluster.NetboxApiUrl, cluster.NetboxToken, egressIP+"/"+deletens.Labels["egressNetmask"])
 			if err != nil {
 				log.Logger.Error("Error deleting egressIP on netbox", egressIP, err)
 			}
