@@ -319,7 +319,7 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 			limit_range,
 			netbox_api_url,
 			netbox_token)
-			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, pgp_sym_encrypt($20::text, $5))
+			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, pgp_sym_encrypt($19::text, $5))
 			RETURNING id`,
 		p.Name,
 		p.ApiUrl,
