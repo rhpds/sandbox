@@ -136,7 +136,7 @@ for payload in sandbox-api-configs/ocp-shared-cluster-configurations/ocpvdev01*.
             | KEYVALUE="${cluster}.netbox_token" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 
 
-    jq  --arg token $token --arg netbox_token $netbox_token '(.token = $token) | (.netbox_token = $netbox_token)'  < "$payload" > "$payload2"
+    jq  --arg token $token --arg netbox_token $netbox_token '(.token = $token | .netbox_token = $netbox_token)'  < "$payload" > "$payload2"
 
     # In bash, files in a * are sorted alphabetically by default
     # so a create will always happen before an update.
