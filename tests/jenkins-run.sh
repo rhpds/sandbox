@@ -129,7 +129,7 @@ for payload in sandbox-api-configs/ocp-shared-cluster-configurations/ocpvdev01*.
             -e PROJECT_ID=$BWS_PROJECT_ID \
             bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
             | KEYVALUE="${cluster}.token" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
-    netboxtoken=$(podman run --rm \
+    netbox_token=$(podman run --rm \
             -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
             -e PROJECT_ID=$BWS_PROJECT_ID \
             bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
