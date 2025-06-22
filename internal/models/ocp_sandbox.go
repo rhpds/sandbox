@@ -1245,57 +1245,59 @@ func (a *OcpSandboxProvider) Request(
 		for {
 			// Add EgressIP
 			var egressIPAvailable string = ""
-			if selectedCluster.NetboxApiUrl != "" && selectedCluster.NetboxToken != "" {
-				log.Logger.Info("selectedCluster", "egressconfig", selectedCluster.NetboxApiUrl)
-				egressIPAvailable, err = netbox.RequestIP(selectedCluster.NetboxApiUrl, selectedCluster.NetboxToken, rnew.ServiceUuid)
-				log.Logger.Info("selectedCluster", "egressip", egressIPAvailable)
-				if err != nil {
-					log.Logger.Error("Error creating EgressIP", "error", err)
-				} else {
-					// Define the egressIP GroupVersionResource
-					egressIPGVR := schema.GroupVersionResource{
-						Group:    "k8s.ovn.org",
-						Version:  "v1",
-						Resource: "egressips",
-					}
+			if value, exists := cloudSelector["egressIP"]; exists && (value == "yes" || value == "true") {
+				if selectedCluster.NetboxApiUrl != "" && selectedCluster.NetboxToken != "" {
+					log.Logger.Info("selectedCluster", "egressconfig", selectedCluster.NetboxApiUrl)
+					egressIPAvailable, err = netbox.RequestIP(selectedCluster.NetboxApiUrl, selectedCluster.NetboxToken, rnew.ServiceUuid)
+					log.Logger.Info("selectedCluster", "egressip", egressIPAvailable)
+					if err != nil {
+						log.Logger.Error("Error creating EgressIP", "error", err)
+					} else {
+						// Define the egressIP GroupVersionResource
+						egressIPGVR := schema.GroupVersionResource{
+							Group:    "k8s.ovn.org",
+							Version:  "v1",
+							Resource: "egressips",
+						}
 
-					// Create the KeycloakUser object as an unstructured object
-					egressIP := &unstructured.Unstructured{
-						Object: map[string]any{
-							"apiVersion": "k8s.ovn.org/v1",
-							"kind":       "EgressIP",
-							"metadata": map[string]any{
-								"name": "egressip-" + guid,
-							},
-							"spec": map[string]any{
-								"egressIPs": []string{strings.Split(egressIPAvailable, "/")[0]},
-								"namespaceSelector": map[string]any{
-									"matchLabels": map[string]any{
-										"guid": guid, // The label selector for the Keycloak realm
+						// Create the KeycloakUser object as an unstructured object
+						egressIP := &unstructured.Unstructured{
+							Object: map[string]any{
+								"apiVersion": "k8s.ovn.org/v1",
+								"kind":       "EgressIP",
+								"metadata": map[string]any{
+									"name": "egressip-" + guid,
+								},
+								"spec": map[string]any{
+									"egressIPs": []string{strings.Split(egressIPAvailable, "/")[0]},
+									"namespaceSelector": map[string]any{
+										"matchLabels": map[string]any{
+											"guid": guid, // The label selector for the Keycloak realm
+										},
 									},
 								},
 							},
-						},
-					}
-					_, err = dynclientset.Resource(egressIPGVR).Create(context.TODO(), egressIP, metav1.CreateOptions{})
-					if err != nil {
-						log.Logger.Error("Error creating EgressIP", "error", err)
-					}
+						}
+						_, err = dynclientset.Resource(egressIPGVR).Create(context.TODO(), egressIP, metav1.CreateOptions{})
+						if err != nil {
+							log.Logger.Error("Error creating EgressIP", "error", err)
+						}
 
-					log.Logger.Debug("EgressIP created successfully")
+						log.Logger.Debug("EgressIP created successfully")
 
+					}
+				}
+				if egressIPAvailable != "" {
+					egressIP = strings.Split(egressIPAvailable, "/")[0]
+					egressNetmask = strings.Split(egressIPAvailable, "/")[1]
+					rnew.Annotations["egressIP"] = egressIP
+					rnew.Annotations["egressNetmask"] = egressNetmask
 				}
 			}
+
+
 			// Create the Namespace
 			// Add serviceUuid as label to the namespace
-
-			if egressIPAvailable != "" {
-				egressIP = strings.Split(egressIPAvailable, "/")[0]
-				egressNetmask = strings.Split(egressIPAvailable, "/")[1]
-				rnew.Annotations["egressIP"] = egressIP
-				rnew.Annotations["egressNetmask"] = egressNetmask
-			}
-
 			_, err = clientset.CoreV1().Namespaces().Create(context.TODO(), &v1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: namespaceName,
@@ -1306,7 +1308,7 @@ func (a *OcpSandboxProvider) Request(
 						"guid":                                 annotations["guid"],
 						"created-by":                           "sandbox-api",
 						"egressIP":                             egressIP,
-						"egressNetmask":                         egressNetmask,
+						"egressNetmask":                        egressNetmask,
 					},
 				},
 			}, metav1.CreateOptions{})
@@ -2078,7 +2080,7 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		return nserr
 	} else {
 		egressIP, ok := deletens.Labels["egressIP"]
-		if ok {
+		if ok && egressIP != "" {
 			err = netbox.ReleaseIP(cluster.NetboxApiUrl, cluster.NetboxToken, egressIP+"/"+deletens.Labels["egressNetmask"])
 			if err != nil {
 				log.Logger.Error("Error deleting egressIP on netbox", egressIP, err)
