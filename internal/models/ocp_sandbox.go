@@ -528,7 +528,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
       skip_quota,
 			limit_range,
 			netbox_api_url,
-      pgp_sym_decrypt(netbox_token::bytea, $1),
+      pgp_sym_decrypt(netbox_token::bytea, $1)
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
 	)
@@ -1245,7 +1245,7 @@ func (a *OcpSandboxProvider) Request(
 		for {
 			// Add EgressIP
 			var egressIPAvailable string = ""
-			if value, exists := cloudSelector["egressIP"]; exists && (value == "yes" || value == "true") {
+			if value, exists := cloudSelector["egressip"]; exists && (value == "yes" || value == "true") {
 				if selectedCluster.NetboxApiUrl != "" && selectedCluster.NetboxToken != "" {
 					log.Logger.Info("selectedCluster", "egressconfig", selectedCluster.NetboxApiUrl)
 					egressIPAvailable, err = netbox.RequestIP(selectedCluster.NetboxApiUrl, selectedCluster.NetboxToken, rnew.ServiceUuid)
