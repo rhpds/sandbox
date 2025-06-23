@@ -112,7 +112,7 @@ Authorization: Bearer {{access_token}}
     {
       "kind": "OcpSandbox",
       "cloud_selector": {
-        "purpose": "dev",
+        "purpose": "dev"
       }
     }
   ],
