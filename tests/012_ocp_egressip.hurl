@@ -145,7 +145,7 @@ jsonpath "$.service_uuid" == "{{uuid}}"
 jsonpath "$.status" == "success"
 jsonpath "$.resources" count == 1
 jsonpath "$.resources[0].status" == "success"
-jsonpath "$.resources[0].annotations.egressIP" == ""
+jsonpath "$.resources[0].annotations.egressIP" not exists
 
 #################################################################################
 # Delete placement
