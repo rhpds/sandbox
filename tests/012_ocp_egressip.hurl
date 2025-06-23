@@ -45,6 +45,7 @@ Authorization: Bearer {{access_token}}
       "kind": "OcpSandbox",
       "cloud_selector": {
         "purpose": "dev",
+        "virt": "yes",
         "egressip": "true"
       }
     }
@@ -112,7 +113,8 @@ Authorization: Bearer {{access_token}}
     {
       "kind": "OcpSandbox",
       "cloud_selector": {
-        "purpose": "dev"
+        "purpose": "dev",
+        "virt": "yes"
       }
     }
   ],
