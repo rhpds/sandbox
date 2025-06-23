@@ -356,6 +356,14 @@ func (h *BaseHandler) UpdateOcpSharedClusterConfigurationHandler(w http.Response
 		ocpSharedClusterConfiguration.UsageNodeSelector = *input.UsageNodeSelector
 	}
 
+	if input.NetboxApiUrl != nil {
+		ocpSharedClusterConfiguration.NetboxApiUrl = *input.NetboxApiUrl
+	}	
+
+	if input.NetboxToken != nil {
+		ocpSharedClusterConfiguration.NetboxToken = *input.NetboxToken
+	}
+
 	if err := ocpSharedClusterConfiguration.Save(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{

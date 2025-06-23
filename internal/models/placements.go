@@ -372,7 +372,6 @@ func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider OcpSa
 		return
 	}
 
-
 	if err := ibmProvider.Release(p.ServiceUuid); err != nil {
 		log.Logger.Error("Error while releasing IBMResourceGroup sandboxes", "error", err)
 		p.SetStatus("error")
