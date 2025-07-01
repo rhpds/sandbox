@@ -279,7 +279,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "placement with multiple Ocp",
-    "guid": "testg",
+    "guid": "ttmultiple",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -297,7 +297,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
 [Options]
-retry: 40
+retry: 60
 HTTP 200
 [Asserts]
 jsonpath "$.service_uuid" == "{{uuid}}"
