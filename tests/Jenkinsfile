@@ -14,6 +14,7 @@ pipeline {
 
     parameters {
         string(name: 'tests', defaultValue: '*.hurl', description: 'what tests to run')
+        string(name: 'sandbox-api-configs-ref' defaultValue: 'main', description: 'sandbox-api-configs branch or tag to use')
     }
 
     stages {
@@ -22,7 +23,7 @@ pipeline {
                 // Load the private repo git@github.com:rhpds/sandbox-api-configs.git
 
                 dir('sandbox-api-configs') {
-                    git branch: 'main',
+                    git branch: "${params.sandbox-api-configs-ref}",
                         credentialsId: 'ssh-key-ocp-shared-clusters-config',
                         url: 'git@github.com:rhpds/sandbox-api-configs.git'
                 }
