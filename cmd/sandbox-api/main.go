@@ -110,8 +110,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	pgConfig.MaxConnIdleTime = 5 * time.Minute // Close idle connections after 5 minutes
-	pgConfig.MaxConnLifetime = time.Hour       // Close connections after 1 hour
+	pgConfig.MaxConnIdleTime = 5 * time.Minute    // Close idle connections after 5 minutes
+	pgConfig.MaxConnLifetime = time.Hour          // Close connections after 1 hour
 	pgConfig.HealthCheckPeriod = 30 * time.Second // Check health every 30 seconds
 
 	// Get shortname from CLUSTER_DOMAIN and hostname from system
@@ -272,7 +272,8 @@ func main() {
 		r.Put("/api/v1/accounts/{kind}/{account}/status", baseHandler.LifeCycleAccountHandler("status"))
 		r.Get("/api/v1/accounts/{kind}/{account}/status", baseHandler.GetStatusAccountHandler)
 		r.Delete("/api/v1/accounts/{kind}/{account}", baseHandler.DeleteAccountHandler)
-		r.Post("/api/v1/placements", baseHandler.CreatePlacementHandler)
+		r.Post("/api/v1/placements", baseHandler.PostPlacementHandler)
+		r.Post("/api/v1/placements/dry-run", baseHandler.PostDryRunPlacementHandler)
 		r.Get("/api/v1/placements/{uuid}", baseHandler.GetPlacementHandler)
 		r.Delete("/api/v1/placements/{uuid}", baseHandler.DeletePlacementHandler)
 		r.Put("/api/v1/placements/{uuid}/stop", baseHandler.LifeCyclePlacementHandler("stop"))

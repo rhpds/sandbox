@@ -130,8 +130,20 @@ func parseClusterCondition(clusterCondition string) []models.ClusterRelation {
 	return relations
 }
 
-func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Request) {
+// cleanupResources runs the Delete method on a slice of deletable resources in a goroutine.
+func cleanupResources(tocleanup []models.Deletable) {
+	go func() {
+		for _, resource := range tocleanup {
+			if err := resource.Delete(); err != nil {
+				log.Logger.Error("Error cleaning up resource during failed placement", "error", err)
+			}
+		}
+	}()
+}
+
+func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Request) {
 	placementRequest := &v1.PlacementRequest{}
+
 	if err := render.Bind(r, placementRequest); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		render.Render(w, r, &v1.Error{
@@ -140,17 +152,8 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			Message:        "Error decoding request body",
 			ErrorMultiline: []string{err.Error()},
 		})
-		log.Logger.Error("CreatePlacementHandler", "error", err)
+		log.Logger.Error("PostPlacementHandler", "error", err)
 
-		return
-	}
-	if len(placementRequest.Resources) == 0 {
-		w.WriteHeader(http.StatusBadRequest)
-		render.Render(w, r, &v1.Error{
-			HTTPStatusCode: http.StatusBadRequest,
-			Message:        "No resources requested",
-		})
-		log.Logger.Info("CreatePlacementHandler", "error", "No resources requested")
 		return
 	}
 
@@ -163,7 +166,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				HTTPStatusCode: http.StatusInternalServerError,
 				Message:        "Error checking for existing placement",
 			})
-			log.Logger.Error("CreatePlacementHandler", "error", err)
+			log.Logger.Error("PostPlacementHandler", "error", err)
 			return
 		}
 
@@ -179,7 +182,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 	// Create the placement
 
 	// Print the placement request for debugging
-	log.Logger.Info("CreatePlacementHandler", "placementRequest", placementRequest)
+	log.Logger.Info("PostPlacementHandler", "placementRequest", placementRequest)
 
 	// keep resources to cleanup in case something goes wrong while creating the placement
 	// useful only if multiple resources are created within a placement
@@ -199,21 +202,14 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				placementRequest.Annotations.Merge(request.Annotations),
 			)
 			if err != nil {
-				// Cleanup previous accouts
-				go func() {
-					for _, account := range tocleanup {
-						if err := account.Delete(); err != nil {
-							log.Logger.Error("Error deleting account", "error", err)
-						}
-					}
-				}()
+				cleanupResources(tocleanup)
 				if err == models.ErrNoEnoughAccountsAvailable {
 					w.WriteHeader(http.StatusInsufficientStorage)
 					render.Render(w, r, &v1.Error{
 						HTTPStatusCode: http.StatusInsufficientStorage,
 						Message:        "Not enough AWS accounts available",
 					})
-					log.Logger.Error("CreatePlacementHandler", "error", err)
+					log.Logger.Error("PostPlacementHandler", "error", err)
 					return
 				}
 				w.WriteHeader(http.StatusInternalServerError)
@@ -222,7 +218,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 					HTTPStatusCode: http.StatusInternalServerError,
 					Message:        "Error creating placement in AWS",
 				})
-				log.Logger.Error("CreatePlacementHandler", "error", err)
+				log.Logger.Error("PostPlacementHandler", "error", err)
 				return
 			}
 
@@ -241,6 +237,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			}
 			log.Logger.Info("ClusterRelation", "alias", request.Alias, "clusterRelation", request.ClusterRelation)
 			var async_request bool = request.Alias == ""
+
 			account, err := h.OcpSandboxProvider.Request(
 				placementRequest.ServiceUuid,
 				request.CloudSelector,
@@ -256,14 +253,8 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 				clusterRelation,
 			)
 			if err != nil {
-				// Cleanup previous accounts
-				go func() {
-					for _, account := range tocleanup {
-						if err := account.Delete(); err != nil {
-							log.Logger.Error("Error deleting account", "error", err)
-						}
-					}
-				}()
+				cleanupResources(tocleanup)
+
 				if strings.Contains(err.Error(), "already exists") {
 					w.WriteHeader(http.StatusConflict)
 					render.Render(w, r, &v1.Error{
@@ -292,7 +283,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 					HTTPStatusCode: http.StatusInternalServerError,
 					Message:        "Error creating placement in Ocp",
 				})
-				log.Logger.Error("CreatePlacementHandler", "error", err)
+				log.Logger.Error("PostPlacementHandler", "error", err)
 				return
 			}
 			tocleanup = append(tocleanup, &account)
@@ -313,13 +304,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			)
 			if err != nil {
 				// Cleanup previous accounts
-				go func() {
-					for _, account := range tocleanup {
-						if err := account.Delete(); err != nil {
-							log.Logger.Error("Error deleting account", "error", err)
-						}
-					}
-				}()
+				cleanupResources(tocleanup)
 				if strings.Contains(err.Error(), "already exists") {
 					w.WriteHeader(http.StatusConflict)
 					render.Render(w, r, &v1.Error{
@@ -348,7 +333,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 					HTTPStatusCode: http.StatusInternalServerError,
 					Message:        "Error creating placement in DNS",
 				})
-				log.Logger.Error("CreatePlacementHandler", "error", err)
+				log.Logger.Error("PostPlacementHandler", "error", err)
 				return
 			}
 			tocleanup = append(tocleanup, &account)
@@ -363,13 +348,8 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 			)
 			if err != nil {
 				// Cleanup previous accounts
-				go func() {
-					for _, account := range tocleanup {
-						if err := account.Delete(); err != nil {
-							log.Logger.Error("Error deleting account", "error", err)
-						}
-					}
-				}()
+				cleanupResources(tocleanup)
+
 				if strings.Contains(err.Error(), "already exists") {
 					w.WriteHeader(http.StatusConflict)
 					render.Render(w, r, &v1.Error{
@@ -398,7 +378,7 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 					HTTPStatusCode: http.StatusInternalServerError,
 					Message:        "Error creating placement in IBM resource group",
 				})
-				log.Logger.Error("CreatePlacementHandler", "error", err)
+				log.Logger.Error("PostPlacementHandler", "error", err)
 				return
 			}
 			tocleanup = append(tocleanup, &account)
@@ -443,6 +423,143 @@ func (h *BaseHandler) CreatePlacementHandler(w http.ResponseWriter, r *http.Requ
 		Message:        "Placement Created",
 		HTTPStatusCode: http.StatusOK,
 	})
+}
+
+// PostDryRunPlacementHandler is a special handler that allows to create a placement
+// with the dry-run flag set to true.
+func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.Request) {
+	placementRequest := &v1.PlacementDryRunRequest{}
+	if err := render.Bind(r, placementRequest); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Error decoding request body",
+			ErrorMultiline: []string{err.Error()},
+		})
+		log.Logger.Error("PostPlacementHandler", "error", err)
+
+		return
+	}
+
+	log.Logger.Info("Handling dry-run request")
+	var dryRunResults []*v1.ResourceDryRunResult
+	overallAvailable := true
+	multipleOcpAccounts := []models.MultipleOcpAccount{} // Needed for OCP scheduling logic
+
+	for _, request := range placementRequest.Resources {
+		result := &v1.ResourceDryRunResult{
+			Kind: request.Kind,
+		}
+
+		switch request.Kind {
+		case "AwsSandbox", "AwsAccount", "aws_account":
+			_, err := h.awsAccountProvider.GetCandidates(placementRequest.Reservation, request.Count)
+			if err != nil {
+				log.Logger.Info("Dry-run check for AWS failed", "error", err)
+				result.Available = false
+				result.Message = "Not enough AWS accounts available"
+				result.Error = err.Error()
+				overallAvailable = false
+			} else {
+				log.Logger.Info("Dry-run check for AWS successful")
+				result.Available = true
+				result.Message = "Matching AWS accounts are available"
+			}
+
+		case "OcpSandbox":
+			var clusterRelation []models.ClusterRelation
+			if request.ClusterCondition != "" {
+				clusterRelation = parseClusterCondition(request.ClusterCondition)
+			} else {
+				clusterRelation = request.ClusterRelation
+			}
+
+			log.Logger.Info("")
+			candidateClusters, err := h.OcpSandboxProvider.GetSchedulableClusters(
+				request.CloudSelector,
+				clusterRelation,
+				multipleOcpAccounts,
+				request.Alias,
+			)
+
+			if err != nil {
+				log.Logger.Error("Dry-run error getting schedulable OCP clusters", "error", err)
+				result.Available = false
+				result.Message = "Error checking for schedulable OCP clusters"
+				result.Error = err.Error()
+				overallAvailable = false
+			} else if len(candidateClusters) == 0 {
+				log.Logger.Info("Dry-run check for OCP failed: no clusters found")
+				result.Available = false
+				result.Message = "No matching OCP shared clusters found"
+				overallAvailable = false
+			} else {
+				log.Logger.Info("Dry-run check for OCP successful", "clusters", candidateClusters)
+				result.Available = true
+				result.Message = "Matching OCP shared clusters found"
+				result.SchedulableClusterCount = len(candidateClusters)
+				// Apply priorities using CloudPreference
+				if len(request.CloudPreference) > 0 {
+					candidateClusters = models.ApplyPriorityWeight(
+						candidateClusters,
+						request.CloudPreference,
+						1,
+					)
+				}
+				// Simulate the placement to inform the next resource in the loop.
+				// We'll hypothetically "place" it on the first available cluster.
+				if request.Alias != "" {
+					// Create a temporary, hypothetical account object with the chosen cluster.
+					// The actual fields needed depend on your scheduling logic, but OcpCluster is the most likely one.
+					hypotheticalAccount := models.OcpSandbox{
+						OcpSharedClusterConfigurationName: candidateClusters[0].Name, // Using the first candidate
+					}
+					multipleOcpAccounts = append(multipleOcpAccounts, models.MultipleOcpAccount{
+						Alias:   request.Alias,
+						Account: hypotheticalAccount,
+					})
+				}
+			}
+
+		// Add cases for DNSSandbox and IBMResourceGroupSandbox if they support dry-run checks
+		case "DNSSandbox":
+			// Assuming a similar check exists for DNS
+			// _, err := h.DNSSandboxProvider.GetCandidates(...)
+			log.Logger.Warn("Dry-run for DNSSandbox not implemented, assuming available")
+			result.Available = true
+			result.Message = "Dry-run check for DNSSandbox is not implemented; assuming available."
+
+		case "IBMResourceGroupSandbox":
+			// Assuming a similar check exists for IBM
+			// _, err := h.IBMResourceGroupSandboxProvider.GetCandidates(...)
+			log.Logger.Warn("Dry-run for IBMResourceGroupSandbox not implemented, assuming available")
+			result.Available = true
+			result.Message = "Dry-run check for IBMResourceGroupSandbox is not implemented; assuming available."
+
+		default:
+			log.Logger.Error("Dry-run: Invalid resource type", "type", request.Kind)
+			result.Available = false
+			result.Message = "Invalid resource type for dry-run"
+			overallAvailable = false
+		}
+		dryRunResults = append(dryRunResults, result)
+	}
+
+	// Compile the final response
+	finalResponse := &v1.PlacementDryRunResponse{
+		OverallAvailable: overallAvailable,
+		Results:          dryRunResults,
+	}
+
+	if overallAvailable {
+		finalResponse.OverallMessage = "All requested resources are available for placement."
+	} else {
+		finalResponse.OverallMessage = "One or more requested resources are not available."
+	}
+
+	render.Render(w, r, finalResponse)
+
 }
 
 func (h *BaseHandler) HealthHandler(w http.ResponseWriter, r *http.Request) {

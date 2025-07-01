@@ -416,10 +416,9 @@ func (a *AwsAccountDynamoDBProvider) FetchAllSorted(by string) ([]models.AwsAcco
 	return makeAccounts(accounts), nil
 }
 
-// Request reserve accounts for a service
-func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, reservation string, count int, annotations models.Annotations) ([]models.AwsAccountWithCreds, error) {
+func (a *AwsAccountDynamoDBProvider) GetCandidates(reservation string, count int) ([]models.AwsAccount, error) {
 	if count <= 0 {
-		return []models.AwsAccountWithCreds{}, errors.New("count must be > 0")
+		return []models.AwsAccount{}, errors.New("count must be > 0")
 	}
 
 	// Get first available accounts older than 24h
@@ -445,7 +444,7 @@ func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, reservation st
 
 	if err != nil {
 		log.Logger.Error("Error getting accounts", "error", err)
-		return []models.AwsAccountWithCreds{}, err
+		return []models.AwsAccount{}, err
 	}
 
 	if len(accounts) < count {
@@ -467,12 +466,27 @@ func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, reservation st
 
 		if err != nil {
 			log.Logger.Error("Error getting accounts", "error", err)
-			return []models.AwsAccountWithCreds{}, err
+			return []models.AwsAccount{}, err
 		}
 
 		if len(accounts) < count {
-			return []models.AwsAccountWithCreds{}, models.ErrNoEnoughAccountsAvailable
+			return []models.AwsAccount{}, models.ErrNoEnoughAccountsAvailable
 		}
+	}
+
+	r := make([]models.AwsAccount, 0, count)
+	for _, account := range accounts {
+		r = append(r, makeAccount(account))
+	}
+
+	return r, nil
+}
+
+// Request reserve accounts for a service
+func (a *AwsAccountDynamoDBProvider) Request(service_uuid string, reservation string, count int, annotations models.Annotations) ([]models.AwsAccountWithCreds, error) {
+	accounts, err := a.GetCandidates(reservation, count)
+	if err != nil {
+		return []models.AwsAccountWithCreds{}, err
 	}
 
 	bookedAccounts := []models.AwsAccountWithCreds{}

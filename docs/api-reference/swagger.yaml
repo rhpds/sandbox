@@ -159,6 +159,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /placements/dry-run:
+    post:
+      summary: Create a placement DRY-RUN request, check availability.
+      operationId: DryRunPlacement
+      tags:
+        - placement
+      parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ACCESS_TOKEN>
+      requestBody:
+        description: >-
+          JSON object to specify placement and other annotations when
+          requesting a resource.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlacementDryRunRequest"
+      responses:
+        '200':
+          description: The result of the dry-run placement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlacementDryRunResponse"
+        default:
+          description: DryRunPlacement unexpected error or Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /placements/{uuid}:
     parameters:
       - in: header
@@ -2434,92 +2469,115 @@ components:
       description: The UUID of the service. Sandboxes are assigned uuid when booked.
       format: uuid
 
-    PlacementRequest:
+    PlacementDryRunRequest:
       description: |-
-        A placement request is a record of service(uuid) / resources / annotations
+        A placement dry run is a record of resources / annotations
+        It is used to check if a placement request can be fulfilled.
+        Not like a regular placement request, the UUID is not mandatory.
       type: object
-      required:
-        - service_uuid
+      allOf:
+        - $ref: '#/components/schemas/BasePlacement'
+        - type: object
+          properties:
+            service_uuid:
+              $ref: "#/components/schemas/UUID"
+
+    BasePlacement:
+      type: object
       properties:
-        service_uuid:
-          $ref: "#/components/schemas/UUID"
         reservation:
           type: string
-          example: summit
         resources:
-          description: Request resources
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceRequest'
+        annotations:
+          $ref: '#/components/schemas/Annotations'
+      required:
+        - resources
+
+    ResourceRequest:
+      type: object
+      properties:
+        kind:
+          $ref: '#/components/schemas/ResourceKind'
+        count:
+          type: integer
+          minimum: 1
+          default: 1
+          example: 1
+        alias:
+          type: string
+        cluster_condition:
+          type: string
+        cluster_relation:
           type: array
           items:
             type: object
             properties:
-              kind:
-                $ref: '#/components/schemas/ResourceKind'
-              count:
-                type: integer
-                minimum: 1
-                default: 1
-                example: 1
-              alias:
+              relation:
                 type: string
-              cluster_condition:
+                enum:
+                  - same
+                  - different
+                  - child
+              reference:
                 type: string
-              cluster_relation:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    relation:
-                      type: string
-                      enum:
-                        - same
-                        - different
-                        - child
-                    reference:
-                      type: string
-              cloud_selector:
-                $ref: "#/components/schemas/Annotations"
-              cloud_preference:
-                $ref: "#/components/schemas/Annotations"
-              annotations:
-                $ref: "#/components/schemas/Annotations"
-              quota:
-                type: object
-                description: |
-                  Quota to be applied to the namespace of the OcpSandbox
-                  The way quota is applied depends on the OcpSharedClusterConfiguration.
-                  By default, if a quota value is missing, the default quota of the shared cluster is applied instead.
-
-                  StrictDefaultSandboxQuota is a flag to determine if the default sandbox quota should be strictly enforced. If set to true, the default sandbox quota will be enforced as a hard limit. Requested quota not be allowed to exceed the default. By default it's false.
-
-                  If set to false, the default sandbox will be updated to the requested quota.
-                  QuotaRequired is a flag to determine if a quota is required in any request for an OcpSandbox.
-                  If set to true, a quota must be provided in the request.
-                  If set to false, a quota will be created based on the default sandbox quota.
-                  By default it's false.
-                example:
-                  pods: "12"
-                  requests.memory: "20Gi"
-                  limits.memory: "20Gi"
-                  secrets: "2"
-                  requests.ephemeral-storage: "100Gi"
-              limit_range:
-                type: object
-                description: |-
-                  Limit Range for the sandbox
-                  This allows to set the default limit and request for pods
-                  see https://kubernetes.io/docs/concepts/policy/limit-range/
-                example:
-                  spec:
-                    limits:
-                      - default:
-                          cpu: "1"
-                          memory: 2Gi
-                        defaultRequest:
-                          cpu: "0.5"
-                          memory: 1Gi
-                        type: Container
+        cloud_selector:
+          $ref: "#/components/schemas/Annotations"
+        cloud_preference:
+          $ref: "#/components/schemas/Annotations"
         annotations:
           $ref: "#/components/schemas/Annotations"
+        quota:
+          type: object
+          description: |
+            Quota to be applied to the namespace of the OcpSandbox
+            The way quota is applied depends on the OcpSharedClusterConfiguration.
+            By default, if a quota value is missing, the default quota of the shared cluster is applied instead.
+
+            StrictDefaultSandboxQuota is a flag to determine if the default sandbox quota should be strictly enforced. If set to true, the default sandbox quota will be enforced as a hard limit. Requested quota not be allowed to exceed the default. By default it's false.
+
+            If set to false, the default sandbox will be updated to the requested quota.
+            QuotaRequired is a flag to determine if a quota is required in any request for an OcpSandbox.
+            If set to true, a quota must be provided in the request.
+            If set to false, a quota will be created based on the default sandbox quota.
+            By default it's false.
+          example:
+            pods: "12"
+            requests.memory: "20Gi"
+            limits.memory: "20Gi"
+            secrets: "2"
+            requests.ephemeral-storage: "100Gi"
+        limit_range:
+          type: object
+          description: |-
+            Limit Range for the sandbox
+            This allows to set the default limit and request for pods
+            see https://kubernetes.io/docs/concepts/policy/limit-range/
+          example:
+            spec:
+              limits:
+                - default:
+                    cpu: "1"
+                    memory: 2Gi
+                  defaultRequest:
+                    cpu: "0.5"
+                    memory: 1Gi
+                  type: Container
+
+    PlacementRequest:
+      description: |-
+        A placement request is a record of service(uuid) / resources / annotations
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/BasePlacement'
+        - type: object
+          required:
+            - service_uuid
+          properties:
+            service_uuid:
+              $ref: "#/components/schemas/UUID"
       example:
         service_uuid: 13a8b15c-e752-4727-ac78-600e8833e575
         resources:
@@ -3417,3 +3475,21 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/IBMResourceGroupSandboxConfiguration'
+
+    PlacementDryRunResponse:
+      description: >-
+        The response for a dry-run placement request.
+
+      type: object
+      properties:
+        message:
+          type: string
+        available:
+          type: boolean
+        error_text:
+          type: string
+          description: >-
+            Optional error text given by downstream services or sandbox API iteself, if any
+      example:
+        message: Not enough AWS accounts available
+        available: false

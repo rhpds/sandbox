@@ -560,10 +560,10 @@ jsonpath "$.resources" count == 2
 jsonpath "$.status" == "success"
 jsonpath "$.resources[?(@.annotations.purpose == 'dev')]" count == 1
 jsonpath "$.resources[?(@.annotations.purpose == 'aws')]" count == 1
-jsonpath "$.resources[?(@.annotations.purpose == 'dev')].status" includes "success"
-jsonpath "$.resources[?(@.annotations.purpose == 'dev')].kind" includes "DNSSandbox"
-jsonpath "$.resources[?(@.annotations.purpose == 'aws')].available" includes false
-jsonpath "$.resources[?(@.annotations.purpose == 'aws')].kind" includes "AwsSandbox"
+jsonpath "$.resources[?(@.annotations.purpose == 'dev')].status" contains "success"
+jsonpath "$.resources[?(@.annotations.purpose == 'dev')].kind" contains "DNSSandbox"
+jsonpath "$.resources[?(@.annotations.purpose == 'aws')].available" contains false
+jsonpath "$.resources[?(@.annotations.purpose == 'aws')].kind" contains "AwsSandbox"
 
 #################################################################################
 # Delete placement

@@ -541,9 +541,9 @@ jsonpath "$.resources" count == 3
 jsonpath "$.resources[0].status" == "success"
 jsonpath "$.resources[1].status" == "success"
 jsonpath "$.resources[2].status" == "success"
-jsonpath "$.resources[?(@.annotations.namespace_suffix == 'dev')].namespace" includes "sandbox-testg-1-dev"
-jsonpath "$.resources[?(@.annotations.namespace_suffix == 'test')].namespace" includes "sandbox-testg-2-test"
-jsonpath "$.resources[?(@.annotations.namespace_suffix == 'prod')].namespace" includes "sandbox-testg-3-prod"
+jsonpath "$.resources[?(@.annotations.namespace_suffix == 'dev')].namespace" contains "sandbox-testg-1-dev"
+jsonpath "$.resources[?(@.annotations.namespace_suffix == 'test')].namespace" contains "sandbox-testg-2-test"
+jsonpath "$.resources[?(@.annotations.namespace_suffix == 'prod')].namespace" contains "sandbox-testg-3-prod"
 
 #################################################################################
 # Get all OcpSandboxes using service_uuid query
@@ -612,10 +612,10 @@ jsonpath "$.resources" count == 2
 jsonpath "$.status" == "success"
 jsonpath "$.resources[?(@.annotations.purpose == 'ocp')]" count == 1
 jsonpath "$.resources[?(@.annotations.purpose == 'aws')]" count == 1
-jsonpath "$.resources[?(@.annotations.purpose == 'ocp')].status" includes "success"
-jsonpath "$.resources[?(@.annotations.purpose == 'ocp')].credentials[0].kind" includes "ServiceAccount"
-jsonpath "$.resources[?(@.annotations.purpose == 'aws')].available" includes false
-jsonpath "$.resources[?(@.annotations.purpose == 'aws')].kind" includes "AwsSandbox"
+jsonpath "$.resources[?(@.annotations.purpose == 'ocp')].status" contains "success"
+jsonpath "$.resources[?(@.annotations.purpose == 'ocp')].credentials[0].kind" contains "ServiceAccount"
+jsonpath "$.resources[?(@.annotations.purpose == 'aws')].available" contains false
+jsonpath "$.resources[?(@.annotations.purpose == 'aws')].kind" contains "AwsSandbox"
 
 #################################################################################
 # Delete placement

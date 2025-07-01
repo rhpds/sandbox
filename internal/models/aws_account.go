@@ -93,6 +93,7 @@ type AwsAccountProvider interface {
 	MarkForCleanup(name string) error
 	MarkForCleanupByServiceUuid(serviceUuid string) error
 	Request(service_uuid string, reservation string, count int, annotations Annotations) ([]AwsAccountWithCreds, error)
+	GetCandidates(reservation string, count int) ([]AwsAccount, error)
 	Reserve(reservation string, count int) ([]AwsAccount, error)
 	ScaleDownReservation(reservation string, count int) error
 	RenameReservation(oldName, newName string) error
