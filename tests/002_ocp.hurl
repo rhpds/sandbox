@@ -279,7 +279,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "placement with multiple Ocp",
-    "guid": "testg",
+    "guid": "ttmultiple",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
