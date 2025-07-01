@@ -1782,6 +1782,13 @@ paths:
                             cpu: "0.5"
                             memory: 1Gi
                           type: Container
+                netbox_api_url:
+                  description: Netbox URL for EgressIP feature
+                  type: string
+                netbox_token:
+                  description: Netbox token for EgressIP feature
+                  type: string
+
             example:
               strict_default_sandbox_quota: true
               quota_required: true
@@ -3286,6 +3293,12 @@ components:
                     memory: 1Gi
                   type: Container
 
+        netbox_api_url:
+          description: Netbox URL for EgressIP feature
+          type: string
+        netbox_token:
+          description: Netbox token for EgressIP feature
+          type: string
       example:
         name: ocp-cluster-1
         api_url: https://api.ocp-cluster-1.com:6443
