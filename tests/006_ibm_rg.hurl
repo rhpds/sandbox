@@ -467,9 +467,9 @@ jsonpath "$.resources" count == 3
 jsonpath "$.resources[0].status" == "success"
 jsonpath "$.resources[1].status" == "success"
 jsonpath "$.resources[2].status" == "success"
-jsonpath "$.resources[?(@.annotations.resourcegroup_suffix == 'dev')].resourcegroup" includes "rg-testg-dev"
-jsonpath "$.resources[?(@.annotations.resourcegroup_suffix == 'test')].resourcegroup" includes "rg-testg-2-test"
-jsonpath "$.resources[?(@.annotations.resourcegroup_suffix == 'prod')].resourcegroup" includes "rg-testg-3-prod"
+jsonpath "$.resources[?(@.annotations.resourcegroup_suffix == 'dev')].resourcegroup" contains "rg-testg-dev"
+jsonpath "$.resources[?(@.annotations.resourcegroup_suffix == 'test')].resourcegroup" contains "rg-testg-2-test"
+jsonpath "$.resources[?(@.annotations.resourcegroup_suffix == 'prod')].resourcegroup" contains "rg-testg-3-prod"
 
 #################################################################################
 # Get all IBMResourceGroupSandboxes using service_uuid query
@@ -538,10 +538,10 @@ jsonpath "$.resources" count == 2
 jsonpath "$.status" == "success"
 jsonpath "$.resources[?(@.annotations.purpose == 'dev')]" count == 1
 jsonpath "$.resources[?(@.annotations.purpose == 'aws')]" count == 1
-jsonpath "$.resources[?(@.annotations.purpose == 'dev')].status" includes "success"
-jsonpath "$.resources[?(@.annotations.purpose == 'dev')].kind" includes "IBMResourceGroupSandbox"
-jsonpath "$.resources[?(@.annotations.purpose == 'aws')].available" includes false
-jsonpath "$.resources[?(@.annotations.purpose == 'aws')].kind" includes "AwsSandbox"
+jsonpath "$.resources[?(@.annotations.purpose == 'dev')].status" contains "success"
+jsonpath "$.resources[?(@.annotations.purpose == 'dev')].kind" contains "IBMResourceGroupSandbox"
+jsonpath "$.resources[?(@.annotations.purpose == 'aws')].available" contains false
+jsonpath "$.resources[?(@.annotations.purpose == 'aws')].kind" contains "AwsSandbox"
 
 #################################################################################
 # Delete placement

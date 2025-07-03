@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-source "${CREDENTIALS_FILE}"
+[ -e "${CREDENTIALS_FILE}" ] && source "${CREDENTIALS_FILE}"
 
 tmpdir=$(mktemp -d)
 apilog=$PWD/api.log
@@ -128,6 +128,7 @@ for payload in sandbox-api-configs/ocp-shared-cluster-configurations/ocpvdev01*.
     token=$(podman run --rm \
             -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
             -e PROJECT_ID=$BWS_PROJECT_ID \
+            --security-opt seccomp=unconfined \
             bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
             | KEYVALUE="${cluster}.token" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 
@@ -168,11 +169,13 @@ for payload in sandbox-api-configs/dns-account-configurations/dev*.json; do
     ACCESS_KEY_ID=$(podman run --rm \
             -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
             -e PROJECT_ID=$BWS_PROJECT_ID \
+            --security-opt seccomp=unconfined \
             bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
             | KEYVALUE="${account}.access_key_id" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
     SECRET_ACCESS_KEY=$(podman run --rm \
             -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
             -e PROJECT_ID=$BWS_PROJECT_ID \
+            --security-opt seccomp=unconfined \
             bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
             | KEYVALUE="${account}.secret_access_key" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 
@@ -213,6 +216,7 @@ for payload in sandbox-api-configs/ibm-resource-group-configurations/dev*.json; 
     APIKEY=$(podman run --rm \
             -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
             -e PROJECT_ID=$BWS_PROJECT_ID \
+            --security-opt seccomp=unconfined \
             bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
             | KEYVALUE="${account}.apikey" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 

@@ -808,24 +808,56 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 
 var ErrNoSchedule error = errors.New("No OCP shared cluster configuration found")
 
-func (a *OcpSandboxProvider) GetSchedulableClusters(cloudSelector map[string]string, possibleClusters []string, excludeClusters []string, childClusters []string) (OcpSharedClusterConfigurations, error) {
+func (a *OcpSandboxProvider) GetSchedulableClusters(
+	cloudSelector map[string]string,
+	clusterRelation []ClusterRelation,
+	multipleAccounts []MultipleOcpAccount,
+	alias string,
+) (OcpSharedClusterConfigurations, error) {
+
+	var possibleClusters []string
+	var excludeClusters []string
+	var parentClusters []string
+
+	for _, relation := range clusterRelation {
+		for _, maccount := range multipleAccounts {
+			if maccount.Alias == relation.Reference && relation.Relation == "same" {
+				possibleClusters = append(possibleClusters, maccount.Account.OcpSharedClusterConfigurationName)
+			}
+			if maccount.Alias == relation.Reference && relation.Relation == "different" {
+				excludeClusters = append(excludeClusters, maccount.Account.OcpSharedClusterConfigurationName)
+			}
+			if maccount.Alias == relation.Reference && relation.Relation == "child" {
+				excludeClusters = append(excludeClusters, maccount.Account.OcpSharedClusterConfigurationName)
+				parentClusters = append(parentClusters, maccount.Account.OcpSharedClusterConfigurationName)
+			}
+		}
+	}
+
+	log.Logger.Info("Relation",
+		"alias", alias,
+		"possibleClusters", possibleClusters,
+		"excludeClusters", excludeClusters,
+		"parentClusters", parentClusters,
+	)
+
 	clusters := OcpSharedClusterConfigurations{}
 	// Get resource from 'ocp_shared_cluster_configurations' table
 	var err error
 	var rows pgx.Rows
 	log.Logger.Info("possibleClusters", "type", possibleClusters)
-	if len(possibleClusters) == 0 && len(excludeClusters) == 0 && len(childClusters) == 0 {
+	if len(possibleClusters) == 0 && len(excludeClusters) == 0 && len(parentClusters) == 0 {
 		rows, err = a.DbPool.Query(
 			context.Background(),
 			`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true ORDER BY random()`,
 			cloudSelector,
 		)
 	} else {
-		if len(childClusters) > 0 {
+		if len(parentClusters) > 0 {
 			rows, err = a.DbPool.Query(
 				context.Background(),
 				`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and annotations->>'parent' = ANY($2::text[]) and valid=true ORDER BY random()`,
-				cloudSelector, childClusters,
+				cloudSelector, parentClusters,
 			)
 			for rows.Next() {
 				var clusterName string
@@ -982,9 +1014,6 @@ func (a *OcpSandboxProvider) Request(
 ) (OcpSandboxWithCreds, error) {
 
 	var selectedCluster OcpSharedClusterConfiguration
-	var possibleClusters []string
-	var excludeClusters []string
-	var childClusters []string
 	var selectedClusterMemoryUsage float64 = -1
 
 	// Ensure annotation has guid
@@ -992,30 +1021,8 @@ func (a *OcpSandboxProvider) Request(
 		return OcpSandboxWithCreds{}, errors.New("guid not found in annotations")
 	}
 
-	for _, relation := range clusterRelation {
-		if multipleAccounts != nil {
-			for _, maccount := range multipleAccounts {
-				if maccount.Alias == relation.Reference && relation.Relation == "same" {
-					possibleClusters = append(possibleClusters, maccount.Account.OcpSharedClusterConfigurationName)
-				}
-				if maccount.Alias == relation.Reference && relation.Relation == "different" {
-					excludeClusters = append(excludeClusters, maccount.Account.OcpSharedClusterConfigurationName)
-				}
-				if maccount.Alias == relation.Reference && relation.Relation == "child" {
-					childClusters = append(excludeClusters, maccount.Account.OcpSharedClusterConfigurationName)
-				}
-			}
-		}
-	}
-	log.Logger.Info("Relation",
-		"alias", alias,
-		"possibleClusters", possibleClusters,
-		"excludeClusters", excludeClusters,
-		"childClusters", childClusters,
-	)
-
 	// Version with OcpSharedClusterConfiguration methods
-	candidateClusters, err := a.GetSchedulableClusters(cloudSelector, possibleClusters, excludeClusters, childClusters)
+	candidateClusters, err := a.GetSchedulableClusters(cloudSelector, clusterRelation, multipleAccounts, alias)
 	if err != nil {
 		log.Logger.Error("Error getting schedulable clusters", "error", err)
 		return OcpSandboxWithCreds{}, err

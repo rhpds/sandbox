@@ -33,12 +33,21 @@ type HealthCheckResult struct {
 	Message        string `json:"message"`
 }
 
-type PlacementRequest struct {
-	ServiceUuid string             `json:"service_uuid"`
-	Provider    string             `json:"provider,omitempty"`
+type BasePlacement struct {
 	Reservation string             `json:"reservation,omitempty"`
 	Resources   []ResourceRequest  `json:"resources"`
 	Annotations models.Annotations `json:"annotations,omitempty"`
+}
+
+type PlacementRequest struct {
+	ServiceUuid string `json:"service_uuid"`
+	Provider    string `json:"provider,omitempty"`
+
+	BasePlacement
+}
+
+type PlacementDryRunRequest struct {
+	BasePlacement
 }
 
 type TokenRequest struct {
@@ -134,7 +143,7 @@ func (p *ReservationRenameRequest) Render(w http.ResponseWriter, r *http.Request
 	return nil
 }
 
-func (p *PlacementRequest) Bind(r *http.Request) error {
+func (p *BasePlacement) Bind(r *http.Request) error {
 	if p.Annotations == nil {
 		p.Annotations = make(models.Annotations)
 	}
@@ -254,5 +263,30 @@ type UpdateIBMResourceGroupSandboxConfigurationRequest struct {
 }
 
 func (j *UpdateIBMResourceGroupSandboxConfigurationRequest) Bind(r *http.Request) error {
+	return nil
+}
+
+// ResourceDryRunResult holds the dry-run result for a single resource.
+type ResourceDryRunResult struct {
+	Kind                    string `json:"kind"`
+	Available               bool   `json:"available"`
+	Message                 string `json:"message"`
+	SchedulableClusterCount int    `json:"schedulable_cluster_count"`
+	Error                   string `json:"error,omitempty"` // Optional: to report specific errors
+}
+
+// PlacementDryRunResponse is the consolidated response for a dry-run request.
+type PlacementDryRunResponse struct {
+	OverallAvailable bool                    `json:"overallAvailable"`
+	OverallMessage   string                  `json:"overallMessage"`
+	Results          []*ResourceDryRunResult `json:"results"`
+
+	// Embedding for renderer
+	HTTPStatusCode int `json:"-"`
+}
+
+// Render is a no-op for the renderer interface.
+func (resp *PlacementDryRunResponse) Render(w http.ResponseWriter, r *http.Request) error {
+	resp.HTTPStatusCode = http.StatusOK
 	return nil
 }

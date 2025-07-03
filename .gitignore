@@ -1,3 +1,11 @@
 build/sandbox-*
 deploy/lambda/*.zip
 .dev.*
+tmp/*
+sandbox-api-configs
+db_dump.sql*
+api.log*
+cmd/sandbox-api/assets
+**/__pycache__
+trace.out
+profile.out
