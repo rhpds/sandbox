@@ -475,7 +475,6 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 				clusterRelation = request.ClusterRelation
 			}
 
-			log.Logger.Info("")
 			candidateClusters, err := h.OcpSandboxProvider.GetSchedulableClusters(
 				request.CloudSelector,
 				clusterRelation,
