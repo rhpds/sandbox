@@ -299,12 +299,16 @@ Authorization: Bearer {{access_token}}
 [Options]
 retry: 60
 HTTP 200
+[Captures]
+console_url: jsonpath "$.resources[0].console_url"
 [Asserts]
 jsonpath "$.service_uuid" == "{{uuid}}"
 jsonpath "$.status" == "success"
 jsonpath "$.resources" count == 3
 jsonpath "$.resources[0].status" == "success"
 jsonpath "$.resources[0].ingress_domain" split "." count > 2
+jsonpath "$.resources[0].console_url" isString
+jsonpath "$.resources[0].console_url" contains "https://"
 jsonpath "$.resources[0].credentials" count >= 1
 jsonpath "$.resources[0].cluster_additional_vars.deployer" exists
 jsonpath "$.resources[0].credentials[0].kind" == "ServiceAccount"
@@ -318,6 +322,14 @@ jsonpath "$.resources[2].credentials" count >= 1
 jsonpath "$.resources[2].credentials[0].kind" == "ServiceAccount"
 jsonpath "$.resources[2].credentials[0].token" isString
 
+#################################################################################
+# Connect to the web console, should be 200 OK
+#################################################################################
+
+GET {{console_url}}
+HTTP 200
+[Asserts]
+body contains "Red Hat OpenShift"
 
 #################################################################################
 # Delete placement
@@ -428,6 +440,8 @@ jsonpath "$.status" == "success"
 jsonpath "$.resources" count == 1
 jsonpath "$.resources[0].status" == "success"
 jsonpath "$.resources[0].ingress_domain" split "." count > 2
+jsonpath "$.resources[0].console_url" isString
+jsonpath "$.resources[0].console_url" contains "https://"
 jsonpath "$.resources[0].credentials" count >= 1
 jsonpath "$.resources[0].credentials[0].kind" == "ServiceAccount"
 jsonpath "$.resources[0].credentials[0].token" isString
@@ -541,6 +555,9 @@ jsonpath "$.resources" count == 3
 jsonpath "$.resources[0].status" == "success"
 jsonpath "$.resources[1].status" == "success"
 jsonpath "$.resources[2].status" == "success"
+jsonpath "$.resources[0].console_url" contains "https://"
+jsonpath "$.resources[1].console_url" contains "https://"
+jsonpath "$.resources[2].console_url" contains "https://"
 jsonpath "$.resources[?(@.annotations.namespace_suffix == 'dev')].namespace" contains "sandbox-testg-1-dev"
 jsonpath "$.resources[?(@.annotations.namespace_suffix == 'test')].namespace" contains "sandbox-testg-2-test"
 jsonpath "$.resources[?(@.annotations.namespace_suffix == 'prod')].namespace" contains "sandbox-testg-3-prod"

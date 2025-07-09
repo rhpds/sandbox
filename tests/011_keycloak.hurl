@@ -74,6 +74,8 @@ jsonpath "$.resources[0].credentials" count >= 2
 jsonpath "$.resources[0].credentials[?(@.kind == 'ServiceAccount')].token" count == 1
 jsonpath "$.resources[0].credentials[?(@.kind == 'KeycloakUser')].username" count == 1
 jsonpath "$.resources[0].credentials[?(@.kind == 'KeycloakUser')].password" count == 1
+jsonpath "$.resources[0].console_url" isString
+jsonpath "$.resources[0].console_url" contains "https://"
 
 #################################################################################
 # Delete placement

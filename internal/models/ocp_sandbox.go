@@ -102,6 +102,7 @@ type OcpSandbox struct {
 	OcpSharedClusterConfigurationName string            `json:"ocp_cluster"`
 	OcpIngressDomain                  string            `json:"ingress_domain"`
 	OcpApiUrl                         string            `json:"api_url"`
+	OcpConsoleUrl                     string            `json:"console_url,omitempty"`
 	Annotations                       map[string]string `json:"annotations"`
 	Status                            string            `json:"status"`
 	ErrorMessage                      string            `json:"error_message,omitempty"`
@@ -506,7 +507,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			default_sandbox_quota,
 			strict_default_sandbox_quota,
 			quota_required,
-      skip_quota,
+			skip_quota,
 			limit_range
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
@@ -1403,6 +1404,42 @@ func (a *OcpSandboxProvider) Request(
 			return
 		}
 		creds := []any{}
+
+		// Detect the OpenShift console URL if it's not part of clusterAdditionalVars already
+
+		if consoleUrl, ok := selectedCluster.AdditionalVars["console_url"]; ok {
+			// try to convert to string
+			if consoleUrlStr, ok := consoleUrl.(string); ok {
+				rnew.OcpConsoleUrl = consoleUrlStr
+			} else {
+				log.Logger.Error("console_url in AdditionalVars is not a string", "value", consoleUrl)
+				rnew.OcpConsoleUrl = ""
+				rnew.SetStatus("error")
+				return
+			}
+		}
+
+		if rnew.OcpConsoleUrl == "" {
+			routeGVR := schema.GroupVersionResource{
+				Group:    "route.openshift.io",
+				Version:  "v1",
+				Resource: "routes",
+			}
+			// Get the console route from the openshift-console namespace
+			res, err := dynclientset.Resource(routeGVR).Namespace("openshift-console").Get(context.TODO(), "console", metav1.GetOptions{})
+			if err != nil {
+				log.Logger.Warn("Could not get console route", "error", err)
+			} else {
+				// Extract the host from the unstructured data
+				host, found, err := unstructured.NestedString(res.Object, "spec", "host")
+				if err != nil || !found {
+					log.Logger.Warn("Could not find 'spec.host' in console route")
+				} else {
+					rnew.OcpConsoleUrl = "https://" + host
+				}
+			}
+		}
+
 		// Create an user if the keycloak option was enabled
 		if value, exists := cloudSelector["keycloak"]; exists && (value == "yes" || value == "true") {
 			// Generate a random password for the Keycloak user
@@ -1833,7 +1870,7 @@ func (a *OcpSandboxProvider) FetchAll() ([]OcpSandbox, error) {
 		 COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
 		 FROM resources r
 		 LEFT JOIN ocp_shared_cluster_configurations oc ON oc.name = r.resource_data->>'ocp_cluster'
-     WHERE r.resource_type = 'OcpSandbox'`,
+		WHERE r.resource_type = 'OcpSandbox'`,
 	)
 
 	if err != nil {
@@ -2183,7 +2220,7 @@ func (a *OcpSandboxWithCreds) Reload() error {
 		context.Background(),
 		`SELECT
 		 r.resource_data,
-         r.id,
+		 r.id,
 		 r.resource_name,
 		 r.resource_type,
 		 r.created_at,
