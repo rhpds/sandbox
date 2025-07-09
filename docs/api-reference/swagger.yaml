@@ -2892,6 +2892,9 @@ components:
         api_url:
           type: string
           example: https://api.ocp-cluster-1.com:6443
+        console_url:
+          type: string
+          example: https://console-openshift-console.apps.ocp-cluster-1.com
         ingress_domain:
           type: string
           example: apps.ocp-cluster-1.com
