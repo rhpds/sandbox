@@ -239,6 +239,8 @@ type UpdateOcpSharedConfigurationRequest struct {
 	MaxCpuUsagePercentage     *float64            `json:"max_cpu_usage_percentage,omitempty"`
 	UsageNodeSelector         *string             `json:"usage_node_selector,omitempty"`
 	LimitRange                *v1.LimitRange      `json:"limit_range,omitempty"`
+	NetboxApiUrl 							*string							`json:"netbox_api_url,omitempty"`
+	NetboxToken 							*string							`json:"netbox_token,omitempty"`
 }
 
 func (j *UpdateOcpSharedConfigurationRequest) Bind(r *http.Request) error {

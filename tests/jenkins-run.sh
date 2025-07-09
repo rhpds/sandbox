@@ -131,8 +131,14 @@ for payload in sandbox-api-configs/ocp-shared-cluster-configurations/ocpvdev01*.
             --security-opt seccomp=unconfined \
             bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
             | KEYVALUE="${cluster}.token" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
+    netbox_token=$(podman run --rm \
+            -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+            -e PROJECT_ID=$BWS_PROJECT_ID \
+            bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
+            | KEYVALUE="${cluster}.netbox_token" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 
-    jq  --arg token $token '(.token = $token)'  < "$payload" > "$payload2"
+
+    jq  --arg token $token --arg netbox_token $netbox_token '(.token = $token | .netbox_token = $netbox_token)'  < "$payload" > "$payload2"
 
     # In bash, files in a * are sorted alphabetically by default
     # so a create will always happen before an update.

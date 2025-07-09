@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/rhpds/sandbox/internal/log"
+	netbox "github.com/rhpds/sandbox/internal/netbox"
 	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -90,6 +91,12 @@ type OcpSharedClusterConfiguration struct {
 	// the value if the labels match. More matching labels means higher weight.
 	// The clusters with the highest weight will be selected first.
 	Weight int `json:"weight,omitempty"`
+
+	// Netbox API URL to query for available IPs and reserve them
+	NetboxApiUrl string `json:"netbox_api_url,omitempty"`
+
+	// Netbox Token to query for available IPs and reserve them
+	NetboxToken string `json:"netbox_token,omitempty"`
 }
 
 type OcpSharedClusterConfigurations []OcpSharedClusterConfiguration
@@ -309,8 +316,10 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 			strict_default_sandbox_quota,
 			quota_required,
 			skip_quota,
-			limit_range)
-			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+			limit_range,
+			netbox_api_url,
+			netbox_token)
+			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, pgp_sym_encrypt($19::text, $5))
 			RETURNING id`,
 		p.Name,
 		p.ApiUrl,
@@ -329,6 +338,8 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 		p.QuotaRequired,
 		p.SkipQuota,
 		p.LimitRange,
+		p.NetboxApiUrl,
+		p.NetboxToken,
 	).Scan(&p.ID); err != nil {
 		return err
 	}
@@ -359,7 +370,9 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 			 strict_default_sandbox_quota = $15,
 			 quota_required = $16,
 			 skip_quota = $17,
-			 limit_range = $18
+			 limit_range = $18,
+			 netbox_api_url = $19,
+			 netbox_token = pgp_sym_encrypt($20::text, $5)
 		 WHERE id = $10`,
 		p.Name,
 		p.ApiUrl,
@@ -379,6 +392,8 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 		p.QuotaRequired,
 		p.SkipQuota,
 		p.LimitRange,
+		p.NetboxApiUrl,
+		p.NetboxToken,
 	); err != nil {
 		return err
 	}
@@ -447,7 +462,9 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 			strict_default_sandbox_quota,
 			quota_required,
 			skip_quota,
-			limit_range
+			limit_range,
+			netbox_api_url,
+			pgp_sym_decrypt(netbox_token::bytea, $1)
 		 FROM ocp_shared_cluster_configurations WHERE name = $2`,
 		p.VaultSecret, name,
 	)
@@ -473,6 +490,8 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 		&cluster.QuotaRequired,
 		&cluster.SkipQuota,
 		&cluster.LimitRange,
+		&cluster.NetboxApiUrl,
+		&cluster.NetboxToken,
 	); err != nil {
 		return OcpSharedClusterConfiguration{}, err
 	}
@@ -507,7 +526,9 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			strict_default_sandbox_quota,
 			quota_required,
       skip_quota,
-			limit_range
+			limit_range,
+			netbox_api_url,
+      pgp_sym_decrypt(netbox_token::bytea, $1)
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
 	)
@@ -539,6 +560,8 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			&cluster.QuotaRequired,
 			&cluster.SkipQuota,
 			&cluster.LimitRange,
+			&cluster.NetboxApiUrl,
+			&cluster.NetboxToken,
 		); err != nil {
 			return []OcpSharedClusterConfiguration{}, err
 		}
@@ -1015,6 +1038,8 @@ func (a *OcpSandboxProvider) Request(
 
 	var selectedCluster OcpSharedClusterConfiguration
 	var selectedClusterMemoryUsage float64 = -1
+	var egressIP string = ""
+	var egressNetmask string = ""
 
 	// Ensure annotation has guid
 	if _, exists := annotations["guid"]; !exists {
@@ -1225,9 +1250,61 @@ func (a *OcpSandboxProvider) Request(
 		delay := time.Second
 		// Loop to wait for the namespace to be deleted
 		for {
+			// Add EgressIP
+			var egressIPAvailable string = ""
+			if value, exists := cloudSelector["egressip"]; exists && (value == "yes" || value == "true") {
+				if selectedCluster.NetboxApiUrl != "" && selectedCluster.NetboxToken != "" {
+					log.Logger.Info("selectedCluster", "egressconfig", selectedCluster.NetboxApiUrl)
+					egressIPAvailable, err = netbox.RequestIP(selectedCluster.NetboxApiUrl, selectedCluster.NetboxToken, rnew.ServiceUuid)
+					log.Logger.Info("selectedCluster", "egressip", egressIPAvailable)
+					if err != nil {
+						log.Logger.Error("Error creating EgressIP", "error", err)
+					} else {
+						// Define the egressIP GroupVersionResource
+						egressIPGVR := schema.GroupVersionResource{
+							Group:    "k8s.ovn.org",
+							Version:  "v1",
+							Resource: "egressips",
+						}
+
+						// Create the KeycloakUser object as an unstructured object
+						egressIP := &unstructured.Unstructured{
+							Object: map[string]any{
+								"apiVersion": "k8s.ovn.org/v1",
+								"kind":       "EgressIP",
+								"metadata": map[string]any{
+									"name": "egressip-" + guid,
+								},
+								"spec": map[string]any{
+									"egressIPs": []string{strings.Split(egressIPAvailable, "/")[0]},
+									"namespaceSelector": map[string]any{
+										"matchLabels": map[string]any{
+											"guid": guid, // The label selector for the Keycloak realm
+										},
+									},
+								},
+							},
+						}
+						_, err = dynclientset.Resource(egressIPGVR).Create(context.TODO(), egressIP, metav1.CreateOptions{})
+						if err != nil {
+							log.Logger.Error("Error creating EgressIP", "error", err)
+						}
+
+						log.Logger.Debug("EgressIP created successfully")
+
+					}
+				}
+				if egressIPAvailable != "" {
+					egressIP = strings.Split(egressIPAvailable, "/")[0]
+					egressNetmask = strings.Split(egressIPAvailable, "/")[1]
+					rnew.Annotations["egressIP"] = egressIP
+					rnew.Annotations["egressNetmask"] = egressNetmask
+				}
+			}
+
+
 			// Create the Namespace
 			// Add serviceUuid as label to the namespace
-
 			_, err = clientset.CoreV1().Namespaces().Create(context.TODO(), &v1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: namespaceName,
@@ -1237,6 +1314,8 @@ func (a *OcpSandboxProvider) Request(
 						"serviceUuid":                          serviceUuid,
 						"guid":                                 annotations["guid"],
 						"created-by":                           "sandbox-api",
+						"egressIP":                             egressIP,
+						"egressNetmask":                        egressNetmask,
 					},
 				},
 			}, metav1.CreateOptions{})
@@ -1990,8 +2069,8 @@ func (account *OcpSandboxWithCreds) Delete() error {
 	}
 
 	// Check if the namespace exists
-	_, err = clientset.CoreV1().Namespaces().Get(context.TODO(), account.Namespace, metav1.GetOptions{})
-	if err != nil {
+	deletens, nserr := clientset.CoreV1().Namespaces().Get(context.TODO(), account.Namespace, metav1.GetOptions{})
+	if nserr != nil {
 		// if error ends with 'not found', consider deletion a success
 		if strings.Contains(err.Error(), "not found") {
 			log.Logger.Info("Namespace not found, consider deletion a success", "name", account.Name)
@@ -2000,12 +2079,31 @@ func (account *OcpSandboxWithCreds) Delete() error {
 				"DELETE FROM resources WHERE id = $1",
 				account.ID,
 			)
-			return err
+			return nserr
 		}
 
-		log.Logger.Error("Error getting OCP namespace", "error", err, "name", account.Name)
+		log.Logger.Error("Error getting OCP namespace", "error", nserr, "name", account.Name)
 		account.SetStatus("error")
-		return err
+		return nserr
+	} else {
+		egressIP, ok := deletens.Labels["egressIP"]
+		if ok && egressIP != "" {
+			err = netbox.ReleaseIP(cluster.NetboxApiUrl, cluster.NetboxToken, egressIP+"/"+deletens.Labels["egressNetmask"])
+			if err != nil {
+				log.Logger.Error("Error deleting egressIP on netbox", egressIP, err)
+			}
+			// Delete the EgressIP object
+			egressIPGVR := schema.GroupVersionResource{
+				Group:    "k8s.ovn.org",
+				Version:  "v1",
+				Resource: "egressips",
+			}
+			if _, err := dynclientset.Resource(egressIPGVR).Get(context.TODO(), "egressip-"+deletens.Labels["guid"], metav1.GetOptions{}); err == nil {
+				if err := dynclientset.Resource(egressIPGVR).Delete(context.TODO(), "egressip-"+deletens.Labels["guid"], metav1.DeleteOptions{}); err != nil {
+					log.Logger.Error("Error deleting EgressIP on netbox", "error", err)
+				}
+			}
+		}
 	}
 	// Delete the Namespace
 	err = clientset.CoreV1().Namespaces().Delete(context.TODO(), account.Namespace, metav1.DeleteOptions{})
