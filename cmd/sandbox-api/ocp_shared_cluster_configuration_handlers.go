@@ -371,3 +371,55 @@ func (h *BaseHandler) UpdateOcpSharedClusterConfigurationHandler(w http.Response
 		Message: "OCP shared cluster configuration updated",
 	})
 }
+
+// PostOcpSharedClustersStatusHandler is a placeholder for a handler that would
+// handle requesting the status of all OCP shared clusters.
+func (h *BaseHandler) PostOcpSharedClustersStatusHandler(w http.ResponseWriter, r *http.Request) {
+	// Check if a status request is already in progress
+	if h.OcpSandboxProvider.IsOcpFleetStatusInProgress(r.Context()) {
+		w.WriteHeader(http.StatusConflict)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusConflict,
+			Message:        "A status check is already in progress. Please wait for it to complete before starting a new one.",
+		})
+		return
+	}
+
+	// Create a new fleet status job
+	job, err := h.OcpSandboxProvider.CreateOcpFleetStatusJob(r.Context())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to create OCP shared cluster status job",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+	render.Render(w, r, &v1.LifecycleResponse{
+		RequestID: job.RequestID,
+		Status:    job.Status,
+		Message:   "Status Request successfully created",
+	})
+}
+
+// GetOcpSharedClusterStatusHandler returns the status of all OCP shared clusters
+func (h *BaseHandler) GetOcpSharedClustersStatusHandler(w http.ResponseWriter, r *http.Request) {
+	// Extract the request ID from the URL
+	// Get the status of all OCP shared clusters
+	statusJob, err := h.OcpSandboxProvider.GetOcpFleetStatusJob(r.Context())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to get OCP shared cluster status",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, statusJob)
+}

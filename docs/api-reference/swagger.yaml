@@ -1872,6 +1872,87 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /ocp-shared-clusters/status:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Admin Login JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <LOGIN_TOKEN>
+    post:
+      summary: Request new status update of all OCP shared clusters
+      operationId: statusOcpSharedClusters
+      tags:
+        - admin
+      responses:
+        '202':
+          description: The status request was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        '409':
+          description: Status request already in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: OCP shared cluster status request already in progress
+                http_code: 409
+        default:
+          description: statusOcpSharedClusters unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      summary: Get the status of all OCP shared clusters
+      operationId: getStatusOcpSharedClusters
+      tags:
+        - admin
+      responses:
+        '200':
+          description: The status of all OCP shared clusters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: getStatusOcpSharedClusters unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /health:
     get:
       summary: Health endpoint
@@ -3492,7 +3573,62 @@ components:
         error_text:
           type: string
           description: >-
-            Optional error text given by downstream services or sandbox API iteself, if any
+            Optional error text given by downstream services or sandbox API
+            itself, if any
       example:
         message: Not enough AWS accounts available
         available: false
+    Job:
+      description: >-
+        A Job is a record of a request to perform an operation.
+      type: object
+      required:
+        - request_id
+        - status
+      properties:
+        message:
+          type: string
+          description: A message describing the job status
+          example: "Job created"
+        request_id:
+          type: string
+          example: F8HWO8Bo79n1I_DPQPIEw
+        status:
+          type: string
+          enum:
+            - new
+            - initializing
+            - running
+            - success
+            - error
+            - deleting
+          example: running
+        completed_at:
+          type: string
+          format: date-time
+          example: 2023-03-13T09:42:33+01:00
+        body:
+          oneOf:
+            - $ref: '#/components/schemas/OcpFleetStatus'
+          discriminator:
+            propertyName: job_type
+            mapping:
+              ocp_fleet_status: '#/components/schemas/OcpFleetStatus'
+
+    OcpFleetStatus:
+      type: object
+      properties:
+        message:
+          type: string
+          example: OCP Fleet is healthy
+        clusters:
+          type: object
+          properties:
+            healthy:
+              type: boolean
+              example: true
+            configuration:
+              $ref: "#/components/schemas/OcpSharedClusterConfiguration"
+            ocp_version:
+              type: string
+              example: 4.16.0

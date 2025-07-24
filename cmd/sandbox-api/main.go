@@ -314,6 +314,8 @@ func main() {
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/enable", baseHandler.EnableOcpSharedClusterConfigurationHandler)
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/update", baseHandler.UpdateOcpSharedClusterConfigurationHandler)
 		r.Delete("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.DeleteOcpSharedClusterConfigurationHandler)
+		r.Post("/api/v1/ocp-shared-clusters/status", baseHandler.PostOcpSharedClustersStatusHandler)
+		r.Get("/api/v1/ocp-shared-clusters/status", baseHandler.GetOcpSharedClustersStatusHandler)
 
 		// ---------------------------------
 		// DNS

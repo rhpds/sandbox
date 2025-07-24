@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v4"
@@ -39,8 +40,8 @@ type OcpSharedClusterConfiguration struct {
 	Name                     string            `json:"name"`
 	ApiUrl                   string            `json:"api_url"`
 	IngressDomain            string            `json:"ingress_domain"`
-	Kubeconfig               string            `json:"kubeconfig"`
-	Token                    string            `json:"token"`
+	Kubeconfig               string            `json:"kubeconfig,omitempty"`
+	Token                    string            `json:"token,omitempty"`
 	CreatedAt                time.Time         `json:"created_at"`
 	UpdatedAt                time.Time         `json:"updated_at"`
 	Annotations              map[string]string `json:"annotations"`
@@ -90,6 +91,21 @@ type OcpSharedClusterConfiguration struct {
 	// the value if the labels match. More matching labels means higher weight.
 	// The clusters with the highest weight will be selected first.
 	Weight int `json:"weight,omitempty"`
+}
+
+// WithoutCredentials Method to return the OcpSharedClusterConfiguration without any credentials
+// or sensitive information.
+func (p *OcpSharedClusterConfiguration) WithoutCredentials() OcpSharedClusterConfiguration {
+	// Create a copy of the OcpSharedClusterConfiguration without credentials
+	withoutCreds := *p
+	withoutCreds.Kubeconfig = ""
+	withoutCreds.Token = ""
+	withoutCreds.DbPool = nil
+	withoutCreds.VaultSecret = ""
+	// Remove sensitive fields
+	withoutCreds.AdditionalVars = nil
+
+	return withoutCreds
 }
 
 type OcpSharedClusterConfigurations []OcpSharedClusterConfiguration
@@ -2343,4 +2359,397 @@ func ApplyQuota(requestedQuotaOrig *v1.ResourceQuota, defaultQuota *v1.ResourceQ
 	}
 
 	return resultQuota
+}
+
+func (a *OcpSandboxProvider) IsOcpFleetStatusInProgress(ctx context.Context) bool {
+
+	store := NewJobStore(a.DbPool)
+
+	// Check if there are any jobs in progress for OCP shared cluster
+	jobs, err := store.GetJobsByType(ctx, "ocp_fleet_status")
+
+	if err != nil {
+		log.Logger.Error("Error getting OCP shared cluster jobs", "error", err)
+		return false
+	}
+
+	for _, job := range jobs {
+		if job.Status == "running" || job.Status == "initializing" {
+			log.Logger.Info("OCP shared cluster status is in progress", "job", job.RequestID, "status", job.Status)
+			return true
+		}
+	}
+
+	return false
+}
+
+func (a *OcpSandboxProvider) CreateOcpFleetStatusJob(ctx context.Context) (*Job, error) {
+	store := NewJobStore(a.DbPool)
+
+	// Create a new job for OCP shared cluster status
+	job := &Job{
+		JobType: "ocp_fleet_status",
+	}
+
+	if err := store.CreateJob(ctx, job); err != nil {
+		log.Logger.Error("Error creating OCP fleet status job", "error", err)
+		return nil, err
+	}
+
+	go a.FleetStatus(context.Background(), job)
+
+	log.Logger.Info("OCP fleet status job created", "job", job.RequestID)
+	return job, nil
+}
+
+// GetOcpFleetStatusJob retrieves the status of all OCP shared clusters.
+func (a *OcpSandboxProvider) GetOcpFleetStatusJob(ctx context.Context) (*Job, error) {
+	store := NewJobStore(a.DbPool)
+
+	// Get the latest job by type ocp_fleet_status
+	job, err := store.GetLatestJobByType(ctx, "ocp_fleet_status")
+	if err != nil {
+		log.Logger.Error("Error getting OCP fleet status job", "error", err)
+		return nil, err
+	}
+
+	if job.JobType != "ocp_fleet_status" {
+		return nil, errors.New("job is not an OCP fleet status job")
+	}
+
+	return job, nil
+}
+
+// OperatorInfo holds the status and version for a single OCP Operator.
+type OperatorInfo struct {
+	Status  string `json:"status"`
+	Version string `json:"version,omitempty"`
+}
+
+// A struct to hold the status results for a single cluster
+type OcpClusterStatusBody struct {
+	ClusterName      string                        `json:"cluster_name"`
+	OCPVersion       string                        `json:"ocp_version,omitempty"`
+	OCPUpdateHistory []any                         `json:"ocp_update_history,omitempty"`
+	NodeSummary      map[string]int                `json:"node_summary"`
+	OperatorStatus   map[string]OperatorInfo       `json:"operator_status"`
+	Configuration    OcpSharedClusterConfiguration `json:"configuration"`
+	Message          string                        `json:"message,omitempty"`
+}
+
+// OcpFleetStatusBody holds the aggregated status for all OCP clusters.
+type OcpFleetStatusBody struct {
+	Clusters map[string]OcpClusterStatusBody `json:"clusters,omitempty"`
+	Message  string                          `json:"message,omitempty"`
+}
+
+// FleetStatus checks the status of all OCP shared clusters.
+// It loops through all OCP shared cluster configurations and creates a job for each one.
+// For each shared cluster, the job will check the following:
+// - The status of the cluster
+// - The OCP Version
+// - versions of the installed operators
+// - Number and type of nodes/workers
+// - The status of the nodes/workers
+// Once all jobs are done, the status of the fleetStatus is set to "success" or "error".
+// This function is executed in a goroutine, so it can be run asynchronously.
+// Each job has a timeout of 2m after which it will be killed and marked as "error".
+func (a *OcpSandboxProvider) FleetStatus(ctx context.Context, job *Job) {
+	log.Logger.Info("Starting OCP Fleet Status check", "job_id", job.ID)
+	store := NewJobStore(a.DbPool)
+
+	fleetBody := OcpFleetStatusBody{
+		Clusters: make(map[string]OcpClusterStatusBody),
+	}
+
+	// Set main job to running
+	if err := store.SetJobStatus(ctx, job, "running"); err != nil {
+		log.Logger.Error("Failed to set fleet status job to running", "error", err, "job_id", job.ID)
+		// Attempt to mark as error and exit
+		_ = store.SetJobStatus(ctx, job, "error")
+		return
+	}
+
+	// Get all cluster configurations
+	clusters, err := a.GetOcpSharedClusterConfigurations()
+	if err != nil {
+		log.Logger.Error("Failed to get OCP shared cluster configurations", "error", err, "job_id", job.ID)
+		job.Status = "error"
+		job.Body = map[string]any{"error": "Failed to get OCP shared cluster configurations: " + err.Error()}
+		_ = store.UpdateJob(ctx, job)
+		return
+	}
+
+	var wg sync.WaitGroup
+	var createdJobs []*Job
+
+	if len(clusters) > 0 {
+		// Set status to running
+		if err := store.SetJobStatus(ctx, job, "running"); err != nil {
+			log.Logger.Error("Failed to set fleet status job to running", "error", err, "job_id", job.ID)
+			// Attempt to mark as error and exit
+			_ = store.SetJobStatus(ctx, job, "error")
+			return
+		}
+	}
+	// Create a sub-job for each cluster and start a goroutine to check its status
+	for _, cluster := range clusters {
+		currentCluster := cluster // Make a local copy for the goroutine
+		subJob := &Job{
+			JobType:     "ocp_cluster_status",
+			ParentJobID: job.ID,
+			Body: map[string]any{
+				"cluster_name": currentCluster.Name,
+			},
+		}
+
+		if err := store.CreateJob(ctx, subJob); err != nil {
+			log.Logger.Error("Failed to create cluster status job", "error", err, "cluster", currentCluster.Name)
+			continue // Skip this cluster, but continue with others
+		}
+
+		// Retrieve the full job object to get its ID
+		createdJob, err := store.GetJobByRequestID(ctx, subJob.RequestID)
+		if err != nil {
+			log.Logger.Error("Failed to retrieve created cluster status job", "error", err, "request_id", subJob.RequestID)
+			continue
+		}
+		createdJobs = append(createdJobs, createdJob)
+
+		wg.Add(1)
+		// Create a context with a 2-minute timeout for each cluster check
+		jobCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+
+		go func(c context.Context, j *Job, conf OcpSharedClusterConfiguration) {
+			defer wg.Done()
+			defer cancel()
+			a.OcpSharedClusterStatus(c, j, conf)
+		}(jobCtx, createdJob, currentCluster)
+	}
+
+	// Wait for all cluster checks to finish
+	wg.Wait()
+	log.Logger.Info("All OCP cluster status checks completed", "job_id", job.ID)
+
+	// Aggregate results
+	fleetHasErrors := false
+
+	for _, j := range createdJobs {
+		finalSubJob, err := store.GetJobByID(ctx, j.ID)
+		if err != nil {
+			log.Logger.Error("Failed to get final status of sub-job", "error", err, "sub_job_id", j.ID)
+			fleetHasErrors = true
+			continue
+		}
+
+		if finalSubJob.Status == "error" {
+			fleetHasErrors = true
+		}
+
+		var subBody OcpClusterStatusBody
+		if finalSubJob.Body != nil {
+			if body, err := GetJobBody[OcpClusterStatusBody](*finalSubJob); err != nil {
+				log.Logger.Error("Failed to parse sub-job body", "error", err, "sub_job_id", j.ID)
+				fleetHasErrors = true
+				subBody.Message = "Failed to parse sub-job body: " + err.Error()
+			} else {
+				subBody = body
+			}
+		}
+
+		fleetBody.Clusters[subBody.ClusterName] = subBody
+	}
+
+	// Finalize main job
+	if fleetHasErrors {
+		job.Status = "error"
+		log.Logger.Warn("OCP Fleet Status check finished with errors", "job_id", job.ID)
+		fleetBody.Message = "Some clusters reported errors during status check."
+	} else {
+		job.Status = "success"
+		log.Logger.Info("OCP Fleet Status check finished successfully", "job_id", job.ID)
+		fleetBody.Message = "All clusters reported successful status checks."
+	}
+
+	if err := SetJobBody(job, fleetBody); err != nil {
+		log.Logger.Error("Failed to set job body for fleet status", "error", err, "job_id", job.ID)
+		job.Status = "error"
+	}
+
+	job.CompletedAt = time.Now()
+	if err := store.UpdateJob(ctx, job); err != nil {
+		log.Logger.Error("Failed to update final fleet status job", "error", err, "job_id", job.ID)
+	}
+
+}
+
+// OcpSharedClusterStatus checks:
+// - The status of the cluster
+// - The OCP Version
+// - versions of the installed operators
+// - Number and type of nodes/workers
+// - The status of the nodes/workers
+func (a *OcpSandboxProvider) OcpSharedClusterStatus(ctx context.Context, job *Job, conf OcpSharedClusterConfiguration) {
+	store := NewJobStore(a.DbPool)
+	if err := store.SetJobStatus(ctx, job, "running"); err != nil {
+		log.Logger.Error("Failed to set cluster status job to running", "error", err, "job_id", job.ID, "cluster", conf.Name)
+		return
+	}
+
+	statusBody := OcpClusterStatusBody{
+		ClusterName:    conf.Name,
+		NodeSummary:    make(map[string]int),
+		OperatorStatus: make(map[string]OperatorInfo),
+		Configuration:  conf.WithoutCredentials(),
+	}
+
+	var err error
+
+	// Create clients
+	config, err := conf.CreateRestConfig()
+	if err != nil {
+		err = fmt.Errorf("failed to create REST config: %w", err)
+	}
+
+	var clientset *kubernetes.Clientset
+	if err == nil {
+		clientset, err = kubernetes.NewForConfig(config)
+		if err != nil {
+			err = fmt.Errorf("failed to create Kubernetes clientset: %w", err)
+		}
+	}
+
+	var dynclientset dynamic.Interface
+	if err == nil {
+		dynclientset, err = dynamic.NewForConfig(config)
+		if err != nil {
+			err = fmt.Errorf("failed to create dynamic clientset: %w", err)
+		}
+	}
+
+	// Check OCP Version
+	if err == nil {
+		gvr := schema.GroupVersionResource{Group: "config.openshift.io", Version: "v1", Resource: "clusterversions"}
+		res, getErr := dynclientset.Resource(gvr).Get(ctx, "version", metav1.GetOptions{})
+		if getErr != nil {
+			err = fmt.Errorf("failed to get clusterversion: %w", getErr)
+		} else {
+			if version, found, _ := unstructured.NestedString(res.Object, "status", "desired", "version"); found {
+				statusBody.OCPVersion = version
+			}
+			if history, found, _ := unstructured.NestedSlice(res.Object, "status", "history"); found {
+				statusBody.OCPUpdateHistory = history
+			}
+		}
+	}
+
+	// Check Node Status
+	if err == nil {
+		nodes, listErr := clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+		if listErr != nil {
+			err = fmt.Errorf("failed to list nodes: %w", listErr)
+		} else {
+			statusBody.NodeSummary["total"] = len(nodes.Items)
+			for _, node := range nodes.Items {
+				if _, ok := node.Labels["node-role.kubernetes.io/master"]; ok {
+					statusBody.NodeSummary["master"]++
+				}
+				if _, ok := node.Labels["node-role.kubernetes.io/worker"]; ok {
+					statusBody.NodeSummary["worker"]++
+				}
+				if _, ok := node.Labels["node-role.kubernetes.io/infra"]; ok {
+					statusBody.NodeSummary["infra"]++
+				}
+				isReady := false
+				for _, cond := range node.Status.Conditions {
+					if cond.Type == v1.NodeReady && cond.Status == v1.ConditionTrue {
+						isReady = true
+						break
+					}
+				}
+				if isReady {
+					statusBody.NodeSummary["ready"]++
+				} else {
+					statusBody.NodeSummary["not_ready"]++
+				}
+			}
+		}
+	}
+
+	// Check Operator Status and Version
+	if err == nil {
+		gvr := schema.GroupVersionResource{Group: "config.openshift.io", Version: "v1", Resource: "clusteroperators"}
+		operators, listErr := dynclientset.Resource(gvr).List(ctx, metav1.ListOptions{})
+		if listErr != nil {
+			err = fmt.Errorf("failed to list clusteroperators: %w", listErr)
+		} else {
+			for _, op := range operators.Items {
+				name := op.GetName()
+				opInfo := OperatorInfo{}
+
+				// Get Health Status
+				var opState []string
+				conditions, found, _ := unstructured.NestedSlice(op.Object, "status", "conditions")
+				if !found {
+					opInfo.Status = "Unknown"
+				} else {
+					for _, c := range conditions {
+						if condition, ok := c.(map[string]any); ok {
+							condType, _ := condition["type"].(string)
+							condStatus, _ := condition["status"].(string)
+
+							if (condType == "Degraded" || condType == "Progressing") && condStatus == "True" {
+								opState = append(opState, condType)
+							}
+							if condType == "Available" && condStatus == "False" {
+								opState = append(opState, "Unavailable")
+							}
+						}
+					}
+					if len(opState) == 0 {
+						opInfo.Status = "Healthy"
+					} else {
+						opInfo.Status = strings.Join(opState, ", ")
+					}
+				}
+
+				// Get Operator Version
+				versions, found, _ := unstructured.NestedSlice(op.Object, "status", "versions")
+				if found {
+					for _, v := range versions {
+						if versionInfo, ok := v.(map[string]any); ok {
+							// The "operator" operand is the version of the controller itself.
+							if operandName, _ := versionInfo["name"].(string); operandName == "operator" {
+								opInfo.Version, _ = versionInfo["version"].(string)
+								break
+							}
+						}
+					}
+				}
+				statusBody.OperatorStatus[name] = opInfo
+			}
+		}
+	}
+
+	// Finalize the job
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			statusBody.Message = "Operation timed out. " + err.Error()
+		} else {
+			statusBody.Message = err.Error()
+		}
+		job.Status = "error"
+	} else {
+		job.Status = "success"
+	}
+
+	if err := SetJobBody(job, statusBody); err != nil {
+		log.Logger.Error("Failed to set job body for cluster status", "error", err, "job_id", job.ID, "cluster", conf.Name)
+		job.Status = "error"
+	}
+
+	if updateErr := store.UpdateJob(ctx, job); updateErr != nil {
+		log.Logger.Error("Failed to update cluster status job", "error", updateErr, "job_id", job.ID, "cluster", conf.Name)
+	}
+	log.Logger.Info("Finished cluster status check", "job_id", job.ID, "cluster", conf.Name, "status", job.Status)
 }

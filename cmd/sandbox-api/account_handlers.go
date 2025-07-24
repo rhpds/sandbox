@@ -391,7 +391,7 @@ func (h *BaseHandler) LifeCycleAccountHandler(action string) http.HandlerFunc {
 
 		// Reply with RequestID
 		w.WriteHeader(http.StatusAccepted)
-		render.Render(w, r, &v1.LifecycleRequestResponse{
+		render.Render(w, r, &v1.LifecycleResponse{
 			HTTPStatusCode: http.StatusAccepted,
 			Message:        fmt.Sprintf("%s request created", action),
 			RequestID:      reqId,
