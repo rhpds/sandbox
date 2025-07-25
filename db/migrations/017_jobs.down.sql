@@ -1,0 +1,2 @@
+DROP TRIGGER IF EXISTS jobs_updated_at ON jobs;
+DROP TABLE IF EXISTS jobs CASCADE;

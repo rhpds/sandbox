@@ -740,7 +740,7 @@ func (h *BaseHandler) LifeCyclePlacementHandler(action string) http.HandlerFunc 
 
 			// Reply with RequestID
 			w.WriteHeader(http.StatusAccepted)
-			render.Render(w, r, &v1.LifecycleRequestResponse{
+			render.Render(w, r, &v1.LifecycleResponse{
 				HTTPStatusCode: http.StatusAccepted,
 				Message:        fmt.Sprintf("%s request created", action),
 				RequestID:      reqId,
@@ -799,7 +799,7 @@ func (h *BaseHandler) LifeCyclePlacementHandler(action string) http.HandlerFunc 
 
 			// Reply with RequestID
 			w.WriteHeader(http.StatusAccepted)
-			render.Render(w, r, &v1.LifecycleRequestResponse{
+			render.Render(w, r, &v1.LifecycleResponse{
 				HTTPStatusCode: http.StatusAccepted,
 				Message:        fmt.Sprintf("%s request created", action),
 				RequestID:      reqId,
@@ -1189,7 +1189,7 @@ func (h *BaseHandler) GetStatusRequestHandler(w http.ResponseWriter, r *http.Req
 
 			// If it's a resource request, just return the status
 			w.WriteHeader(http.StatusOK)
-			render.Render(w, r, &v1.LifecycleRequestResponse{
+			render.Render(w, r, &v1.LifecycleResponse{
 				HTTPStatusCode: http.StatusOK,
 				RequestID:      RequestID,
 				Status:         job.Status,
@@ -1220,7 +1220,7 @@ func (h *BaseHandler) GetStatusRequestHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	w.WriteHeader(http.StatusOK)
-	render.Render(w, r, &v1.LifecycleRequestResponse{
+	render.Render(w, r, &v1.LifecycleResponse{
 		HTTPStatusCode: http.StatusOK,
 		RequestID:      RequestID,
 		Status:         status,

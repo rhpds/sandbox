@@ -68,7 +68,7 @@ type PlacementResponse struct {
 	Message        string `json:"message"`
 	Placement      models.PlacementWithCreds
 }
-type LifecycleRequestResponse struct {
+type LifecycleResponse struct {
 	HTTPStatusCode int    `json:"http_code,omitempty"` // http response status code
 	Message        string `json:"message"`
 	RequestID      string `json:"request_id,omitempty"`
@@ -103,7 +103,7 @@ func (p *PlacementStatusResponse) Render(w http.ResponseWriter, r *http.Request)
 	return nil
 }
 
-func (p *LifecycleRequestResponse) Render(w http.ResponseWriter, r *http.Request) error {
+func (p *LifecycleResponse) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
