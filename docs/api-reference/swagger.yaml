@@ -289,7 +289,7 @@ paths:
       operationId: stopPlacement
       summary: Stop all the resources of a placement assigned to a specific UUID.
       description: |-
-        Call this endpoint to stop all the resources in all the accounts of a service identified by UUID (usually anarchy UUID).
+        Call this endpoint to stop all the resources in all the accounts of a placement identified by UUID (usually anarchy UUID).
 
         This action will cascade stop to all the accounts associated with the placement.
       responses:
@@ -333,7 +333,7 @@ paths:
       operationId: startPlacement
       summary: Start all the resources of a placement assigned to a specific UUID.
       description: |-
-        Call this endpoint to start all the resources in all the accounts of a service identified by UUID (usually anarchy UUID).
+        Call this endpoint to start all the resources in all the accounts of a placement identified by UUID (usually anarchy UUID).
 
         This action will cascade start to all the accounts associated with the placement.
       responses:
@@ -470,7 +470,7 @@ paths:
           type: boolean
       - name: service_uuid
         in: query
-        description: Filter accounts by UUID (usually anarchy UUID)
+        description: Filter accounts by placement UUID (usually anarchy UUID)
         schema:
           $ref: '#/components/schemas/UUID'
     get:
@@ -2547,7 +2547,7 @@ components:
   schemas:
     UUID:
       type: string
-      description: The UUID of the service. Sandboxes are assigned uuid when booked. Usually anarchy UUID.
+      description: The UUID of the placement. Sandboxes are assigned uuid when booked. Usually anarchy UUID.
       format: uuid
 
     PlacementDryRunRequest:
