@@ -36,10 +36,9 @@ run-air: cmd/sandbox-api/assets/swagger.yaml .dev.pgenv .dev.jwtauth_env
 
 rm-local-pg:
 	@podman kill $${POSTGRESQL_POD} || true
-	@podman rm $${POSTGRESQL_POD} || true
 	@rm -f .dev.pg_password .dev.pgenv .dev.tokens_env .dev.admin_token .dev.app_token || true
 
-run-local-pg: rm-local-pg .dev.pg_password
+run-local-pg: .dev.pg_password
 	@echo "Running local postgres..."
 	@podman run  --rm -p $${POSTGRESQL_PORT}:5432 --name $${POSTGRESQL_POD} -e POSTGRES_PASSWORD=$(shell cat .dev.pg_password) -d postgres:16-bullseye
 # See full list of parameters here:
