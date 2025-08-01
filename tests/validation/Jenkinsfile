@@ -1,0 +1,47 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'cluster', defaultValue: 'all', description: 'cluster to validate')
+        string(name: 'sandbox-api-configs-ref', defaultValue: 'main', description: 'sandbox-api-configs branch or tag to use')
+    }
+
+    stages {
+        stage('Test') {
+            steps {
+                // Load the private repo git@github.com:rhpds/sandbox-api-configs.git
+
+                dir('sandbox-api-configs') {
+                    git branch: "${params['sandbox-api-configs-ref']}",
+                        credentialsId: 'ssh-key-ocp-shared-clusters-config',
+                        url: 'git@github.com:rhpds/sandbox-api-configs.git'
+                }
+
+
+                // Use  credential sandbox-functional-tests-dev-creds as a file to load the credentials
+                withCredentials([
+                    file(credentialsId: 'sandbox-functional-tests-dev-creds', variable: 'CREDENTIALS_FILE'),
+                    string(credentialsId: 'bw-ocp-shared-clusters-config-token', variable: 'BWS_ACCESS_TOKEN'),
+                    string(credentialsId: 'bw-ocp-shared-clusters-config-project-id', variable: 'BWS_PROJECT_ID'),
+                ]) {
+                    sh "tests/validation/validate-cluster.sh '${params.cluster}'"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            // This block will run regardless of success, failure, or abort
+            archiveArtifacts artifacts: 'api.log.gz'
+            archiveArtifacts artifacts: 'db_dump.sql.gz'
+            script {
+                def artifactUrlAPI = "${env.BUILD_URL}artifact/api.log.gz"
+                def artifactUrlDB = "${env.BUILD_URL}artifact/db_dump.sql.gz"
+
+                echo "API logs: ${artifactUrlAPI}"
+                echo "DB Dump: ${artifactUrlDB}"
+            }
+        }
+    }
+}

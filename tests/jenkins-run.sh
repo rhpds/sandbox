@@ -10,6 +10,10 @@ jobdir=$PWD
 # trap function
 _on_exit() {
     local exit_status=${1:-$?}
+
+    # Kill entire process group of the API
+    [ -n "${apipid}" ] &&  kill -- -$apipid
+
     rm -rf $tmpdir
     cd $jobdir
 
@@ -90,7 +94,8 @@ set -o pipefail
 export PORT
 
 echo "Running sandbox API on port $PORT"
-make run-api &> $apilog &
+setsid make run-api &> $apilog &
+apipid=$!
 
 # Wait for the API to come up
 retries=0
