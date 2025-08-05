@@ -13,7 +13,7 @@ pipeline {
 
                 dir('sandbox-api-configs') {
                     git branch: "${params['sandbox-api-configs-ref']}",
-                        credentialsId: 'ssh-key-ocp-shared-clusters-config',
+                        credentialsId: 'ssh-key-jenkins-qa-sandbox-api-folder',
                         url: 'git@github.com:rhpds/sandbox-api-configs.git'
                 }
 
