@@ -237,25 +237,17 @@ for cluster in $clusters; do
             --variable uuid=$uuid \
             --variable guid=$guid \
             --jobs 1 \
-            validation/keycloak.hurl
+            validation/keycloak.hurl validation/local-999.hurl
 
         if [ $? -ne 0 ]; then
-            echo "Tests for cluster ${cluster}-keycloak FAILED"
+            echo "Keycloak tests for cluster ${cluster} FAILED"
             testsfailed+=("${cluster}-keycloak")
         else
-            echo "Tests for cluster ${cluster}-keycloak PASSED"
+            echo "Keycloak tests for cluster ${cluster} PASSED"
             testssuccess+=("${cluster}-keycloak")
         fi
     else
         echo "Skipping Keycloak tests for cluster $cluster"
-    fi
-
-    if [ $? -ne 0 ]; then
-        echo "Tests for cluster $cluster FAILED"
-        testsfailed+=("$cluster")
-    else
-        echo "Tests for cluster $cluster PASSED"
-        testssuccess+=("$cluster")
     fi
 done
 
