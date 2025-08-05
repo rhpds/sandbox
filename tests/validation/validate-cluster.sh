@@ -209,7 +209,7 @@ for cluster in $clusters; do
         --variable uuid=$uuid \
         --variable guid=$guid \
         --jobs 1 \
-        validation/0*.hurl 999.hurl
+        validation/local-*.hurl
 
     if [ $? -ne 0 ]; then
         echo "Tests for cluster $cluster FAILED"
@@ -220,18 +220,22 @@ for cluster in $clusters; do
     fi
 done
 
+echo "Running global tests, not specific to a cluster"
+
 hurl --test \
     --variable login_token=$apptoken \
     --variable login_token_admin=$admintoken \
     --variable host=http://localhost:$PORT \
     --variable cluster=$cluster \
     --jobs 1 \
-    validation/status-all.hurl
+    validation/global-*.hurl
 
 if [ $? -ne 0 ]; then
-    clustersfailed+=("status-endpoint")
+    echo "Global tests FAILED"
+    clustersfailed+=("global")
 else
-    clusterssuccess+=("status-endpoint")
+    echo "Global tests PASSED"
+    clusterssuccess+=("global")
 fi
 
 set -e
