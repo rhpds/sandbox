@@ -54,6 +54,7 @@ for cmd in "${mandatory_commands[@]}"; do
         exit 1
     fi
 done
+make clean
 
 # Pull needed images
 podman pull --quiet quay.io/rhpds/sandbox-admin:latest
@@ -72,6 +73,7 @@ else
     echo "Using PostgreSQL port $POSTGRESQL_PORT"
     POSTGRESQL_PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq)  | shuf  | head -n 1 )
     echo "Using PostgreSQL port $POSTGRESQL_PORT"
+    export POSTGRESQL_PORT
 fi
 set -o pipefail
 
