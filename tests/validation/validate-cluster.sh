@@ -196,8 +196,8 @@ fi
 
 cd tests/
 
-clustersfailed=()
-clusterssuccess=()
+testsfailed=()
+testssuccess=()
 set +e
 for cluster in $clusters; do
     echo "Running tests for cluster $cluster"
@@ -213,10 +213,10 @@ for cluster in $clusters; do
 
     if [ $? -ne 0 ]; then
         echo "Tests for cluster $cluster FAILED"
-        clustersfailed+=("$cluster")
+        testsfailed+=("$cluster")
     else
         echo "Tests for cluster $cluster PASSED"
-        clusterssuccess+=("$cluster")
+        testssuccess+=("$cluster")
     fi
 done
 
@@ -232,18 +232,20 @@ hurl --test \
 
 if [ $? -ne 0 ]; then
     echo "Global tests FAILED"
-    clustersfailed+=("global")
+    testsfailed+=("global")
 else
     echo "Global tests PASSED"
-    clusterssuccess+=("global")
+    testssuccess+=("global")
 fi
 
 set -e
 
-echo "Failed clusters: ${clustersfailed[*]}"
-echo "Successful clusters: ${clusterssuccess[*]}"
+echo "#######################################################################"
+echo "FAILED tests: ${testsfailed[*]}"
+echo "Successful tests: ${testssuccess[*]}"
+echo "#######################################################################"
 
-if [ ${#clustersfailed[@]} -ne 0 ]; then
+if [ ${#testsfailed[@]} -ne 0 ]; then
     echo "Some tests failed"
     exit 1
 else
