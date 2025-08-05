@@ -208,7 +208,7 @@ for cluster in $clusters; do
         --variable uuid=$uuid \
         --variable guid=$guid \
         --jobs 1 \
-        validation/*.hurl
+        validation/0*.hurl 999.hurl
 
     if [ $? -ne 0 ]; then
         echo "Tests for cluster $cluster FAILED"
@@ -217,6 +217,16 @@ for cluster in $clusters; do
         echo "Tests for cluster $cluster PASSED"
     fi
 done
+set -e
+
+hurl --test \
+    --variable login_token=$apptoken \
+    --variable login_token_admin=$admintoken \
+    --variable host=http://localhost:$PORT \
+    --variable cluster=$cluster \
+    --jobs 1 \
+    validation/status-all.hurl
+
 
 if [ "$catchallfail" = true ]; then
     echo "Some tests failed"
