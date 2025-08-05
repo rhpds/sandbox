@@ -54,6 +54,7 @@ for cmd in "${mandatory_commands[@]}"; do
         exit 1
     fi
 done
+make clean
 
 # Pull needed images
 podman pull --quiet quay.io/rhpds/sandbox-admin:latest
@@ -66,6 +67,8 @@ POSTGRESQL_PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut
 if [ -z "$POSTGRESQL_PORT" ]; then
     echo "No free port found"
     exit 1
+else
+    echo "Using PostgreSQL port $POSTGRESQL_PORT"
 fi
 set -o pipefail
 
@@ -188,6 +191,9 @@ fi
 
 cd tests/
 
+testsfailed=()
+testssuccess=()
+set +e
 for cluster in $clusters; do
     echo "Running tests for cluster $cluster"
     hurl --test \
@@ -198,5 +204,45 @@ for cluster in $clusters; do
         --variable uuid=$uuid \
         --variable guid=$guid \
         --jobs 1 \
-        validation/*.hurl
+        validation/local-*.hurl
+
+    if [ $? -ne 0 ]; then
+        echo "Tests for cluster $cluster FAILED"
+        testsfailed+=("$cluster")
+    else
+        echo "Tests for cluster $cluster PASSED"
+        testssuccess+=("$cluster")
+    fi
 done
+
+echo "Running global tests, not specific to a cluster"
+
+hurl --test \
+    --variable login_token=$apptoken \
+    --variable login_token_admin=$admintoken \
+    --variable host=http://localhost:$PORT \
+    --variable cluster=$cluster \
+    --jobs 1 \
+    validation/global-*.hurl
+
+if [ $? -ne 0 ]; then
+    echo "Global tests FAILED"
+    testsfailed+=("global")
+else
+    echo "Global tests PASSED"
+    testssuccess+=("global")
+fi
+
+set -e
+
+echo "#######################################################################"
+echo "FAILED tests: ${testsfailed[*]}"
+echo "Successful tests: ${testssuccess[*]}"
+echo "#######################################################################"
+
+if [ ${#testsfailed[@]} -ne 0 ]; then
+    echo "Some tests failed"
+    exit 1
+else
+    echo "All tests passed"
+fi
