@@ -189,6 +189,15 @@ else
     clusters="$clustername"
 fi
 
+get_cluster_conf() {
+    local cluster=$1
+    local route=http://localhost:$PORT
+    accesstoken=$(curl -s $route/api/v1/login  -H "Authorization: Bearer $admintoken"|jq -r .access_token)
+
+    curl -s $route/api/v1/ocp-shared-cluster-configurations/$cluster \
+        -H "Authorization: Bearer $accesstoken"
+}
+
 cd tests/
 
 testsfailed=()
@@ -205,6 +214,41 @@ for cluster in $clusters; do
         --variable guid=$guid \
         --jobs 1 \
         validation/local-*.hurl
+
+    if [ $? -ne 0 ]; then
+        echo "Tests for cluster $cluster FAILED"
+        testsfailed+=("$cluster")
+    else
+        echo "Tests for cluster $cluster PASSED"
+        testssuccess+=("$cluster")
+    fi
+
+    # Determine if we run keycloak.hurl tests based on value of
+    # .annotations.keycloak == "yes" in the cluster configuration
+    keycloak=$(get_cluster_conf $cluster | jq -r '.annotations.keycloak // "no"')
+
+    if [ "$keycloak" == "yes" ]; then
+        echo "Running Keycloak tests for cluster $cluster"
+        hurl --test \
+            --variable login_token=$apptoken \
+            --variable login_token_admin=$admintoken \
+            --variable host=http://localhost:$PORT \
+            --variable cluster=$cluster \
+            --variable uuid=$uuid \
+            --variable guid=$guid \
+            --jobs 1 \
+            validation/keycloak.hurl
+
+        if [ $? -ne 0 ]; then
+            echo "Tests for cluster ${cluster}-keycloak FAILED"
+            testsfailed+=("${cluster}-keycloak")
+        else
+            echo "Tests for cluster ${cluster}-keycloak PASSED"
+            testssuccess+=("${cluster}-keycloak")
+        fi
+    else
+        echo "Skipping Keycloak tests for cluster $cluster"
+    fi
 
     if [ $? -ne 0 ]; then
         echo "Tests for cluster $cluster FAILED"
