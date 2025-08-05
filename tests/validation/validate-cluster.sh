@@ -188,6 +188,8 @@ fi
 
 cd tests/
 
+catchallfail=false
+set +e
 for cluster in $clusters; do
     echo "Running tests for cluster $cluster"
     hurl --test \
@@ -199,4 +201,18 @@ for cluster in $clusters; do
         --variable guid=$guid \
         --jobs 1 \
         validation/*.hurl
+
+    if [ $? -ne 0 ]; then
+        echo "Tests for cluster $cluster FAILED"
+        catchallfail=true
+    else
+        echo "Tests for cluster $cluster PASSED"
+    fi
 done
+
+if [ "$catchallfail" = true ]; then
+    echo "Some tests failed"
+    exit 1
+else
+    echo "All tests passed"
+fi
