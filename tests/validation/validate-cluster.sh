@@ -219,7 +219,6 @@ for cluster in $clusters; do
         clusterssuccess+=("$cluster")
     fi
 done
-set -e
 
 hurl --test \
     --variable login_token=$apptoken \
@@ -229,6 +228,13 @@ hurl --test \
     --jobs 1 \
     validation/status-all.hurl
 
+if [ $? -ne 0 ]; then
+    clustersfailed+=("status-endpoint")
+else
+    clusterssuccess+=("status-endpoint")
+fi
+
+set -e
 
 echo "Failed clusters: ${clustersfailed[*]}"
 echo "Successful clusters: ${clusterssuccess[*]}"
