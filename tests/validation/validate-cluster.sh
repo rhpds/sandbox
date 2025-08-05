@@ -196,7 +196,8 @@ fi
 
 cd tests/
 
-catchallfail=false
+clustersfailed=()
+clusterssuccess=()
 set +e
 for cluster in $clusters; do
     echo "Running tests for cluster $cluster"
@@ -212,9 +213,10 @@ for cluster in $clusters; do
 
     if [ $? -ne 0 ]; then
         echo "Tests for cluster $cluster FAILED"
-        catchallfail=true
+        clustersfailed+=("$cluster")
     else
         echo "Tests for cluster $cluster PASSED"
+        clusterssuccess+=("$cluster")
     fi
 done
 set -e
@@ -228,7 +230,10 @@ hurl --test \
     validation/status-all.hurl
 
 
-if [ "$catchallfail" = true ]; then
+echo "Failed clusters: ${clustersfailed[*]}"
+echo "Successful clusters: ${clusterssuccess[*]}"
+
+if [ ${#clustersfailed[@]} -ne 0 ]; then
     echo "Some tests failed"
     exit 1
 else
