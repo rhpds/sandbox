@@ -110,6 +110,8 @@ jsonpath "$.resources[2].credentials[0].token" isString
 #################################################################################
 
 GET {{console_url}}
+[Options]
+retry: 10
 HTTP 200
 [Asserts]
 body contains "Red Hat OpenShift"
