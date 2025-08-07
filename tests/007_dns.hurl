@@ -381,7 +381,7 @@ jsonpath "$.resources" count == 1
 jsonpath "$.resources[0].status" == "success"
 
 #################################################################################
-# Create the same placement should return 409 conflict
+# Create the same placement should return 200
 #################################################################################
 
 POST {{host}}/api/v1/placements
@@ -394,12 +394,40 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
+    "tests": "Simple DNSSandbox placement",
+    "guid": "{{guid}}",
+    "env_type": "ocp4-cluster-blablablabla"
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "Placement already exists with identical request"
+
+#################################################################################
+# Create a different placement with same uuid should return 409 conflict
+#################################################################################
+
+POST {{host}}/api/v1/placements
+Authorization: Bearer {{access_token}}
+{
+  "service_uuid": "{{uuid}}",
+  "resources": [
+    {
+      "kind": "DNSSandbox"
+    },
+    {
+      "kind": "DNSSandbox"
+    }
+  ],
+  "annotations": {
     "test":"Should not be created as it's 409",
     "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
 HTTP 409
+[Asserts]
+jsonpath "$.message" == "UUID already in use by another placement"
 
 #################################################################################
 # Get all DNSSandboxes

@@ -40,6 +40,10 @@ func (p *Placement) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func (p *PlacementWithCreds) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
 func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) error {
 
 	accounts, err := awsProvider.FetchAllByServiceUuid(p.ServiceUuid)
@@ -121,7 +125,7 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 	return nil
 }
 
-func (p *Placement) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) error {
+func (p *PlacementWithCreds) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) error {
 
 	accounts, err := awsProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
 
@@ -371,7 +375,6 @@ func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider OcpSa
 		p.SetStatus("error")
 		return
 	}
-
 
 	if err := ibmProvider.Release(p.ServiceUuid); err != nil {
 		log.Logger.Error("Error while releasing IBMResourceGroup sandboxes", "error", err)
