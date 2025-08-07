@@ -180,7 +180,7 @@ HTTP 404
 #################################################################################
 # Ensure the DNS account 'testdns' doesn't exist
 #################################################################################
-DELETE {{host}}/api/v1/dns/testdns
+DELETE {{host}}/api/v1/dns/{{guid}}
 Authorization: Bearer {{access_token_admin}}
 [Options]
 retry: 10
@@ -204,7 +204,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "cloud_selector too restrictive",
-    "guid": "testdns",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -242,7 +242,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "placement with multiple DNS",
-    "guid": "testdns",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -316,7 +316,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "failed placement with multiple DNS with one that cannot schedule",
-    "guid": "testdns",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -352,7 +352,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "Simple DNSSandbox placement",
-    "guid": "testdns",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -395,7 +395,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test":"Should not be created as it's 409",
-    "guid": "testdns",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -460,7 +460,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "Placement with 3 sandboxes with sandbox suffix",
-    "guid": "testdns",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -489,9 +489,9 @@ jsonpath "$.resources" count == 3
 jsonpath "$.resources[0].status" == "success"
 jsonpath "$.resources[1].status" == "success"
 jsonpath "$.resources[2].status" == "success"
-jsonpath "$.resources[?(@.annotations.sandbox_suffix == 'dev')].credentials[0].zone" nth 0 startsWith "testdns-1-dev"
-jsonpath "$.resources[?(@.annotations.sandbox_suffix == 'test')].credentials[0].zone" nth 0 startsWith "testdns-1-test"
-jsonpath "$.resources[?(@.annotations.sandbox_suffix == 'prod')].credentials[0].zone" nth 0 startsWith "testdns-1-prod"
+jsonpath "$.resources[?(@.annotations.sandbox_suffix == 'dev')].credentials[0].zone" nth 0 startsWith "{{guid}}-1-dev"
+jsonpath "$.resources[?(@.annotations.sandbox_suffix == 'test')].credentials[0].zone" nth 0 startsWith "{{guid}}-1-test"
+jsonpath "$.resources[?(@.annotations.sandbox_suffix == 'prod')].credentials[0].zone" nth 0 startsWith "{{guid}}-1-prod"
 
 #################################################################################
 # Get all DNSSandboxes using service_uuid query
@@ -532,7 +532,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "Placement with both AWS + DNS",
-    "guid": "testdns",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -542,7 +542,7 @@ jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 jsonpath "$.Placement.resources" count == 2
 jsonpath "$.Placement.resources[0].status" matches "^(initializing|success)$"
-jsonpath "$.Placement.resources[0].annotations.guid" == "testdns"
+jsonpath "$.Placement.resources[0].annotations.guid" == "{{guid}}"
 jsonpath "$.Placement.resources[0].annotations.purpose" == "dev"
 
 #################################################################################

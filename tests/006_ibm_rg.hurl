@@ -182,7 +182,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "cloud_selector too restrictive",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -220,7 +220,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "placement with multiple IBM",
-    "guid": "tt-multi",
+    "guid": "{{guid}}",
     "env_type": "multi"
   }
 }
@@ -294,7 +294,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "failed placement with multiple IBM with one that cannot schedule",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -330,7 +330,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "Simple IBMResourceGroupSandbox placement",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -342,6 +342,7 @@ jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 jsonpath "$.Placement.resources" count == 1
 jsonpath "$.Placement.resources[0].status" == "initializing"
+
 
 #################################################################################
 # Wait until the placement is succesfull and resources are ready
@@ -373,7 +374,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test":"Should not be created as it's 409",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -437,8 +438,8 @@ Authorization: Bearer {{access_token}}
     {"kind": "IBMResourceGroupSandbox", "annotations": {"resourcegroup_suffix": "prod"}}
   ],
   "annotations": {
-    "test": "Placement with 3 sandboxes with namespace suffix",
-    "guid": "testg",
+    "test": "Placement with 3 sandboxes with rg suffix",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -467,9 +468,9 @@ jsonpath "$.resources" count == 3
 jsonpath "$.resources[0].status" == "success"
 jsonpath "$.resources[1].status" == "success"
 jsonpath "$.resources[2].status" == "success"
-jsonpath "$.resources[?(@.annotations.resourcegroup_suffix == 'dev')].resourcegroup" contains "rg-testg-dev"
-jsonpath "$.resources[?(@.annotations.resourcegroup_suffix == 'test')].resourcegroup" contains "rg-testg-2-test"
-jsonpath "$.resources[?(@.annotations.resourcegroup_suffix == 'prod')].resourcegroup" contains "rg-testg-3-prod"
+jsonpath "$.resources[?(@.annotations.resourcegroup_suffix == 'dev')].resourcegroup" contains "rg-{{guid}}-dev"
+jsonpath "$.resources[?(@.annotations.resourcegroup_suffix == 'test')].resourcegroup" contains "rg-{{guid}}-2-test"
+jsonpath "$.resources[?(@.annotations.resourcegroup_suffix == 'prod')].resourcegroup" contains "rg-{{guid}}-3-prod"
 
 #################################################################################
 # Get all IBMResourceGroupSandboxes using service_uuid query
@@ -510,7 +511,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "Placement with both AWS + IBM",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -520,7 +521,7 @@ jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 jsonpath "$.Placement.resources" count == 2
 jsonpath "$.Placement.resources[0].status" == "initializing"
-jsonpath "$.Placement.resources[0].annotations.guid" == "testg"
+jsonpath "$.Placement.resources[0].annotations.guid" == "{{guid}}"
 jsonpath "$.Placement.resources[0].annotations.purpose" == "dev"
 
 #################################################################################

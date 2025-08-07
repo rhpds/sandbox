@@ -62,7 +62,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "Simple OcpSandbox placement",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -142,7 +142,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "Simple OcpSandbox placement",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -221,7 +221,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "OcpSandbox placement with relation different",
-    "guid": "tt-relation",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -318,7 +318,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "Simple OcpSandbox placement",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -404,7 +404,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "Simple OcpSandbox placement",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }

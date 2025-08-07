@@ -75,7 +75,7 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "guid": "testg"
+    "guid": "{{guid}}"
   }
 }
 HTTP 200
@@ -87,7 +87,7 @@ jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 jsonpath "$.Placement.resources" count == 1
 jsonpath "$.Placement.resources[0].available" == false
 jsonpath "$.Placement.resources[0].reservation" not exists
-jsonpath "$.Placement.resources[0].annotations.guid" == "testg"
+jsonpath "$.Placement.resources[0].annotations.guid" == "{{guid}}"
 jsonpath "$.Placement.resources[0].annotations.purpose" == "backend"
 
 #################################################################################

@@ -241,7 +241,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "cloud_selector too restrictive",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -279,7 +279,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "placement with multiple Ocp",
-    "guid": "ttmultiple",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -376,7 +376,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "failed placement with multiple Ocp with one that cannot schedule",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -412,7 +412,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "Simple OcpSandbox placement",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -460,8 +460,8 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "test":"Should not be created as it's 409",
-    "guid": "testg",
+    "test":"Should not be created as it's different",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -526,7 +526,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "Placement with 3 sandboxes with namespace suffix",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -558,9 +558,9 @@ jsonpath "$.resources[2].status" == "success"
 jsonpath "$.resources[0].console_url" contains "https://"
 jsonpath "$.resources[1].console_url" contains "https://"
 jsonpath "$.resources[2].console_url" contains "https://"
-jsonpath "$.resources[?(@.annotations.namespace_suffix == 'dev')].namespace" contains "sandbox-testg-1-dev"
-jsonpath "$.resources[?(@.annotations.namespace_suffix == 'test')].namespace" contains "sandbox-testg-2-test"
-jsonpath "$.resources[?(@.annotations.namespace_suffix == 'prod')].namespace" contains "sandbox-testg-3-prod"
+jsonpath "$.resources[?(@.annotations.namespace_suffix == 'dev')].namespace" contains "sandbox-{{guid}}-1-dev"
+jsonpath "$.resources[?(@.annotations.namespace_suffix == 'test')].namespace" contains "sandbox-{{guid}}-2-test"
+jsonpath "$.resources[?(@.annotations.namespace_suffix == 'prod')].namespace" contains "sandbox-{{guid}}-3-prod"
 
 #################################################################################
 # Get all OcpSandboxes using service_uuid query
@@ -601,7 +601,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "Placement with both AWS + OCP",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -611,7 +611,7 @@ jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 jsonpath "$.Placement.resources" count == 2
 jsonpath "$.Placement.resources[0].status" == "initializing"
-jsonpath "$.Placement.resources[0].annotations.guid" == "testg"
+jsonpath "$.Placement.resources[0].annotations.guid" == "{{guid}}"
 jsonpath "$.Placement.resources[0].annotations.purpose" == "ocp"
 
 #################################################################################

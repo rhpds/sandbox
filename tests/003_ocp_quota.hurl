@@ -102,7 +102,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "OcpSandbox placement with Quota with a wrong syntax",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -128,7 +128,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "Simple OcpSandbox placement",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -199,7 +199,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "OcpSandbox placement with a Quota",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
@@ -273,7 +273,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "OcpSandbox placement missing Quota",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
 }

@@ -48,7 +48,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "OcpSandbox placement with HCP",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-foo"
   }
 }

@@ -35,13 +35,7 @@ HTTP 404
 # Delete reservation
 #################################################################################
 
-DELETE {{host}}/api/v1/reservations/summit
-Authorization: Bearer {{access_token_admin}}
-[Options]
-retry: 40
-HTTP 404
-
-DELETE {{host}}/api/v1/reservations/summit2
+DELETE {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token_admin}}
 [Options]
 retry: 40
