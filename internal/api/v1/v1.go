@@ -119,6 +119,8 @@ type ResourceRequest struct {
 	ClusterCondition string                   `json:"cluster_condition,omitempty"`
 	ClusterRelation  []models.ClusterRelation `json:"cluster_relation,omitempty"`
 	Count            int                      `json:"count"`
+	CreateCerts			 bool											`json:"create_certs,omitempty"`
+	CertsDomains		 []string									`json:"certs_domains,omitempty"`
 	Kind             string                   `json:"kind"`
 	LimitRange       *v1.LimitRange           `json:"limit_range,omitempty"`
 	Quota            *v1.ResourceList         `json:"quota,omitempty"`
