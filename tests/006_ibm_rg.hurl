@@ -345,6 +345,54 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 
 #################################################################################
+# Create same placement should return a 200
+#################################################################################
+
+POST {{host}}/api/v1/placements
+Authorization: Bearer {{access_token}}
+{
+  "service_uuid": "{{uuid}}",
+  "resources": [
+    {
+      "kind": "IBMResourceGroupSandbox"
+    }
+  ],
+  "annotations": {
+    "tests": "Simple IBMResourceGroupSandbox placement",
+    "guid": "{{guid}}",
+    "env_type": "ocp4-cluster-blablablabla"
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "Placement already exists with identical request"
+jsonpath "$.Placement.service_uuid" == "{{uuid}}"
+jsonpath "$.Placement.resources" count == 1
+
+#################################################################################
+# Create a different placement with same uuid should return a 409
+#################################################################################
+
+POST {{host}}/api/v1/placements
+Authorization: Bearer {{access_token}}
+{
+  "service_uuid": "{{uuid}}",
+  "resources": [
+    {
+      "kind": "IBMResourceGroupSandbox"
+    }
+  ],
+  "annotations": {
+    "tests": "Simple IBMResourceGroupSandbox placement",
+    "guid": "{{guid}}",
+    "env_type": "ocp4-cluster-blablablabla"
+  }
+}
+HTTP 409
+[Asserts]
+jsonpath "$.message" == "UUID already in use by another placement"
+
+#################################################################################
 # Wait until the placement is succesfull and resources are ready
 #################################################################################
 
