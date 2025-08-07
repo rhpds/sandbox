@@ -11,6 +11,20 @@ jobdir=$PWD
 _on_exit() {
     local exit_status=${1:-$?}
 
+    set +e
+    if [ -n "${uuid}" ]; then
+        # Always try to delete placements and reservations (999.hurl)
+        cd $jobdir/tests
+        hurl --test \
+            --variable login_token=$apptoken \
+            --variable login_token_admin=$admintoken \
+            --variable host=http://localhost:$PORT \
+            --variable uuid=$uuid \
+            --variable guid=$guid \
+            --jobs 1 \
+            999.hurl
+    fi
+
     # Kill entire process group of the API
     [ -n "${apipid}" ] &&  kill -- -$apipid
 
@@ -250,6 +264,8 @@ done
 
 uuid=$(uuidgen -r)
 export uuid
+guid=tt-$(echo $uuid | tr -dc 'a-z0-9' | head -c 4)
+export guid
 cd tests/
 
 tests=$1
@@ -262,5 +278,6 @@ hurl --test \
     --variable login_token_admin=$admintoken \
     --variable host=http://localhost:$PORT \
     --variable uuid=$uuid \
+    --variable guid=$guid \
     --jobs 1 \
     $tests

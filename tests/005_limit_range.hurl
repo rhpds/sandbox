@@ -131,7 +131,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "Simple OcpSandbox placement for limit range test",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-foo"
   }
 }
@@ -225,7 +225,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "OcpSandbox placement with limit range",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-foo"
   }
 }

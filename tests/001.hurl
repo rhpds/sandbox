@@ -27,7 +27,7 @@ jsonpath "$.access_token_exp" isString
 #################################################################################
 # Delete the reservation
 #################################################################################
-DELETE {{host}}/api/v1/reservations/summit
+DELETE {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token_admin}}
 [Options]
 retry: 3
@@ -40,7 +40,7 @@ HTTP 404
 POST {{host}}/api/v1/reservations
 Authorization: Bearer {{access_token}}
 {
-  "name": "summit",
+  "name": "reservation-{{guid}}",
   "resources": [
     {
       "kind": "AwsSandbox",
@@ -50,10 +50,10 @@ Authorization: Bearer {{access_token}}
 }
 HTTP 401
 
-PUT {{host}}/api/v1/reservations/summit
+PUT {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
 {
-  "name": "summit",
+  "name": "reservation-{{guid}}",
   "resources": [
     {
       "kind": "AwsSandbox",
@@ -63,7 +63,7 @@ Authorization: Bearer {{access_token}}
 }
 HTTP 401
 
-DELETE {{host}}/api/v1/reservations/summit
+DELETE {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
 HTTP 401
 
@@ -75,7 +75,7 @@ HTTP 401
 POST {{host}}/api/v1/reservations
 Authorization: Bearer {{access_token_admin}}
 {
-  "name": "summit",
+  "name": "reservation-{{guid}}",
   "resources": [
     {
       "kind": "AwsSandbox",
@@ -95,7 +95,7 @@ jsonpath "$.message" contains "You can only reserve up to"
 POST {{host}}/api/v1/reservations
 Authorization: Bearer {{access_token_admin}}
 {
-  "name": "summit",
+  "name": "reservation-{{guid}}",
   "resources": [
     {
       "kind": "AwsSandbox",
@@ -119,7 +119,7 @@ jsonpath "$.message" == "Kind AwsSandbox is defined more than once"
 # POST {{host}}/api/v1/reservations
 # Authorization: Bearer {{access_token_admin}}
 # {
-#   "name": "summit",
+#   "name": "reservation-{{guid}}",
 #   "expiration": "2020-04-20T23:13:27.464333+02:00",
 #   "resources": [
 #     {
@@ -139,7 +139,7 @@ jsonpath "$.message" == "Kind AwsSandbox is defined more than once"
 POST {{host}}/api/v1/reservations
 Authorization: Bearer {{access_token_admin}}
 {
-  "name": "summit",
+  "name": "reservation-{{guid}}",
   "resources": [
     {
       "kind": "AwsSandbox",
@@ -158,7 +158,7 @@ jsonpath "$.message" == "Reservation request created"
 POST {{host}}/api/v1/reservations
 Authorization: Bearer {{access_token_admin}}
 {
-  "name": "summit",
+  "name": "reservation-{{guid}}",
   "resources": [
     {
       "kind": "AwsSandbox",
@@ -174,7 +174,7 @@ jsonpath "$.message" == "Reservation already exists"
 # Wait for the reservation to be ready
 #################################################################################
 
-GET {{host}}/api/v1/reservations/summit
+GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
 [Options]
 retry: 30
@@ -186,7 +186,7 @@ jsonpath "$.reservation.status" == "success"
 # Ensure reservation definition has 2 resources
 #################################################################################
 
-GET {{host}}/api/v1/reservations/summit
+GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
 HTTP 200
 [Asserts]
@@ -196,7 +196,7 @@ jsonpath "$.reservation.request.resources[0].count" == 2
 # Ensure it has 2 resources actually listed
 #################################################################################
 
-GET {{host}}/api/v1/reservations/summit/resources
+GET {{host}}/api/v1/reservations/reservation-{{guid}}/resources
 Authorization: Bearer {{access_token}}
 HTTP 200
 [Asserts]
@@ -207,7 +207,7 @@ jsonpath "$.count" == 2
 # Update reservation
 #################################################################################
 
-PUT {{host}}/api/v1/reservations/summit
+PUT {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token_admin}}
 {
   "resources": [
@@ -225,7 +225,7 @@ jsonpath "$.message" == "Reservation update request created"
 # Ensure the reservation is 'updating'
 #################################################################################
 
-GET {{host}}/api/v1/reservations/summit
+GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
 [Options]
 retry: 20
@@ -237,7 +237,7 @@ jsonpath "$.reservation.status" == "updating"
 # Ensure the reservation is ready
 #################################################################################
 
-GET {{host}}/api/v1/reservations/summit
+GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
 [Options]
 retry: 25
@@ -249,7 +249,7 @@ jsonpath "$.reservation.status" == "success"
 # Ensure reservation definition has now 5 resources
 #################################################################################
 
-GET {{host}}/api/v1/reservations/summit
+GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
 HTTP 200
 [Asserts]
@@ -259,7 +259,7 @@ jsonpath "$.reservation.request.resources[0].count" == 5
 # Ensure it has 5 resources actually listed
 #################################################################################
 
-GET {{host}}/api/v1/reservations/summit/resources
+GET {{host}}/api/v1/reservations/reservation-{{guid}}/resources
 Authorization: Bearer {{access_token}}
 [Options]
 retry: 10
@@ -276,7 +276,7 @@ POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
 {
   "service_uuid": "{{uuid}}",
-  "reservation": "summit",
+  "reservation": "reservation-{{guid}}",
   "resources": [
     {
       "kind": "AwsSandbox",
@@ -292,13 +292,13 @@ jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 jsonpath "$.Placement.resources" count == 1
 jsonpath "$.Placement.resources[0].available" == false
-jsonpath "$.Placement.resources[0].reservation" == "summit"
+jsonpath "$.Placement.resources[0].reservation" == "reservation-{{guid}}"
 
 #################################################################################
 # Scale down reservation
 #################################################################################
 
-PUT {{host}}/api/v1/reservations/summit
+PUT {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token_admin}}
 {
   "resources": [
@@ -316,7 +316,7 @@ jsonpath "$.message" == "Reservation update request created"
 # Ensure the reservation is 'updating'
 #################################################################################
 
-GET {{host}}/api/v1/reservations/summit
+GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
 [Options]
 retry: 10
@@ -328,7 +328,7 @@ jsonpath "$.reservation.status" == "updating"
 # Ensure the reservation is ready
 #################################################################################
 
-GET {{host}}/api/v1/reservations/summit
+GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
 [Options]
 retry: 20
@@ -340,7 +340,7 @@ jsonpath "$.reservation.status" == "success"
 # Ensure reservation definition has now 1 resources
 #################################################################################
 
-GET {{host}}/api/v1/reservations/summit
+GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
 HTTP 200
 [Asserts]
@@ -350,7 +350,7 @@ jsonpath "$.reservation.request.resources[0].count" == 1
 # Ensure it has 1 resources actually listed
 #################################################################################
 
-GET {{host}}/api/v1/reservations/summit/resources
+GET {{host}}/api/v1/reservations/reservation-{{guid}}/resources
 Authorization: Bearer {{access_token}}
 HTTP 200
 [Asserts]
@@ -361,7 +361,7 @@ jsonpath "$.count" == 1
 # Delete the reservation
 #################################################################################
 
-DELETE {{host}}/api/v1/reservations/summit
+DELETE {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token_admin}}
 HTTP 202
 [Asserts]
@@ -371,7 +371,7 @@ jsonpath "$.message" == "Reservation deletion request created"
 # Ensure the reservation is 'deleting'
 #################################################################################
 
-GET {{host}}/api/v1/reservations/summit
+GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
 HTTP 200
 [Asserts]
@@ -381,7 +381,7 @@ jsonpath "$.reservation.status" == "deleting"
 # Ensure reservation is gone
 #################################################################################
 
-GET {{host}}/api/v1/reservations/summit
+GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
 [Options]
 retry: 30

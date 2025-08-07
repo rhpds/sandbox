@@ -301,7 +301,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "relation OcpSandbox placement",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-rel"
   }
 }
@@ -364,7 +364,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "relation OcpSandbox impossible",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "ocp4-cluster-impossible"
   }
 }

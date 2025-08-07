@@ -55,7 +55,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "placement with cloud_preference",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "tests"
   }
 }
@@ -112,7 +112,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "placement with cloud_preference",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "tests"
   }
 }
@@ -169,7 +169,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "placement with cloud_preference",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "tests"
   }
 }
@@ -226,7 +226,7 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "test": "placement with cloud_preference",
-    "guid": "testg",
+    "guid": "{{guid}}",
     "env_type": "tests"
   }
 }
