@@ -26,8 +26,6 @@ type Placement struct {
 
 type PlacementWithCreds struct {
 	Placement
-
-	Resources []any `json:"resources"`
 }
 
 type Placements []Placement
