@@ -202,6 +202,12 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 			existingRequest = tmp
 		}
 
+		// TODO: remove
+		log.Logger.Info("Existing placement found",
+			"service_uuid", placementRequest.ServiceUuid,
+			"existingRequest", existingRequest,
+			"newRequest", placementRequest)
+
 		if reflect.DeepEqual(existingRequest, placementRequest) {
 			placementWithCreds := models.PlacementWithCreds{
 				Placement: *existingPlacement,
