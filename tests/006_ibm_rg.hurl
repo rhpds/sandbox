@@ -331,7 +331,7 @@ Authorization: Bearer {{access_token}}
   "annotations": {
     "tests": "Simple IBMResourceGroupSandbox placement",
     "guid": "{{guid}}",
-    "env_type": "ocp4-cluster-blablablabla"
+    "env_type": "ocp4-cluster"
   }
 }
 HTTP 200
@@ -360,7 +360,7 @@ Authorization: Bearer {{access_token}}
   "annotations": {
     "tests": "Simple IBMResourceGroupSandbox placement",
     "guid": "{{guid}}",
-    "env_type": "ocp4-cluster-blablablabla"
+    "env_type": "ocp4-cluster"
   }
 }
 HTTP 200
@@ -384,8 +384,8 @@ Authorization: Bearer {{access_token}}
   ],
   "annotations": {
     "tests": "Simple IBMResourceGroupSandbox placement",
-    "guid": "{{guid}}",
-    "env_type": "ocp4-cluster-blablablabla"
+    "guid": "{{guid}}-different",
+    "env_type": "ocp4-cluster"
   }
 }
 HTTP 409
