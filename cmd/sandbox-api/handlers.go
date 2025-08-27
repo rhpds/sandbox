@@ -202,11 +202,10 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 			existingRequest = tmp
 		}
 
-		// TODO: remove
-		log.Logger.Info("Existing placement found",
-			"service_uuid", placementRequest.ServiceUuid,
-			"existingRequest", existingRequest,
-			"newRequest", placementRequest)
+		// Normalize the existing request so it's consistent with the new one.
+		// That way we can use reflect.DeepEqual to compare them.
+		// The http.Request parameter is not used by Bind logic, so passing nil is safe.
+		existingRequest.Bind(nil)
 
 		if reflect.DeepEqual(existingRequest, placementRequest) {
 			placementWithCreds := models.PlacementWithCreds{
