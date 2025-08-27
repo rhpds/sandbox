@@ -203,9 +203,12 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 		}
 
 		// Normalize the existing request so it's consistent with the new one.
+		// The best way to do that is to run the Bind method again.
 		// That way we can use reflect.DeepEqual to compare them.
 		// The http.Request parameter is not used by Bind logic, so passing nil is safe.
-		existingRequest.Bind(nil)
+		// But in case it changes in the future, we pass a dummy http.Request instead
+		dummyReq, _ := http.NewRequest("GET", "/", nil)
+		existingRequest.Bind(dummyReq)
 
 		if reflect.DeepEqual(existingRequest, placementRequest) {
 			placementWithCreds := models.PlacementWithCreds{
