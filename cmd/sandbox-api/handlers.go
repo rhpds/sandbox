@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -157,7 +158,7 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	_, err := models.GetPlacementByServiceUuid(h.dbpool, placementRequest.ServiceUuid)
+	existingPlacement, err := models.GetPlacementByServiceUuid(h.dbpool, placementRequest.ServiceUuid)
 	if err != pgx.ErrNoRows {
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -169,12 +170,81 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 			log.Logger.Error("PostPlacementHandler", "error", err)
 			return
 		}
+		// Compare request if placement already exists
+		existingRequest, ok := existingPlacement.Request.(*v1.PlacementRequest)
+		if !ok {
+			// Attempt to re-marshal and unmarshal into the correct type
+			data, err := json.Marshal(existingPlacement.Request)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					Err:            err,
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error marshalling existing request",
+					ErrorMultiline: []string{err.Error()},
+				})
+				log.Logger.Error("PostPlacementHandler", "error", err)
+				return
+			}
 
-		// Placement already exists
+			tmp := &v1.PlacementRequest{}
+			if err := json.Unmarshal(data, tmp); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					Err:            err,
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error unmarshalling existing request",
+					ErrorMultiline: []string{err.Error()},
+				})
+				log.Logger.Error("PostPlacementHandler", "error", err)
+				return
+			}
+			existingRequest = tmp
+		}
+
+		// Normalize the existing request so it's consistent with the new one.
+		// The best way to do that is to run the Bind method again.
+		// That way we can use reflect.DeepEqual to compare them.
+		// The http.Request parameter is not used by Bind logic, so passing nil is safe.
+		// But in case it changes in the future, we pass a dummy http.Request instead
+		dummyReq, _ := http.NewRequest("GET", "/", nil)
+		existingRequest.Bind(dummyReq)
+
+		if reflect.DeepEqual(existingRequest, placementRequest) {
+			placementWithCreds := models.PlacementWithCreds{
+				Placement: *existingPlacement,
+			}
+			if err := placementWithCreds.LoadActiveResourcesWithCreds(
+				h.awsAccountProvider,
+				h.OcpSandboxProvider,
+				h.DNSSandboxProvider,
+				h.IBMResourceGroupSandboxProvider,
+			); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					Err:            err,
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error loading resources",
+					ErrorMultiline: []string{err.Error()},
+				})
+				return
+			}
+
+			// Same request, return 200 OK
+			w.WriteHeader(http.StatusOK)
+			render.Render(w, r, &v1.PlacementResponse{
+				Placement:      placementWithCreds,
+				Message:        "Placement already exists with identical request",
+				HTTPStatusCode: http.StatusOK,
+			})
+			return
+		}
+
+		// A different Placement with same UUID already exists
 		w.WriteHeader(http.StatusConflict)
 		render.Render(w, r, &v1.Error{
 			HTTPStatusCode: http.StatusConflict,
-			Message:        "Placement already exists",
+			Message:        "UUID already in use by another placement",
 		})
 		return
 	}
@@ -643,7 +713,11 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 		log.Logger.Error("GetPlacementHandler", "error", err)
 		return
 	}
-	if err := placement.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider); err != nil {
+	placementWithCreds := &models.PlacementWithCreds{
+		Placement: *placement,
+	}
+
+	if err := placementWithCreds.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
 			Err:            err,
@@ -657,7 +731,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	w.WriteHeader(http.StatusOK)
-	render.Render(w, r, placement)
+	render.Render(w, r, placementWithCreds)
 }
 
 // Delete placement by service uuid

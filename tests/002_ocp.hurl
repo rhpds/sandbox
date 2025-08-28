@@ -426,6 +426,53 @@ jsonpath "$.Placement.resources" count == 1
 jsonpath "$.Placement.resources[0].status" == "initializing"
 
 #################################################################################
+# Create the same placement should return a 200 OK
+#################################################################################
+
+POST {{host}}/api/v1/placements
+Authorization: Bearer {{access_token}}
+{
+  "service_uuid": "{{uuid}}",
+  "resources": [
+    {
+      "kind": "OcpSandbox"
+    }
+  ],
+  "annotations": {
+    "tests": "Simple OcpSandbox placement",
+    "guid": "{{guid}}",
+    "env_type": "ocp4-cluster-blablablabla"
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.message" == "Placement already exists with identical request"
+jsonpath "$.Placement.service_uuid" == "{{uuid}}"
+
+#################################################################################
+# Create a different placement should return 409 conflict
+#################################################################################
+
+POST {{host}}/api/v1/placements
+Authorization: Bearer {{access_token}}
+{
+  "service_uuid": "{{uuid}}",
+  "resources": [
+    {
+      "kind": "OcpSandbox"
+    }
+  ],
+  "annotations": {
+    "test":"Should not be created as it's different",
+    "guid": "{{guid}}",
+    "env_type": "ocp4-cluster-blablablabla"
+  }
+}
+HTTP 409
+[Asserts]
+jsonpath "$.message" == "UUID already in use by another placement"
+
+#################################################################################
 # Wait until the placement is succesfull and resources are ready
 #################################################################################
 

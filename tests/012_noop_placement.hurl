@@ -177,7 +177,7 @@ HTTP 404
 POST {{host}}/api/v1/reservations
 Authorization: Bearer {{access_token_admin}}
 {
-  "name": "summit",
+  "name": "reservation-{{guid}}",
   "resources": [
     {
       "kind": "AwsSandbox",
@@ -192,7 +192,7 @@ jsonpath "$.message" == "Reservation request created"
 #################################################################################
 # Wait for the reservation to be ready
 #################################################################################
-GET {{host}}/api/v1/reservations/summit
+GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
 [Options]
 retry: 30
@@ -207,7 +207,7 @@ POST {{host}}/api/v1/placements/dry-run
 Authorization: Bearer {{access_token}}
 {
   "service_uuid": "{{uuid}}",
-  "reservation": "summit",
+  "reservation": "reservation-{{guid}}",
   "resources": [
     {
       "kind": "AwsSandbox",
