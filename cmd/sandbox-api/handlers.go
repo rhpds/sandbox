@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -261,6 +263,15 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 	multipleOcp := multipleKind(placementRequest.Resources, "OcpSandbox")
 	multipleDNS := multipleKind(placementRequest.Resources, "DNSSandbox")
 	multipleOcpAccounts := []models.MultipleOcpAccount{}
+	
+	// Track ArgoCD credentials per GUID per cluster to reuse across namespaces
+	argoCDCredentials := make(map[string]map[string]models.ArgoCDCredential)
+	var argoCDMutex sync.Mutex
+	
+	// Store shared state in context for this request
+	ctx := context.WithValue(r.Context(), "argoCDCredentials", argoCDCredentials)
+	ctx = context.WithValue(ctx, "argoCDMutex", &argoCDMutex)
+	
 	for _, request := range placementRequest.Resources {
 		switch request.Kind {
 		case "AwsSandbox", "AwsAccount", "aws_account":
@@ -317,10 +328,11 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 				request.LimitRange,
 				multipleOcp,
 				multipleOcpAccounts,
-				r.Context(),
+				ctx,
 				async_request,
 				request.Alias,
 				clusterRelation,
+				request.ArgocdVersion,
 			)
 			if err != nil {
 				cleanupResources(tocleanup)

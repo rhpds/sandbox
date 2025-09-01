@@ -1,0 +1,161 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argocd-secret
+  namespace: {{ .Namespace }}
+  labels:
+    {{- range $key, $value := .Labels }}
+    {{ $key }}: "{{ $value }}"
+    {{- end }}
+    app.kubernetes.io/name: "argocd-secret"
+type: Opaque
+data:
+  admin.password: {{ .AdminPasswordHash }}
+  admin.passwordMtime: {{ .AdminPasswordMtime }}
+
+---
+apiVersion: argoproj.io/v1beta1
+kind: ArgoCD
+metadata:
+  name: argocd
+  namespace: {{ .Namespace }}
+  labels:
+    {{- range $key, $value := .Labels }}
+    {{ $key }}: "{{ $value }}"
+    {{- end }}
+    app.kubernetes.io/name: "argocd"
+spec:
+  # ArgoCD version configuration
+  version: {{ .ArgoCD.Version }}
+  
+  # Use Dex with OpenShift OAuth for SSO
+  sso:
+    dex:
+      openShiftOAuth: true
+    provider: dex
+  
+  # RBAC configuration - grant admin access to the Keycloak user within ArgoCD
+  rbac:
+    policy: |
+      g, system:cluster-admins, role:admin
+      g, cluster-admins, role:admin
+      g, sandbox-{{ .Guid }}, role:admin
+    scopes: '[name,groups]'
+  
+  # Server configuration with OpenShift Route
+  server:
+    insecure: {{ .ArgoCD.Server.Insecure }}
+    route:
+      enabled: true
+      tls:
+        insecureEdgeTerminationPolicy: Redirect
+        termination: edge
+    grpc:
+      web: true
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+  
+  # Application controller configuration
+  controller:
+    appSync: 3m
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "256Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+  
+  # Repository server configuration  
+  repo:
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+  
+  # Resource exclusions for cluster-scoped resources
+  resourceExclusions: |
+    - apiGroups:
+      - clusterview.open-cluster-management.io
+      kinds:
+      - "*"
+      clusters:
+      - "*"
+    - apiGroups:
+      - kubevirt.io
+      kinds:
+      - "*"
+      clusters:
+      - "*"
+    - apiGroups:
+      - storage.k8s.io
+      kinds:
+      - "*"
+      clusters:
+      - "*"
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: argocd-sandbox-user
+  namespace: {{ .Namespace }}
+  labels:
+    {{- range $key, $value := .Labels }}
+    {{ $key }}: "{{ $value }}"
+    {{- end }}
+    app.kubernetes.io/name: "argocd-sandbox-user-role"
+rules:
+# Full access to ArgoCD Applications
+- apiGroups: ["argoproj.io"]
+  resources: ["applications", "applicationsets"]
+  verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
+# Read access to ArgoCD Projects
+- apiGroups: ["argoproj.io"]
+  resources: ["appprojects"]
+  verbs: ["get", "list", "watch"]
+# Read access to core resources to see what's deployed
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets", "persistentvolumeclaims", "events"]
+  verbs: ["get", "list", "watch"]
+# Read access to common workload resources
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch"]
+# Read access to networking resources
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses", "networkpolicies"]
+  verbs: ["get", "list", "watch"]
+# Read access to routes (OpenShift)
+- apiGroups: ["route.openshift.io"]
+  resources: ["routes"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argocd-sandbox-user
+  namespace: {{ .Namespace }}
+  labels:
+    {{- range $key, $value := .Labels }}
+    {{ $key }}: "{{ $value }}"
+    {{- end }}
+    app.kubernetes.io/name: "argocd-sandbox-user-binding"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: argocd-sandbox-user
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: sandbox-{{ .Guid }}

@@ -2993,6 +2993,10 @@ components:
             deployer:
               openshift_cnv_nfs_path: /IBMfoobar/data01
               openshift_cnv_nfs_server: fsf-region.domain.com
+        argocd_version:
+          type: string
+          description: "Version of ArgoCD to deploy when argocd is enabled in cloud_selector. Defaults to v3.0.13 if not specified."
+          example: "v3.0.13"
 
     OcpSandboxWithCreds:
       allOf:

@@ -15,6 +15,7 @@ pipeline {
     parameters {
         string(name: 'tests', defaultValue: '*.hurl', description: 'what tests to run')
         string(name: 'sandbox-api-configs-ref', defaultValue: 'main', description: 'sandbox-api-configs branch or tag to use')
+        booleanParam(name: 'run_argocd_python_tests', defaultValue: true, description: 'Run ArgoCD Python integration tests')
     }
 
     stages {
@@ -35,7 +36,7 @@ pipeline {
                     string(credentialsId: 'bw-ocp-shared-clusters-config-token', variable: 'BWS_ACCESS_TOKEN'),
                     string(credentialsId: 'bw-ocp-shared-clusters-config-project-id', variable: 'BWS_PROJECT_ID'),
                 ]) {
-                    sh "tests/jenkins-run.sh '${params.tests}'"
+                    sh "RUN_ARGOCD_PYTHON_TESTS='${params.run_argocd_python_tests}' tests/jenkins-run.sh '${params.tests}'"
                 }
             }
         }
