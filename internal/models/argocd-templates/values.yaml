@@ -16,7 +16,7 @@ labels:
 
 # Argo CD configuration
 argocd:
-  image: "quay.io/argoproj/argocd:v3.0.13"
+  image: "quay.io/argoproj/argocd:v3.0.16"
   server:
     insecure: true
   controller:

@@ -2,7 +2,7 @@
 # This test validates that Argo CD instances are properly provisioned when requested
 #
 # ArgoCD Provisioning Usage:
-# 1. Basic: cloud_selector: { "argocd": "yes" } - Uses default version (v3.0.13)
+# 1. Basic: cloud_selector: { "argocd": "yes" } - Uses default version (v3.0.16)
 # 2. Custom version: cloud_selector: { "argocd": "yes" }, "argocd_version": "v2.11.7"
 # 
 # argocd_version is a request field, not in cloud_selector

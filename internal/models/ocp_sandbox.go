@@ -1823,10 +1823,10 @@ func (a *OcpSandboxProvider) Request(
 			argoCDNamespace := "sandbox-" + annotations["guid"] + "-argocd"
 			argoCDNamespace = argoCDNamespace[:min(63, len(argoCDNamespace))] // truncate to 63
 
-			// Get ArgoCD version from request, default to v3.0.13
+			// Get ArgoCD version from request, default to v3.0.16
 			argoCDVersion := rnew.ArgocdVersion
 			if argoCDVersion == "" {
-				argoCDVersion = "v3.0.13"
+				argoCDVersion = "v3.0.16"
 			}
 
 			// Extract ArgoCD credentials and mutex from context
