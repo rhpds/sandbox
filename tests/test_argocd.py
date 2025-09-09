@@ -21,6 +21,9 @@ import pytest
 import structlog
 
 # Configure structlog
+import sys
+logging.basicConfig(level=logging.INFO, stream=sys.stdout, 
+                   format='%(asctime)s [%(levelname)-8s] %(message)s')
 structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(logging.INFO))
 logger = structlog.get_logger()
 
