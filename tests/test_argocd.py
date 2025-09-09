@@ -212,8 +212,8 @@ class ArgoCDClient:
         response.raise_for_status()
         return response.json()
     
-    def create_hello_world_app(self, app_name: str, target_namespace: str) -> Dict[str, Any]:
-        """Create a simple hello-world application."""
+    def create_hello_world_app(self, app_name: str, target_namespace: str, max_retries: int = 5) -> Dict[str, Any]:
+        """Create a simple hello-world application with retry logic for repo connectivity issues."""
         app_manifest = {
             "metadata": {
                 "name": app_name
@@ -239,14 +239,35 @@ class ArgoCDClient:
             }
         }
         
-        response = self.session.post(f"{self.url}/api/v1/applications", json=app_manifest)
-        try:
-            response.raise_for_status()
-        except Exception as e:
-            # Log the response content for debugging
-            print(f"ArgoCD API error response: {response.text}")
-            raise e
-        return response.json()
+        for attempt in range(max_retries):
+            try:
+                response = self.session.post(f"{self.url}/api/v1/applications", json=app_manifest)
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
+                # Check if this is a repo connectivity issue
+                if (hasattr(e, 'response') and e.response is not None and 
+                    e.response.status_code == 400 and 
+                    ('repository not accessible' in e.response.text or 
+                     'connection refused' in e.response.text or
+                     'dial tcp' in e.response.text)):
+                    
+                    if attempt < max_retries - 1:
+                        wait_time = (attempt + 1) * 10  # Progressive backoff: 10s, 20s, 30s, 40s
+                        logger.info(f"ArgoCD repo server connectivity issue, retrying in {wait_time}s", 
+                                   attempt=attempt + 1, 
+                                   max_retries=max_retries,
+                                   app_name=app_name)
+                        time.sleep(wait_time)
+                        continue
+                
+                # Log the response content for debugging and re-raise
+                if hasattr(e, 'response') and e.response is not None:
+                    print(f"ArgoCD API error response: {e.response.text}")
+                raise e
+        
+        # This shouldn't be reached, but just in case
+        raise Exception(f"Failed to create application {app_name} after {max_retries} attempts")
     
 
     def get_application(self, app_name: str) -> Dict[str, Any]:
