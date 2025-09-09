@@ -39,6 +39,7 @@ def cleanup_all_placements():
             client.delete_placement(test_uuid)
             print(f"✅ Placement {test_uuid} deleted")
             active_placements.remove((client, test_uuid))
+
         except Exception as e:
             # if it's not a 404 Client Error, raise exception
             if '404 Client Error' in str(e):
@@ -139,6 +140,9 @@ class SandboxAPIClient:
     def delete_placement(self, service_uuid: str) -> Dict[str, Any]:
         """Delete a placement."""
         response = self.session.delete(f"{self.base_url}/api/v1/placements/{service_uuid}")
+        if response.status_code == 404:
+            logger.info(f"Placement {service_uuid} not found (404).")
+            return {"status": "not_found"}
         response.raise_for_status()
         return response.json()
     
