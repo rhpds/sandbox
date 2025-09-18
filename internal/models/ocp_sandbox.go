@@ -2125,17 +2125,100 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		err = dynclientset.Resource(keycloakUserGVR).Namespace(namespace).Delete(context.TODO(), userAccountName, metav1.DeleteOptions{})
 		if err != nil {
 			if strings.Contains(err.Error(), "not found") {
-				log.Logger.Info("Keycloak not found, move on", "name", account.Name)
+				log.Logger.Info("Keycloak user CR already gone", "name", account.Name)
 			} else {
-				log.Logger.Error("Error deleting KeycloadUser", "error", err, "name", account.Name)
+				log.Logger.Error("Error deleting KeycloakUser", "error", err, "name", account.Name)
 				account.SetStatus("error")
 				return err
+			}
+		} else {
+			// Wait for the KeycloakUser to be actually deleted from the cluster
+			// This ensures the Keycloak operator has processed the deletion
+			log.Logger.Info("Waiting for KeycloakUser deletion to complete", "user", userAccountName)
+
+			for retries := 0; retries < 30; retries++ {
+				time.Sleep(2 * time.Second)
+
+				_, err = dynclientset.Resource(keycloakUserGVR).Namespace(namespace).Get(context.TODO(), userAccountName, metav1.GetOptions{})
+				if err != nil && strings.Contains(err.Error(), "not found") {
+					log.Logger.Info("KeycloakUser deletion confirmed", "user", userAccountName, "retries", retries)
+					break
+				}
+
+				if retries == 29 {
+					log.Logger.Error("KeycloakUser deletion verification timed out", "user", userAccountName)
+					account.SetStatus("error")
+					return fmt.Errorf("Error deleting KeycloakUser: %w", err)
+				}
 			}
 		}
 
 		log.Logger.Info("KeycloakUser deleted",
 			"cluster", account.OcpSharedClusterConfigurationName,
 			"name", account.Name, "user", userAccountName)
+
+		// Now cleanup all users and identities associated to the user in the cluster
+		// Delete the OpenShift User resource
+		userGVR := schema.GroupVersionResource{
+			Group:    "user.openshift.io",
+			Version:  "v1",
+			Resource: "users",
+		}
+
+		// Get the user to retrieve its identities before deletion
+		user, err := dynclientset.Resource(userGVR).Get(context.TODO(), userAccountName, metav1.GetOptions{})
+		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				log.Logger.Info("OpenShift user already gone", "user", userAccountName)
+			} else {
+				log.Logger.Error("Error getting OpenShift user", "error", err, "user", userAccountName)
+				account.SetStatus("error")
+				return err
+			}
+		} else {
+			// Extract identities from the user
+			identities, found, err := unstructured.NestedStringSlice(user.Object, "identities")
+			if err != nil {
+				log.Logger.Error("Error extracting identities from user", "error", err, "user", userAccountName)
+			} else if found {
+				// Delete each identity
+				identityGVR := schema.GroupVersionResource{
+					Group:    "user.openshift.io",
+					Version:  "v1",
+					Resource: "identities",
+				}
+
+				for _, identity := range identities {
+					err = dynclientset.Resource(identityGVR).Delete(context.TODO(), identity, metav1.DeleteOptions{})
+					if err != nil {
+						if strings.Contains(err.Error(), "not found") {
+							log.Logger.Info("Identity already gone", "identity", identity)
+						} else {
+							log.Logger.Error("Error deleting identity", "error", err, "identity", identity)
+							account.SetStatus("error")
+							return err
+						}
+					} else {
+						log.Logger.Info("Identity deleted", "identity", identity, "user", userAccountName)
+					}
+				}
+			}
+
+			// Delete the OpenShift user
+			err = dynclientset.Resource(userGVR).Delete(context.TODO(), userAccountName, metav1.DeleteOptions{})
+			if err != nil {
+				if strings.Contains(err.Error(), "not found") {
+					log.Logger.Info("OpenShift user already gone", "user", userAccountName)
+				} else {
+					log.Logger.Error("Error deleting OpenShift user", "error", err, "user", userAccountName)
+					account.SetStatus("error")
+					return err
+				}
+			} else {
+				log.Logger.Info("OpenShift user deleted", "user", userAccountName)
+			}
+		}
+
 	}
 
 	_, err = account.Provider.DbPool.Exec(
