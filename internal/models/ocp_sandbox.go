@@ -1444,14 +1444,15 @@ func (a *OcpSandboxProvider) Request(
 			// Get the console route from the openshift-console namespace
 			res, err := dynclientset.Resource(routeGVR).Namespace("openshift-console").Get(context.TODO(), "console", metav1.GetOptions{})
 			if err != nil {
-				log.Logger.Warn("Could not get console route", "error", err)
+				log.Logger.Warn("Could not get console route", "error", err, "cluster", selectedCluster.Name)
 			} else {
 				// Extract the host from the unstructured data
 				host, found, err := unstructured.NestedString(res.Object, "spec", "host")
 				if err != nil || !found {
-					log.Logger.Warn("Could not find 'spec.host' in console route")
+					log.Logger.Warn("Could not find 'spec.host' in console route", "found", found, "error", err, "cluster", selectedCluster.Name)
 				} else {
 					rnew.OcpConsoleUrl = "https://" + host
+					log.Logger.Info("Successfully detected console URL", "cluster", selectedCluster.Name, "console_url", rnew.OcpConsoleUrl)
 				}
 			}
 		}
