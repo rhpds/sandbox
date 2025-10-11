@@ -1636,7 +1636,7 @@ func (a *OcpSandboxProvider) Request(
 					Subjects: []rbacv1.Subject{
 						{
 							Kind:      "ServiceAccount",
-							Name:      "default",
+							Name:      "sandbox",
 							Namespace: namespaceName,
 						},
 					},
