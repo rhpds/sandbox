@@ -1260,7 +1260,7 @@ func (a *OcpSandboxProvider) Request(
 							Resource: "egressips",
 						}
 
-						// Create the KeycloakUser object as an unstructured object
+						// Create the EgressIP object as an unstructured object
 						egressIP := &unstructured.Unstructured{
 							Object: map[string]any{
 								"apiVersion": "k8s.ovn.org/v1",
@@ -1272,7 +1272,7 @@ func (a *OcpSandboxProvider) Request(
 									"egressIPs": []string{strings.Split(egressIPAvailable, "/")[0]},
 									"namespaceSelector": map[string]any{
 										"matchLabels": map[string]any{
-											"guid": guid, // The label selector for the Keycloak realm
+											"serviceUuid": serviceUuid, // The label selector for the service uuid
 										},
 									},
 								},
