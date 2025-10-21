@@ -31,17 +31,24 @@ _on_exit() {
     rm -rf $tmpdir
     cd $jobdir
 
-    (. ./.dev.pgenv ;
-     podman run --rm \
-         --net=host \
-         -v $(pwd):/backup:z \
-         postgres:16-bullseye \
-         pg_dump "${DATABASE_URL}" -f /backup/db_dump.sql
-    )
-    gzip -f $dbdump
-    gzip -f $apilog
+    if [ -f ./.dev.pgenv ]; then
+        (. ./.dev.pgenv ;
+         podman run --rm \
+             --net=host \
+             --security-opt seccomp=unconfined \
+             --userns=host \
+             -v $(pwd):/backup:z \
+             postgres:16-bullseye \
+             pg_dump "${DATABASE_URL}" -f /backup/db_dump.sql
+        ) || echo "Warning: Failed to dump database"
+    else
+        echo "Warning: .dev.pgenv not found, skipping database dump"
+        touch $dbdump
+    fi
+    [ -f "$dbdump" ] && gzip -f $dbdump || echo "Warning: db_dump.sql not found"
+    [ -f "$apilog" ] && gzip -f $apilog || echo "Warning: api.log not found"
 
-    make clean
+    make clean || echo "Warning: make clean failed, but continuing"
     exit $exit_status
 }
 
@@ -62,9 +69,9 @@ for cmd in "${mandatory_commands[@]}"; do
 done
 
 # Pull needed images
-podman pull --quiet quay.io/rhpds/sandbox-admin:latest
-podman pull --quiet docker.io/library/postgres:16-bullseye
-podman pull --quiet docker.io/bitwarden/bws:0.5.0
+podman pull --quiet quay.io/rhpds/sandbox-admin:latest || echo "Warning: Failed to pull sandbox-admin image"
+podman pull --quiet docker.io/library/postgres:16-bullseye || echo "Warning: Failed to pull postgres image"
+podman pull --quiet docker.io/bitwarden/bws:0.5.0 || echo "Warning: Failed to pull bws image"
 
 # Run the local postgresql instance
 set +o pipefail
@@ -79,6 +86,12 @@ export POSTGRESQL_PORT
 POSTGRESQL_POD=localpg$$
 export POSTGRESQL_POD
 make run-local-pg
+
+# Check if .dev.pgenv was created successfully
+if [ ! -f ./.dev.pgenv ]; then
+    echo "Error: .dev.pgenv was not created by make run-local-pg"
+    exit 1
+fi
 
 # DB migrations
 sleep 2
@@ -148,6 +161,7 @@ for payload in sandbox-api-configs/ocp-shared-cluster-configurations/ocpvdev01*.
             -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
             -e PROJECT_ID=$BWS_PROJECT_ID \
             --security-opt seccomp=unconfined \
+            --userns=host \
             bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
             | KEYVALUE="${cluster}.token" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 
@@ -189,12 +203,14 @@ for payload in sandbox-api-configs/dns-account-configurations/dev*.json; do
             -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
             -e PROJECT_ID=$BWS_PROJECT_ID \
             --security-opt seccomp=unconfined \
+            --userns=host \
             bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
             | KEYVALUE="${account}.access_key_id" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
     SECRET_ACCESS_KEY=$(podman run --rm \
             -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
             -e PROJECT_ID=$BWS_PROJECT_ID \
             --security-opt seccomp=unconfined \
+            --userns=host \
             bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
             | KEYVALUE="${account}.secret_access_key" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 
@@ -236,6 +252,7 @@ for payload in sandbox-api-configs/ibm-resource-group-configurations/dev*.json; 
             -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
             -e PROJECT_ID=$BWS_PROJECT_ID \
             --security-opt seccomp=unconfined \
+            --userns=host \
             bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
             | KEYVALUE="${account}.apikey" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 
