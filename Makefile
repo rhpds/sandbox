@@ -40,7 +40,7 @@ rm-local-pg:
 
 run-local-pg: .dev.pg_password
 	@echo "Running local postgres..."
-	@podman run  --rm -p $${POSTGRESQL_PORT}:5432 --name $${POSTGRESQL_POD} --security-opt seccomp=unconfined --userns=host -e POSTGRES_PASSWORD=$(shell cat .dev.pg_password) -d postgres:16-bullseye
+	@podman run  --rm -p $${POSTGRESQL_PORT}:5432 --name $${POSTGRESQL_POD} --security-opt label=disable --userns=host -e POSTGRES_PASSWORD=$(shell cat .dev.pg_password) -d postgres:16-bullseye
 # See full list of parameters here:
 # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
 

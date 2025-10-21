@@ -35,7 +35,7 @@ _on_exit() {
         (. ./.dev.pgenv ;
          podman run --rm \
              --net=host \
-             --security-opt seccomp=unconfined \
+             --security-opt label=disable \
              --userns=host \
              -v $(pwd):/backup:z \
              postgres:16-bullseye \
@@ -87,15 +87,15 @@ POSTGRESQL_POD=localpg$$
 export POSTGRESQL_POD
 make run-local-pg
 
+# DB migrations
+sleep 2
+make migrate
 # Check if .dev.pgenv was created successfully
 if [ ! -f ./.dev.pgenv ]; then
     echo "Error: .dev.pgenv was not created by make run-local-pg"
     exit 1
 fi
 
-# DB migrations
-sleep 2
-make migrate
 # ensure all .down.sql files are working
 (. ./.dev.pgenv && migrate -database "${DATABASE_URL}" -path db/migrations down -all )
 # Run migration again
@@ -160,7 +160,7 @@ for payload in sandbox-api-configs/ocp-shared-cluster-configurations/ocpvdev01*.
     token=$(podman run --rm \
             -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
             -e PROJECT_ID=$BWS_PROJECT_ID \
-            --security-opt seccomp=unconfined \
+            --security-opt label=disable \
             --userns=host \
             bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
             | KEYVALUE="${cluster}.token" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
@@ -202,14 +202,14 @@ for payload in sandbox-api-configs/dns-account-configurations/dev*.json; do
     ACCESS_KEY_ID=$(podman run --rm \
             -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
             -e PROJECT_ID=$BWS_PROJECT_ID \
-            --security-opt seccomp=unconfined \
+            --security-opt label=disable \
             --userns=host \
             bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
             | KEYVALUE="${account}.access_key_id" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
     SECRET_ACCESS_KEY=$(podman run --rm \
             -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
             -e PROJECT_ID=$BWS_PROJECT_ID \
-            --security-opt seccomp=unconfined \
+            --security-opt label=disable \
             --userns=host \
             bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
             | KEYVALUE="${account}.secret_access_key" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
@@ -251,7 +251,7 @@ for payload in sandbox-api-configs/ibm-resource-group-configurations/dev*.json; 
     APIKEY=$(podman run --rm \
             -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
             -e PROJECT_ID=$BWS_PROJECT_ID \
-            --security-opt seccomp=unconfined \
+            --security-opt label=disable \
             --userns=host \
             bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
             | KEYVALUE="${account}.apikey" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
