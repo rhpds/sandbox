@@ -154,8 +154,8 @@ type KeycloakCredential struct {
 type OcpSandboxes []OcpSandbox
 
 type MultipleOcpAccount struct {
-	Alias   string     `json:"alias"`
-	Account OcpSandbox `json:"account"`
+	Alias   string              `json:"alias"`
+	Account OcpSandboxWithCreds `json:"account"`
 }
 
 type TokenResponse struct {
@@ -1459,11 +1459,41 @@ func (a *OcpSandboxProvider) Request(
 
 		// Create an user if the keycloak option was enabled
 		if value, exists := cloudSelector["keycloak"]; exists && (value == "yes" || value == "true") {
-			// Generate a random password for the Keycloak user
-			userAccountName := "sandbox-" + guid
-			password, err := generateRandomPassword(16)
-			if err != nil {
-				log.Logger.Error("Error generating password", "error", err)
+			// Use the original GUID (from annotations) to ensure same username across sandboxes on the same cluster
+			userAccountName := "sandbox-" + annotations["guid"]
+
+			// Check if we already have a Keycloak user from any previously created account
+			var password string
+			var userAlreadyCreated bool
+		searchLoop:
+			for _, maccount := range multipleAccounts {
+				// Look for KeycloakCredential in the account's credentials
+				for _, cred := range maccount.Account.Credentials {
+					if keycloakCred, ok := cred.(KeycloakCredential); ok {
+						if keycloakCred.Kind == "KeycloakUser" && keycloakCred.Username == userAccountName {
+							password = keycloakCred.Password
+							// Check if user was created on the same cluster to determine userAlreadyCreated flag
+							userAlreadyCreated = maccount.Account.OcpSharedClusterConfigurationName == selectedCluster.Name
+							log.Logger.Debug("Reusing existing Keycloak credentials",
+								"alias", maccount.Alias,
+								"user", userAccountName,
+								"fromCluster", maccount.Account.OcpSharedClusterConfigurationName,
+								"currentCluster", selectedCluster.Name,
+								"userAlreadyCreated", userAlreadyCreated,
+							)
+							break searchLoop
+						}
+					}
+				}
+			}
+
+			// If no existing password found, generate a new one
+			if password == "" {
+				var err error
+				password, err = generateRandomPassword(16)
+				if err != nil {
+					log.Logger.Error("Error generating password", "error", err)
+				}
 			}
 
 			// Define the KeycloakUser GroupVersionResource
@@ -1505,12 +1535,21 @@ func (a *OcpSandboxProvider) Request(
 
 			// Create the KeycloakUser resource in the specified namespace
 			namespace := "rhsso"
-			_, err = dynclientset.Resource(keycloakUserGVR).Namespace(namespace).Create(context.TODO(), keycloakUser, metav1.CreateOptions{})
-			if err != nil {
-				log.Logger.Error("Error creating KeycloakUser", "error", err)
-			}
 
-			log.Logger.Debug("KeycloakUser created successfully")
+			// Check if we already created the user (using our plumbing field)
+			if userAlreadyCreated {
+				log.Logger.Info("KeycloakUser already created by previous sandbox, skipping creation", "user", userAccountName, "cluster", selectedCluster.Name)
+			} else {
+				// User hasn't been created yet, create it
+				_, err = dynclientset.Resource(keycloakUserGVR).Namespace(namespace).Create(context.TODO(), keycloakUser, metav1.CreateOptions{})
+				if err != nil {
+					log.Logger.Error("Error creating KeycloakUser", "error", err)
+					userAlreadyCreated = false // Mark as not created due to error
+				} else {
+					log.Logger.Debug("KeycloakUser created successfully")
+					userAlreadyCreated = true // Mark as created
+				}
+			}
 
 			creds = append(creds, KeycloakCredential{
 				Kind:     "KeycloakUser",

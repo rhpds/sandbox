@@ -358,8 +358,7 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 			}
 			tocleanup = append(tocleanup, &account)
 			if multipleOcp && request.Alias != "" {
-				maccount, _ := h.OcpSandboxProvider.FetchByName(account.Name)
-				multipleOcpAccounts = append(multipleOcpAccounts, models.MultipleOcpAccount{Alias: request.Alias, Account: maccount})
+				multipleOcpAccounts = append(multipleOcpAccounts, models.MultipleOcpAccount{Alias: request.Alias, Account: account})
 			}
 			resources = append(resources, account)
 
@@ -581,8 +580,10 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 				if request.Alias != "" {
 					// Create a temporary, hypothetical account object with the chosen cluster.
 					// The actual fields needed depend on your scheduling logic, but OcpCluster is the most likely one.
-					hypotheticalAccount := models.OcpSandbox{
-						OcpSharedClusterConfigurationName: candidateClusters[0].Name, // Using the first candidate
+					hypotheticalAccount := models.OcpSandboxWithCreds{
+						OcpSandbox: models.OcpSandbox{
+							OcpSharedClusterConfigurationName: candidateClusters[0].Name, // Using the first candidate
+						},
 					}
 					multipleOcpAccounts = append(multipleOcpAccounts, models.MultipleOcpAccount{
 						Alias:   request.Alias,

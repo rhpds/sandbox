@@ -2,6 +2,8 @@ build/sandbox-*
 deploy/lambda/*.zip
 .dev.*
 tmp/*
+backups
+backups/*
 sandbox-api-configs
 db_dump.sql*
 api.log*
