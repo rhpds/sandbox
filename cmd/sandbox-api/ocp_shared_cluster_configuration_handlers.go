@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-chi/render"
 )
+
 
 func (h *BaseHandler) CreateOcpSharedClusterConfigurationHandler(w http.ResponseWriter, r *http.Request) {
 	ocpSharedClusterConfiguration := models.MakeOcpSharedClusterConfiguration()
@@ -385,8 +387,20 @@ func (h *BaseHandler) PostOcpSharedClustersStatusHandler(w http.ResponseWriter, 
 		return
 	}
 
+	// Check for debug parameters and add them to context
+	ctx := r.Context()
+	if debugForceFail := r.URL.Query().Get("debug_force_fail"); debugForceFail != "" {
+		ctx = context.WithValue(ctx, models.DebugForceFailKey, debugForceFail)
+	}
+	if debugForceTimeout := r.URL.Query().Get("debug_force_timeout"); debugForceTimeout != "" {
+		ctx = context.WithValue(ctx, models.DebugForceTimeoutKey, debugForceTimeout)
+	}
+	if debugCustomTimeout := r.URL.Query().Get("debug_custom_timeout"); debugCustomTimeout != "" {
+		ctx = context.WithValue(ctx, models.DebugCustomTimeoutKey, debugCustomTimeout)
+	}
+	
 	// Create a new fleet status job
-	job, err := h.OcpSandboxProvider.CreateOcpFleetStatusJob(r.Context())
+	job, err := h.OcpSandboxProvider.CreateOcpFleetStatusJob(ctx)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{

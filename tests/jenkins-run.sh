@@ -75,7 +75,7 @@ podman pull --quiet docker.io/bitwarden/bws:0.5.0 || echo "Warning: Failed to pu
 
 # Run the local postgresql instance
 set +o pipefail
-POSTGRESQL_PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq)  | shuf  | head -n 1 )
+POSTGRESQL_PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq)  | shuf 2>/dev/null | head -n 1 )
 if [ -z "$POSTGRESQL_PORT" ]; then
     echo "No free port found"
     exit 1
@@ -112,7 +112,7 @@ make test
 # Select a free port
 #PORT=54379
 set +o pipefail
-PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq)  | shuf  | head -n 1 )
+PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq)  | shuf 2>/dev/null | head -n 1 )
 if [ -z "$PORT" ]; then
     echo "No free port found"
     exit 1

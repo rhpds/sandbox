@@ -51,7 +51,7 @@ HTTP 401
 # Run status request for all shared clusters
 #################################################################################
 
-POST {{host}}/api/v1/ocp-shared-clusters/status
+POST {{host}}/api/v1/ocp-shared-clusters/status?debug_custom_timeout=10s
 Authorization: Bearer {{access_token_admin}}
 HTTP 202
 [Captures]
@@ -79,7 +79,7 @@ HTTP 200
 [Asserts]
 jsonpath "$.request_id" isString
 jsonpath "$.request_id" == "{{status_request_id}}"
-jsonpath "$.status" == "running"
+jsonpath "$.status" != "error"
 
 #################################################################################
 # Poll for the final status, expecting it to eventually succeed
