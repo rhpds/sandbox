@@ -2646,6 +2646,10 @@ components:
                     cpu: "0.5"
                     memory: 1Gi
                   type: Container
+        argocd_version:
+          type: string
+          description: "Version of ArgoCD to deploy when argocd is enabled in cloud_selector. Defaults to v3.0.16 if not specified."
+          example: "v3.0.16"
 
     PlacementRequest:
       description: |-
@@ -2993,6 +2997,10 @@ components:
             deployer:
               openshift_cnv_nfs_path: /IBMfoobar/data01
               openshift_cnv_nfs_server: fsf-region.domain.com
+        argocd_version:
+          type: string
+          description: "Version of ArgoCD to deploy when argocd is enabled in cloud_selector. Defaults to v3.0.16 if not specified."
+          example: "v3.0.16"
 
     OcpSandboxWithCreds:
       allOf:

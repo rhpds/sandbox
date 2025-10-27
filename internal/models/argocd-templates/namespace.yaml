@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Namespace }}
+  labels:
+    serviceUuid: "{{ .ServiceUuid }}"
+    guid: "{{ .Guid }}"
+    created-by: "sandbox-api"
+    component: "argocd"
+    app.kubernetes.io/name: "argocd"
+    app.kubernetes.io/part-of: "argocd"

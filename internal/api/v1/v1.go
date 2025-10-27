@@ -114,6 +114,7 @@ func (p *PlacementResponse) Render(w http.ResponseWriter, r *http.Request) error
 type ResourceRequest struct {
 	Alias            string                   `json:"alias,omitempty"`
 	Annotations      models.Annotations       `json:"annotations,omitempty"`
+	ArgocdVersion    string                   `json:"argocd_version,omitempty"`
 	CloudPreference  models.Annotations       `json:"cloud_preference,omitempty"`
 	CloudSelector    models.Annotations       `json:"cloud_selector,omitempty"`
 	ClusterCondition string                   `json:"cluster_condition,omitempty"`

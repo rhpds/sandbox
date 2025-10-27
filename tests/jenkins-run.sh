@@ -75,7 +75,7 @@ podman pull --quiet docker.io/bitwarden/bws:0.5.0 || echo "Warning: Failed to pu
 
 # Run the local postgresql instance
 set +o pipefail
-POSTGRESQL_PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq)  | shuf  | head -n 1 )
+POSTGRESQL_PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq)  | shuf 2>/dev/null | head -n 1 )
 if [ -z "$POSTGRESQL_PORT" ]; then
     echo "No free port found"
     exit 1
@@ -112,7 +112,7 @@ make test
 # Select a free port
 #PORT=54379
 set +o pipefail
-PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq)  | shuf  | head -n 1 )
+PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq)  | shuf 2>/dev/null | head -n 1 )
 if [ -z "$PORT" ]; then
     echo "No free port found"
     exit 1
@@ -290,6 +290,9 @@ if [ -z "$tests" ]; then
     tests='*.hurl'
 fi
 
+echo "Running HURL functional tests..."
+# Temporarily disable exit on error for HURL tests
+set +e
 hurl --test \
     --variable login_token=$apptoken \
     --variable login_token_admin=$admintoken \
@@ -298,3 +301,101 @@ hurl --test \
     --variable guid=$guid \
     --jobs 1 \
     $tests
+
+# Capture HURL test result but don't exit on failure
+HURL_EXIT_CODE=$?
+# Re-enable exit on error for subsequent commands (but only for critical failures)
+set -e
+if [ $HURL_EXIT_CODE -eq 0 ]; then
+    HURL_RESULT="✅ PASSED"
+else
+    HURL_RESULT="❌ FAILED"
+fi
+echo "HURL tests completed with exit code: $HURL_EXIT_CODE"
+
+# Run Python ArgoCD tests if they exist, python3 is available, and the parameter is enabled
+# Default to true if RUN_ARGOCD_PYTHON_TESTS is not set (for local development)
+RUN_ARGOCD_PYTHON_TESTS=${RUN_ARGOCD_PYTHON_TESTS:-true}
+PYTHON_RESULT="🔘 SKIPPED"
+PYTHON_EXIT_CODE=0
+
+if [ "${RUN_ARGOCD_PYTHON_TESTS}" = "true" ] && [ -f "test_argocd.py" ] && command -v python3 &> /dev/null; then
+    echo "Running Python ArgoCD functional tests..."
+    
+    # Set environment variables for Python tests
+    export SANDBOX_URL="http://localhost:$PORT"
+    export APP_TOKEN="$apptoken"
+
+    # Check if required Python packages are available
+    missing_packages=()
+    if ! python3 -c "import pytest" &> /dev/null; then
+        missing_packages+=("pytest")
+    fi
+    if ! python3 -c "import requests" &> /dev/null; then
+        missing_packages+=("requests")
+    fi
+    if ! python3 -c "import urllib3" &> /dev/null; then
+        missing_packages+=("urllib3")
+    fi
+    
+    if [ ${#missing_packages[@]} -gt 0 ]; then
+        echo "Missing Python packages: ${missing_packages[*]}"
+        echo "Attempting to install Python test dependencies..."
+        # Try different installation methods for externally managed environments
+        if python3 -m pip install --quiet --user -r requirements.txt 2>/dev/null; then
+            echo "Dependencies installed successfully with --user flag"
+        elif python3 -m pip install --quiet --break-system-packages -r requirements.txt 2>/dev/null; then
+            echo "Dependencies installed successfully with --break-system-packages flag"
+        else
+            echo "Warning: Could not install Python dependencies, skipping Python tests"
+            PYTHON_RESULT="❌ FAILED (dependencies)"
+        fi
+    else
+        echo "All required Python packages are already available"
+    fi
+    
+    # Run Python tests if pytest is available
+    if python3 -c "import pytest" &> /dev/null; then
+        echo "Running ArgoCD integration tests..."
+        # Temporarily disable exit on error for Python tests
+        set +e
+        python3 -m pytest test_argocd.py -v -x --tb=short
+        PYTHON_EXIT_CODE=$?
+        set -e
+        if [ $PYTHON_EXIT_CODE -eq 0 ]; then
+            PYTHON_RESULT="✅ PASSED"
+        else
+            PYTHON_RESULT="❌ FAILED"
+        fi
+        echo "Python tests completed with exit code: $PYTHON_EXIT_CODE"
+    else
+        echo "Warning: pytest not available, skipping Python ArgoCD tests"
+        PYTHON_RESULT="❌ FAILED (pytest unavailable)"
+    fi
+else
+    if [ "${RUN_ARGOCD_PYTHON_TESTS}" != "true" ]; then
+        echo "Skipping ArgoCD Python tests (disabled by RUN_ARGOCD_PYTHON_TESTS parameter)"
+        PYTHON_RESULT="🔘 SKIPPED (disabled)"
+    else
+        echo "Skipping ArgoCD Python tests (test_argocd.py not found or python3 not available)"
+        PYTHON_RESULT="🔘 SKIPPED (unavailable)"
+    fi
+fi
+
+# Print test summary
+echo ""
+echo "========================================="
+echo "          TEST RESULTS SUMMARY"
+echo "========================================="
+echo "HURL Tests:        $HURL_RESULT"
+echo "Python Tests:      $PYTHON_RESULT"
+echo "========================================="
+
+# Exit with failure if any test failed
+if [ $HURL_EXIT_CODE -ne 0 ] || [ $PYTHON_EXIT_CODE -ne 0 ]; then
+    echo "❌ Some tests failed"
+    exit 1
+else
+    echo "✅ All enabled tests passed"
+    exit 0
+fi

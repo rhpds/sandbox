@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"crypto/rand"
+	"embed"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -12,7 +13,10 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -28,7 +32,11 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
+	"sigs.k8s.io/yaml"
 )
+
+//go:embed argocd-templates/*.yaml
+var argoCDTemplates embed.FS
 
 type OcpSandboxProvider struct {
 	DbPool      *pgxpool.Pool `json:"-"`
@@ -58,6 +66,10 @@ type OcpSharedClusterConfiguration struct {
 	// Additionally, content developers can specify custom quotas in agnosticV
 	// based on the requirements of specific Labs/Demos.
 	DefaultSandboxQuota *v1.ResourceQuota `json:"default_sandbox_quota"`
+
+	// ArgoCDQuota is the default quota applied to ArgoCD namespaces
+	// This quota should be sized appropriately for ArgoCD components
+	ArgoCDQuota *v1.ResourceQuota `json:"argocd_quota"`
 
 	// StrictDefaultSandboxQuota is a flag to determine if the default sandbox quota
 	// should be strictly enforced. If set to true, the default sandbox quota will be
@@ -128,6 +140,7 @@ type OcpSandbox struct {
 	ToCleanup                         bool              `json:"to_cleanup"`
 	Quota                             v1.ResourceList   `json:"quota,omitempty"`
 	LimitRange                        *v1.LimitRange    `json:"limit_range,omitempty"`
+	ArgocdVersion                     string            `json:"argocd_version,omitempty"`
 }
 
 type OcpSandboxWithCreds struct {
@@ -151,6 +164,15 @@ type KeycloakCredential struct {
 	Password string `json:"password"`
 }
 
+// Credential for Argo CD access
+type ArgoCDCredential struct {
+	Kind      string `json:"kind"` // "ArgoCDCredential"
+	URL       string `json:"url"`
+	Namespace string `json:"namespace"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+}
+
 type OcpSandboxes []OcpSandbox
 
 type MultipleOcpAccount struct {
@@ -164,25 +186,9 @@ type TokenResponse struct {
 
 var nameRegex = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
 
-// GenerateRandomPassword generates a random password of specified length.
-func generateRandomPassword(length int) (string, error) {
-	bytes := make([]byte, length)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return base64.URLEncoding.EncodeToString(bytes), nil
-}
-
-// MakeOcpSharedClusterConfiguration creates a new OcpSharedClusterConfiguration
-// with default values
-func MakeOcpSharedClusterConfiguration() *OcpSharedClusterConfiguration {
-	p := &OcpSharedClusterConfiguration{}
-
-	p.Valid = true
-	p.MaxMemoryUsagePercentage = 80
-	p.MaxCpuUsagePercentage = 100
-	p.UsageNodeSelector = "node-role.kubernetes.io/worker="
-	p.DefaultSandboxQuota = &v1.ResourceQuota{
+// getDefaultSandboxQuota returns the default sandbox quota
+func getDefaultSandboxQuota() *v1.ResourceQuota {
+	return &v1.ResourceQuota{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "sandbox-quota",
 		},
@@ -208,6 +214,73 @@ func MakeOcpSharedClusterConfiguration() *OcpSharedClusterConfiguration {
 			},
 		},
 	}
+}
+
+// isValidResourceQuota checks if a ResourceQuota is properly configured
+func isValidResourceQuota(quota *v1.ResourceQuota) bool {
+	if quota == nil {
+		return false
+	}
+	// Extra defensive: check if Spec itself could somehow be in invalid state
+	// (In standard K8s API, Spec is a struct not pointer, but being thorough)
+	if quota.Spec.Hard == nil {
+		return false
+	}
+	return len(quota.Spec.Hard) > 0
+}
+
+// getDefaultArgoCDQuota returns the default ArgoCD quota
+func getDefaultArgoCDQuota() *v1.ResourceQuota {
+	return &v1.ResourceQuota{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "argocd-quota",
+		},
+		Spec: v1.ResourceQuotaSpec{
+			Hard: v1.ResourceList{
+				v1.ResourcePods:                     resource.MustParse("20"),   // ArgoCD pods + apps
+				v1.ResourceLimitsCPU:                resource.MustParse("10"),   // Moderate CPU for ArgoCD
+				v1.ResourceLimitsMemory:             resource.MustParse("20Gi"), // Memory for ArgoCD components
+				v1.ResourceRequestsCPU:              resource.MustParse("5"),    // CPU requests
+				v1.ResourceRequestsMemory:           resource.MustParse("10Gi"), // Memory requests
+				v1.ResourceRequestsStorage:          resource.MustParse("20Gi"), // Storage for ArgoCD data
+				v1.ResourceEphemeralStorage:         resource.MustParse("50Gi"), // Ephemeral storage
+				v1.ResourceRequestsEphemeralStorage: resource.MustParse("20Gi"), // Ephemeral storage requests
+				v1.ResourceLimitsEphemeralStorage:   resource.MustParse("50Gi"), // Ephemeral storage limits
+				v1.ResourcePersistentVolumeClaims:   resource.MustParse("10"),   // PVCs
+				v1.ResourceServices:                 resource.MustParse("20"),   // Services
+				v1.ResourceServicesLoadBalancers:    resource.MustParse("5"),    // LoadBalancers
+				v1.ResourceServicesNodePorts:        resource.MustParse("10"),   // NodePorts
+				v1.ResourceSecrets:                  resource.MustParse("50"),   // Secrets for ArgoCD
+				v1.ResourceConfigMaps:               resource.MustParse("50"),   // ConfigMaps
+				v1.ResourceReplicationControllers:   resource.MustParse("10"),   // ReplicationControllers
+				v1.ResourceQuotas:                   resource.MustParse("5"),    // Quotas
+			},
+		},
+	}
+}
+
+// GenerateRandomPassword generates a random password of specified length.
+func generateRandomPassword(length int) (string, error) {
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(bytes), nil
+}
+
+// MakeOcpSharedClusterConfiguration creates a new OcpSharedClusterConfiguration
+// with default values
+func MakeOcpSharedClusterConfiguration() *OcpSharedClusterConfiguration {
+	p := &OcpSharedClusterConfiguration{}
+
+	p.Valid = true
+	p.MaxMemoryUsagePercentage = 80
+	p.MaxCpuUsagePercentage = 100
+	p.UsageNodeSelector = "node-role.kubernetes.io/worker="
+	p.DefaultSandboxQuota = getDefaultSandboxQuota()
+
+	// Default quota for ArgoCD namespaces - sized for ArgoCD components
+	p.ArgoCDQuota = getDefaultArgoCDQuota()
 	p.StrictDefaultSandboxQuota = false
 	p.QuotaRequired = false
 	p.SkipQuota = true
@@ -323,11 +396,12 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 			max_cpu_usage_percentage,
 			usage_node_selector,
 			default_sandbox_quota,
+			argocd_quota,
 			strict_default_sandbox_quota,
 			quota_required,
 			skip_quota,
 			limit_range)
-			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 			RETURNING id`,
 		p.Name,
 		p.ApiUrl,
@@ -342,6 +416,7 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 		p.MaxCpuUsagePercentage,
 		p.UsageNodeSelector,
 		p.DefaultSandboxQuota,
+		p.ArgoCDQuota,
 		p.StrictDefaultSandboxQuota,
 		p.QuotaRequired,
 		p.SkipQuota,
@@ -373,10 +448,11 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 			 max_cpu_usage_percentage = $12,
 			 usage_node_selector = $13,
 			 default_sandbox_quota = $14,
-			 strict_default_sandbox_quota = $15,
-			 quota_required = $16,
-			 skip_quota = $17,
-			 limit_range = $18
+			 argocd_quota = $15,
+			 strict_default_sandbox_quota = $16,
+			 quota_required = $17,
+			 skip_quota = $18,
+			 limit_range = $19
 		 WHERE id = $10`,
 		p.Name,
 		p.ApiUrl,
@@ -392,6 +468,7 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 		p.MaxCpuUsagePercentage,
 		p.UsageNodeSelector,
 		p.DefaultSandboxQuota,
+		p.ArgoCDQuota,
 		p.StrictDefaultSandboxQuota,
 		p.QuotaRequired,
 		p.SkipQuota,
@@ -461,6 +538,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 			max_cpu_usage_percentage,
 			usage_node_selector,
 			default_sandbox_quota,
+			argocd_quota,
 			strict_default_sandbox_quota,
 			quota_required,
 			skip_quota,
@@ -486,6 +564,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 		&cluster.MaxCpuUsagePercentage,
 		&cluster.UsageNodeSelector,
 		&cluster.DefaultSandboxQuota,
+		&cluster.ArgoCDQuota,
 		&cluster.StrictDefaultSandboxQuota,
 		&cluster.QuotaRequired,
 		&cluster.SkipQuota,
@@ -495,6 +574,15 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 	}
 	cluster.DbPool = p.DbPool
 	cluster.VaultSecret = p.VaultSecret
+
+	// Set default quotas if none are configured (for backward compatibility)
+	if !isValidResourceQuota(cluster.DefaultSandboxQuota) {
+		cluster.DefaultSandboxQuota = getDefaultSandboxQuota()
+	}
+	if !isValidResourceQuota(cluster.ArgoCDQuota) {
+		cluster.ArgoCDQuota = getDefaultArgoCDQuota()
+	}
+
 	return cluster, nil
 }
 
@@ -521,6 +609,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			max_cpu_usage_percentage,
 			usage_node_selector,
 			default_sandbox_quota,
+			argocd_quota,
 			strict_default_sandbox_quota,
 			quota_required,
 			skip_quota,
@@ -552,6 +641,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			&cluster.MaxCpuUsagePercentage,
 			&cluster.UsageNodeSelector,
 			&cluster.DefaultSandboxQuota,
+			&cluster.ArgoCDQuota,
 			&cluster.StrictDefaultSandboxQuota,
 			&cluster.QuotaRequired,
 			&cluster.SkipQuota,
@@ -562,6 +652,15 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 
 		cluster.DbPool = p.DbPool
 		cluster.VaultSecret = p.VaultSecret
+
+		// Set default quotas if none are configured (for backward compatibility)
+		if !isValidResourceQuota(cluster.DefaultSandboxQuota) {
+			cluster.DefaultSandboxQuota = getDefaultSandboxQuota()
+		}
+		if !isValidResourceQuota(cluster.ArgoCDQuota) {
+			cluster.ArgoCDQuota = getDefaultArgoCDQuota()
+		}
+
 		clusters = append(clusters, cluster)
 	}
 
@@ -1028,6 +1127,7 @@ func (a *OcpSandboxProvider) Request(
 	asyncRequest bool,
 	alias string,
 	clusterRelation []ClusterRelation,
+	argocdVersion string,
 ) (OcpSandboxWithCreds, error) {
 
 	var selectedCluster OcpSharedClusterConfiguration
@@ -1066,13 +1166,16 @@ func (a *OcpSandboxProvider) Request(
 		return OcpSandboxWithCreds{}, err
 	}
 	// Return the Placement with a status 'initializing'
+	log.Logger.Info("Creating OcpSandbox with ArgoCD version", "argocdVersion", argocdVersion, "serviceUuid", serviceUuid)
+
 	rnew := OcpSandboxWithCreds{
 		OcpSandbox: OcpSandbox{
-			Name:        guid + "-" + serviceUuid,
-			Kind:        "OcpSandbox",
-			Annotations: annotations,
-			ServiceUuid: serviceUuid,
-			Status:      "initializing",
+			Name:          guid + "-" + serviceUuid,
+			Kind:          "OcpSandbox",
+			Annotations:   annotations,
+			ServiceUuid:   serviceUuid,
+			Status:        "initializing",
+			ArgocdVersion: argocdVersion,
 		},
 		Provider: a,
 	}
@@ -1233,7 +1336,8 @@ func (a *OcpSandboxProvider) Request(
 		serviceAccountName := "sandbox"
 		suffix := annotations["namespace_suffix"]
 		if suffix == "" {
-			suffix = serviceUuid
+			// Use the first 5 characters of the serviceUuid
+			suffix = serviceUuid[0:min(5, len(serviceUuid))]
 		}
 
 		namespaceName := "sandbox-" + guid + "-" + suffix
@@ -1245,16 +1349,29 @@ func (a *OcpSandboxProvider) Request(
 			// Create the Namespace
 			// Add serviceUuid as label to the namespace
 
+			namespaceAnnotations := make(map[string]string)
+			namespaceLabels := map[string]string{
+				"mutatepods.kubemacpool.io":            "ignore",
+				"mutatevirtualmachines.kubemacpool.io": "ignore",
+				"serviceUuid":                          serviceUuid,
+				"guid":                                 annotations["guid"],
+				"created-by":                           "sandbox-api",
+			}
+
+			// Add Argo CD managed-by annotation and label if argocd is enabled
+			if value, exists := cloudSelector["argocd"]; exists && (value == "yes" || value == "true") {
+				// Use the original GUID for ArgoCD namespace to ensure single ArgoCD instance per GUID
+				argoCDNamespace := "sandbox-" + annotations["guid"] + "-argocd"
+				argoCDNamespace = argoCDNamespace[:min(63, len(argoCDNamespace))]
+				namespaceAnnotations["argocd.argoproj.io/managed-by"] = argoCDNamespace
+				namespaceLabels["argocd.argoproj.io/managed-by"] = argoCDNamespace
+			}
+
 			_, err = clientset.CoreV1().Namespaces().Create(context.TODO(), &v1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: namespaceName,
-					Labels: map[string]string{
-						"mutatepods.kubemacpool.io":            "ignore",
-						"mutatevirtualmachines.kubemacpool.io": "ignore",
-						"serviceUuid":                          serviceUuid,
-						"guid":                                 annotations["guid"],
-						"created-by":                           "sandbox-api",
-					},
+					Name:        namespaceName,
+					Labels:      namespaceLabels,
+					Annotations: namespaceAnnotations,
 				},
 			}, metav1.CreateOptions{})
 
@@ -1281,6 +1398,17 @@ func (a *OcpSandboxProvider) Request(
 				log.Logger.Error("Error saving OCP account", "error", err)
 				rnew.SetStatus("error")
 				return
+			}
+
+			// Create ArgoCD RBAC in this namespace if ArgoCD is enabled
+			if value, exists := cloudSelector["argocd"]; exists && (value == "yes" || value == "true") {
+				// Use the original GUID for ArgoCD namespace to ensure single ArgoCD instance per GUID
+				argoCDNamespace := "sandbox-" + annotations["guid"] + "-argocd"
+				argoCDNamespace = argoCDNamespace[:min(63, len(argoCDNamespace))]
+				if err := createArgoCDRBACInNamespace(clientset, namespaceName, argoCDNamespace, serviceUuid, annotations["guid"]); err != nil {
+					log.Logger.Error("Error creating ArgoCD RBAC in namespace", "error", err, "namespace", namespaceName)
+					// Don't fail the entire sandbox creation for this
+				}
 			}
 			break
 		}
@@ -1726,6 +1854,248 @@ func (a *OcpSandboxProvider) Request(
 			}
 
 			log.Logger.Debug("CephBlockPoolRadosNamespace created successfully")
+		}
+
+		// Deploy or connect to shared Argo CD if the argocd option was enabled
+		if value, exists := cloudSelector["argocd"]; exists && (value == "yes" || value == "true") {
+			// Use the original GUID (not the incremented one) for ArgoCD namespace to ensure
+			// single ArgoCD instance per original GUID across multiple namespaces
+			argoCDNamespace := "sandbox-" + annotations["guid"] + "-argocd"
+			argoCDNamespace = argoCDNamespace[:min(63, len(argoCDNamespace))] // truncate to 63
+
+			// Get ArgoCD version from request, default to v3.0.16
+			argoCDVersion := rnew.ArgocdVersion
+			if argoCDVersion == "" {
+				argoCDVersion = "v3.0.16"
+			}
+
+			// Extract ArgoCD credentials and mutex from context
+			argoCDCredentials := ctx.Value("argoCDCredentials").(map[string]map[string]ArgoCDCredential)
+			argoCDMutex := ctx.Value("argoCDMutex").(*sync.Mutex)
+
+			// Use map-based tracking to ensure ArgoCD is created only once per GUID per cluster
+			// Use mutex to make the check-and-mark operation atomic
+			argoCDMutex.Lock()
+			// Initialize nested map if needed
+			if argoCDCredentials[annotations["guid"]] == nil {
+				argoCDCredentials[annotations["guid"]] = make(map[string]ArgoCDCredential)
+			}
+
+			// Check if we already have ArgoCD credentials for this GUID on this cluster
+			_, argoCDExists := argoCDCredentials[annotations["guid"]][selectedCluster.Name]
+
+			var deployedAdminPassword string
+			if !argoCDExists {
+				argoCDMutex.Unlock()
+
+				// Check if Argo CD namespace already exists for this GUID (shared across namespaces)
+				// We need to ensure it's not in Terminating state
+				var existingNs *v1.Namespace
+				existingNs, err = clientset.CoreV1().Namespaces().Get(context.TODO(), argoCDNamespace, metav1.GetOptions{})
+				namespaceTerminating := err == nil && (existingNs.DeletionTimestamp != nil || existingNs.Status.Phase == "Terminating")
+
+				// If namespace exists but is terminating, wait for it to be deleted
+				if namespaceTerminating {
+					log.Logger.Info("ArgoCD namespace is terminating, waiting for deletion to complete",
+						"namespace", argoCDNamespace,
+						"phase", existingNs.Status.Phase,
+						"deletionTimestamp", existingNs.DeletionTimestamp)
+
+					// Wait for the namespace to be fully deleted (max 1 minute)
+					waitStart := time.Now()
+					maxWait := 1 * time.Minute
+					namespaceDeleted := false
+					for time.Since(waitStart) < maxWait {
+						time.Sleep(5 * time.Second)
+						_, checkErr := clientset.CoreV1().Namespaces().Get(context.TODO(), argoCDNamespace, metav1.GetOptions{})
+						if checkErr != nil && strings.Contains(checkErr.Error(), "not found") {
+							log.Logger.Info("ArgoCD namespace deletion completed", "namespace", argoCDNamespace)
+							namespaceDeleted = true
+							break
+						}
+					}
+
+					if !namespaceDeleted {
+						log.Logger.Error("Timeout waiting for ArgoCD namespace deletion", "namespace", argoCDNamespace)
+						rnew.SetStatus("error")
+						return
+					}
+				}
+
+				// Now we can proceed with creation - mark ArgoCD as being created immediately to prevent race conditions
+				argoCDMutex.Lock()
+				argoCDCredentials[annotations["guid"]][selectedCluster.Name] = ArgoCDCredential{
+					Kind:      "ArgoCDCredential",
+					URL:       "", // Will be updated after deployment
+					Namespace: argoCDNamespace,
+					Username:  "admin",
+					Password:  "", // Will be updated after deployment
+				}
+				argoCDMutex.Unlock()
+
+				// Deploy Argo CD instance using templates (only once per GUID per cluster)
+				log.Logger.Info("Starting Argo CD deployment",
+					"namespace", argoCDNamespace,
+					"guid", annotations["guid"],
+					"cluster", selectedCluster.Name,
+					"version", argoCDVersion)
+
+				// The namespace will be created by the template
+				var err error
+				deployedAdminPassword, err = deployArgoCDFromTemplates(clientset, dynclientset, argoCDNamespace, serviceUuid, annotations["guid"], argoCDVersion, selectedCluster.IngressDomain, selectedCluster.ArgoCDQuota)
+				if err != nil {
+					log.Logger.Error("Error deploying Argo CD", "error", err, "namespace", argoCDNamespace, "version", argoCDVersion)
+					// Cleanup the main namespace on failure
+					if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+						log.Logger.Error("Error cleaning up the main namespace", "error", err)
+					}
+					rnew.SetStatus("error")
+					return
+				}
+
+				// Get access URL for the Argo CD instance
+				argoCDURL, err := getArgoCDAccessInfo(clientset, dynclientset, argoCDNamespace, selectedCluster.IngressDomain)
+				if err != nil {
+					log.Logger.Error("Error getting Argo CD access info", "error", err)
+					argoCDURL = ""
+				}
+
+				// Update credentials in the map with actual values
+				argoCDMutex.Lock()
+				argoCDCredentials[annotations["guid"]][selectedCluster.Name] = ArgoCDCredential{
+					Kind:      "ArgoCDCredential",
+					URL:       argoCDURL,
+					Namespace: argoCDNamespace,
+					Username:  "admin",
+					Password:  deployedAdminPassword,
+				}
+				argoCDMutex.Unlock()
+
+				log.Logger.Info("Argo CD instance created and credentials stored",
+					"namespace", argoCDNamespace,
+					"guid", annotations["guid"],
+					"cluster", selectedCluster.Name)
+			} else {
+				argoCDMutex.Unlock()
+				log.Logger.Info("Using existing Argo CD instance from map",
+					"namespace", argoCDNamespace,
+					"guid", annotations["guid"],
+					"cluster", selectedCluster.Name)
+			}
+
+			// Always create RoleBinding to allow Argo CD service account to manage this user namespace
+			_, err = clientset.RbacV1().RoleBindings(namespaceName).Create(context.TODO(), &rbacv1.RoleBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "argocd-application-controller",
+					Labels: map[string]string{
+						"serviceUuid": serviceUuid,
+						"guid":        annotations["guid"],
+						"component":   "argocd",
+					},
+				},
+				RoleRef: rbacv1.RoleRef{
+					APIGroup: rbacv1.GroupName,
+					Kind:     "ClusterRole",
+					Name:     "admin",
+				},
+				Subjects: []rbacv1.Subject{
+					{
+						Kind:      "ServiceAccount",
+						Name:      "argocd-application-controller",
+						Namespace: argoCDNamespace,
+					},
+				},
+			}, metav1.CreateOptions{})
+
+			// Create RoleBinding, handling race conditions gracefully
+			_, err = clientset.RbacV1().RoleBindings(argoCDNamespace).Create(context.TODO(), &rbacv1.RoleBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "argocd-sandbox-serviceaccount",
+					Labels: map[string]string{
+						"serviceUuid": serviceUuid,
+						"guid":        annotations["guid"],
+						"component":   "argocd",
+					},
+				},
+				RoleRef: rbacv1.RoleRef{
+					APIGroup: rbacv1.GroupName,
+					Kind:     "Role",
+					Name:     "argocd-sandbox-user",
+				},
+				Subjects: []rbacv1.Subject{
+					{
+						Kind:      "ServiceAccount",
+						Name:      serviceAccountName,
+						Namespace: namespaceName,
+					},
+				},
+			}, metav1.CreateOptions{})
+			if err != nil && strings.Contains(err.Error(), "already exists") {
+				log.Logger.Info("ArgoCD RoleBinding already exists, skipping creation", "name", "argocd-sandbox-serviceaccount", "namespace", argoCDNamespace)
+			}
+
+			// Create view RoleBinding, handling race conditions gracefully
+			_, err = clientset.RbacV1().RoleBindings(argoCDNamespace).Create(context.TODO(), &rbacv1.RoleBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "argocd-sandbox-serviceaccount-view",
+					Labels: map[string]string{
+						"serviceUuid": serviceUuid,
+						"guid":        annotations["guid"],
+						"component":   "argocd",
+					},
+				},
+				RoleRef: rbacv1.RoleRef{
+					APIGroup: rbacv1.GroupName,
+					Kind:     "ClusterRole",
+					Name:     "view",
+				},
+				Subjects: []rbacv1.Subject{
+					{
+						Kind:      "ServiceAccount",
+						Name:      serviceAccountName,
+						Namespace: namespaceName,
+					},
+				},
+			}, metav1.CreateOptions{})
+
+			if err != nil {
+				if !strings.Contains(err.Error(), "already exists") {
+					log.Logger.Error("Error creating Argo CD RoleBinding", "error", err)
+					// Only cleanup the main namespace, not the shared Argo CD
+					if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+						log.Logger.Error("Error cleaning up the main namespace", "error", err)
+					}
+					rnew.SetStatus("error")
+					return
+				}
+
+				log.Logger.Info("ArgoCD view RoleBinding already exists, skipping creation", "name", "argocd-sandbox-serviceaccount-view", "namespace", argoCDNamespace)
+			}
+
+			// Always add ArgoCD credentials to ALL namespaces that request ArgoCD
+			// Get credentials from the map for this specific cluster
+			argoCDMutex.Lock()
+			if clusterCreds, exists := argoCDCredentials[annotations["guid"]][selectedCluster.Name]; exists {
+				// Use ArgoCD credentials from this cluster
+				creds = append(creds, clusterCreds)
+				argoCDMutex.Unlock()
+			} else {
+				argoCDMutex.Unlock()
+				log.Logger.Error("ArgoCD credentials not found for this cluster",
+					"guid", annotations["guid"],
+					"cluster", selectedCluster.Name)
+			}
+
+			// Log only if credentials were found and added
+			argoCDMutex.Lock()
+			if clusterCreds, exists := argoCDCredentials[annotations["guid"]][selectedCluster.Name]; exists {
+				log.Logger.Info("Argo CD configured for namespace",
+					"argoCDNamespace", argoCDNamespace,
+					"userNamespace", namespaceName,
+					"url", clusterCreds.URL,
+					"credentialsAdded", true)
+			}
+			argoCDMutex.Unlock()
 		}
 
 		// Create secret to generate a token, for the clusters without image registry and for future versions of OCP
@@ -2259,6 +2629,12 @@ func (account *OcpSandboxWithCreds) Delete() error {
 			}
 		}
 
+	}
+
+	// Clean up Argo CD resources if they exist
+	if err := cleanupArgoCDResources(clientset, dynclientset, account); err != nil {
+		log.Logger.Error("Error cleaning up Argo CD resources", "error", err, "name", account.Name)
+		// Don't fail the entire deletion for Argo CD cleanup issues
 	}
 
 	_, err = account.Provider.DbPool.Exec(
@@ -2875,4 +3251,524 @@ func (a *OcpSandboxProvider) OcpSharedClusterStatus(ctx context.Context, job *Jo
 		log.Logger.Error("Failed to update cluster status job", "error", updateErr, "job_id", job.ID, "cluster", conf.Name)
 	}
 	log.Logger.Info("Finished cluster status check", "job_id", job.ID, "cluster", conf.Name, "status", job.Status)
+}
+
+// ArgoCDTemplateValues holds the values for rendering Argo CD templates
+type ArgoCDTemplateValues struct {
+	Namespace          string            `json:"namespace"`
+	ServiceUuid        string            `json:"serviceUuid"`
+	Guid               string            `json:"guid"`
+	AdminPassword      string            `json:"adminPassword"`
+	AdminPasswordHash  string            `json:"adminPasswordHash"`
+	AdminPasswordMtime string            `json:"adminPasswordMtime"`
+	IngressDomain      string            `json:"ingressDomain"`
+	Labels             map[string]string `json:"labels"`
+	ArgoCD             struct {
+		Image   string `json:"image"`
+		Version string `json:"version"`
+		Server  struct {
+			Insecure bool `json:"insecure"`
+		} `json:"server"`
+		Controller struct {
+			StatusProcessors    int `json:"statusProcessors"`
+			OperationProcessors int `json:"operationProcessors"`
+			AppResync           int `json:"appResync"`
+		} `json:"controller"`
+		RepoServer struct {
+			LogLevel string `json:"logLevel"`
+		} `json:"repoServer"`
+	} `json:"argocd"`
+	Service struct {
+		Type  string `json:"type"`
+		Ports struct {
+			HTTP int `json:"http"`
+			GRPC int `json:"grpc"`
+		} `json:"ports"`
+	} `json:"service"`
+	Resources struct {
+		Server     map[string]map[string]string `json:"server"`
+		Controller map[string]map[string]string `json:"controller"`
+		RepoServer map[string]map[string]string `json:"repoServer"`
+	} `json:"resources"`
+}
+
+// deployArgoCDFromTemplates deploys Argo CD using the embedded templates
+func deployArgoCDFromTemplates(clientset *kubernetes.Clientset, dynclientset dynamic.Interface, namespace, serviceUuid, guid, argoCDVersion, ingressDomain string, argoCDQuotaSpec *v1.ResourceQuota) (string, error) {
+
+	// Generate admin password (readable for ArgoCD login)
+	adminPasswordBytes := make([]byte, 16)
+	if _, err := rand.Read(adminPasswordBytes); err != nil {
+		return "", fmt.Errorf("failed to generate admin password: %w", err)
+	}
+	adminPassword := base64.URLEncoding.EncodeToString(adminPasswordBytes)[:16] // Use first 16 chars for readability
+
+	// Generate bcrypt hash for the password to prevent ArgoCD auto-regeneration
+	adminPasswordHash, err := bcrypt.GenerateFromPassword([]byte(adminPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate admin password hash: %w", err)
+	}
+
+	// Generate current timestamp for password mtime in UTC
+	adminPasswordMtime := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+
+	// Prepare template values
+	values := ArgoCDTemplateValues{
+		Namespace:          namespace,
+		ServiceUuid:        serviceUuid,
+		Guid:               guid,
+		AdminPassword:      adminPassword,
+		AdminPasswordHash:  base64.StdEncoding.EncodeToString(adminPasswordHash),
+		AdminPasswordMtime: base64.StdEncoding.EncodeToString([]byte(adminPasswordMtime)),
+		IngressDomain:      ingressDomain,
+		Labels: map[string]string{
+			"serviceUuid":               serviceUuid,
+			"guid":                      guid,
+			"app.kubernetes.io/name":    "argocd",
+			"app.kubernetes.io/part-of": "argocd",
+			"created-by":                "sandbox-api",
+		},
+	}
+
+	// Set ArgoCD image version
+	values.ArgoCD.Image = "quay.io/argoproj/argocd"
+	values.ArgoCD.Version = argoCDVersion
+	log.Logger.Info("Setting ArgoCD image version", "argoCDVersion", argoCDVersion, "fullImage", values.ArgoCD.Image, "version", values.ArgoCD.Version)
+	values.ArgoCD.Server.Insecure = true
+	values.ArgoCD.Controller.StatusProcessors = 20
+	values.ArgoCD.Controller.OperationProcessors = 10
+	values.ArgoCD.Controller.AppResync = 180
+	values.ArgoCD.RepoServer.LogLevel = "info"
+	values.Service.Type = "ClusterIP"
+	values.Service.Ports.HTTP = 80
+	values.Service.Ports.GRPC = 443
+
+	// Set resource limits
+	values.Resources.Server = map[string]map[string]string{
+		"requests": {"cpu": "100m", "memory": "128Mi"},
+		"limits":   {"cpu": "500m", "memory": "512Mi"},
+	}
+	values.Resources.Controller = map[string]map[string]string{
+		"requests": {"cpu": "250m", "memory": "256Mi"},
+		"limits":   {"cpu": "1000m", "memory": "1Gi"},
+	}
+	values.Resources.RepoServer = map[string]map[string]string{
+		"requests": {"cpu": "100m", "memory": "128Mi"},
+		"limits":   {"cpu": "500m", "memory": "512Mi"},
+	}
+
+	// List of template files to render and apply
+	templateFiles := []string{
+		"namespace.yaml",
+		"argocd.yaml",
+	}
+
+	// Render and apply each template
+	for _, templateFile := range templateFiles {
+		log.Logger.Info("Applying Argo CD template", "file", templateFile, "namespace", namespace)
+
+		if err := renderAndApplyTemplate(clientset, dynclientset, templateFile, values); err != nil {
+			log.Logger.Error("Failed to apply template", "file", templateFile, "error", err)
+			return "", fmt.Errorf("failed to apply template %s: %w", templateFile, err)
+		}
+
+		log.Logger.Info("Successfully applied template", "file", templateFile)
+	}
+
+	// Apply ArgoCD quota for the namespace (configured in cluster settings)
+	argoCDQuota := &v1.ResourceQuota{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "argocd-quota",
+			Labels: map[string]string{
+				"serviceUuid": serviceUuid,
+				"guid":        guid,
+				"created-by":  "sandbox-api",
+			},
+		},
+		Spec: v1.ResourceQuotaSpec{
+			Hard: argoCDQuotaSpec.Spec.Hard,
+		},
+	}
+
+	// Create the quota, handling race conditions gracefully
+	_, err = clientset.CoreV1().ResourceQuotas(namespace).Create(context.TODO(), argoCDQuota, metav1.CreateOptions{})
+	if err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			log.Logger.Info("ArgoCD quota already exists, skipping creation", "namespace", namespace)
+		} else {
+			log.Logger.Error("Error creating ArgoCD quota", "error", err, "namespace", namespace)
+			// Don't fail the entire deployment for quota creation failure
+		}
+	} else {
+		log.Logger.Info("Successfully created ArgoCD quota", "namespace", namespace)
+	}
+
+	// Create LimitRange for ArgoCD namespace to provide default limits/requests
+	argoCDLimitRange := &v1.LimitRange{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "argocd-limit-range",
+			Labels: map[string]string{
+				"serviceUuid": serviceUuid,
+				"guid":        guid,
+				"created-by":  "sandbox-api",
+			},
+		},
+		Spec: v1.LimitRangeSpec{
+			Limits: []v1.LimitRangeItem{
+				{
+					Type: "Container",
+					Default: v1.ResourceList{
+						"cpu":    resource.MustParse("500m"),
+						"memory": resource.MustParse("512Mi"),
+					},
+					DefaultRequest: v1.ResourceList{
+						"cpu":    resource.MustParse("100m"),
+						"memory": resource.MustParse("128Mi"),
+					},
+				},
+			},
+		},
+	}
+
+	// Create the LimitRange, handling race conditions gracefully
+	_, err = clientset.CoreV1().LimitRanges(namespace).Create(context.TODO(), argoCDLimitRange, metav1.CreateOptions{})
+	if err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			log.Logger.Info("ArgoCD LimitRange already exists, skipping creation", "namespace", namespace)
+		} else {
+			log.Logger.Error("Error creating ArgoCD LimitRange", "error", err, "namespace", namespace)
+			// Don't fail the entire deployment for LimitRange creation failure
+		}
+	} else {
+		log.Logger.Info("Successfully created ArgoCD LimitRange", "namespace", namespace)
+	}
+
+	log.Logger.Info("Argo CD templates applied successfully", "namespace", namespace)
+	return adminPassword, nil
+}
+
+// renderAndApplyTemplate renders a template and applies it to the cluster
+func renderAndApplyTemplate(clientset *kubernetes.Clientset, dynclientset dynamic.Interface, templateFile string, values ArgoCDTemplateValues) error {
+	// Read template file from embedded filesystem
+	templatePath := "argocd-templates/" + templateFile
+	templateContent, err := argoCDTemplates.ReadFile(templatePath)
+	if err != nil {
+		return fmt.Errorf("failed to read template %s: %w", templateFile, err)
+	}
+
+	// Parse and execute template
+	tmpl, err := template.New(templateFile).Parse(string(templateContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse template %s: %w", templateFile, err)
+	}
+
+	var buf strings.Builder
+	if err := tmpl.Execute(&buf, values); err != nil {
+		return fmt.Errorf("failed to execute template %s: %w", templateFile, err)
+	}
+
+	// Apply the rendered YAML using kubectl-like functionality
+	if err := applyYAMLToCluster(clientset, dynclientset, buf.String()); err != nil {
+		return fmt.Errorf("failed to apply rendered template %s: %w", templateFile, err)
+	}
+
+	return nil
+}
+
+// applyYAMLToCluster applies YAML content to the Kubernetes cluster
+func applyYAMLToCluster(clientset *kubernetes.Clientset, dynclientset dynamic.Interface, yamlContent string) error {
+	// Split YAML documents and apply each one
+	documents := strings.Split(yamlContent, "---")
+	appliedDocs := 0
+
+	for i, doc := range documents {
+		doc = strings.TrimSpace(doc)
+		if doc == "" {
+			continue
+		}
+
+		log.Logger.Debug("Applying YAML document", "document", i+1, "content_preview", doc[:min(100, len(doc))]+"...")
+
+		if err := applyYAMLDocument(clientset, dynclientset, doc); err != nil {
+			log.Logger.Error("Failed to apply YAML document", "document", i+1, "error", err, "content_preview", doc[:min(200, len(doc))]+"...")
+			return fmt.Errorf("failed to apply YAML document %d: %w", i+1, err)
+		}
+
+		appliedDocs++
+		log.Logger.Debug("Successfully applied YAML document", "document", i+1)
+	}
+
+	if appliedDocs == 0 {
+		return fmt.Errorf("no valid YAML documents found in template")
+	}
+
+	log.Logger.Info("Applied all YAML documents successfully", "count", appliedDocs)
+	return nil
+}
+
+// applyYAMLDocument applies a single YAML document using the Kubernetes dynamic client
+func applyYAMLDocument(clientset *kubernetes.Clientset, dynclientset dynamic.Interface, yamlDoc string) error {
+	// Convert YAML to unstructured object
+	var obj unstructured.Unstructured
+	if err := yaml.Unmarshal([]byte(yamlDoc), &obj); err != nil {
+		log.Logger.Error("Failed to unmarshal YAML", "error", err, "yaml", yamlDoc)
+		return fmt.Errorf("failed to unmarshal YAML: %w", err)
+	}
+
+	// Get the GVK (GroupVersionKind) from the object
+	gvk := obj.GroupVersionKind()
+	if gvk.Kind == "" {
+		log.Logger.Error("Missing kind in YAML document", "yaml", yamlDoc)
+		return fmt.Errorf("missing kind in YAML document")
+	}
+
+	log.Logger.Debug("Processing resource", "kind", gvk.Kind, "name", obj.GetName(), "namespace", obj.GetNamespace())
+
+	// Use the dynamic client directly with the GVR from the object
+	gvr := schema.GroupVersionResource{
+		Group:    gvk.Group,
+		Version:  gvk.Version,
+		Resource: strings.ToLower(gvk.Kind) + "s", // Simple pluralization
+	}
+
+	// Handle special cases for resource names
+	switch gvk.Kind {
+	case "ServiceAccount":
+		gvr.Resource = "serviceaccounts"
+	case "RoleBinding":
+		gvr.Resource = "rolebindings"
+	case "ConfigMap":
+		gvr.Resource = "configmaps"
+	}
+
+	// Get the appropriate namespace (if needed)
+	var dr dynamic.ResourceInterface
+	namespace := obj.GetNamespace()
+	if namespace != "" {
+		// Namespaced resource
+		dr = dynclientset.Resource(gvr).Namespace(namespace)
+	} else {
+		// Cluster-scoped resource (like Namespace)
+		dr = dynclientset.Resource(gvr)
+	}
+
+	// Apply the object (create or update)
+	_, err := dr.Create(context.TODO(), &obj, metav1.CreateOptions{})
+	if err != nil {
+		// If it already exists, that's fine - we don't need to update it
+		if strings.Contains(err.Error(), "already exists") {
+			log.Logger.Info("Resource already exists, skipping", "kind", gvk.Kind, "name", obj.GetName(), "namespace", obj.GetNamespace())
+		} else {
+			log.Logger.Error("Failed to create resource", "kind", gvk.Kind, "name", obj.GetName(), "namespace", obj.GetNamespace(), "error", err)
+			return fmt.Errorf("failed to create %s %s: %w", gvk.Kind, obj.GetName(), err)
+		}
+	} else {
+		log.Logger.Info("Created resource successfully", "kind", gvk.Kind, "name", obj.GetName(), "namespace", obj.GetNamespace())
+	}
+
+	return nil
+}
+
+// getArgoCDAccessInfo retrieves the Argo CD server URL
+func getArgoCDAccessInfo(clientset *kubernetes.Clientset, dynclientset dynamic.Interface, namespace, ingressDomain string) (string, error) {
+	ctx := context.TODO()
+
+	// For the URL, construct it based on the route or ingress domain
+	argoCDURL := fmt.Sprintf("https://argocd-server-%s.%s", namespace, ingressDomain)
+
+	// Try to get the actual route if it exists
+	routeGVR := schema.GroupVersionResource{
+		Group:    "route.openshift.io",
+		Version:  "v1",
+		Resource: "routes",
+	}
+
+	route, err := dynclientset.Resource(routeGVR).Namespace(namespace).Get(ctx, "argocd-server", metav1.GetOptions{})
+	if err == nil {
+		// Extract the host from the route
+		host, found, _ := unstructured.NestedString(route.Object, "spec", "host")
+		if found && host != "" {
+			argoCDURL = "https://" + host
+		}
+	}
+
+	return argoCDURL, nil
+}
+
+// cleanupArgoCDResources cleans up Argo CD resources associated with a sandbox
+func cleanupArgoCDResources(clientset *kubernetes.Clientset, dynclientset dynamic.Interface, account *OcpSandboxWithCreds) error {
+	ctx := context.TODO()
+
+	// Extract GUID from annotations or resource data
+	guid := ""
+	if account.Annotations != nil {
+		if g, exists := account.Annotations["guid"]; exists {
+			guid = g
+		}
+	}
+
+	if guid == "" {
+		// Try to extract from the namespace name
+		// Typical pattern: "sandbox-<guid>-<suffix>"
+		parts := strings.Split(account.Namespace, "-")
+		if len(parts) >= 3 {
+			guid = parts[1] // Extract the GUID part
+		}
+	}
+
+	if guid == "" {
+		log.Logger.Warn("Could not determine GUID for Argo CD cleanup", "namespace", account.Namespace)
+		return nil
+	}
+
+	argoCDNamespace := "sandbox-" + guid + "-argocd"
+	argoCDNamespace = argoCDNamespace[:min(63, len(argoCDNamespace))]
+
+	// Check if the Argo CD namespace exists
+	_, err := clientset.CoreV1().Namespaces().Get(ctx, argoCDNamespace, metav1.GetOptions{})
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			log.Logger.Info("Argo CD namespace not found, skipping cleanup", "argoCDNamespace", argoCDNamespace)
+			return nil
+		}
+		return fmt.Errorf("error checking Argo CD namespace: %w", err)
+	}
+
+	// Check if this is the last namespace for this GUID/service
+	// We should only delete the Argo CD namespace if no other namespaces are using it
+	isLastNamespace, err := isLastNamespaceForService(clientset, account, guid)
+	if err != nil {
+		log.Logger.Error("Error checking if this is the last namespace", "error", err)
+		// Continue with cleanup anyway
+	}
+
+	// Clean up service account RoleBindings in the ArgoCD namespace (if it exists)
+	// Note: RoleBindings in the user namespace are automatically deleted with the namespace
+	if argoCDNamespace != "" {
+		// Clean up the main RoleBinding
+		saRbName := "argocd-sandbox-serviceaccount"
+		err = clientset.RbacV1().RoleBindings(argoCDNamespace).Delete(ctx, saRbName, metav1.DeleteOptions{})
+		if err != nil && !strings.Contains(err.Error(), "not found") {
+			log.Logger.Error("Error deleting service account RoleBinding in ArgoCD namespace", "error", err, "namespace", argoCDNamespace)
+		} else {
+			log.Logger.Info("Deleted service account RoleBinding", "namespace", argoCDNamespace, "roleBinding", saRbName)
+		}
+
+		// Clean up the view RoleBinding
+		saViewRbName := "argocd-sandbox-serviceaccount-view"
+		err = clientset.RbacV1().RoleBindings(argoCDNamespace).Delete(ctx, saViewRbName, metav1.DeleteOptions{})
+		if err != nil && !strings.Contains(err.Error(), "not found") {
+			log.Logger.Error("Error deleting service account view RoleBinding in ArgoCD namespace", "error", err, "namespace", argoCDNamespace)
+		} else {
+			log.Logger.Info("Deleted service account view RoleBinding", "namespace", argoCDNamespace, "roleBinding", saViewRbName)
+		}
+	}
+
+	// Only delete the entire Argo CD namespace if this is the last namespace using it
+	if isLastNamespace {
+		log.Logger.Info("Deleting Argo CD namespace as this is the last namespace for this service",
+			"argoCDNamespace", argoCDNamespace,
+			"lastUserNamespace", account.Namespace)
+
+		err = clientset.CoreV1().Namespaces().Delete(ctx, argoCDNamespace, metav1.DeleteOptions{})
+		if err != nil && !strings.Contains(err.Error(), "not found") {
+			return fmt.Errorf("error deleting Argo CD namespace %s: %w", argoCDNamespace, err)
+		}
+
+		log.Logger.Info("Argo CD namespace deleted", "namespace", argoCDNamespace)
+	} else {
+		log.Logger.Info("Keeping Argo CD namespace as other namespaces are still using it",
+			"argoCDNamespace", argoCDNamespace,
+			"deletedUserNamespace", account.Namespace)
+	}
+
+	return nil
+}
+
+// createArgoCDRBACInNamespace creates Role and RoleBinding for ArgoCD to manage resources in a specific namespace
+func createArgoCDRBACInNamespace(clientset *kubernetes.Clientset, targetNamespace, argoCDNamespace, serviceUuid, guid string) error {
+	ctx := context.TODO()
+
+	// Create RoleBinding to give ArgoCD admin access in the target namespace
+	roleBinding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "argocd-admin-" + guid,
+			Namespace: targetNamespace,
+			Labels: map[string]string{
+				"serviceUuid":               serviceUuid,
+				"guid":                      guid,
+				"app.kubernetes.io/name":    "argocd-application-controller",
+				"app.kubernetes.io/part-of": "argocd",
+				"created-by":                "sandbox-api",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "admin",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "argocd-application-controller",
+				Namespace: argoCDNamespace,
+			},
+		},
+	}
+
+	_, err := clientset.RbacV1().RoleBindings(targetNamespace).Create(ctx, roleBinding, metav1.CreateOptions{})
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		return fmt.Errorf("failed to create ArgoCD admin role binding in namespace %s: %w", targetNamespace, err)
+	}
+
+	log.Logger.Info("Created ArgoCD admin RBAC in namespace",
+		"targetNamespace", targetNamespace,
+		"argoCDNamespace", argoCDNamespace,
+		"guid", guid)
+
+	return nil
+}
+
+// isLastNamespaceForService checks if this is the last namespace for a given service/GUID
+// that has Argo CD enabled
+func isLastNamespaceForService(clientset *kubernetes.Clientset, account *OcpSandboxWithCreds, guid string) (bool, error) {
+	ctx := context.TODO()
+
+	// List all namespaces with the same serviceUuid label
+	serviceUuid := ""
+	if account.Annotations != nil {
+		serviceUuid = account.Annotations["service_uuid"]
+	}
+
+	if serviceUuid == "" {
+		// If we can't determine the service UUID, assume it's the last one to be safe
+		return true, nil
+	}
+
+	// List namespaces with matching labels
+	namespaces, err := clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("serviceUuid=%s", serviceUuid),
+	})
+	if err != nil {
+		return true, err // Assume it's the last one if we can't check
+	}
+
+	// Count how many namespaces (other than the current one being deleted) have argocd managed-by annotation
+	argoCDNamespace := "sandbox-" + guid + "-argocd"
+	argoCDNamespace = argoCDNamespace[:min(63, len(argoCDNamespace))]
+
+	count := 0
+	for _, ns := range namespaces.Items {
+		// Skip the namespace we're currently deleting
+		if ns.Name == account.Namespace {
+			continue
+		}
+
+		// Check if this namespace has the argocd managed-by annotation
+		if managedBy, exists := ns.Annotations["argocd.argoproj.io/managed-by"]; exists && managedBy == argoCDNamespace {
+			count++
+		}
+	}
+
+	// If count is 0, this is the last namespace
+	return count == 0, nil
 }

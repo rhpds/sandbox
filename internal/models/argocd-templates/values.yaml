@@ -1,0 +1,59 @@
+---
+# Default values for Argo CD deployment
+# These will be overridden by the Go code with actual values
+
+namespace: ""
+serviceUuid: ""
+guid: ""
+adminPassword: ""
+
+labels:
+  serviceUuid: ""
+  guid: ""
+  app.kubernetes.io/name: "argocd"
+  app.kubernetes.io/part-of: "argocd"
+  created-by: "sandbox-api"
+
+# Argo CD configuration
+argocd:
+  image: "quay.io/argoproj/argocd:v3.0.16"
+  server:
+    insecure: true
+  controller:
+    statusProcessors: 20
+    operationProcessors: 10
+    appResync: 180
+  repoServer:
+    logLevel: "info"
+
+# Service configuration
+service:
+  type: ClusterIP
+  ports:
+    http: 80
+    grpc: 443
+
+# Resource limits and requests
+resources:
+  server:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  controller:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+  repoServer:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+...
