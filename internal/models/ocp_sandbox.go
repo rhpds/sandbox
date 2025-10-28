@@ -30,6 +30,20 @@ import (
 	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
+// Context keys for debug parameters
+type contextKey string
+
+const (
+	DebugForceFailKey     contextKey = "debug_force_fail"
+	DebugForceTimeoutKey  contextKey = "debug_force_timeout"
+	FleetStatusTimeoutKey contextKey = "fleet_status_timeout"
+
+	// Fleet status operation timeout
+	FleetStatusTimeout = 3 * time.Minute
+	// Individual cluster status timeout
+	ClusterStatusTimeout = 2 * time.Minute
+)
+
 type OcpSandboxProvider struct {
 	DbPool      *pgxpool.Pool `json:"-"`
 	VaultSecret string        `json:"-"`
@@ -2519,7 +2533,21 @@ func (a *OcpSandboxProvider) CreateOcpFleetStatusJob(ctx context.Context) (*Job,
 		return nil, err
 	}
 
-	go a.FleetStatus(context.Background(), job)
+	// Create a fresh background context for the async operation
+	// but copy debug values and timeout from the HTTP request context
+	backgroundCtx := context.Background()
+	if debugForceFail := ctx.Value(DebugForceFailKey); debugForceFail != nil {
+		backgroundCtx = context.WithValue(backgroundCtx, DebugForceFailKey, debugForceFail)
+	}
+	if debugForceTimeout := ctx.Value(DebugForceTimeoutKey); debugForceTimeout != nil {
+		backgroundCtx = context.WithValue(backgroundCtx, DebugForceTimeoutKey, debugForceTimeout)
+	}
+	if fleetTimeout := ctx.Value(FleetStatusTimeoutKey); fleetTimeout != nil {
+		backgroundCtx = context.WithValue(backgroundCtx, FleetStatusTimeoutKey, fleetTimeout)
+	}
+
+	// Pass the background context to FleetStatus (not the HTTP request context)
+	go a.FleetStatus(backgroundCtx, job)
 
 	log.Logger.Info("OCP fleet status job created", "job", job.RequestID)
 	return job, nil
@@ -2576,20 +2604,130 @@ type OcpFleetStatusBody struct {
 // - The status of the nodes/workers
 // Once all jobs are done, the status of the fleetStatus is set to "success" or "error".
 // This function is executed in a goroutine, so it can be run asynchronously.
-// Each job has a timeout of 2m after which it will be killed and marked as "error".
+// Each individual cluster check has a timeout of 2m after which it will be killed and marked as "error".
+// The entire fleet status operation has a timeout of 3m to prevent stuck jobs.
 func (a *OcpSandboxProvider) FleetStatus(ctx context.Context, job *Job) {
 	log.Logger.Info("Starting OCP Fleet Status check", "job_id", job.ID)
 	store := NewJobStore(a.DbPool)
+
+	// Get the timeout duration from context (pre-parsed and validated by handler)
+	timeout := FleetStatusTimeout
+	if ctxTimeout, ok := ctx.Value(FleetStatusTimeoutKey).(time.Duration); ok {
+		timeout = ctxTimeout
+		log.Logger.Info("Using custom timeout for fleet status", "job_id", job.ID, "timeout", timeout)
+	}
+
+	// Create a timeout context for the entire fleet status operation
+	// The ctx passed here is already a background context with debug values copied
+	fleetCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Set up a goroutine to handle timeout
+	done := make(chan bool, 1)
+	go func() {
+		defer func() {
+			select {
+			case done <- true:
+			default:
+			}
+		}()
+		a.executeFleetStatus(fleetCtx, job, store)
+	}()
+
+	// Wait for either completion or timeout
+	// Use a loop to prioritize completion over timeout when both are ready
+	for {
+		select {
+		case <-done:
+			log.Logger.Info("OCP Fleet Status check completed", "job_id", job.ID)
+			return
+		case <-fleetCtx.Done():
+			// Check if done channel is also ready (race condition)
+			select {
+			case <-done:
+				log.Logger.Info("OCP Fleet Status check completed just before timeout", "job_id", job.ID)
+				return
+			default:
+				// Timeout occurred, check if job was already completed by reading from database
+				ctx := context.Background()
+				currentJob, err := store.GetJobByID(ctx, job.ID)
+				if err != nil {
+					log.Logger.Error("Failed to check job status during timeout", "error", err, "job_id", job.ID)
+					// If we can't check status, assume timeout and handle it
+					a.handleFleetTimeout(job, store)
+				} else if currentJob.Status != "success" && currentJob.Status != "error" {
+					log.Logger.Error("OCP Fleet Status check timed out", "job_id", job.ID, "timeout", timeout, "current_status", currentJob.Status)
+					// Handle timeout cleanup here with fresh context
+					a.handleFleetTimeoutWithDuration(job, store, timeout)
+				} else {
+					log.Logger.Info("Fleet status job already completed, skipping timeout handler", "job_id", job.ID, "status", currentJob.Status)
+				}
+				return
+			}
+		}
+	}
+}
+
+func (a *OcpSandboxProvider) handleFleetTimeout(job *Job, store *JobStore) {
+	a.handleFleetTimeoutWithDuration(job, store, FleetStatusTimeout)
+}
+
+func (a *OcpSandboxProvider) handleFleetTimeoutWithDuration(job *Job, store *JobStore, timeout time.Duration) {
+	// Use fresh context since the original is canceled
+	ctx := context.Background()
+
+	// Update main job as timed out
+	job.Status = "error"
+	job.Body = map[string]any{"error": fmt.Sprintf("Fleet status check timed out after %v", timeout)}
+	job.CompletedAt = time.Now()
+
+	if err := store.UpdateJob(ctx, job); err != nil {
+		log.Logger.Error("Failed to update timed out fleet status job", "error", err, "job_id", job.ID)
+	}
+}
+
+func (a *OcpSandboxProvider) executeFleetStatus(ctx context.Context, job *Job, store *JobStore) {
+	// Use a separate context for database operations to avoid cancellation issues
+	dbCtx := context.Background()
 
 	fleetBody := OcpFleetStatusBody{
 		Clusters: make(map[string]OcpClusterStatusBody),
 	}
 
 	// Set main job to running
-	if err := store.SetJobStatus(ctx, job, "running"); err != nil {
+	if err := store.SetJobStatus(dbCtx, job, "running"); err != nil {
 		log.Logger.Error("Failed to set fleet status job to running", "error", err, "job_id", job.ID)
 		// Attempt to mark as error and exit
-		_ = store.SetJobStatus(ctx, job, "error")
+		_ = store.SetJobStatus(dbCtx, job, "error")
+		return
+	}
+
+	// Handle debug parameters from context
+	if debugForceFail, ok := ctx.Value(DebugForceFailKey).(string); ok && debugForceFail == "immediate" {
+		log.Logger.Info("Debug: forcing immediate failure", "job_id", job.ID)
+		job.Status = "error"
+		job.Body = map[string]any{"error": "Debug: forced immediate failure"}
+		job.CompletedAt = time.Now()
+		if err := store.UpdateJob(dbCtx, job); err != nil {
+			log.Logger.Error("Failed to update job with immediate failure", "error", err, "job_id", job.ID)
+		}
+		return
+	}
+
+	if debugForceTimeout, ok := ctx.Value(DebugForceTimeoutKey).(string); ok && debugForceTimeout == "fleet" {
+		// Get the timeout from the context deadline
+		deadline, hasDeadline := ctx.Deadline()
+		var sleepDuration time.Duration
+		if hasDeadline {
+			// Sleep longer than the timeout to trigger timeout
+			timeUntilDeadline := time.Until(deadline)
+			sleepDuration = timeUntilDeadline + 30*time.Second
+		} else {
+			// Fallback to default timeout + buffer
+			sleepDuration = FleetStatusTimeout + 1*time.Minute
+		}
+		log.Logger.Info("Debug: forcing fleet timeout by sleeping", "job_id", job.ID, "sleep_duration", sleepDuration)
+		time.Sleep(sleepDuration)
 		return
 	}
 
@@ -2599,7 +2737,7 @@ func (a *OcpSandboxProvider) FleetStatus(ctx context.Context, job *Job) {
 		log.Logger.Error("Failed to get OCP shared cluster configurations", "error", err, "job_id", job.ID)
 		job.Status = "error"
 		job.Body = map[string]any{"error": "Failed to get OCP shared cluster configurations: " + err.Error()}
-		_ = store.UpdateJob(ctx, job)
+		_ = store.UpdateJob(dbCtx, job)
 		return
 	}
 
@@ -2608,10 +2746,10 @@ func (a *OcpSandboxProvider) FleetStatus(ctx context.Context, job *Job) {
 
 	if len(clusters) > 0 {
 		// Set status to running
-		if err := store.SetJobStatus(ctx, job, "running"); err != nil {
+		if err := store.SetJobStatus(dbCtx, job, "running"); err != nil {
 			log.Logger.Error("Failed to set fleet status job to running", "error", err, "job_id", job.ID)
 			// Attempt to mark as error and exit
-			_ = store.SetJobStatus(ctx, job, "error")
+			_ = store.SetJobStatus(dbCtx, job, "error")
 			return
 		}
 	}
@@ -2626,13 +2764,13 @@ func (a *OcpSandboxProvider) FleetStatus(ctx context.Context, job *Job) {
 			},
 		}
 
-		if err := store.CreateJob(ctx, subJob); err != nil {
+		if err := store.CreateJob(dbCtx, subJob); err != nil {
 			log.Logger.Error("Failed to create cluster status job", "error", err, "cluster", currentCluster.Name)
 			continue // Skip this cluster, but continue with others
 		}
 
 		// Retrieve the full job object to get its ID
-		createdJob, err := store.GetJobByRequestID(ctx, subJob.RequestID)
+		createdJob, err := store.GetJobByRequestID(dbCtx, subJob.RequestID)
 		if err != nil {
 			log.Logger.Error("Failed to retrieve created cluster status job", "error", err, "request_id", subJob.RequestID)
 			continue
@@ -2640,8 +2778,8 @@ func (a *OcpSandboxProvider) FleetStatus(ctx context.Context, job *Job) {
 		createdJobs = append(createdJobs, createdJob)
 
 		wg.Add(1)
-		// Create a context with a 2-minute timeout for each cluster check
-		jobCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		// Create a context with timeout for each cluster check
+		jobCtx, cancel := context.WithTimeout(ctx, ClusterStatusTimeout)
 
 		go func(c context.Context, j *Job, conf OcpSharedClusterConfiguration) {
 			defer wg.Done()
@@ -2658,7 +2796,7 @@ func (a *OcpSandboxProvider) FleetStatus(ctx context.Context, job *Job) {
 	fleetHasErrors := false
 
 	for _, j := range createdJobs {
-		finalSubJob, err := store.GetJobByID(ctx, j.ID)
+		finalSubJob, err := store.GetJobByID(dbCtx, j.ID)
 		if err != nil {
 			log.Logger.Error("Failed to get final status of sub-job", "error", err, "sub_job_id", j.ID)
 			fleetHasErrors = true
@@ -2666,6 +2804,18 @@ func (a *OcpSandboxProvider) FleetStatus(ctx context.Context, job *Job) {
 		}
 
 		if finalSubJob.Status == "error" {
+			fleetHasErrors = true
+		}
+
+		// Check if job is still running or in any incomplete state (likely timed out) and mark as error
+		if finalSubJob.Status != "success" && finalSubJob.Status != "error" {
+			log.Logger.Warn("Sub-job not completed, likely timed out", "sub_job_id", j.ID, "status", finalSubJob.Status)
+			finalSubJob.Status = "error"
+			finalSubJob.Body = map[string]any{"error": fmt.Sprintf("Cluster status check timed out after %v", ClusterStatusTimeout)}
+			finalSubJob.CompletedAt = time.Now()
+			if err := store.UpdateJob(dbCtx, finalSubJob); err != nil {
+				log.Logger.Error("Failed to update timed out sub-job", "error", err, "sub_job_id", j.ID)
+			}
 			fleetHasErrors = true
 		}
 
@@ -2700,7 +2850,7 @@ func (a *OcpSandboxProvider) FleetStatus(ctx context.Context, job *Job) {
 	}
 
 	job.CompletedAt = time.Now()
-	if err := store.UpdateJob(ctx, job); err != nil {
+	if err := store.UpdateJob(dbCtx, job); err != nil {
 		log.Logger.Error("Failed to update final fleet status job", "error", err, "job_id", job.ID)
 	}
 
@@ -2714,8 +2864,28 @@ func (a *OcpSandboxProvider) FleetStatus(ctx context.Context, job *Job) {
 // - The status of the nodes/workers
 func (a *OcpSandboxProvider) OcpSharedClusterStatus(ctx context.Context, job *Job, conf OcpSharedClusterConfiguration) {
 	store := NewJobStore(a.DbPool)
-	if err := store.SetJobStatus(ctx, job, "running"); err != nil {
+	dbCtx := context.Background()
+	if err := store.SetJobStatus(dbCtx, job, "running"); err != nil {
 		log.Logger.Error("Failed to set cluster status job to running", "error", err, "job_id", job.ID, "cluster", conf.Name)
+		return
+	}
+
+	// Handle debug timeout for cluster-level testing
+	if debugForceTimeout, ok := ctx.Value(DebugForceTimeoutKey).(string); ok && debugForceTimeout == "cluster" {
+		// Get the timeout from the context deadline
+		deadline, hasDeadline := ctx.Deadline()
+		var sleepDuration time.Duration
+		if hasDeadline {
+			// Sleep longer than the timeout to trigger timeout
+			timeUntilDeadline := time.Until(deadline)
+			sleepDuration = timeUntilDeadline + 10*time.Second
+		} else {
+			// Fallback to default timeout + buffer
+			sleepDuration = ClusterStatusTimeout + 1*time.Minute
+		}
+		log.Logger.Info("Debug: forcing cluster timeout by sleeping", "job_id", job.ID, "cluster", conf.Name, "sleep_duration", sleepDuration)
+		time.Sleep(sleepDuration)
+		// This will cause the context to timeout and the goroutine to exit without completing
 		return
 	}
 
@@ -2871,7 +3041,7 @@ func (a *OcpSandboxProvider) OcpSharedClusterStatus(ctx context.Context, job *Jo
 		job.Status = "error"
 	}
 
-	if updateErr := store.UpdateJob(ctx, job); updateErr != nil {
+	if updateErr := store.UpdateJob(dbCtx, job); updateErr != nil {
 		log.Logger.Error("Failed to update cluster status job", "error", updateErr, "job_id", job.ID, "cluster", conf.Name)
 	}
 	log.Logger.Info("Finished cluster status check", "job_id", job.ID, "cluster", conf.Name, "status", job.Status)

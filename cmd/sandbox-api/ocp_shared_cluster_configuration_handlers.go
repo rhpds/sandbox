@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v4"
@@ -385,8 +388,35 @@ func (h *BaseHandler) PostOcpSharedClustersStatusHandler(w http.ResponseWriter, 
 		return
 	}
 
+	// Check for debug parameters and add them to context
+	ctx := r.Context()
+	if debugForceFail := r.URL.Query().Get("debug_force_fail"); debugForceFail != "" {
+		ctx = context.WithValue(ctx, models.DebugForceFailKey, debugForceFail)
+	}
+	if debugForceTimeout := r.URL.Query().Get("debug_force_timeout"); debugForceTimeout != "" {
+		ctx = context.WithValue(ctx, models.DebugForceTimeoutKey, debugForceTimeout)
+	}
+
+	// Parse and validate custom timeout
+	timeout := models.FleetStatusTimeout // Default timeout
+	if debugCustomTimeout := r.URL.Query().Get("debug_custom_timeout"); debugCustomTimeout != "" {
+		if customDuration, err := time.ParseDuration(debugCustomTimeout); err == nil {
+			timeout = customDuration
+		} else {
+			w.WriteHeader(http.StatusBadRequest)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusBadRequest,
+				Message:        "Invalid debug_custom_timeout format",
+				ErrorMultiline: []string{fmt.Sprintf("Failed to parse duration '%s': %v", debugCustomTimeout, err)},
+			})
+			return
+		}
+	}
+	// Add the parsed timeout to context
+	ctx = context.WithValue(ctx, models.FleetStatusTimeoutKey, timeout)
+
 	// Create a new fleet status job
-	job, err := h.OcpSandboxProvider.CreateOcpFleetStatusJob(r.Context())
+	job, err := h.OcpSandboxProvider.CreateOcpFleetStatusJob(ctx)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{

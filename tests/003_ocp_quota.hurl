@@ -86,6 +86,16 @@ retry: 2
 HTTP 404
 
 #################################################################################
+# Ensure placements are cleaned up
+#################################################################################
+
+DELETE {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 6
+HTTP 404
+
+#################################################################################
 # Ensure error when quota quantity doesn't match the k8s regex
 #################################################################################
 POST {{host}}/api/v1/placements
