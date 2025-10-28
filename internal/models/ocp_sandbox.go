@@ -34,13 +34,13 @@ import (
 type contextKey string
 
 const (
-	DebugForceFailKey    contextKey = "debug_force_fail"
-	DebugForceTimeoutKey contextKey = "debug_force_timeout"
-	DebugCustomTimeoutKey contextKey = "debug_custom_timeout"
-	
+	DebugForceFailKey     contextKey = "debug_force_fail"
+	DebugForceTimeoutKey  contextKey = "debug_force_timeout"
+	FleetStatusTimeoutKey contextKey = "fleet_status_timeout"
+
 	// Fleet status operation timeout
 	FleetStatusTimeout = 3 * time.Minute
-	// Individual cluster status timeout  
+	// Individual cluster status timeout
 	ClusterStatusTimeout = 2 * time.Minute
 )
 
@@ -2534,7 +2534,7 @@ func (a *OcpSandboxProvider) CreateOcpFleetStatusJob(ctx context.Context) (*Job,
 	}
 
 	// Create a fresh background context for the async operation
-	// but copy debug values from the HTTP request context
+	// but copy debug values and timeout from the HTTP request context
 	backgroundCtx := context.Background()
 	if debugForceFail := ctx.Value(DebugForceFailKey); debugForceFail != nil {
 		backgroundCtx = context.WithValue(backgroundCtx, DebugForceFailKey, debugForceFail)
@@ -2542,10 +2542,10 @@ func (a *OcpSandboxProvider) CreateOcpFleetStatusJob(ctx context.Context) (*Job,
 	if debugForceTimeout := ctx.Value(DebugForceTimeoutKey); debugForceTimeout != nil {
 		backgroundCtx = context.WithValue(backgroundCtx, DebugForceTimeoutKey, debugForceTimeout)
 	}
-	if debugCustomTimeout := ctx.Value(DebugCustomTimeoutKey); debugCustomTimeout != nil {
-		backgroundCtx = context.WithValue(backgroundCtx, DebugCustomTimeoutKey, debugCustomTimeout)
+	if fleetTimeout := ctx.Value(FleetStatusTimeoutKey); fleetTimeout != nil {
+		backgroundCtx = context.WithValue(backgroundCtx, FleetStatusTimeoutKey, fleetTimeout)
 	}
-	
+
 	// Pass the background context to FleetStatus (not the HTTP request context)
 	go a.FleetStatus(backgroundCtx, job)
 
@@ -2610,15 +2610,11 @@ func (a *OcpSandboxProvider) FleetStatus(ctx context.Context, job *Job) {
 	log.Logger.Info("Starting OCP Fleet Status check", "job_id", job.ID)
 	store := NewJobStore(a.DbPool)
 
-	// Determine the timeout duration
+	// Get the timeout duration from context (pre-parsed and validated by handler)
 	timeout := FleetStatusTimeout
-	if debugCustomTimeout, ok := ctx.Value(DebugCustomTimeoutKey).(string); ok {
-		if customDuration, err := time.ParseDuration(debugCustomTimeout); err == nil {
-			timeout = customDuration
-			log.Logger.Info("Using custom timeout for fleet status", "job_id", job.ID, "timeout", timeout)
-		} else {
-			log.Logger.Warn("Invalid custom timeout format, using default", "job_id", job.ID, "custom_timeout", debugCustomTimeout, "default_timeout", timeout)
-		}
+	if ctxTimeout, ok := ctx.Value(FleetStatusTimeoutKey).(time.Duration); ok {
+		timeout = ctxTimeout
+		log.Logger.Info("Using custom timeout for fleet status", "job_id", job.ID, "timeout", timeout)
 	}
 
 	// Create a timeout context for the entire fleet status operation
@@ -2679,12 +2675,12 @@ func (a *OcpSandboxProvider) handleFleetTimeout(job *Job, store *JobStore) {
 func (a *OcpSandboxProvider) handleFleetTimeoutWithDuration(job *Job, store *JobStore, timeout time.Duration) {
 	// Use fresh context since the original is canceled
 	ctx := context.Background()
-	
+
 	// Update main job as timed out
 	job.Status = "error"
 	job.Body = map[string]any{"error": fmt.Sprintf("Fleet status check timed out after %v", timeout)}
 	job.CompletedAt = time.Now()
-	
+
 	if err := store.UpdateJob(ctx, job); err != nil {
 		log.Logger.Error("Failed to update timed out fleet status job", "error", err, "job_id", job.ID)
 	}
@@ -2717,7 +2713,7 @@ func (a *OcpSandboxProvider) executeFleetStatus(ctx context.Context, job *Job, s
 		}
 		return
 	}
-	
+
 	if debugForceTimeout, ok := ctx.Value(DebugForceTimeoutKey).(string); ok && debugForceTimeout == "fleet" {
 		// Get the timeout from the context deadline
 		deadline, hasDeadline := ctx.Deadline()
@@ -2876,7 +2872,7 @@ func (a *OcpSandboxProvider) OcpSharedClusterStatus(ctx context.Context, job *Jo
 
 	// Handle debug timeout for cluster-level testing
 	if debugForceTimeout, ok := ctx.Value(DebugForceTimeoutKey).(string); ok && debugForceTimeout == "cluster" {
-		// Get the timeout from the context deadline  
+		// Get the timeout from the context deadline
 		deadline, hasDeadline := ctx.Deadline()
 		var sleepDuration time.Duration
 		if hasDeadline {
