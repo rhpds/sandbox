@@ -1,0 +1,12 @@
+---
+# Task file for deleting a single sandbox
+- name: Delete sandbox with sandbox_ctl role
+  include_role:
+    name: sandbox_ctl
+  vars:
+    sandbox_type: "OcpSandbox"
+    sandbox_guid: "{{ sandbox_user }}"
+    sandbox_openshift_namespace: "sandbox-{{ sandbox_user }}"
+
+    # Keycloak cleanup
+    sandbox_enable_keycloak: "{{ enable_keycloak | default(true) }}"

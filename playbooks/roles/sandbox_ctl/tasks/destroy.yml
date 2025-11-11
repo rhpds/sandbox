@@ -1,0 +1,17 @@
+---
+# Destroy tasks for sandbox using sandbox-ctl binary
+# The CLI is idempotent - safe to run multiple times
+- name: Execute sandbox-ctl delete command
+  command: >-
+    {{ sandbox_ctl_binary }} delete {{ sandbox_type | default('OcpSandbox') }}
+    --api-url="{{ cluster_api_url }}"
+    --token="{{ cluster_admin_token }}"
+    --guid="{{ sandbox_guid }}"
+    {% if not sandbox_enable_keycloak %}--keycloak=false{% endif %}
+  register: sandbox_ctl_delete_result
+  changed_when: true
+
+- name: Display destroy results
+  debug:
+    msg:
+      - "{{ sandbox_ctl_delete_result.stdout }}"

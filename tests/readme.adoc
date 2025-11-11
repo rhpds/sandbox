@@ -105,3 +105,76 @@ hurl --variable login_token_admin=$admintoken \
 === Troubleshoot ===
 
 Add the `--verbose` argument to the `hurl` command to see the full requests.
+
+== Jenkins CI Tests ==
+
+The `jenkins-run.sh` script runs comprehensive tests including:
+
+1. **Hurl API tests** - All `*.hurl` tests against the sandbox-api
+2. **sandbox-ctl CLI functional tests** - Tests the CLI binary directly against a real OCP cluster
+3. **Ansible role tests** - Tests the `sandbox_ctl` Ansible role example playbooks
+
+=== Running Jenkins Tests Locally ===
+
+The jenkins-run.sh script requires:
+
+* **Bitwarden CLI access** - For fetching cluster credentials
+* **OCP cluster configurations** - In `sandbox-api-configs/ocp-shared-cluster-configurations/`
+* **Environment variables**:
+  - `BWS_ACCESS_TOKEN` - Bitwarden Secrets Manager access token
+  - `BWS_PROJECT_ID` - Bitwarden project ID
+
+.Run all tests (including sandbox-ctl and Ansible role tests)
+----
+cd tests
+BWS_ACCESS_TOKEN=your-token BWS_PROJECT_ID=your-project ./jenkins-run.sh
+----
+
+The script will:
+
+1. Download `oc` binary if not available (cached in `~/.local/bin`)
+2. Start PostgreSQL database for API tests
+3. Run database migrations
+4. Start sandbox-api
+5. Run hurl API tests
+6. Build sandbox-ctl binary
+7. Get credentials for ocpvdev01 cluster from Bitwarden
+8. Run sandbox-ctl functional tests (test-sandbox-ctl.sh)
+9. Install ansible-core and kubernetes.core collection
+10. Run sandbox_ctl Ansible role example playbooks:
+    - single-sandbox.yml
+    - multiple-sandboxes.yml
+    - with-other-role.yml
+
+=== OC Binary Management ===
+
+The `oc` binary is automatically downloaded if not available:
+
+* **Download source**: https://mirror.openshift.com/pub/openshift-v4/clients/oc/latest/linux/oc.tar.gz
+* **Install location**: `~/.local/bin/oc`
+* **Cached**: Downloaded once and reused across test runs
+
+To manually install `oc`:
+----
+mkdir -p ~/.local/bin
+curl -sL https://mirror.openshift.com/pub/openshift-v4/clients/oc/latest/linux/oc.tar.gz | tar -xz -C ~/.local/bin oc
+chmod +x ~/.local/bin/oc
+export PATH="$HOME/.local/bin:$PATH"
+----
+
+=== Cluster Credentials from Bitwarden ===
+
+The script fetches cluster credentials from Bitwarden Secrets Manager:
+
+----
+# Cluster token stored as: {cluster-name}.token
+# Example: ocpvdev01.token
+
+CLUSTER_TOKEN=$(podman run --rm \
+    -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+    -e PROJECT_ID=$BWS_PROJECT_ID \
+    --security-opt label=disable \
+    --userns=host \
+    bitwarden/bws:0.5.0 secret list $BWS_PROJECT_ID \
+    | jq -r '.[] | select(.key=="ocpvdev01.token") | .value')
+----

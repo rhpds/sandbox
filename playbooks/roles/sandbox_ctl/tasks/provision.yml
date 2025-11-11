@@ -1,0 +1,73 @@
+---
+# Provision tasks for sandbox using sandbox-ctl binary
+- name: Execute sandbox-ctl create command
+  command: >-
+    {{ sandbox_ctl_binary }} create {{ sandbox_type | default('OcpSandbox') }}
+    --api-url="{{ cluster_api_url }}"
+    --token="{{ cluster_admin_token }}"
+    --guid="{{ sandbox_guid }}"
+    --service-uuid="{{ sandbox_service_uuid }}"
+    {% if not sandbox_enable_keycloak %}--keycloak=false{% endif %}
+    {% if sandbox_quota != '' %}--quota={{ sandbox_quota | quote }}{% endif %}
+    {% if sandbox_limit_range != '' %}--limit-range={{ sandbox_limit_range | quote }}{% endif %}
+    {% if sandbox_owner != '' %}--owner={{ sandbox_owner | quote }}{% endif %}
+    {% if sandbox_owner_email != '' %}--owner-email={{ sandbox_owner_email | quote }}{% endif %}
+    {% if sandbox_env_type != '' %}--env-type={{ sandbox_env_type | quote }}{% endif %}
+    {% if sandbox_annotations != '' %}--annotations={{ sandbox_annotations | quote }}{% endif %}
+  register: sandbox_ctl_result
+
+- name: Parse sandbox-ctl JSON output
+  set_fact:
+    sandbox_ctl_output: "{{ sandbox_ctl_result.stdout | from_json }}"
+
+- name: Get console URL from route
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    name: "{{ sandbox_console_route_name }}"
+    namespace: "{{ sandbox_console_namespace }}"
+    host: "{{ k8s_auth.host }}"
+    api_key: "{{ k8s_auth.api_key }}"
+    validate_certs: "{{ k8s_auth.validate_certs }}"
+  register: console_route
+  ignore_errors: true
+
+- name: Set console URL
+  set_fact:
+    sandbox_openshift_console_url: "https://{{ console_route.resources[0].spec.host }}"
+  when: 
+    - console_route.resources is defined
+    - console_route.resources | length > 0
+    - console_route.resources[0].spec.host is defined
+
+- name: Set fallback console URL if route not found
+  set_fact:
+    sandbox_openshift_console_url: ""
+  when: sandbox_openshift_console_url is not defined
+
+# Set output variables for backward compatibility
+- name: Set sandbox output variables from CLI output
+  set_fact:
+    sandbox_openshift_name: "{{ sandbox_ctl_output.namespace }}"
+    sandbox_openshift_cluster: "{{ sandbox_ctl_output.ocp_cluster }}"
+    sandbox_openshift_api_url: "{{ sandbox_ctl_output.api_url }}"
+    sandbox_openshift_apps_domain: "{{ sandbox_ctl_output.ingress_domain }}"
+    sandbox_openshift_namespace: "{{ sandbox_ctl_output.namespace }}"
+    sandbox_openshift_api_token: "{{ (sandbox_ctl_output.credentials | selectattr('kind', 'equalto', 'ServiceAccount') | list)[0].token }}"
+    sandbox_openshift_user: "{{ (sandbox_ctl_output.credentials | selectattr('kind', 'equalto', 'KeycloakUser') | list)[0].username if (sandbox_ctl_output.credentials | selectattr('kind', 'equalto', 'KeycloakUser') | list) else (sandbox_ctl_output.credentials | selectattr('kind', 'equalto', 'ServiceAccount') | list)[0].name }}"
+    sandbox_openshift_password: "{{ (sandbox_ctl_output.credentials | selectattr('kind', 'equalto', 'KeycloakUser') | list)[0].password if (sandbox_ctl_output.credentials | selectattr('kind', 'equalto', 'KeycloakUser') | list) else '' }}"
+
+- name: Set sandbox credentials array from CLI output
+  set_fact:
+    sandbox_openshift_credentials: "{{ sandbox_ctl_output.credentials }}"
+
+- name: Display provision results
+  debug:
+    msg:
+      - "OCP Sandbox provisioned successfully using sandbox-ctl!"
+      - "Namespace: {{ sandbox_openshift_namespace }}"
+      - "API URL: {{ sandbox_openshift_api_url }}"
+      - "Console URL: {{ sandbox_ctl_output.console_url }}"
+      - "Apps Domain: {{ sandbox_openshift_apps_domain }}"
+      - "Service Account: {{ (sandbox_ctl_output.credentials | selectattr('kind', 'equalto', 'ServiceAccount') | list)[0].name }}"
+      - "Keycloak User: {{ (sandbox_ctl_output.credentials | selectattr('kind', 'equalto', 'KeycloakUser') | list)[0].username if (sandbox_ctl_output.credentials | selectattr('kind', 'equalto', 'KeycloakUser') | list) else 'Not enabled' }}"

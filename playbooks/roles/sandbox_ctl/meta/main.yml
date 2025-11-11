@@ -1,0 +1,38 @@
+---
+galaxy_info:
+  role_name: sandbox_ctl
+  namespace: redhat_demo_platform
+  author: Red Hat Demo Platform Team
+  description: Ansible role for sandbox-ctl CLI - create and manage sandboxes of any type
+  company: Red Hat
+  license: MIT
+  min_ansible_version: 2.12
+  platforms:
+    - name: EL
+      versions:
+        - 8
+        - 9
+    - name: Fedora
+      versions:
+        - all
+    - name: Ubuntu
+      versions:
+        - all
+    - name: Debian
+      versions:
+        - all
+  galaxy_tags:
+    - sandbox
+    - cli
+    - automation
+    - devops
+    - multi_user
+    - openshift
+    - kubernetes
+    - aws
+    - wrapper
+
+dependencies: []
+
+collections:
+  - kubernetes.core

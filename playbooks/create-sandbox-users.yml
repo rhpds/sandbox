@@ -1,0 +1,216 @@
+---
+# Example playbook for managing OCP sandbox users using the ocp_sandbox role
+# This playbook demonstrates both single user and multiple user scenarios
+#
+# Usage:
+#   # Create single user
+#   ansible-playbook create-sandbox-users.yml -e user_name=john.doe
+#
+#   # Create multiple users
+#   ansible-playbook create-sandbox-users.yml -e num_users=5 -e user_prefix=student
+#
+#   # Delete users
+#   ansible-playbook create-sandbox-users.yml -e ACTION=destroy -e num_users=5 -e user_prefix=student
+#
+#   # Custom configuration
+#   ansible-playbook create-sandbox-users.yml -e user_name=admin.user -e enable_keycloak=true
+
+- name: "{{ 'Create' if ACTION | default('provision') == 'provision' else 'Delete' }} OCP Sandbox Users"
+  hosts: localhost
+  gather_facts: true
+  vars:
+    # Default configuration - can be overridden via -e
+    cluster_api_url: "{{ lookup('env', 'CLUSTER_API_URL') }}"
+    cluster_admin_token: "{{ lookup('env', 'CLUSTER_ADMIN_TOKEN') }}"
+
+    # Output directory - override with -e output_dir=/custom/path
+    # Credentials are saved to {{ output_dir }}/credentials/
+    output_dir: "/tmp/output_dir_{{ (cluster_api_url | hash('md5'))[:8] }}"
+    
+  pre_tasks:
+    - name: Set default ACTION if not provided
+      set_fact:
+        ACTION: "{{ ACTION | default('provision') }}"
+
+    - name: Validate required environment variables
+      assert:
+        that:
+          - cluster_api_url is defined and cluster_api_url != ""
+          - cluster_admin_token is defined and cluster_admin_token != ""
+        fail_msg: "Required environment variables: CLUSTER_API_URL, CLUSTER_ADMIN_TOKEN"
+
+    - name: Validate ACTION parameter
+      assert:
+        that:
+          - ACTION in ['provision', 'destroy']
+        fail_msg: "ACTION must be either 'provision' or 'destroy'"
+
+    - name: Create credentials output directory
+      file:
+        path: "{{ output_dir }}/credentials"
+        state: directory
+        mode: '0750'
+      when: ACTION == 'provision'
+
+    - name: Generate user list for multiple users scenario
+      set_fact:
+        sandbox_users: "{{ sandbox_users | default([]) + [(user_prefix | default('user')) + '-' + '%03d'|format(item)] }}"
+      loop: "{{ range(1, (num_users | default(1) | int) + 1) | list }}"
+      when: (num_users | default(1) | int) > 1
+
+    - name: Set single user list
+      set_fact:
+        sandbox_users: ["{{ user_name | default('demo-user') }}"]
+      when: (num_users | default(1) | int) == 1
+
+    - name: Set optional variables to avoid recursion
+      set_fact:
+        provided_owner: "{{ sandbox_owner if sandbox_owner is defined else '' }}"
+        provided_owner_email: "{{ sandbox_owner_email if sandbox_owner_email is defined else '' }}"
+        provided_env_type: "{{ sandbox_env_type if sandbox_env_type is defined else '' }}"
+        provided_quota: "{{ sandbox_quota if sandbox_quota is defined else '' }}"
+        provided_limit_range: "{{ sandbox_limit_range if sandbox_limit_range is defined else '' }}"
+        provided_annotations: "{{ sandbox_annotations if sandbox_annotations is defined else '' }}"
+
+    - name: Display sandbox operation plan
+      debug:
+        msg:
+          - "{{ 'Creating' if ACTION == 'provision' else 'Deleting' }} {{ sandbox_users | length }} sandbox(s)"
+          - "Users: {{ sandbox_users }}"
+          - "{{ 'Keycloak enabled: ' + (enable_keycloak | default(true) | string) if ACTION == 'provision' else 'Keycloak users will be deleted' }}"
+          - "{{ 'Credentials will be saved to: ' + output_dir + '/credentials/' if ACTION == 'provision' else 'Sandboxes will be permanently deleted' }}"
+
+  tasks:
+    # ===== PROVISION TASKS =====
+    - name: Initialize collected data
+      set_fact:
+        collected_sandboxes: []
+      when: ACTION == 'provision'
+
+    - name: Create sandbox for each user
+      include_tasks: create-single-sandbox.yml
+      loop: "{{ sandbox_users }}"
+      loop_control:
+        loop_var: sandbox_user
+      when: ACTION == 'provision'
+    
+    - name: Save individual user credentials
+      copy:
+        content: |
+          # Sandbox Credentials for {{ item.user }}
+          # Generated: {{ ansible_facts["date_time"]["iso8601"] }}
+
+          ## OpenShift Access
+          Namespace: {{ item.namespace }}
+          API URL: {{ item.api_url }}
+          Console URL: {{ item.console_url }}
+          Apps Domain: {{ item.apps_domain }}
+
+          ## Service Account Credentials
+          Service Account: {{ (item.credentials | selectattr('kind', 'equalto', 'ServiceAccount') | list)[0].name }}
+          Token: {{ (item.credentials | selectattr('kind', 'equalto', 'ServiceAccount') | list)[0].token }}
+
+          {% set keycloak_creds = item.credentials | selectattr('kind', 'equalto', 'KeycloakUser') | list %}
+          {% if keycloak_creds %}
+          ## Keycloak User Credentials
+          Username: {{ keycloak_creds[0].username }}
+          Password: {{ keycloak_creds[0].password }}
+          {% endif %}
+
+          ## CLI Login Commands
+          # Using service account token:
+          oc login {{ item.api_url }} --token={{ (item.credentials | selectattr('kind', 'equalto', 'ServiceAccount') | list)[0].token }} --namespace={{ item.namespace }}
+
+          {% if keycloak_creds %}
+          # Using Keycloak credentials:
+          oc login {{ item.api_url }} --username={{ keycloak_creds[0].username }} --password={{ keycloak_creds[0].password }}
+          {% endif %}
+        dest: "{{ output_dir }}/credentials/{{ item.user }}-credentials.txt"
+        mode: '0600'
+      loop: "{{ collected_sandboxes }}"
+      when: ACTION == 'provision'
+
+    - name: Create JSON credentials file for programmatic access
+      copy:
+        content: |
+          {
+            "user": "{{ item.user }}",
+            "created": "{{ ansible_facts["date_time"]["iso8601"] }}",
+            "namespace": "{{ item.namespace }}",
+            "cluster": {
+              "apiUrl": "{{ item.api_url }}",
+              "consoleUrl": "{{ item.console_url }}",
+              "appsDomain": "{{ item.apps_domain }}"
+            },
+            "credentials": {{ item.credentials | to_nice_json }}
+          }
+        dest: "{{ output_dir }}/credentials/{{ item.user }}-credentials.json"
+        mode: '0600'
+      loop: "{{ collected_sandboxes }}"
+      when: ACTION == 'provision'
+
+    - name: Create summary credentials file
+      copy:
+        content: |
+          # OCP Sandbox Users Summary
+          # Generated: {{ ansible_facts["date_time"]["iso8601"] }}
+          # Total Users: {{ collected_sandboxes | length }}
+
+          {% for sandbox in collected_sandboxes %}
+          ## {{ sandbox.user }}
+          Namespace: {{ sandbox.namespace }}
+          Service Account: {{ (sandbox.credentials | selectattr('kind', 'equalto', 'ServiceAccount') | list)[0].name }}
+          {% set keycloak_creds = sandbox.credentials | selectattr('kind', 'equalto', 'KeycloakUser') | list %}
+          {% if keycloak_creds %}
+          Keycloak User: {{ keycloak_creds[0].username }}
+          {% endif %}
+
+          {% endfor %}
+
+          ## Quick Access
+          All credentials saved in: {{ output_dir }}/credentials/
+
+          Individual files:
+          {% for sandbox in collected_sandboxes %}
+          - {{ sandbox.user }}-credentials.txt (human readable)
+          - {{ sandbox.user }}-credentials.json (machine readable)
+          {% endfor %}
+        dest: "{{ output_dir }}/credentials/README.md"
+        mode: '0600'
+      when: ACTION == 'provision'
+
+    # ===== DESTROY TASKS =====
+    - name: Delete sandbox for each user
+      include_tasks: delete-single-sandbox.yml
+      loop: "{{ sandbox_users }}"
+      loop_control:
+        loop_var: sandbox_user
+      when: ACTION == 'destroy'
+
+  post_tasks:
+    - name: Display provision completion summary
+      debug:
+        msg:
+          - "Successfully created {{ collected_sandboxes | length }} sandbox(s)"
+          - ""
+          - "Credentials saved to: {{ output_dir }}/credentials/"
+          - ""
+          - "Quick access examples:"
+          - "  # View all users: cat {{ output_dir }}/credentials/README.md"
+          - "  # User credentials: cat {{ output_dir }}/credentials/{{ sandbox_users[0] }}-credentials.txt"
+          - "  # JSON format: cat {{ output_dir }}/credentials/{{ sandbox_users[0] }}-credentials.json"
+          - ""
+          - "CLI login examples:"
+          - "  # Service account: oc login {{ cluster_api_url }} --token=<TOKEN>"
+          - "  # Keycloak user: oc login {{ cluster_api_url }} --username=<USERNAME> --password=<PASSWORD>"
+      when: ACTION == 'provision'
+
+    - name: Display destroy completion summary
+      debug:
+        msg:
+          - "Successfully deleted {{ sandbox_users | length }} sandbox(s)"
+          - ""
+          - "Users deleted: {{ sandbox_users }}"
+          - ""
+          - "All sandboxes, namespaces, service accounts, and Keycloak users have been removed."
+      when: ACTION == 'destroy'

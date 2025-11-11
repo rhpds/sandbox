@@ -14,7 +14,7 @@ VACUUM_VERSION ?= latest
 export VACUUM_VERSION
 export CGO_ENABLED=0
 
-build: sandbox-list sandbox-metrics sandbox-api sandbox-issue-jwt sandbox-rotate-vault
+build: sandbox-list sandbox-metrics sandbox-api sandbox-issue-jwt sandbox-rotate-vault sandbox-ctl
 
 test: cmd/sandbox-api/assets/swagger.yaml
 	@echo "Running tests..."
@@ -86,6 +86,15 @@ sandbox-replicate:
 sandbox-rotate-vault:
 	go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" -o build/sandbox-rotate-vault ./cmd/sandbox-rotate-vault
 
+sandbox-ctl:
+	@if command -v gox > /dev/null; then \
+		gox  \
+			-ldflags="-X 'main.Version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" \
+			-output="build/sandbox-ctl_{{.OS}}_{{.Arch}}" \
+			./cmd/sandbox-ctl; \
+	else \
+		go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" -o build/sandbox-ctl ./cmd/sandbox-ctl; \
+	fi
 
 push-lambda: deploy/lambda/sandbox-replicate.zip
 	python ./deploy/lambda/sandbox-replicate.py
@@ -93,7 +102,7 @@ push-lambda: deploy/lambda/sandbox-replicate.zip
 fmt:
 	@go fmt ./...
 
-.PHONY: sandbox-api sandbox-issue-jwt issue-jwt tokens sandbox-list sandbox-metrics sandbox-rotate-vault run-api run-air sandbox-replicate migrate fixtures test run-local-pg push-lambda clean fmt
+.PHONY: sandbox-api sandbox-issue-jwt issue-jwt tokens sandbox-list sandbox-metrics sandbox-rotate-vault sandbox-ctl run-api run-air sandbox-replicate migrate fixtures test run-local-pg push-lambda clean fmt
 
 clean: rm-local-pg
 	rm -f build/sandbox-*

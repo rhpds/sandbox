@@ -1,0 +1,228 @@
+---
+# Example: Create multiple OCP sandboxes for different users
+- name: Multiple Sandboxes Creation Example
+  hosts: localhost
+  connection: local
+  gather_facts: true
+
+  vars:
+    # Cluster credentials - Option 1: Use current oc session (default)
+    # Option 2: Set via environment variables (useful for CI/CD)
+    cluster_api_url: "{{ lookup('env', 'CLUSTER_API_URL') | default('', true) }}"
+    cluster_admin_token: "{{ lookup('env', 'CLUSTER_ADMIN_TOKEN') | default('', true) }}"
+
+    # Define multiple sandboxes to create (one per user)
+    sandboxes:
+      - name: "alice"
+        owner: "Alice Developer"
+        owner_email: "alice@example.com"
+        env_type: "development"
+        quota: '{"requests.cpu":"8","requests.memory":"16Gi","pods":"50"}'
+        keycloak: true
+
+      - name: "bob"
+        owner: "Bob Tester"
+        owner_email: "bob@example.com"
+        env_type: "test"
+        quota: '{"requests.cpu":"4","requests.memory":"8Gi","pods":"30"}'
+        keycloak: true
+
+      - name: "ci-user"
+        owner: "CI Automation User"
+        owner_email: "ci-automation@example.com"
+        env_type: "ci"
+        quota: '{"requests.cpu":"2","requests.memory":"4Gi","pods":"20"}'
+        keycloak: false  # Service account only
+
+  tasks:
+    # Create all sandboxes
+    # We'll save credentials to a temporary dict for each sandbox
+    - name: Initialize sandboxes dict
+      set_fact:
+        sandboxes_info: {}
+
+    - name: Create sandbox and save info
+      include_tasks: create-and-save-sandbox.yml
+      loop: "{{ sandboxes }}"
+      loop_control:
+        loop_var: sandbox_config
+
+    # Convert dict to list for easier iteration
+    - name: Build sandboxes list
+      set_fact:
+        created_sandboxes: "{{ sandboxes_info.values() | list }}"
+
+    # Display summary
+    - name: Display created sandboxes summary
+      debug:
+        msg: |
+          Created {{ created_sandboxes | length }} sandboxes:
+          {% for sb in created_sandboxes %}
+            {{ loop.index }}. {{ sb.name }}: {{ sb.namespace }}
+          {% endfor %}
+
+    # Save credentials to files
+    - name: Create credentials directory
+      file:
+        path: "/tmp/sandbox-credentials-{{ ansible_date_time.epoch }}"
+        state: directory
+        mode: '0700'
+      register: creds_dir
+
+    - name: Save individual sandbox credentials
+      copy:
+        content: |
+          # Sandbox: {{ item.name }}
+          # Created: {{ ansible_date_time.iso8601 }}
+
+          Namespace: {{ item.namespace }}
+          API URL: {{ item.api_url }}
+          Console URL: {{ item.console_url }}
+
+          # Service Account Access
+          Token: {{ item.token }}
+
+          {% if item.password %}
+          # Keycloak User Access
+          Username: {{ item.user }}
+          Password: {{ item.password }}
+          {% endif %}
+
+          # CLI Login Commands
+          oc login {{ item.api_url }} --token={{ item.token }}
+          {% if item.password %}
+          oc login {{ item.api_url }} -u {{ item.user }} -p {{ item.password }}
+          {% endif %}
+        dest: "{{ creds_dir.path }}/{{ item.name }}-credentials.txt"
+        mode: '0600'
+      loop: "{{ created_sandboxes }}"
+      no_log: true
+
+    - name: Create credentials summary
+      copy:
+        content: |
+          # Sandboxes Created: {{ ansible_date_time.iso8601 }}
+          # Total: {{ created_sandboxes | length }}
+
+          {% for sb in created_sandboxes %}
+          ## {{ sb.name }}
+          Namespace: {{ sb.namespace }}
+          Console: {{ sb.console_url }}
+          User: {{ sb.user }}
+
+          {% endfor %}
+
+          Individual credentials files:
+          {% for sb in created_sandboxes %}
+          - {{ sb.name }}-credentials.txt
+          {% endfor %}
+        dest: "{{ creds_dir.path }}/README.txt"
+        mode: '0600'
+
+    - name: Show credentials location
+      debug:
+        msg:
+          - "Credentials saved to: {{ creds_dir.path }}"
+          - "View summary: cat {{ creds_dir.path }}/README.txt"
+
+    # Use sandbox outputs - deploy to each sandbox
+    - name: Deploy demo app to each sandbox
+      kubernetes.core.k8s:
+        state: present
+        host: "{{ item.api_url }}"
+        api_key: "{{ item.token }}"
+        validate_certs: false
+        definition:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: demo-pod
+            namespace: "{{ item.namespace }}"
+            labels:
+              app: demo
+              sandbox: "{{ item.name }}"
+          spec:
+            containers:
+              - name: nginx
+                image: nginxinc/nginx-unprivileged:latest
+                ports:
+                  - containerPort: 8080
+      loop: "{{ created_sandboxes }}"
+      register: pod_results
+
+    - name: Wait for pods to be ready
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        name: demo-pod
+        namespace: "{{ item.namespace }}"
+        host: "{{ item.api_url }}"
+        api_key: "{{ item.token }}"
+        validate_certs: false
+        wait: yes
+        wait_condition:
+          type: Ready
+          status: "True"
+        wait_timeout: 120
+      loop: "{{ created_sandboxes }}"
+      ignore_errors: true
+
+    - name: Verify deployments
+      debug:
+        msg: "Demo pods deployed to {{ created_sandboxes | length }} sandboxes"
+
+    # Pause before cleanup
+    - name: Pause before cleanup
+      pause:
+        prompt: |
+
+          All sandboxes are ready!
+
+          Credentials saved to: {{ creds_dir.path }}
+
+          Press ENTER to clean up all sandboxes, or Ctrl+C to keep them running
+      when: cleanup_pause | default(true) | bool
+
+  # Cleanup all sandboxes
+  post_tasks:
+    - name: Cleanup all sandboxes
+      block:
+        - name: Destroy each sandbox
+          include_role:
+            name: sandbox_ctl
+          vars:
+            ACTION: destroy
+            sandbox_type: "OcpSandbox"
+            sandbox_guid: "{{ item.name }}"
+          loop: "{{ sandboxes }}"
+          register: cleanup_results
+
+        - name: Verify all namespaces deleted
+          kubernetes.core.k8s_info:
+            api_version: v1
+            kind: Namespace
+            label_selectors:
+              - "guid in ({{ sandboxes | map(attribute='name') | join(',') }})"
+            host: "{{ cluster_api_url }}"
+            api_key: "{{ cluster_admin_token }}"
+            validate_certs: false
+          register: remaining_namespaces
+          retries: 6
+          delay: 10
+          until: remaining_namespaces.resources | length == 0
+          ignore_errors: true
+
+        - name: Cleanup summary
+          debug:
+            msg:
+              - "Cleanup completed"
+              - "Sandboxes destroyed: {{ cleanup_results.results | length }}"
+              - "Remaining namespaces: {{ remaining_namespaces.resources | length }}"
+
+        - name: Show remaining namespaces
+          debug:
+            msg: "Still terminating: {{ remaining_namespaces.resources | map(attribute='metadata.name') | list }}"
+          when: remaining_namespaces.resources | length > 0
+
+      when: cleanup | default(true) | bool
+      tags: cleanup

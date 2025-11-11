@@ -11,3 +11,4 @@ cmd/sandbox-api/assets
 **/__pycache__
 trace.out
 profile.out
+credentials/*

@@ -45,8 +45,10 @@ const (
 )
 
 type OcpSandboxProvider struct {
-	DbPool      *pgxpool.Pool `json:"-"`
-	VaultSecret string        `json:"-"`
+	DbPool        *pgxpool.Pool                  `json:"-"`
+	VaultSecret   string                         `json:"-"`
+	DirectMode    bool                           `json:"-"` // For CLI usage without database
+	DirectCluster *OcpSharedClusterConfiguration `json:"-"` // Target cluster for direct mode
 }
 
 type OcpSharedClusterConfiguration struct {
@@ -662,6 +664,11 @@ func (a *OcpSandboxWithCreds) Update() error {
 }
 
 func (a *OcpSandboxWithCreds) Save() error {
+	// For CLI usage without database, this is a noop
+	if a.Provider.DirectMode {
+		return nil
+	}
+
 	if a.ID != 0 {
 		return a.Update()
 	}
@@ -684,6 +691,12 @@ func (a *OcpSandboxWithCreds) Save() error {
 }
 
 func (a *OcpSandboxWithCreds) SetStatus(status string) error {
+	// For CLI usage without database, just update the local status
+	if a.Provider.DirectMode {
+		a.Status = status
+		return nil
+	}
+
 	_, err := a.Provider.DbPool.Exec(
 		context.Background(),
 		fmt.Sprintf(`UPDATE resources
@@ -708,6 +721,12 @@ func (a *OcpSandboxWithCreds) GetStatus() (string, error) {
 }
 
 func (a *OcpSandboxWithCreds) MarkForCleanup() error {
+	// For CLI usage without database, just update the local flag
+	if a.Provider.DirectMode {
+		a.ToCleanup = true
+		return nil
+	}
+
 	_, err := a.Provider.DbPool.Exec(
 		context.Background(),
 		"UPDATE resources SET to_cleanup = true, resource_data['to_cleanup'] = 'true' WHERE id = $1",
@@ -719,6 +738,12 @@ func (a *OcpSandboxWithCreds) MarkForCleanup() error {
 
 func (a *OcpSandboxWithCreds) IncrementCleanupCount() error {
 	a.CleanupCount = a.CleanupCount + 1
+
+	// For CLI usage without database, just update the local count
+	if a.Provider.DirectMode {
+		return nil
+	}
+
 	_, err := a.Provider.DbPool.Exec(
 		context.Background(),
 		"UPDATE resources SET cleanup_count = cleanup_count + 1 WHERE id = $1",
@@ -845,6 +870,14 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(
 	multipleAccounts []MultipleOcpAccount,
 	alias string,
 ) (OcpSharedClusterConfigurations, error) {
+
+	// For DirectMode CLI usage, return the target cluster directly
+	if a.DirectMode {
+		if a.DirectCluster == nil {
+			return OcpSharedClusterConfigurations{}, errors.New("DirectMode enabled but no DirectCluster set")
+		}
+		return OcpSharedClusterConfigurations{*a.DirectCluster}, nil
+	}
 
 	var possibleClusters []string
 	var excludeClusters []string
@@ -1074,7 +1107,7 @@ func (a *OcpSandboxProvider) Request(
 
 	// Determine guid, auto increment the guid if there are multiple resources
 	// for a serviceUuid
-	guid, err := guessNextGuid(annotations["guid"], serviceUuid, a.DbPool, multiple, ctx)
+	guid, err := guessNextGuid(annotations["guid"], serviceUuid, a.DbPool, multiple, ctx, a.DirectMode)
 	if err != nil {
 		log.Logger.Error("Error guessing guid", "error", err)
 		return OcpSandboxWithCreds{}, err
@@ -1303,13 +1336,16 @@ func (a *OcpSandboxProvider) Request(
 			// Create Quota for the Namespace
 			// First calculate the quota using the requested_quota from the PlacementRequest and
 			// the options from the OcpSharedClusterConfiguration
-			requested := &v1.ResourceQuota{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "sandbox-requested-quota",
-				},
-				Spec: v1.ResourceQuotaSpec{
-					Hard: *requestedQuota,
-				},
+			var requested *v1.ResourceQuota
+			if requestedQuota != nil {
+				requested = &v1.ResourceQuota{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "sandbox-requested-quota",
+					},
+					Spec: v1.ResourceQuotaSpec{
+						Hard: *requestedQuota,
+					},
+				}
 			}
 
 			if selectedCluster.QuotaRequired {
@@ -1846,7 +1882,12 @@ func (a *OcpSandboxProvider) Request(
 	return rnew, nil
 }
 
-func guessNextGuid(origGuid string, serviceUuid string, dbpool *pgxpool.Pool, multiple bool, ctx context.Context) (string, error) {
+func guessNextGuid(origGuid string, serviceUuid string, dbpool *pgxpool.Pool, multiple bool, ctx context.Context, directMode bool) (string, error) {
+	// For direct CLI usage, just return the original guid
+	if directMode {
+		return origGuid, nil
+	}
+
 	var rowcount int
 	guid := origGuid
 	increment := 0
@@ -1975,80 +2016,102 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		return errors.New("resource ID must be > 0")
 	}
 
-	// Wait for the status of the resource until it's in final state
-	maxRetries := 10
-	for {
-		status, err := account.GetStatus()
-		if err != nil {
-			// if norow, the resource was not created, nothing to delete
-			if err == pgx.ErrNoRows {
-				log.Logger.Info("Resource not found", "name", account.Name)
-				return nil
-			}
-			log.Logger.Error("cannot get status of resource", "error", err, "name", account.Name)
-			break
-		}
-		if maxRetries == 0 {
-			log.Logger.Error("Resource is not in a final state", "name", account.Name, "status", status)
-
-			// Curative and auto-healing action, set status to error
-			if status == "initializing" || status == "scheduling" {
-				if err := account.SetStatus("error"); err != nil {
-					log.Logger.Error("Cannot set status", "error", err)
-					return err
+	// For DirectMode CLI usage, skip database status checks and proceed directly to cluster cleanup
+	if account.Provider.DirectMode {
+		log.Logger.Info("DirectMode: Skipping database status checks, proceeding to cluster cleanup", "name", account.Name)
+	} else {
+		// Wait for the status of the resource until it's in final state
+		maxRetries := 10
+		for {
+			status, err := account.GetStatus()
+			if err != nil {
+				// if norow, the resource was not created, nothing to delete
+				if err == pgx.ErrNoRows {
+					log.Logger.Info("Resource not found", "name", account.Name)
+					return nil
 				}
-				maxRetries = 10
-				continue
+				log.Logger.Error("cannot get status of resource", "error", err, "name", account.Name)
+				break
 			}
-			return errors.New("Resource is not in a final state, cannot delete")
-		}
+			if maxRetries == 0 {
+				log.Logger.Error("Resource is not in a final state", "name", account.Name, "status", status)
 
-		if status == "success" || status == "error" {
-			break
-		}
-
-		time.Sleep(5 * time.Second)
-		maxRetries--
-	}
-
-	// Reload account
-	if err := account.Reload(); err != nil {
-		log.Logger.Error("Error reloading account", "error", err)
-		return err
-	}
-
-	if account.OcpSharedClusterConfigurationName == "" {
-		// Get the OCP shared cluster configuration name from the resources.resource_data column using ID
-		err := account.Provider.DbPool.QueryRow(
-			context.Background(),
-			"SELECT resource_data->>'ocp_cluster' FROM resources WHERE id = $1",
-			account.ID,
-		).Scan(&account.OcpSharedClusterConfigurationName)
-
-		if err != nil {
-			if err == pgx.ErrNoRows {
-				log.Logger.Error("Ocp cluster doesn't exist for resource", "name", account.Name)
-				account.SetStatus("error")
-				return errors.New("Ocp cluster doesn't exist for resource")
+				// Curative and auto-healing action, set status to error
+				if status == "initializing" || status == "scheduling" {
+					if err := account.SetStatus("error"); err != nil {
+						log.Logger.Error("Cannot set status", "error", err)
+						return err
+					}
+					maxRetries = 10
+					continue
+				}
+				return errors.New("Resource is not in a final state, cannot delete")
 			}
 
-			log.Logger.Error("Ocp cluster query error", "err", err)
-			account.SetStatus("error")
+			if status == "success" || status == "error" {
+				break
+			}
+
+			time.Sleep(5 * time.Second)
+			maxRetries--
+		}
+
+		// Reload account
+		if err := account.Reload(); err != nil {
+			log.Logger.Error("Error reloading account", "error", err)
 			return err
 		}
 	}
 
+	// Handle cluster configuration name lookup
 	if account.OcpSharedClusterConfigurationName == "" {
-		// The resource was not created, nothing to delete
-		// that happens when no cluster is elected
-		_, err := account.Provider.DbPool.Exec(
-			context.Background(),
-			"DELETE FROM resources WHERE id = $1",
-			account.ID,
-		)
-		return err
+		if account.Provider.DirectMode {
+			// In DirectMode, use the cluster from the provider directly
+			if account.Provider.DirectCluster != nil {
+				account.OcpSharedClusterConfigurationName = account.Provider.DirectCluster.Name
+			} else {
+				log.Logger.Error("DirectMode: DirectCluster not set", "name", account.Name)
+				return errors.New("DirectMode: DirectCluster not set")
+			}
+		} else {
+			// Get the OCP shared cluster configuration name from the resources.resource_data column using ID
+			err := account.Provider.DbPool.QueryRow(
+				context.Background(),
+				"SELECT resource_data->>'ocp_cluster' FROM resources WHERE id = $1",
+				account.ID,
+			).Scan(&account.OcpSharedClusterConfigurationName)
+
+			if err != nil {
+				if err == pgx.ErrNoRows {
+					log.Logger.Error("Ocp cluster doesn't exist for resource", "name", account.Name)
+					account.SetStatus("error")
+					return errors.New("Ocp cluster doesn't exist for resource")
+				}
+
+				log.Logger.Error("Ocp cluster query error", "err", err)
+				account.SetStatus("error")
+				return err
+			}
+		}
 	}
 
+	if account.OcpSharedClusterConfigurationName == "" {
+		if account.Provider.DirectMode {
+			log.Logger.Info("DirectMode: No cluster configuration name, nothing to delete", "name", account.Name)
+			return nil
+		} else {
+			// The resource was not created, nothing to delete
+			// that happens when no cluster is elected
+			_, err := account.Provider.DbPool.Exec(
+				context.Background(),
+				"DELETE FROM resources WHERE id = $1",
+				account.ID,
+			)
+			return err
+		}
+	}
+
+	// Update status and cleanup tracking
 	account.SetStatus("deleting")
 	// In case anything goes wrong, we'll know it can safely be deleted
 	account.MarkForCleanup()
@@ -2056,21 +2119,37 @@ func (account *OcpSandboxWithCreds) Delete() error {
 
 	if account.Namespace == "" {
 		log.Logger.Info("Empty namespace, consider deletion a success", "name", account.Name)
-		_, err := account.Provider.DbPool.Exec(
-			context.Background(),
-			"DELETE FROM resources WHERE id = $1",
-			account.ID,
-		)
-		return err
+		if !account.Provider.DirectMode {
+			_, err := account.Provider.DbPool.Exec(
+				context.Background(),
+				"DELETE FROM resources WHERE id = $1",
+				account.ID,
+			)
+			return err
+		}
+		return nil
 	}
 
-	// Get the OCP shared cluster configuration from the resources.resource_data column
+	// Get the OCP shared cluster configuration
+	var cluster *OcpSharedClusterConfiguration
+	var err error
 
-	cluster, err := account.Provider.GetOcpSharedClusterConfigurationByName(account.OcpSharedClusterConfigurationName)
-	if err != nil {
-		log.Logger.Error("Error getting OCP shared cluster configuration", "error", err)
-		account.SetStatus("error")
-		return err
+	if account.Provider.DirectMode {
+		// In DirectMode, use the cluster from the provider directly
+		cluster = account.Provider.DirectCluster
+		if cluster == nil {
+			log.Logger.Error("DirectMode: DirectCluster not set", "name", account.Name)
+			return errors.New("DirectMode: DirectCluster not set")
+		}
+	} else {
+		// Get from database
+		clusterConfig, dbErr := account.Provider.GetOcpSharedClusterConfigurationByName(account.OcpSharedClusterConfigurationName)
+		if dbErr != nil {
+			log.Logger.Error("Error getting OCP shared cluster configuration", "error", dbErr)
+			account.SetStatus("error")
+			return dbErr
+		}
+		cluster = &clusterConfig
 	}
 
 	config, err := cluster.CreateRestConfig()
@@ -2102,12 +2181,15 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		// if error ends with 'not found', consider deletion a success
 		if strings.Contains(err.Error(), "not found") {
 			log.Logger.Info("Namespace not found, consider deletion a success", "name", account.Name)
-			_, err = account.Provider.DbPool.Exec(
-				context.Background(),
-				"DELETE FROM resources WHERE id = $1",
-				account.ID,
-			)
-			return err
+			if !account.Provider.DirectMode {
+				_, err = account.Provider.DbPool.Exec(
+					context.Background(),
+					"DELETE FROM resources WHERE id = $1",
+					account.ID,
+				)
+				return err
+			}
+			return nil
 		}
 
 		log.Logger.Error("Error getting OCP namespace", "error", err, "name", account.Name)
@@ -2275,12 +2357,17 @@ func (account *OcpSandboxWithCreds) Delete() error {
 
 	}
 
-	_, err = account.Provider.DbPool.Exec(
-		context.Background(),
-		"DELETE FROM resources WHERE id = $1",
-		account.ID,
-	)
-	return err
+	// Final database cleanup (skip for DirectMode)
+	if !account.Provider.DirectMode {
+		_, err = account.Provider.DbPool.Exec(
+			context.Background(),
+			"DELETE FROM resources WHERE id = $1",
+			account.ID,
+		)
+		return err
+	}
+
+	return nil
 }
 
 func (p *OcpSandboxProvider) FetchByName(name string) (OcpSandbox, error) {

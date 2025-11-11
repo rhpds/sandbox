@@ -1,0 +1,140 @@
+---
+# Demo application deployment role
+# This role expects explicit parameters to be passed when included
+
+- name: Validate required parameters
+  assert:
+    that:
+      - target_namespace is defined
+      - target_api_url is defined
+      - target_api_token is defined
+    fail_msg: "This role requires: target_namespace, target_api_url, target_api_token"
+
+- name: Display deployment target
+  debug:
+    msg:
+      - "Deploying {{ demo_app_name }} to sandbox"
+      - "Namespace: {{ target_namespace }}"
+      - "API URL: {{ target_api_url }}"
+
+- name: Create deployment
+  kubernetes.core.k8s:
+    state: present
+    host: "{{ target_api_url }}"
+    api_key: "{{ target_api_token }}"
+    validate_certs: false
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "{{ demo_app_name }}"
+        namespace: "{{ target_namespace }}"
+        labels:
+          app: "{{ demo_app_name }}"
+      spec:
+        replicas: "{{ demo_app_replicas }}"
+        selector:
+          matchLabels:
+            app: "{{ demo_app_name }}"
+        template:
+          metadata:
+            labels:
+              app: "{{ demo_app_name }}"
+          spec:
+            containers:
+              - name: app
+                image: "{{ demo_app_image }}"
+                ports:
+                  - containerPort: "{{ demo_app_port }}"
+                resources:
+                  requests:
+                    memory: "128Mi"
+                    cpu: "50m"
+                  limits:
+                    memory: "256Mi"
+                    cpu: "200m"
+
+- name: Create service
+  kubernetes.core.k8s:
+    state: present
+    host: "{{ target_api_url }}"
+    api_key: "{{ target_api_token }}"
+    validate_certs: false
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: "{{ demo_app_name }}"
+        namespace: "{{ target_namespace }}"
+        labels:
+          app: "{{ demo_app_name }}"
+      spec:
+        selector:
+          app: "{{ demo_app_name }}"
+        ports:
+          - port: "{{ demo_app_port }}"
+            targetPort: "{{ demo_app_port }}"
+
+- name: Create route (OpenShift)
+  kubernetes.core.k8s:
+    state: present
+    host: "{{ target_api_url }}"
+    api_key: "{{ target_api_token }}"
+    validate_certs: false
+    definition:
+      apiVersion: route.openshift.io/v1
+      kind: Route
+      metadata:
+        name: "{{ demo_app_name }}"
+        namespace: "{{ target_namespace }}"
+        labels:
+          app: "{{ demo_app_name }}"
+      spec:
+        to:
+          kind: Service
+          name: "{{ demo_app_name }}"
+        port:
+          targetPort: "{{ demo_app_port }}"
+        tls:
+          termination: edge
+          insecureEdgeTerminationPolicy: Redirect
+  register: route_result
+
+- name: Wait for deployment to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ demo_app_name }}"
+    namespace: "{{ target_namespace }}"
+    host: "{{ target_api_url }}"
+    api_key: "{{ target_api_token }}"
+    validate_certs: false
+    wait: yes
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 180
+
+- name: Get route URL
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    name: "{{ demo_app_name }}"
+    namespace: "{{ target_namespace }}"
+    host: "{{ target_api_url }}"
+    api_key: "{{ target_api_token }}"
+    validate_certs: false
+  register: route_info
+
+- name: Set application URL
+  set_fact:
+    demo_app_url: "https://{{ route_info.resources[0].spec.host }}"
+  when: route_info.resources | length > 0
+
+- name: Display deployment info
+  debug:
+    msg:
+      - "Application deployed successfully!"
+      - "App URL: {{ demo_app_url | default('N/A') }}"
+      - "Replicas: {{ demo_app_replicas }}"
+      - "Namespace: {{ target_namespace }}"

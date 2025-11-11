@@ -1,0 +1,288 @@
+---
+# Example: Create sandbox and use outputs with another role
+# This demonstrates the integration pattern for complex workflows
+
+- name: Sandbox with Application Deployment Example
+  hosts: localhost
+  connection: local
+  gather_facts: true
+
+  vars:
+    # Cluster credentials - Option 1: Use current oc session (default)
+    # Option 2: Set via environment variables (useful for CI/CD)
+    cluster_api_url: "{{ lookup('env', 'CLUSTER_API_URL') | default('', true) }}"
+    cluster_admin_token: "{{ lookup('env', 'CLUSTER_ADMIN_TOKEN') | default('', true) }}"
+
+    # Sandbox configuration
+    project_name: "workshop-demo"
+    project_guid: "{{ project_name }}-{{ ansible_date_time.epoch }}"
+
+    # Application configurations for different environments
+    applications:
+      - name: "frontend"
+        image: "nginxinc/nginx-unprivileged:latest"
+        replicas: 2
+        port: 8080
+
+      - name: "backend"
+        image: "nginxinc/nginx-unprivileged:latest"
+        replicas: 1
+        port: 8080
+
+  tasks:
+    # Step 1: Create the sandbox environment
+    - name: Create sandbox for the project
+      include_role:
+        name: sandbox_ctl
+      vars:
+        ACTION: provision
+        sandbox_type: "OcpSandbox"
+        sandbox_guid: "{{ project_guid }}"
+        sandbox_service_uuid: "{{ project_name }}-svc"
+        sandbox_enable_keycloak: true
+        sandbox_owner: "Workshop Instructor"
+        sandbox_owner_email: "instructor@example.com"
+        sandbox_env_type: "workshop"
+        sandbox_quota: '{"requests.cpu":"8","requests.memory":"16Gi","pods":"50"}'
+        sandbox_limit_range: '{"default":{"memory":"1Gi","cpu":"500m"},"defaultRequest":{"memory":"256Mi","cpu":"100m"}}'
+
+    # Step 2: Display sandbox information
+    - name: Show sandbox details
+      debug:
+        msg:
+          - "Sandbox provisioned successfully!"
+          - "Namespace: {{ sandbox_openshift_namespace }}"
+          - "Console: {{ sandbox_openshift_console_url }}"
+          - "User: {{ sandbox_openshift_user }}"
+
+    # Step 3: Save sandbox credentials for later use
+    - name: Save sandbox credentials
+      set_fact:
+        saved_sandbox_info:
+          namespace: "{{ sandbox_openshift_namespace }}"
+          api_url: "{{ sandbox_openshift_api_url }}"
+          console_url: "{{ sandbox_openshift_console_url }}"
+          api_token: "{{ sandbox_openshift_api_token }}"
+          user: "{{ sandbox_openshift_user }}"
+          password: "{{ sandbox_openshift_password }}"
+
+    # Step 4: Deploy each application using the demo role
+    - name: Deploy applications to sandbox
+      include_role:
+        name: demo_app_role
+      vars:
+        # Application configuration
+        demo_app_name: "{{ item.name }}"
+        demo_app_image: "{{ item.image }}"
+        demo_app_replicas: "{{ item.replicas }}"
+        demo_app_port: "{{ item.port }}"
+        # Explicitly pass sandbox outputs to the demo role
+        target_namespace: "{{ sandbox_openshift_namespace }}"
+        target_api_url: "{{ sandbox_openshift_api_url }}"
+        target_api_token: "{{ sandbox_openshift_api_token }}"
+      loop: "{{ applications }}"
+      register: app_deployments
+
+    # Step 5: Verify all deployments
+    - name: Get all deployments in sandbox
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        namespace: "{{ sandbox_openshift_namespace }}"
+        host: "{{ sandbox_openshift_api_url }}"
+        api_key: "{{ sandbox_openshift_api_token }}"
+        validate_certs: false
+      register: all_deployments
+
+    - name: Display deployment summary
+      debug:
+        msg: |
+          Deployed {{ all_deployments.resources | length }} applications
+          {% for deploy in all_deployments.resources %}
+            - {{ deploy.metadata.name }}: {{ deploy.status.availableReplicas | default(0) }}/{{ deploy.spec.replicas }} ready
+          {% endfor %}
+
+    # Step 6: Get routes for all applications
+    - name: Get all routes
+      kubernetes.core.k8s_info:
+        api_version: route.openshift.io/v1
+        kind: Route
+        namespace: "{{ sandbox_openshift_namespace }}"
+        host: "{{ sandbox_openshift_api_url }}"
+        api_key: "{{ sandbox_openshift_api_token }}"
+        validate_certs: false
+      register: all_routes
+
+    - name: Display application URLs
+      debug:
+        msg: |
+          Application URLs:
+          {% for route in all_routes.resources %}
+            {{ route.metadata.name }}: https://{{ route.spec.host }}
+          {% endfor %}
+
+    # Step 7: Create a summary ConfigMap with all info
+    - name: Create deployment summary ConfigMap
+      kubernetes.core.k8s:
+        state: present
+        host: "{{ sandbox_openshift_api_url }}"
+        api_key: "{{ sandbox_openshift_api_token }}"
+        validate_certs: false
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: deployment-summary
+            namespace: "{{ sandbox_openshift_namespace }}"
+          data:
+            project: "{{ project_name }}"
+            created: "{{ ansible_date_time.iso8601 }}"
+            applications: "{{ applications | map(attribute='name') | join(', ') }}"
+            sandbox_user: "{{ sandbox_openshift_user }}"
+            console_url: "{{ sandbox_openshift_console_url }}"
+
+    # Step 8: Test access to applications
+    - name: Test application endpoints
+      uri:
+        url: "https://{{ item.spec.host }}"
+        validate_certs: false
+        status_code: [200, 301, 302]
+      loop: "{{ all_routes.resources }}"
+      register: endpoint_tests
+      ignore_errors: true
+
+    - name: Show endpoint test results
+      debug:
+        msg: |
+          Endpoint tests:
+          {% for test in endpoint_tests.results %}
+            {{ test.item.metadata.name }}: {{ 'OK' if not test.failed else 'FAILED' }}
+          {% endfor %}
+
+    # Step 9: Create access instructions
+    - name: Generate access instructions
+      copy:
+        content: |
+          # {{ project_name }} Sandbox Access Instructions
+          Generated: {{ ansible_date_time.iso8601 }}
+
+          ## Sandbox Details
+          Namespace: {{ saved_sandbox_info.namespace }}
+          Console: {{ saved_sandbox_info.console_url }}
+
+          ## Credentials
+          Username: {{ saved_sandbox_info.user }}
+          Password: {{ saved_sandbox_info.password }}
+
+          ## CLI Access
+          oc login {{ saved_sandbox_info.api_url }} -u {{ saved_sandbox_info.user }} -p {{ saved_sandbox_info.password }}
+          oc project {{ saved_sandbox_info.namespace }}
+
+          ## Deployed Applications
+          {% for route in all_routes.resources %}
+          {{ route.metadata.name }}: https://{{ route.spec.host }}
+          {% endfor %}
+
+          ## Management Commands
+          # List all pods
+          oc get pods -n {{ saved_sandbox_info.namespace }}
+
+          # View logs
+          oc logs -f deployment/frontend -n {{ saved_sandbox_info.namespace }}
+          oc logs -f deployment/backend -n {{ saved_sandbox_info.namespace }}
+
+          # Scale applications
+          oc scale deployment/frontend --replicas=3 -n {{ saved_sandbox_info.namespace }}
+
+          ## Cleanup
+          # To delete the entire sandbox:
+          # (Run from the original repository)
+          ansible-playbook with-other-role.yml -e cleanup_only=true -e project_guid={{ project_guid }}
+        dest: "/tmp/{{ project_name }}-access-instructions.txt"
+        mode: '0600'
+      register: instructions_file
+
+    - name: Show completion message
+      debug:
+        msg: |
+          ====================================
+          Sandbox and applications are ready!
+          ====================================
+
+          Access instructions saved to:
+            {{ instructions_file.dest }}
+
+          Console: {{ saved_sandbox_info.console_url }}
+          Username: {{ saved_sandbox_info.user }}
+          Password: {{ saved_sandbox_info.password }}
+
+          Applications deployed:
+          {% for route in all_routes.resources %}
+            - https://{{ route.spec.host }}
+          {% endfor %}
+
+    - name: Pause before cleanup
+      pause:
+        prompt: |
+
+          Environment is ready!
+          View access instructions: cat {{ instructions_file.dest }}
+
+          Press ENTER to clean up, or Ctrl+C to keep running
+      when:
+        - cleanup_pause | default(true) | bool
+        - not cleanup_only | default(false) | bool
+
+  # Comprehensive cleanup with error handling
+  post_tasks:
+    - name: Cleanup sandbox and all resources
+      block:
+        - name: Delete deployment summary
+          debug:
+            msg: "Cleaning up sandbox {{ project_guid }}"
+
+        - name: Destroy the sandbox
+          include_role:
+            name: sandbox_ctl
+          vars:
+            ACTION: destroy
+            sandbox_type: "OcpSandbox"
+            sandbox_guid: "{{ project_guid }}"
+
+        - name: Wait for namespace deletion
+          kubernetes.core.k8s_info:
+            api_version: v1
+            kind: Namespace
+            name: "{{ saved_sandbox_info.namespace }}"
+            host: "{{ cluster_api_url }}"
+            api_key: "{{ cluster_admin_token }}"
+            validate_certs: false
+          register: ns_status
+          retries: 10
+          delay: 10
+          until: ns_status.resources | length == 0
+          ignore_errors: true
+
+        - name: Cleanup status
+          debug:
+            msg:
+              - "Cleanup completed"
+              - "Namespace deleted: {{ ns_status.resources | length == 0 }}"
+              - "{% if ns_status.resources | length > 0 %}Namespace may still be terminating{% endif %}"
+
+        - name: Remove access instructions file
+          file:
+            path: "{{ instructions_file.dest }}"
+            state: absent
+          when: instructions_file is defined
+
+      rescue:
+        - name: Cleanup failed
+          debug:
+            msg:
+              - "WARNING: Cleanup encountered errors"
+              - "Manual cleanup may be required:"
+              - "  oc delete namespace {{ saved_sandbox_info.namespace }}"
+
+      when: cleanup | default(true) | bool or cleanup_only | default(false) | bool
+      tags: cleanup
