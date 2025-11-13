@@ -9,7 +9,7 @@ RUN make sandbox-list
 FROM registry.access.redhat.com/ubi8/ubi:latest
     MAINTAINER Guillaume Coré <gucore@redhat.com>
 
-ARG AWSNUKE_VERSION=v3.35.2
+ARG AWSNUKE_VERSION=v3.61.0
 ARG AWSNUKE_LEGACY_VERSION=v2.25.0
 ARG RUSH_VERSION=v0.5.4
 
