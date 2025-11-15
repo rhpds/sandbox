@@ -1,0 +1,68 @@
+---
+# Test playbook for sandbox_ctl role
+- name: Test Sandbox CLI Role
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    # Override these with actual cluster details
+    cluster_api_url: "{{ lookup('env', 'TEST_CLUSTER_API_URL') }}"
+    cluster_admin_token: "{{ lookup('env', 'TEST_CLUSTER_ADMIN_TOKEN') }}"
+    
+    test_guid: "ansible-test"
+    test_service_uuid: "test-{{ ansible_date_time.epoch }}"
+    
+  pre_tasks:
+    - name: Validate test environment
+      assert:
+        that:
+          - cluster_api_url != ""
+          - cluster_admin_token != ""
+        fail_msg: "Set TEST_CLUSTER_API_URL and TEST_CLUSTER_ADMIN_TOKEN environment variables"
+        
+  tasks:
+    # Test basic provision
+    - name: Test sandbox creation
+      include_role:
+        name: sandbox_ctl
+      vars:
+        ACTION: provision
+        cluster_api_url: "{{ cluster_api_url }}"
+        cluster_admin_token: "{{ cluster_admin_token }}"
+        sandbox_guid: "{{ test_guid }}"
+        sandbox_service_uuid: "{{ test_service_uuid }}"
+        sandbox_enable_keycloak: true
+    
+    # Verify results
+    - name: Verify sandbox was created
+      assert:
+        that:
+          - sandbox_openshift_namespace is defined
+          - sandbox_openshift_api_token is defined
+          - sandbox_openshift_credentials is defined
+          - sandbox_openshift_credentials | length >= 1
+        fail_msg: "Sandbox creation failed - missing output variables"
+    
+    # Display results
+    - name: Show sandbox information
+      debug:
+        msg:
+          - "Sandbox created successfully"
+          - "Namespace: {{ sandbox_openshift_namespace }}"
+          - "API Token: {{ sandbox_openshift_api_token[:20] }}..."
+          - "Console URL: {{ sandbox_openshift_console_url | default('N/A') }}"
+          - "Credentials: {{ sandbox_openshift_credentials | length }} entries"
+    
+    # Test cleanup
+    - name: Test sandbox destruction
+      include_role:
+        name: sandbox_ctl
+      vars:
+        ACTION: destroy
+        cluster_api_url: "{{ cluster_api_url }}"
+        cluster_admin_token: "{{ cluster_admin_token }}"
+        sandbox_guid: "{{ test_guid }}"
+    
+    - name: Test completed successfully
+      debug:
+        msg: "All tests passed. Sandbox role is working correctly."

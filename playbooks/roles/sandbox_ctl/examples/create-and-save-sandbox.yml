@@ -1,0 +1,33 @@
+---
+# Helper task file for creating a sandbox and saving its info
+# This is included in a loop from multiple-sandboxes.yml
+
+- name: Create sandbox for {{ sandbox_config.name }}
+  include_role:
+    name: sandbox_ctl
+  vars:
+    ACTION: provision
+    sandbox_type: "OcpSandbox"
+    sandbox_guid: "{{ sandbox_config.name }}"
+    sandbox_service_uuid: "{{ sandbox_config.name }}-{{ ansible_date_time.epoch }}"
+    sandbox_enable_keycloak: "{{ sandbox_config.keycloak }}"
+    sandbox_owner: "{{ sandbox_config.owner }}"
+    sandbox_owner_email: "{{ sandbox_config.owner_email }}"
+    sandbox_env_type: "{{ sandbox_config.env_type }}"
+    sandbox_quota: "{{ sandbox_config.quota }}"
+
+- name: Save {{ sandbox_config.name }} sandbox info
+  set_fact:
+    sandboxes_info: "{{ sandboxes_info | combine({
+      sandbox_config.name: {
+        'name': sandbox_config.name,
+        'namespace': sandbox_openshift_namespace,
+        'api_url': sandbox_openshift_api_url,
+        'console_url': sandbox_openshift_console_url,
+        'token': sandbox_openshift_api_token,
+        'user': sandbox_openshift_user,
+        'password': sandbox_openshift_password,
+        'credentials': sandbox_openshift_credentials
+      }
+    }) }}"
+  no_log: true

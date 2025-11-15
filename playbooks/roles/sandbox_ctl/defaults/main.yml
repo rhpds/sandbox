@@ -1,0 +1,41 @@
+# Default variables for sandbox_ctl role
+---
+# Action to perform: provision or destroy
+ACTION: provision
+
+# OpenShift cluster connection details for ADMIN access (required)
+# These MUST be provided explicitly to avoid accidental targeting of wrong cluster
+cluster_api_url: ""
+cluster_admin_token: ""
+
+# Sandbox configuration
+sandbox_guid: "{{ guid | default('sandbox') }}"
+sandbox_service_uuid: "{{ service_uuid | default(ansible_date_time.epoch) }}"
+
+# Feature toggles (simplified for sandbox-ctl)
+sandbox_enable_keycloak: true
+
+# Optional metadata for sandbox-ctl
+sandbox_owner: ""
+sandbox_owner_email: ""
+sandbox_env_type: ""
+
+# Resource constraints as JSON (passed to sandbox-ctl)
+# Example: {"requests.cpu":"4","requests.memory":"8Gi","pods":"20"}
+sandbox_quota: ""
+sandbox_limit_range: ""
+
+# Additional annotations as JSON
+sandbox_annotations: ""
+
+# Console URL detection
+sandbox_console_namespace: openshift-console
+sandbox_console_route_name: console
+
+# Keycloak namespace
+sandbox_keycloak_namespace: keycloak
+
+# Sandbox-ctl binary configuration
+# The binary must be installed and available in PATH before running this role
+# Will be auto-detected from PATH during execution
+sandbox_ctl_binary: ""

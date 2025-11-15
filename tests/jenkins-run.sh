@@ -7,6 +7,43 @@ apilog=$PWD/api.log
 dbdump=$PWD/db_dump.sql
 jobdir=$PWD
 
+# Artifact retention setup
+ARTIFACTS_DIR=$PWD/test-artifacts
+mkdir -p "$ARTIFACTS_DIR"
+BUILD_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+echo "Test artifacts will be saved to: $ARTIFACTS_DIR"
+
+# Capture environment information
+cat > "$ARTIFACTS_DIR/environment.txt" << EOF
+Test Environment Information
+=============================
+Timestamp: $BUILD_TIMESTAMP
+Hostname: $(hostname)
+User: $(whoami)
+Working Directory: $PWD
+Git Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "N/A")
+Git Commit: $(git rev-parse HEAD 2>/dev/null || echo "N/A")
+Git Status: $(git status --short 2>/dev/null || echo "N/A")
+
+System Information:
+-------------------
+OS: $(uname -s)
+Kernel: $(uname -r)
+Architecture: $(uname -m)
+
+Tool Versions:
+--------------
+Bash: $BASH_VERSION
+Make: $(make --version 2>/dev/null | head -1 || echo "N/A")
+Go: $(go version 2>/dev/null || echo "N/A")
+Podman: $(podman --version 2>/dev/null || echo "N/A")
+jq: $(jq --version 2>/dev/null || echo "N/A")
+Hurl: $(hurl --version 2>/dev/null || echo "N/A")
+EOF
+
+# Add ansible and oc versions later when installed
+echo "" >> "$ARTIFACTS_DIR/environment.txt"
+
 # trap function
 _on_exit() {
     local exit_status=${1:-$?}
@@ -48,6 +85,23 @@ _on_exit() {
     [ -f "$dbdump" ] && gzip -f $dbdump || echo "Warning: db_dump.sql not found"
     [ -f "$apilog" ] && gzip -f $apilog || echo "Warning: api.log not found"
 
+    # Create test summary
+    if [ -d "$ARTIFACTS_DIR" ]; then
+        cat > "$ARTIFACTS_DIR/test-summary.txt" << EOF
+Test Run Summary
+================
+Timestamp: $BUILD_TIMESTAMP
+Exit Status: $exit_status
+Duration: $(date -u -d @$(($(date +%s) - ${TEST_START_TIME:-$(date +%s)})) +%T)
+
+Available Artifacts:
+- environment.txt (system and tool versions)
+- api.log.gz (if API tests were run)
+- db_dump.sql.gz (database dump)
+EOF
+        echo "Test artifacts saved to: $ARTIFACTS_DIR"
+    fi
+
     make clean || echo "Warning: make clean failed, but continuing"
     exit $exit_status
 }
@@ -58,6 +112,9 @@ trap "_on_exit" EXIT
 set -e -o pipefail
 unset DBUS_SESSION_BUS_ADDRESS
 
+# Record test start time for duration calculation
+TEST_START_TIME=$(date +%s)
+
 # Ensure binaries are installed
 mandatory_commands=(jq podman)
 
@@ -67,6 +124,41 @@ for cmd in "${mandatory_commands[@]}"; do
         exit 1
     fi
 done
+
+# Ensure oc binary is available
+# Download to shared location to avoid re-downloading every time
+OC_SHARED_DIR="${HOME}/.local/bin"
+mkdir -p "$OC_SHARED_DIR"
+export PATH="$OC_SHARED_DIR:$PATH"
+
+if ! command -v oc &> /dev/null; then
+    echo "oc binary not found, downloading from OpenShift mirror..."
+    OC_DOWNLOAD_URL="https://mirror.openshift.com/pub/openshift-v4/clients/oc/latest/linux/oc.tar.gz"
+    OC_TMP_TAR=$(mktemp)
+
+    if curl -sL "$OC_DOWNLOAD_URL" -o "$OC_TMP_TAR"; then
+        tar -xzf "$OC_TMP_TAR" -C "$OC_SHARED_DIR" oc
+        chmod +x "$OC_SHARED_DIR/oc"
+        rm -f "$OC_TMP_TAR"
+        echo "oc binary installed to $OC_SHARED_DIR/oc"
+    else
+        echo "Failed to download oc binary"
+        exit 1
+    fi
+else
+    echo "oc binary found: $(command -v oc)"
+fi
+
+# Verify oc is now available
+if ! command -v oc &> /dev/null; then
+    echo "oc binary still not available after installation attempt"
+    exit 1
+fi
+
+echo "oc version: $(oc version --client 2>&1 | head -1)"
+
+# Add oc version to environment info
+echo "oc: $(oc version --client 2>&1 | head -1)" >> "$ARTIFACTS_DIR/environment.txt"
 
 # Pull needed images
 podman pull --quiet quay.io/rhpds/sandbox-admin:latest || echo "Warning: Failed to pull sandbox-admin image"
@@ -298,3 +390,124 @@ hurl --test \
     --variable guid=$guid \
     --jobs 1 \
     $tests
+
+# Run sandbox-ctl functional tests
+echo ""
+echo "========================================="
+echo "Running sandbox-ctl functional tests"
+echo "========================================="
+cd $jobdir
+
+# Build sandbox-ctl binary
+make sandbox-ctl
+
+# Get credentials for first ocpvdev cluster from bitwarden
+FIRST_CLUSTER="ocpvdev01"
+echo "Getting credentials for $FIRST_CLUSTER from Bitwarden..."
+
+CLUSTER_TOKEN=$(podman run --rm \
+        -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+        -e PROJECT_ID=$BWS_PROJECT_ID \
+        --security-opt label=disable \
+        --userns=host \
+        bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
+        | KEYVALUE="${FIRST_CLUSTER}.token" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
+
+if [ -z "$CLUSTER_TOKEN" ]; then
+    echo "Error: Failed to get cluster token from Bitwarden"
+    exit 1
+fi
+
+# Get API URL from cluster config
+CLUSTER_API_URL=$(jq -r '.api_url' < "sandbox-api-configs/ocp-shared-cluster-configurations/${FIRST_CLUSTER}.create.json")
+
+if [ -z "$CLUSTER_API_URL" ]; then
+    echo "Error: Failed to get cluster API URL from config"
+    exit 1
+fi
+
+echo "Cluster: $FIRST_CLUSTER"
+echo "API URL: $CLUSTER_API_URL"
+
+# Set up credentials for functional tests
+export TEST_CLUSTER_API_URL="$CLUSTER_API_URL"
+export TEST_CLUSTER_ADMIN_TOKEN="$CLUSTER_TOKEN"
+
+# Run the functional tests
+cd tests/functional
+chmod +x test-sandbox-ctl.sh
+./test-sandbox-ctl.sh
+
+echo ""
+echo "✅ sandbox-ctl functional tests completed successfully"
+echo ""
+
+# Run sandbox_ctl Ansible role example playbook tests
+echo ""
+echo "========================================="
+echo "Testing sandbox_ctl Ansible role examples"
+echo "========================================="
+cd $jobdir
+
+# Install ansible-core if not available
+if ! command -v ansible-playbook &> /dev/null; then
+    echo "Installing ansible-core..."
+    pip3 install --user ansible-core || {
+        echo "Error: Failed to install ansible-core"
+        exit 1
+    }
+fi
+
+# Install kubernetes.core collection
+echo "Installing kubernetes.core collection..."
+ansible-galaxy collection install kubernetes.core --force
+
+# Add ansible version to environment info
+echo "Ansible: $(ansible-playbook --version 2>/dev/null | head -1)" >> "$ARTIFACTS_DIR/environment.txt"
+
+# Export credentials for ansible playbooks
+export CLUSTER_API_URL="$CLUSTER_API_URL"
+export CLUSTER_ADMIN_TOKEN="$CLUSTER_TOKEN"
+
+# Test single-sandbox example
+echo ""
+echo "Testing single-sandbox.yml example..."
+cd playbooks/roles/sandbox_ctl/examples
+
+# Add the role path
+export ANSIBLE_ROLES_PATH="$jobdir/playbooks/roles"
+
+# Run with cleanup pause disabled and quick execution
+ansible-playbook single-sandbox.yml \
+    -e cleanup_pause=false \
+    -e cluster_api_url="$CLUSTER_API_URL" \
+    -e cluster_admin_token="$CLUSTER_ADMIN_TOKEN"
+
+echo "✅ single-sandbox.yml test completed successfully"
+
+# Test multiple-sandboxes example
+echo ""
+echo "Testing multiple-sandboxes.yml example..."
+ansible-playbook multiple-sandboxes.yml \
+    -e cleanup_pause=false \
+    -e cluster_api_url="$CLUSTER_API_URL" \
+    -e cluster_admin_token="$CLUSTER_ADMIN_TOKEN"
+
+echo "✅ multiple-sandboxes.yml test completed successfully"
+
+# Test with-other-role example
+echo ""
+echo "Testing with-other-role.yml example..."
+ansible-playbook with-other-role.yml \
+    -e cleanup_pause=false \
+    -e cluster_api_url="$CLUSTER_API_URL" \
+    -e cluster_admin_token="$CLUSTER_ADMIN_TOKEN"
+
+echo "✅ with-other-role.yml test completed successfully"
+
+echo ""
+echo "========================================="
+echo "✅ All sandbox_ctl Ansible role tests passed"
+echo "========================================="
+
+cd $jobdir

@@ -1,0 +1,56 @@
+---
+# Main tasks for sandbox_ctl role
+- name: Validate required variables
+  assert:
+    that:
+      - ACTION in ['provision', 'destroy']
+      - cluster_api_url is defined and cluster_api_url != ""
+      - cluster_admin_token is defined and cluster_admin_token != ""
+    fail_msg: |
+      Required: cluster_api_url and cluster_admin_token
+
+      Get from current oc session:
+        export CLUSTER_API_URL=$(oc whoami --show-server)
+        export CLUSTER_ADMIN_TOKEN=$(oc whoami -t)
+
+- name: Set kubernetes connection info for admin access
+  set_fact:
+    k8s_auth:
+      host: "{{ cluster_api_url }}"
+      api_key: "{{ cluster_admin_token }}"
+      validate_certs: false
+
+- name: Check if sandbox-ctl is in PATH
+  command: which sandbox-ctl
+  register: sandbox_ctl_which
+  failed_when: false
+  changed_when: false
+
+- name: Verify sandbox-ctl is available
+  assert:
+    that:
+      - sandbox_ctl_which.rc == 0
+    fail_msg: |
+      sandbox-ctl binary not found in PATH.
+
+      Please install sandbox-ctl before running this role:
+        1. Download the correct binary for your architecture:
+           - Linux AMD64: sandbox-ctl_linux_amd64
+           - Linux ARM64: sandbox-ctl_linux_arm64
+           - macOS Intel: sandbox-ctl_darwin_amd64
+           - macOS Apple Silicon (M1/M2/M3): sandbox-ctl_darwin_arm64
+
+        2. Install to PATH:
+           sudo install -m 0755 sandbox-ctl_* /usr/local/bin/sandbox-ctl
+
+- name: Set sandbox-ctl binary from PATH
+  set_fact:
+    sandbox_ctl_binary: "{{ sandbox_ctl_which.stdout }}"
+
+- name: Include provision tasks
+  include_tasks: provision.yml
+  when: ACTION == 'provision'
+
+- name: Include destroy tasks
+  include_tasks: destroy.yml
+  when: ACTION == 'destroy'

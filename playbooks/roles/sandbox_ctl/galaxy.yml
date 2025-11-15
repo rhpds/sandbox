@@ -1,0 +1,34 @@
+---
+namespace: redhat_demo_platform
+name: sandbox_ctl
+version: 2.0.0
+readme: README.md
+authors:
+  - Red Hat Demo Platform Team <demo-platform@redhat.com>
+
+description: Ansible role for sandbox-ctl CLI - create and manage sandboxes of any type
+
+license:
+  - Apache-2.0
+
+license_file: ''
+
+tags:
+  - sandbox
+  - cli
+  - automation
+  - devops
+  - multi_user
+  - openshift
+  - kubernetes
+  - aws
+  - wrapper
+
+dependencies: {}
+
+repository: https://github.com/rhpds/ansible-role-sandbox-ctl
+documentation: https://github.com/rhpds/ansible-role-sandbox-ctl/blob/main/README.md
+homepage: https://github.com/rhpds/ansible-role-sandbox-ctl
+issues: https://github.com/rhpds/ansible-role-sandbox-ctl/issues
+
+build_ignore: []

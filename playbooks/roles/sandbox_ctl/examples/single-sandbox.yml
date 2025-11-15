@@ -1,0 +1,132 @@
+---
+# Example: Create a single OCP sandbox and use its outputs
+- name: Single Sandbox Creation Example
+  hosts: localhost
+  connection: local
+  gather_facts: true
+
+  vars:
+    # Cluster credentials - Option 1: Use current oc session (default)
+    # Option 2: Set via environment variables (useful for CI/CD)
+    cluster_api_url: "{{ lookup('env', 'CLUSTER_API_URL') | default('', true) }}"
+    cluster_admin_token: "{{ lookup('env', 'CLUSTER_ADMIN_TOKEN') | default('', true) }}"
+
+    # Sandbox configuration
+    my_sandbox_guid: "demo-{{ ansible_date_time.epoch }}"
+    my_service_uuid: "svc-{{ ansible_date_time.epoch }}"
+
+  tasks:
+
+    # Step 1: Create the sandbox
+    - name: Create OCP sandbox
+      include_role:
+        name: sandbox_ctl
+      vars:
+        ACTION: provision
+        sandbox_type: "OcpSandbox"
+        sandbox_guid: "{{ my_sandbox_guid }}"
+        sandbox_service_uuid: "{{ my_service_uuid }}"
+        sandbox_enable_keycloak: true
+        sandbox_owner: "Demo User"
+        sandbox_owner_email: "demo@example.com"
+        sandbox_env_type: "development"
+
+    # Step 2: Display the sandbox information
+    - name: Show created sandbox details
+      debug:
+        msg:
+          - "Sandbox Created Successfully!"
+          - "================================"
+          - "Namespace: {{ sandbox_openshift_namespace }}"
+          - "API URL: {{ sandbox_openshift_api_url }}"
+          - "Console URL: {{ sandbox_openshift_console_url }}"
+          - "Apps Domain: {{ sandbox_openshift_apps_domain }}"
+          - "Service Account Token: {{ sandbox_openshift_api_token[:30] }}..."
+          - "Keycloak User: {{ sandbox_openshift_user }}"
+          - "Keycloak Password: {{ sandbox_openshift_password }}"
+
+    # Step 3: Use the sandbox outputs in subsequent tasks
+    - name: Deploy an application to the sandbox
+      kubernetes.core.k8s:
+        state: present
+        host: "{{ sandbox_openshift_api_url }}"
+        api_key: "{{ sandbox_openshift_api_token }}"
+        validate_certs: false
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: demo-config
+            namespace: "{{ sandbox_openshift_namespace }}"
+          data:
+            message: "Hello from sandbox {{ my_sandbox_guid }}"
+            created_by: "Demo User"
+
+    - name: Verify the ConfigMap was created
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: ConfigMap
+        name: demo-config
+        namespace: "{{ sandbox_openshift_namespace }}"
+        host: "{{ sandbox_openshift_api_url }}"
+        api_key: "{{ sandbox_openshift_api_token }}"
+        validate_certs: false
+      register: configmap_info
+
+    - name: Show ConfigMap status
+      debug:
+        msg: "ConfigMap created successfully in {{ sandbox_openshift_namespace }}"
+      when: configmap_info.resources | length > 0
+
+    # Step 4: Wait for user confirmation before cleanup
+    - name: Pause before cleanup
+      pause:
+        prompt: |
+
+          Sandbox is ready!
+
+          You can now access it:
+            oc login {{ sandbox_openshift_api_url }} --token={{ sandbox_openshift_api_token }}
+            oc login {{ sandbox_openshift_api_url }} -u {{ sandbox_openshift_user }} -p {{ sandbox_openshift_password }}
+
+          Press ENTER to clean up the sandbox, or Ctrl+C to keep it running
+      when: cleanup_pause | default(true) | bool
+
+  # Cleanup block with proper error handling
+  post_tasks:
+    - name: Cleanup sandbox
+      block:
+        - name: Destroy the sandbox
+          include_role:
+            name: sandbox_ctl
+          vars:
+            ACTION: destroy
+            sandbox_type: "OcpSandbox"
+            sandbox_guid: "{{ my_sandbox_guid }}"
+
+        - name: Verify namespace was deleted
+          kubernetes.core.k8s_info:
+            api_version: v1
+            kind: Namespace
+            name: "{{ sandbox_openshift_namespace }}"
+            host: "{{ cluster_api_url }}"
+            api_key: "{{ cluster_admin_token }}"
+            validate_certs: false
+          register: namespace_check
+          retries: 5
+          delay: 10
+          until: namespace_check.resources | length == 0
+          ignore_errors: true
+
+        - name: Cleanup successful
+          debug:
+            msg: "Sandbox {{ my_sandbox_guid }} cleaned up successfully"
+          when: namespace_check.resources | length == 0
+
+        - name: Cleanup warning
+          debug:
+            msg: "WARNING: Namespace may still be terminating. Check manually: oc get namespace {{ sandbox_openshift_namespace }}"
+          when: namespace_check.resources | length > 0
+
+      when: cleanup | default(true) | bool
+      tags: cleanup

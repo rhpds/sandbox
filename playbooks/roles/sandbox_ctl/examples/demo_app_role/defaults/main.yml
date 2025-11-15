@@ -1,0 +1,6 @@
+---
+# Demo app role defaults
+demo_app_name: "hello-world"
+demo_app_image: "nginxinc/nginx-unprivileged:latest"
+demo_app_replicas: 2
+demo_app_port: 8080

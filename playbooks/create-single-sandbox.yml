@@ -1,0 +1,37 @@
+---
+# Task file for creating a single sandbox and collecting its data
+- name: Create sandbox with sandbox_ctl role
+  include_role:
+    name: sandbox_ctl
+  vars:
+    sandbox_type: "OcpSandbox"
+    sandbox_guid: "{{ sandbox_user }}"
+    sandbox_service_uuid: "{{ service_uuid | default(uuid) | default('') }}"
+    sandbox_openshift_namespace: "sandbox-{{ sandbox_user }}"
+    sandbox_service_account_name: "sandbox-{{ sandbox_user }}"
+
+    # Feature toggles
+    sandbox_enable_keycloak: "{{ enable_keycloak | default(true) }}"
+
+    # Optional metadata (only pass if defined)
+    sandbox_owner: "{{ provided_owner if provided_owner is defined else '' }}"
+    sandbox_owner_email: "{{ provided_owner_email if provided_owner_email is defined else '' }}"
+    sandbox_env_type: "{{ provided_env_type if provided_env_type is defined else '' }}"
+
+    # Resource constraints (only pass if defined)
+    sandbox_quota: "{{ provided_quota if provided_quota is defined else '' }}"
+    sandbox_limit_range: "{{ provided_limit_range if provided_limit_range is defined else '' }}"
+    sandbox_annotations: "{{ provided_annotations if provided_annotations is defined else '' }}"
+
+    # Console configuration
+    sandbox_console_route_name: console
+    sandbox_console_namespace: openshift-console
+
+    # Timing configuration
+    sandbox_namespace_creation_max_delay: 300
+    sandbox_token_wait_retries: 30
+    sandbox_token_wait_delay: 2
+
+- name: Collect sandbox data
+  set_fact:
+    collected_sandboxes: "{{ collected_sandboxes | default([]) + [{'user': sandbox_user, 'namespace': sandbox_openshift_namespace, 'api_url': sandbox_openshift_api_url, 'console_url': sandbox_ctl_output.console_url, 'apps_domain': sandbox_openshift_apps_domain, 'credentials': sandbox_openshift_credentials}] }}"
