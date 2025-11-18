@@ -10,7 +10,7 @@ COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null)
 DATE ?= $(shell date -u)
 POSTGRESQL_PORT ?= 5432
 POSTGRESQL_POD ?= localpg
-VACUUM_VERSION ?= latest
+VACUUM_VERSION ?= v0.20.1
 export VACUUM_VERSION
 export CGO_ENABLED=0
 

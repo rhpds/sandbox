@@ -715,7 +715,8 @@ func (a *IBMResourceGroupSandboxProvider) Request(serviceUuid string, cloud_sele
 		}
 
 		resourceGroupCreate := resourcemanagerv2.CreateResourceGroupOptions{
-			Name: &resourceGroupName,
+			Name:      &resourceGroupName,
+			AccountID: accountID,
 		}
 
 		resCreateResourceGroup, response, err := resourceManagerClient.CreateResourceGroup(&resourceGroupCreate)
