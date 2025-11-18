@@ -260,7 +260,7 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 	resources := []any{}
 	multipleOcp := multipleKind(placementRequest.Resources, "OcpSandbox")
 	multipleDNS := multipleKind(placementRequest.Resources, "DNSSandbox")
-	multipleOcpAccounts := []models.MultipleOcpAccount{}
+	multipleOcpAccounts := []models.OcpSandboxWithCreds{}
 	for _, request := range placementRequest.Resources {
 		switch request.Kind {
 		case "AwsSandbox", "AwsAccount", "aws_account":
@@ -358,7 +358,7 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 			}
 			tocleanup = append(tocleanup, &account)
 			if multipleOcp && request.Alias != "" {
-				multipleOcpAccounts = append(multipleOcpAccounts, models.MultipleOcpAccount{Alias: request.Alias, Account: account})
+				multipleOcpAccounts = append(multipleOcpAccounts, account)
 			}
 			resources = append(resources, account)
 
@@ -514,7 +514,7 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 	log.Logger.Info("Handling dry-run request")
 	var dryRunResults []*v1.ResourceDryRunResult
 	overallAvailable := true
-	multipleOcpAccounts := []models.MultipleOcpAccount{} // Needed for OCP scheduling logic
+	multipleOcpAccounts := []models.OcpSandboxWithCreds{} // Needed for OCP scheduling logic
 
 	for _, request := range placementRequest.Resources {
 		result := &v1.ResourceDryRunResult{
@@ -583,12 +583,10 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 					hypotheticalAccount := models.OcpSandboxWithCreds{
 						OcpSandbox: models.OcpSandbox{
 							OcpSharedClusterConfigurationName: candidateClusters[0].Name, // Using the first candidate
+							Alias:                             request.Alias,
 						},
 					}
-					multipleOcpAccounts = append(multipleOcpAccounts, models.MultipleOcpAccount{
-						Alias:   request.Alias,
-						Account: hypotheticalAccount,
-					})
+					multipleOcpAccounts = append(multipleOcpAccounts, hypotheticalAccount)
 				}
 			}
 

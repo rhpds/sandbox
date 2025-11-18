@@ -74,6 +74,8 @@ jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 jsonpath "$.Placement.resources" count == 2
 jsonpath "$.Placement.resources[0].status"  matches "^(initializing|success)$"
+jsonpath "$.Placement.resources[0].alias" == "A"
+jsonpath "$.Placement.resources[1].alias" == "B"
 
 #################################################################################
 # Wait until the placement is succesfull and resources are ready
@@ -92,6 +94,8 @@ jsonpath "$.service_uuid" == "{{uuid}}"
 jsonpath "$.status" == "success"
 jsonpath "$.resources" count == 2
 jsonpath "$.resources[0].status" == "success"
+jsonpath "$.resources[0].alias" == "A"
+jsonpath "$.resources[1].alias" == "B"
 variable "cluster1" ==  "{{cluster2}}"
 
 #################################################################################

@@ -142,6 +142,7 @@ type OcpSandbox struct {
 	ToCleanup                         bool              `json:"to_cleanup"`
 	Quota                             v1.ResourceList   `json:"quota,omitempty"`
 	LimitRange                        *v1.LimitRange    `json:"limit_range,omitempty"`
+	Alias                             string            `json:"alias,omitempty"`
 }
 
 type OcpSandboxWithCreds struct {
@@ -166,11 +167,6 @@ type KeycloakCredential struct {
 }
 
 type OcpSandboxes []OcpSandbox
-
-type MultipleOcpAccount struct {
-	Alias   string              `json:"alias"`
-	Account OcpSandboxWithCreds `json:"account"`
-}
 
 type TokenResponse struct {
 	AccessToken string `json:"access_token"`
@@ -842,7 +838,7 @@ var ErrNoSchedule error = errors.New("No OCP shared cluster configuration found"
 func (a *OcpSandboxProvider) GetSchedulableClusters(
 	cloudSelector map[string]string,
 	clusterRelation []ClusterRelation,
-	multipleAccounts []MultipleOcpAccount,
+	multipleAccounts []OcpSandboxWithCreds,
 	alias string,
 ) (OcpSharedClusterConfigurations, error) {
 
@@ -853,14 +849,14 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(
 	for _, relation := range clusterRelation {
 		for _, maccount := range multipleAccounts {
 			if maccount.Alias == relation.Reference && relation.Relation == "same" {
-				possibleClusters = append(possibleClusters, maccount.Account.OcpSharedClusterConfigurationName)
+				possibleClusters = append(possibleClusters, maccount.OcpSharedClusterConfigurationName)
 			}
 			if maccount.Alias == relation.Reference && relation.Relation == "different" {
-				excludeClusters = append(excludeClusters, maccount.Account.OcpSharedClusterConfigurationName)
+				excludeClusters = append(excludeClusters, maccount.OcpSharedClusterConfigurationName)
 			}
 			if maccount.Alias == relation.Reference && relation.Relation == "child" {
-				excludeClusters = append(excludeClusters, maccount.Account.OcpSharedClusterConfigurationName)
-				parentClusters = append(parentClusters, maccount.Account.OcpSharedClusterConfigurationName)
+				excludeClusters = append(excludeClusters, maccount.OcpSharedClusterConfigurationName)
+				parentClusters = append(parentClusters, maccount.OcpSharedClusterConfigurationName)
 			}
 		}
 	}
@@ -1037,7 +1033,7 @@ func (a *OcpSandboxProvider) Request(
 	requestedQuota *v1.ResourceList,
 	requestedLimitRange *v1.LimitRange,
 	multiple bool,
-	multipleAccounts []MultipleOcpAccount,
+	multipleAccounts []OcpSandboxWithCreds,
 	ctx context.Context,
 	asyncRequest bool,
 	alias string,
@@ -1087,6 +1083,7 @@ func (a *OcpSandboxProvider) Request(
 			Annotations: annotations,
 			ServiceUuid: serviceUuid,
 			Status:      "initializing",
+			Alias:       alias,
 		},
 		Provider: a,
 	}
@@ -1482,16 +1479,16 @@ func (a *OcpSandboxProvider) Request(
 		searchLoop:
 			for _, maccount := range multipleAccounts {
 				// Look for KeycloakCredential in the account's credentials
-				for _, cred := range maccount.Account.Credentials {
+				for _, cred := range maccount.Credentials {
 					if keycloakCred, ok := cred.(KeycloakCredential); ok {
 						if keycloakCred.Kind == "KeycloakUser" && keycloakCred.Username == userAccountName {
 							password = keycloakCred.Password
 							// Check if user was created on the same cluster to determine userAlreadyCreated flag
-							userAlreadyCreated = maccount.Account.OcpSharedClusterConfigurationName == selectedCluster.Name
+							userAlreadyCreated = maccount.OcpSharedClusterConfigurationName == selectedCluster.Name
 							log.Logger.Debug("Reusing existing Keycloak credentials",
 								"alias", maccount.Alias,
 								"user", userAccountName,
-								"fromCluster", maccount.Account.OcpSharedClusterConfigurationName,
+								"fromCluster", maccount.OcpSharedClusterConfigurationName,
 								"currentCluster", selectedCluster.Name,
 								"userAlreadyCreated", userAlreadyCreated,
 							)
