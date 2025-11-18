@@ -1,6 +1,11 @@
 package models
 
 import (
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +17,12 @@ import (
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
+  "github.com/go-acme/lego/v4/certcrypto"
+  "github.com/go-acme/lego/v4/certificate"
+  "github.com/go-acme/lego/v4/challenge/dns01"
+  "github.com/go-acme/lego/v4/lego"
+  legoroute53 "github.com/go-acme/lego/v4/providers/dns/route53"
+  "github.com/go-acme/lego/v4/registration"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/rhpds/sandbox/internal/log"
@@ -21,6 +32,22 @@ import (
 	"strings"
 	"time"
 )
+
+type SSLUser struct {
+	Email        string
+	Registration *registration.Resource
+	key          crypto.PrivateKey
+}
+
+func (u *SSLUser) GetEmail() string {
+	return u.Email
+}
+func (u SSLUser) GetRegistration() *registration.Resource {
+	return u.Registration
+}
+func (u *SSLUser) GetPrivateKey() crypto.PrivateKey {
+	return u.key
+}
 
 type DNSSandboxProvider struct {
 	DbPool      *pgxpool.Pool `json:"-"`
@@ -41,6 +68,10 @@ type DNSAccountConfiguration struct {
 	AdditionalVars     map[string]any    `json:"additional_vars,omitempty"`
 	DbPool             *pgxpool.Pool     `json:"-"`
 	VaultSecret        string            `json:"-"`
+	SSLAuthEabKid			 string						 `json:"ssl_auth_eab_kid,omitempty"`
+	SSLAuthEabHMAC		 string						 `json:"ssl_auth_eab_hmac,omitempty"`
+	SSLAuthProvider		 string						 `json:"ssl_auth_provider,omitempty"`
+	SSLACMEDirectory   string            `json:"ssl_auth_acme_directory,omitempty"`
 }
 
 type DNSAccountConfigurations []DNSAccountConfiguration
@@ -51,6 +82,8 @@ type DNSSandbox struct {
 	Kind                        string            `json:"kind"` // "DNSSandbox"
 	ServiceUuid                 string            `json:"service_uuid"`
 	DNSAccountConfigurationName string            `json:"dns_account"`
+	CreateCerts									bool							`json:"create_certs"`
+	CertDomains									[]string					`json:"certs_domains"`
 	Annotations                 map[string]string `json:"annotations"`
 	Status                      string            `json:"status"`
 	ErrorMessage                string            `json:"error_message,omitempty"`
@@ -63,6 +96,7 @@ type DNSSandboxWithCreds struct {
 	DNSSandbox
 
 	Credentials []any               `json:"credentials,omitempty"`
+	SSLCerts[]any                   `json:"certificates,omitempty"`
 	Provider    *DNSSandboxProvider `json:"-"`
 }
 
@@ -73,6 +107,14 @@ type DNSServiceAccount struct {
 	AwsSecretAccessKey string `json:"aws_secret_access_key"`
 	Zone               string `json:"zone"`
 	HostedZoneID       string `json:"hosted_zone_id"`
+}
+
+// SSL certificate
+type SSLCert struct {
+	Kind               string `json:"kind"` // "SSLCert"
+	Domain						 string `json:"domain"`
+	Certificate				 string `json:"certificate"`
+	PrivateKey				 string `json:"private_key"`
 }
 
 type DNSSandboxes []DNSSandbox
@@ -167,8 +209,13 @@ func (p *DNSAccountConfiguration) Save() error {
 			hosted_zone_id,
 			annotations,
 			valid,
-			additional_vars)
-			VALUES ($1, $2, pgp_sym_encrypt($3::text, $4), $5, $6, $7, $8, $9)
+			additional_vars,
+			ssl_auth_eab_kid,
+			ssl_auth_eab_hmac,
+			ssl_auth_provider,
+			ssl_auth_acme_directory
+			)
+			VALUES ($1, $2, pgp_sym_encrypt($3::text, $4), $5, $6, pgp_sym_encrypt($7::text, $4), $8, $9)
 			RETURNING id`,
 		p.Name,
 		p.AwsAccessKeyID,
@@ -179,6 +226,10 @@ func (p *DNSAccountConfiguration) Save() error {
 		p.Annotations,
 		p.Valid,
 		p.AdditionalVars,
+	  p.SSLAuthEabKid,
+		p.SSLAuthEabHMAC,
+		p.SSLAuthProvider,
+		p.SSLACMEDirectory,
 	).Scan(&p.ID); err != nil {
 		return err
 	}
@@ -199,8 +250,13 @@ func (p *DNSAccountConfiguration) Update() error {
 			 aws_secret_access_key = pgp_sym_encrypt($3::text, $4),
 			 annotations = $5,
 			 valid = $6,
-			 additional_vars = $7
-		 WHERE id = $8`,
+			 additional_vars = $7,
+  		 ssl_auth_eab_kid = $8,
+	 		 ssl_auth_eab_hmac = pgp_sym_encrypt($9::text, $4),
+			 ssl_auth_provider = $10,
+			 ssl_auth_acme_directory = $11
+
+		 WHERE id = $12`,
 		p.Name,
 		p.AwsAccessKeyID,
 		p.AwsSecretAccessKey,
@@ -208,6 +264,11 @@ func (p *DNSAccountConfiguration) Update() error {
 		p.Annotations,
 		p.Valid,
 		p.AdditionalVars,
+	  p.SSLAuthEabKid,
+		p.SSLAuthEabHMAC,
+		p.SSLAuthProvider,
+		p.SSLACMEDirectory,
+
 		p.ID,
 	); err != nil {
 		return err
@@ -269,7 +330,11 @@ func (p *DNSSandboxProvider) GetDNSAccountConfigurationByName(name string) (DNSA
 			updated_at,
 			annotations,
 			valid,
-			additional_vars
+			additional_vars,
+  		ssl_auth_eab_kid,
+	 		pgp_sym_decrypt(ssl_auth_eab_hmac::bytea, $1),
+			ssl_auth_provider,
+			ssl_auth_acme_directory
 		 FROM dns_account_configurations WHERE name = $2`,
 		p.VaultSecret, name,
 	)
@@ -287,6 +352,11 @@ func (p *DNSSandboxProvider) GetDNSAccountConfigurationByName(name string) (DNSA
 		&account.Annotations,
 		&account.Valid,
 		&account.AdditionalVars,
+	  &account.SSLAuthEabKid,
+		&account.SSLAuthEabHMAC,
+		&account.SSLAuthProvider,
+		&account.SSLACMEDirectory,
+
 	); err != nil {
 		return DNSAccountConfiguration{}, err
 	}
@@ -313,7 +383,11 @@ func (p *DNSSandboxProvider) GetDNSAccountConfigurations() (DNSAccountConfigurat
 			updated_at,
 			annotations,
 			valid,
-			additional_vars
+			additional_vars,
+  		ssl_auth_eab_kid,
+	 		pgp_sym_decrypt(ssl_auth_eab_hmac::bytea, $1),
+			ssl_auth_provider,
+			ssl_auth_acme_directory
 		 FROM dns_account_configurations`,
 		p.VaultSecret,
 	)
@@ -337,6 +411,10 @@ func (p *DNSSandboxProvider) GetDNSAccountConfigurations() (DNSAccountConfigurat
 			&account.Annotations,
 			&account.Valid,
 			&account.AdditionalVars,
+	    &account.SSLAuthEabKid,
+		  &account.SSLAuthEabHMAC,
+		  &account.SSLAuthProvider,
+		  &account.SSLACMEDirectory,
 		); err != nil {
 			return []DNSAccountConfiguration{}, err
 		}
@@ -652,7 +730,7 @@ func (a *DNSSandboxProvider) GetSchedulableAccounts(cloud_selector map[string]st
 	return accounts, nil
 }
 
-func (a *DNSSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, multiple bool, ctx context.Context) (DNSSandboxWithCreds, error) {
+func (a *DNSSandboxProvider) Request(serviceUuid string, create_certs bool, certs_domains []string, cloud_selector map[string]string, annotations map[string]string, multiple bool, ctx context.Context) (DNSSandboxWithCreds, error) {
 	if _, exists := annotations["guid"]; !exists {
 		return DNSSandboxWithCreds{}, errors.New("guid not found in annotations")
 	}
@@ -827,8 +905,109 @@ func (a *DNSSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			HostedZoneID:       strings.Split(*responseCreate.HostedZone.Id, "/")[2],
 		},
 	}
-	rnew.Credentials = creds
-	rnew.Status = "success"
+	if create_certs == true {
+		go func() {
+			if selectedAccount.SSLACMEDirectory == "" {
+				log.Logger.Error("Account has not defined SSLACMEDirectory defined", "error", err)
+				rnew.SetStatus("error")
+				return
+			}
+			privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+			if err != nil {
+				log.Logger.Error("Error generating key", "error", err)
+				rnew.SetStatus("error")
+				return
+			}
+			ssluser := SSLUser{
+				Email: "sandbox-api-rhpd@redhat.com.com",
+				key:   privateKey,
+			}
+
+			legoconfig := lego.NewConfig(&ssluser)
+			legoconfig.CADirURL = selectedAccount.SSLACMEDirectory
+			legoconfig.UserAgent = "lego-client"
+			legoconfig.Certificate.KeyType = certcrypto.RSA2048
+
+			sslclient, err := lego.NewClient(legoconfig)
+			if err != nil {
+				log.Logger.Error("Error communicating to CA server", "error", err)
+				rnew.SetStatus("error")
+				return
+			}
+
+			reg, err := sslclient.Registration.RegisterWithExternalAccountBinding(
+				registration.RegisterEABOptions{
+					TermsOfServiceAgreed: true,
+					Kid:                  selectedAccount.SSLAuthEabKid,
+					HmacEncoded:          selectedAccount.SSLAuthEabHMAC,
+				},
+			)
+			if err != nil {
+				log.Logger.Error("Registration failed", "error", err)
+				rnew.SetStatus("error")
+				return
+			}
+			ssluser.Registration = reg
+
+			time.Sleep(10 * time.Second)
+			for _, cert_domain := range certs_domains {
+				dnsConfig := legoroute53.Config{
+					AccessKeyID: *accesskey.AccessKeyId,
+					SecretAccessKey: *accesskey.SecretAccessKey,
+					HostedZoneID: strings.Split(*responseCreate.HostedZone.Id, "/")[2],
+					MaxRetries: 5,
+					WaitForRecordSetsChanged: true,
+					TTL: 10,
+					PropagationTimeout: 2*time.Minute,
+					PollingInterval: 4*time.Second,
+				}
+				dnsProvider, err := legoroute53.NewDNSProviderConfig(&dnsConfig)
+				if err != nil {
+					log.Logger.Error("Route53 DNS provider setup failed", "error", err)
+					rnew.SetStatus("error")
+					return
+				}
+				
+				err = sslclient.Challenge.SetDNS01Provider(dnsProvider, dns01.CondOption(true,
+					dns01.AddRecursiveNameservers([]string{"1.1.1.1:53", "8.8.8.8:53"})))
+				if err != nil {
+					log.Logger.Error("DNS provider config failed", "error", err)
+					rnew.SetStatus("error")
+					return
+				}
+
+				request := certificate.ObtainRequest{
+					Domains: []string{cert_domain + "." + domain},
+					Bundle:  true,
+				}
+
+				cert, err := sslclient.Certificate.Obtain(request)
+				if err != nil {
+					log.Logger.Error("Certificate request failed", "error", err)
+					rnew.SetStatus("error")
+					return
+				}
+
+				creds = append(creds, SSLCert{
+						Kind: "SSLCert",
+						Domain: cert_domain + "." + domain,
+						Certificate: string(cert.Certificate),
+						PrivateKey: string(cert.PrivateKey),
+					},
+				)
+			}
+			rnew.Credentials = creds
+			rnew.Status = "success"
+			if err := rnew.Save(); err != nil {
+				log.Logger.Error("Error saving DNS account", "error", err)
+				return
+			}
+		}()
+	} else {
+		rnew.Credentials = creds
+		rnew.Status = "success"
+
+	}
 
 	if err := rnew.Save(); err != nil {
 		log.Logger.Error("Error saving DNS account", "error", err)
@@ -974,6 +1153,7 @@ func (sandbox *DNSSandboxWithCreds) Delete() error {
 		return errors.New("resource ID must be > 0")
 	}
 
+	log.Logger.Info("Deleting", "DNSSandbox", sandbox.Name)
 	maxRetries := 10
 	for {
 		status, err := sandbox.GetStatus()
@@ -1079,6 +1259,9 @@ func (sandbox *DNSSandboxWithCreds) Delete() error {
 	)
 
 	var credsSandbox map[string]interface{}
+	if len(sandbox.Credentials) == 0 {
+		return err
+	}
 	credsSandbox = sandbox.Credentials[0].(map[string]interface{})
 	domain := credsSandbox["zone"].(string)
 	responseListResourceRecordSets, err := route53Client.ListResourceRecordSets(context.TODO(), &route53.ListResourceRecordSetsInput{
@@ -1186,7 +1369,6 @@ func (sandbox *DNSSandboxWithCreds) Delete() error {
 		}
 	}
 
-	log.Logger.Info("Deleting", "user", sandbox.Name)
 	iamClient := iam.NewFromConfig(
 		cfg,
 		func(o *iam.Options) {
@@ -1243,6 +1425,7 @@ func (sandbox *DNSSandboxWithCreds) Delete() error {
 		"DELETE FROM resources WHERE id = $1",
 		sandbox.ID,
 	)
+	log.Logger.Info("Deleted completed", "DNSSandbox", sandbox.Name)
 	return err
 }
 
