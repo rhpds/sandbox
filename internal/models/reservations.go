@@ -35,6 +35,10 @@ func (r *ReservationRequest) Bind(r2 *http.Request) error {
 }
 
 func (r *ReservationRequest) Validate(h AwsAccountProvider) (string, error) {
+	return r.ValidateWithCurrent(h, nil)
+}
+
+func (r *ReservationRequest) ValidateWithCurrent(h AwsAccountProvider, currentReservation *Reservation) (string, error) {
 	done := make(map[string]bool)
 
 	for _, resource := range r.Resources {
@@ -50,6 +54,28 @@ func (r *ReservationRequest) Validate(h AwsAccountProvider) (string, error) {
 			}
 
 			done["AwsSandbox"] = true
+
+			// Determine the delta if this is an update
+			var delta int
+			if currentReservation != nil {
+				// Find the current count for this resource kind
+				currentCount := 0
+				for _, currentResource := range currentReservation.Request.Resources {
+					if currentResource.Kind == resource.Kind {
+						currentCount = currentResource.Count
+						break
+					}
+				}
+				delta = resource.Count - currentCount
+			} else {
+				// New reservation, delta is the full count
+				delta = resource.Count
+			}
+
+			// If scaling down (delta <= 0), skip validation as we're returning accounts
+			if delta <= 0 {
+				continue
+			}
 
 			// Get the current number of total and available accounts
 			available, err := h.CountReservationAvailable("")
@@ -70,7 +96,9 @@ func (r *ReservationRequest) Validate(h AwsAccountProvider) (string, error) {
 			// available - x >= total * 0.2
 			// x <= available - total * 0.2
 			max := available - int(float64(total)*0.2)
-			// Validate Count
+			// Validate Count (use delta for updates, resource.Count for new reservations)
+			validateCount := delta
+
 			if max <= 0 {
 				log.Logger.Info(
 					"Not enough available resources",
@@ -81,14 +109,15 @@ func (r *ReservationRequest) Validate(h AwsAccountProvider) (string, error) {
 				return "Not enough available resources", errors.New("not enough available resources")
 			}
 
-			if resource.Count > max {
+			if validateCount > max {
 				log.Logger.Info(
 					"Not enough available resources",
 					"available", available,
 					"total", total,
 					"20% of total", int(float64(total)*0.2),
-					"max", max)
-				return fmt.Sprintf("You can only reserve up to %d accounts", max), errors.New("not enough available resources")
+					"max", max,
+					"requested", validateCount)
+				return fmt.Sprintf("You can only reserve up to %d additional accounts", max), errors.New("not enough available resources")
 			}
 
 		default:
