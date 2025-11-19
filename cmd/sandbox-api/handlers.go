@@ -1581,8 +1581,8 @@ func (h *BaseHandler) UpdateReservationHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Validate the request
-	if message, err := reservationReq.Validate(h.awsAccountProvider); err != nil {
+	// Validate the request with current reservation state
+	if message, err := reservationReq.ValidateWithCurrent(h.awsAccountProvider, reservation); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		render.Render(w, r, &v1.Error{
 			Err:            err,
