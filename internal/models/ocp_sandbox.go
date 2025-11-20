@@ -2568,6 +2568,98 @@ func (a *OcpSandboxProvider) GetOcpFleetStatusJob(ctx context.Context) (*Job, er
 	return job, nil
 }
 
+// SelfHealStaleFleetStatusJobs checks for stale fleet status jobs and marks them as error.
+// This is called before creating a new fleet status job to ensure we don't get stuck
+// with zombie jobs blocking new requests.
+func (a *OcpSandboxProvider) SelfHealStaleFleetStatusJobs(ctx context.Context) error {
+	store := NewJobStore(a.DbPool)
+
+	// Get the latest job by type ocp_fleet_status
+	job, err := store.GetLatestJobByType(ctx, "ocp_fleet_status")
+	if err != nil {
+		// If no job exists, that's fine - nothing to heal
+		if err == ErrNoJobFound {
+			log.Logger.Debug("No existing fleet status job found, nothing to self-heal")
+			return nil
+		}
+		// For other errors, return them so the caller can handle
+		log.Logger.Error("Error getting latest fleet status job for self-healing", "error", err)
+		return err
+	}
+
+	// Safety check - ensure job is not nil
+	if job == nil {
+		log.Logger.Warn("GetLatestJobByType returned nil job without error")
+		return nil
+	}
+
+	if job.JobType != "ocp_fleet_status" {
+		return nil
+	}
+
+	// Self-healing: check if the job is stale
+	if job.Status == "running" || job.Status == "initializing" {
+		// Calculate how long the job has been running
+		jobAge := time.Since(job.CreatedAt)
+
+		// Use the default timeout, but allow for some grace period
+		// Add 30 seconds grace period to account for processing time
+		maxAllowedAge := FleetStatusTimeout + (30 * time.Second)
+
+		log.Logger.Debug("Checking if fleet status job is stale",
+			"job_id", job.ID,
+			"request_id", job.RequestID,
+			"status", job.Status,
+			"age", jobAge,
+			"max_allowed", maxAllowedAge,
+			"is_stale", jobAge > maxAllowedAge,
+		)
+
+		if jobAge > maxAllowedAge {
+			log.Logger.Warn("Detected stale fleet status job, applying self-healing",
+				"job_id", job.ID,
+				"request_id", job.RequestID,
+				"status", job.Status,
+				"age", jobAge,
+				"max_allowed", maxAllowedAge,
+			)
+
+			// Save original status before modifying
+			originalStatus := job.Status
+
+			// Mark the job as error
+			job.Status = "error"
+			job.CompletedAt = time.Now()
+
+			// Use SetJobBody to properly serialize the error message
+			bodyData := map[string]any{
+				"error": fmt.Sprintf("Fleet status check exceeded timeout (job age: %v, max allowed: %v). Job was automatically marked as error by self-healing mechanism.",
+					jobAge.Round(time.Second),
+					maxAllowedAge.Round(time.Second)),
+				"self_healed":     true,
+				"original_status": originalStatus,
+			}
+			if err := SetJobBody(job, bodyData); err != nil {
+				log.Logger.Error("Failed to set job body during self-healing", "error", err, "job_id", job.ID)
+				return err
+			}
+
+			// Update the job in the database
+			if err := store.UpdateJob(ctx, job); err != nil {
+				log.Logger.Error("Failed to update stale job during self-healing", "error", err, "job_id", job.ID)
+				return err
+			}
+
+			log.Logger.Info("Successfully applied self-healing to stale fleet status job",
+				"job_id", job.ID,
+				"request_id", job.RequestID,
+			)
+		}
+	}
+
+	return nil
+}
+
 // OperatorInfo holds the status and version for a single OCP Operator.
 type OperatorInfo struct {
 	Status  string `json:"status"`
@@ -2675,8 +2767,13 @@ func (a *OcpSandboxProvider) handleFleetTimeoutWithDuration(job *Job, store *Job
 
 	// Update main job as timed out
 	job.Status = "error"
-	job.Body = map[string]any{"error": fmt.Sprintf("Fleet status check timed out after %v", timeout)}
 	job.CompletedAt = time.Now()
+
+	// Use SetJobBody to properly serialize the error
+	bodyData := map[string]any{"error": fmt.Sprintf("Fleet status check timed out after %v", timeout)}
+	if err := SetJobBody(job, bodyData); err != nil {
+		log.Logger.Error("Failed to set job body for timeout", "error", err, "job_id", job.ID)
+	}
 
 	if err := store.UpdateJob(ctx, job); err != nil {
 		log.Logger.Error("Failed to update timed out fleet status job", "error", err, "job_id", job.ID)
@@ -2686,6 +2783,38 @@ func (a *OcpSandboxProvider) handleFleetTimeoutWithDuration(job *Job, store *Job
 func (a *OcpSandboxProvider) executeFleetStatus(ctx context.Context, job *Job, store *JobStore) {
 	// Use a separate context for database operations to avoid cancellation issues
 	dbCtx := context.Background()
+
+	// Add panic recovery to ensure job is always marked as completed
+	defer func() {
+		if r := recover(); r != nil {
+			log.Logger.Error("Panic in executeFleetStatus",
+				"panic", r,
+				"job_nil", job == nil,
+			)
+
+			// If job is nil, we can't update the database, but at least we logged the panic
+			if job == nil {
+				log.Logger.Error("Cannot update job after panic - job is nil")
+				return
+			}
+
+			log.Logger.Error("Marking job as error after panic", "job_id", job.ID)
+			job.Status = "error"
+			job.CompletedAt = time.Now()
+
+			// Use SetJobBody to properly serialize the error
+			bodyData := map[string]any{
+				"error":          fmt.Sprintf("Fleet status check panicked: %v", r),
+				"panic_recovery": true,
+			}
+			if err := SetJobBody(job, bodyData); err != nil {
+				log.Logger.Error("Failed to set job body after panic recovery", "error", err, "job_id", job.ID)
+			}
+			if err := store.UpdateJob(dbCtx, job); err != nil {
+				log.Logger.Error("Failed to update job after panic recovery", "error", err, "job_id", job.ID)
+			}
+		}
+	}()
 
 	fleetBody := OcpFleetStatusBody{
 		Clusters: make(map[string]OcpClusterStatusBody),
@@ -2703,8 +2832,11 @@ func (a *OcpSandboxProvider) executeFleetStatus(ctx context.Context, job *Job, s
 	if debugForceFail, ok := ctx.Value(DebugForceFailKey).(string); ok && debugForceFail == "immediate" {
 		log.Logger.Info("Debug: forcing immediate failure", "job_id", job.ID)
 		job.Status = "error"
-		job.Body = map[string]any{"error": "Debug: forced immediate failure"}
 		job.CompletedAt = time.Now()
+		bodyData := map[string]any{"error": "Debug: forced immediate failure"}
+		if err := SetJobBody(job, bodyData); err != nil {
+			log.Logger.Error("Failed to set job body for debug failure", "error", err, "job_id", job.ID)
+		}
 		if err := store.UpdateJob(dbCtx, job); err != nil {
 			log.Logger.Error("Failed to update job with immediate failure", "error", err, "job_id", job.ID)
 		}
@@ -2733,7 +2865,10 @@ func (a *OcpSandboxProvider) executeFleetStatus(ctx context.Context, job *Job, s
 	if err != nil {
 		log.Logger.Error("Failed to get OCP shared cluster configurations", "error", err, "job_id", job.ID)
 		job.Status = "error"
-		job.Body = map[string]any{"error": "Failed to get OCP shared cluster configurations: " + err.Error()}
+		bodyData := map[string]any{"error": "Failed to get OCP shared cluster configurations: " + err.Error()}
+		if err := SetJobBody(job, bodyData); err != nil {
+			log.Logger.Error("Failed to set job body for cluster config error", "error", err, "job_id", job.ID)
+		}
 		_ = store.UpdateJob(dbCtx, job)
 		return
 	}
@@ -2808,8 +2943,11 @@ func (a *OcpSandboxProvider) executeFleetStatus(ctx context.Context, job *Job, s
 		if finalSubJob.Status != "success" && finalSubJob.Status != "error" {
 			log.Logger.Warn("Sub-job not completed, likely timed out", "sub_job_id", j.ID, "status", finalSubJob.Status)
 			finalSubJob.Status = "error"
-			finalSubJob.Body = map[string]any{"error": fmt.Sprintf("Cluster status check timed out after %v", ClusterStatusTimeout)}
 			finalSubJob.CompletedAt = time.Now()
+			bodyData := map[string]any{"error": fmt.Sprintf("Cluster status check timed out after %v", ClusterStatusTimeout)}
+			if err := SetJobBody(finalSubJob, bodyData); err != nil {
+				log.Logger.Error("Failed to set job body for timed out sub-job", "error", err, "sub_job_id", j.ID)
+			}
 			if err := store.UpdateJob(dbCtx, finalSubJob); err != nil {
 				log.Logger.Error("Failed to update timed out sub-job", "error", err, "sub_job_id", j.ID)
 			}
@@ -2862,6 +3000,41 @@ func (a *OcpSandboxProvider) executeFleetStatus(ctx context.Context, job *Job, s
 func (a *OcpSandboxProvider) OcpSharedClusterStatus(ctx context.Context, job *Job, conf OcpSharedClusterConfiguration) {
 	store := NewJobStore(a.DbPool)
 	dbCtx := context.Background()
+
+	// Add panic recovery to ensure job is always marked as completed
+	defer func() {
+		if r := recover(); r != nil {
+			log.Logger.Error("Panic in OcpSharedClusterStatus",
+				"cluster", conf.Name,
+				"panic", r,
+				"job_nil", job == nil,
+			)
+
+			// If job is nil, we can't update the database, but at least we logged the panic
+			if job == nil {
+				log.Logger.Error("Cannot update job after panic - job is nil", "cluster", conf.Name)
+				return
+			}
+
+			log.Logger.Error("Marking job as error after panic", "job_id", job.ID, "cluster", conf.Name)
+			job.Status = "error"
+			job.CompletedAt = time.Now()
+
+			// Use SetJobBody to properly serialize the error
+			bodyData := map[string]any{
+				"cluster_name":   conf.Name,
+				"error":          fmt.Sprintf("Cluster status check panicked: %v", r),
+				"panic_recovery": true,
+			}
+			if err := SetJobBody(job, bodyData); err != nil {
+				log.Logger.Error("Failed to set job body after panic recovery", "error", err, "job_id", job.ID, "cluster", conf.Name)
+			}
+			if err := store.UpdateJob(dbCtx, job); err != nil {
+				log.Logger.Error("Failed to update job after panic recovery", "error", err, "job_id", job.ID, "cluster", conf.Name)
+			}
+		}
+	}()
+
 	if err := store.SetJobStatus(dbCtx, job, "running"); err != nil {
 		log.Logger.Error("Failed to set cluster status job to running", "error", err, "job_id", job.ID, "cluster", conf.Name)
 		return

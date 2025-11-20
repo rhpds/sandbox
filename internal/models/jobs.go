@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -12,6 +13,11 @@ import (
 
 	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
+)
+
+// Sentinel errors for jobs
+var (
+	ErrNoJobFound = errors.New("no job found for type")
 )
 
 // Generic job
@@ -277,7 +283,7 @@ func (s *JobStore) GetLatestJobByType(ctx context.Context, jobType string) (*Job
 	defer rows.Close()
 
 	if !rows.Next() {
-		return nil, fmt.Errorf("no job found for type")
+		return nil, ErrNoJobFound
 	}
 
 	var j Job

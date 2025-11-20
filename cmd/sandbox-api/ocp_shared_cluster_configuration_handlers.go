@@ -7,11 +7,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/render"
 	"github.com/jackc/pgx/v4"
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/models"
-
-	"github.com/go-chi/render"
 )
 
 func (h *BaseHandler) CreateOcpSharedClusterConfigurationHandler(w http.ResponseWriter, r *http.Request) {
@@ -378,6 +377,18 @@ func (h *BaseHandler) UpdateOcpSharedClusterConfigurationHandler(w http.Response
 // PostOcpSharedClustersStatusHandler is a placeholder for a handler that would
 // handle requesting the status of all OCP shared clusters.
 func (h *BaseHandler) PostOcpSharedClustersStatusHandler(w http.ResponseWriter, r *http.Request) {
+	// Self-heal any stale jobs before checking if one is in progress
+	// This ensures we don't get stuck with zombie jobs
+	if err := h.OcpSandboxProvider.SelfHealStaleFleetStatusJobs(r.Context()); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to check for stale fleet status jobs",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
 	// Check if a status request is already in progress
 	if h.OcpSandboxProvider.IsOcpFleetStatusInProgress(r.Context()) {
 		w.WriteHeader(http.StatusConflict)
