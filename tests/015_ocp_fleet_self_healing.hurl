@@ -18,22 +18,36 @@ jsonpath "$.access_token" isString
 jsonpath "$.access_token_exp" isString
 
 #################################################################################
-# Test 1: Whatever state we're in, we should be able to POST multiple times
-# and get consistent behavior (either 202 if no job running, or 409 if one is)
+# Test 1: Wait for any existing job to complete
+# (Previous tests may have left a job running)
 #################################################################################
 
-# First POST
+# Wait for any job to complete
+GET {{host}}/api/v1/ocp-shared-clusters/status
+Authorization: Bearer {{access_token_admin}}
+[Options]
+retry: 60
+HTTP 200
+[Asserts]
+jsonpath "$.status" != "running"
+jsonpath "$.status" != "initializing"
+
+#################################################################################
+# Test 2: Create a fresh job and verify consistency
+#################################################################################
+
+# First POST - should succeed now
 POST {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
 HTTP 202
 
-# Second POST immediately after - if job is running, should get 409
+# Second POST immediately after - should get 409
 POST {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
 HTTP 409
 
 #################################################################################
-# Test 2: Wait for any current job to complete, then create a fresh one
+# Test 3: Wait for current job to complete, then create another
 #################################################################################
 
 # Wait for any job to complete
@@ -67,7 +81,7 @@ jsonpath "$.request_id" == "{{fresh_job_request_id}}"
 jsonpath "$.status" matches "^(running|success|error)$"
 
 #################################################################################
-# Test 3: Wait for job to complete, verify we can create another
+# Test 4: Wait for job to complete, verify we can create another
 #################################################################################
 
 # Wait for job to finish
@@ -92,7 +106,7 @@ jsonpath "$.request_id" != "{{fresh_job_request_id}}"
 jsonpath "$.status" == "initializing"
 
 #################################################################################
-# Test 4: Rapid-fire POSTs for consistency
+# Test 5: Rapid-fire POSTs for consistency
 # While a job is running, all POSTs should consistently return 409
 #################################################################################
 
