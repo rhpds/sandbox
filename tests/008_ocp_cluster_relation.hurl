@@ -61,7 +61,7 @@ Authorization: Bearer {{access_token}}
    }
   ],
   "annotations": {
-    "tests": "Simple OcpSandbox placement",
+    "tests": "OcpSandbox placement with relation",
     "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
@@ -145,9 +145,9 @@ Authorization: Bearer {{access_token}}
    }
   ],
   "annotations": {
-    "tests": "Simple OcpSandbox placement",
+    "tests": "cluster relation with Child(A)",
     "guid": "{{guid}}",
-    "env_type": "ocp4-cluster-blablablabla"
+    "env_type": "ocp4-cluster"
   }
 }
 HTTP 200
