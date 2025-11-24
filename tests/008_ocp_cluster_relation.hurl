@@ -407,9 +407,9 @@ Authorization: Bearer {{access_token}}
    }
   ],
   "annotations": {
-    "tests": "Simple OcpSandbox placement",
+    "tests": "OcpSandbox placement 2 different HCPs",
     "guid": "{{guid}}",
-    "env_type": "ocp4-cluster-blablablabla"
+    "env_type": "ocp4-cluster"
   }
 }
 HTTP 200
