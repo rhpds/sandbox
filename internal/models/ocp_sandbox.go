@@ -1275,6 +1275,7 @@ func (a *OcpSandboxProvider) Request(
 					time.Sleep(delay)
 					delay = delay * 2
 					if delay > 90*time.Second {
+						log.Logger.Error("Timeout creating OCP namespace", "error", err)
 						rnew.SetStatus("error")
 						return
 					}
