@@ -163,7 +163,7 @@ jsonpath "$.resources[0].credentials" count >= 1
 jsonpath "$.resources[0].credentials[0].kind" == "ServiceAccount"
 jsonpath "$.resources[0].credentials[0].token" isString
 jsonpath "$.resources[0].limit_range.spec.limits" count == 1
-jsonpath "$.resources[0].limit_range.spec.limits[0].default.cpu" == "2"
+jsonpath "$.resources[0].limit_range.spec.limits[0].default.cpu" == "500m"
 
 #################################################################################
 # Delete placement
