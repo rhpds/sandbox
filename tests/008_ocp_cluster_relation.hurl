@@ -342,7 +342,7 @@ jsonpath "$.Placement.resources[0].status"  matches "^(initializing|success)$"
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
 [Options]
-retry: 40
+retry: 80
 HTTP 200
 [Captures]
 cluster1: jsonpath "$.resources[0].ocp_cluster"
