@@ -2500,19 +2500,21 @@ func (a *OcpSandboxProvider) IsOcpFleetStatusInProgress(ctx context.Context) boo
 
 	store := NewJobStore(a.DbPool)
 
-	// Check if there are any jobs in progress for OCP shared cluster
-	jobs, err := store.GetJobsByType(ctx, "ocp_fleet_status")
+	// Check if the latest job is in progress for OCP shared cluster
+	job, err := store.GetLatestJobByType(ctx, "ocp_fleet_status")
 
 	if err != nil {
-		log.Logger.Error("Error getting OCP shared cluster jobs", "error", err)
+		if err == ErrNoJobFound {
+			// No job exists, so nothing is in progress
+			return false
+		}
+		log.Logger.Error("Error getting latest OCP fleet status job", "error", err)
 		return false
 	}
 
-	for _, job := range jobs {
-		if job.Status == "running" || job.Status == "initializing" {
-			log.Logger.Info("OCP shared cluster status is in progress", "job", job.RequestID, "status", job.Status)
-			return true
-		}
+	if job.Status == "running" || job.Status == "initializing" {
+		log.Logger.Info("OCP fleet status is in progress", "job", job.RequestID, "status", job.Status)
+		return true
 	}
 
 	return false
