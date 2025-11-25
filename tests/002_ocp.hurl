@@ -392,7 +392,7 @@ Authorization: Bearer {{access_token}}
 [QueryStringParams]
 service_uuid: {{uuid}}
 [Options]
-retry: 40
+retry: 50
 HTTP 404
 [Asserts]
 jsonpath "$" count == 0

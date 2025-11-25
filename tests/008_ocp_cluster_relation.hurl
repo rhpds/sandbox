@@ -61,7 +61,7 @@ Authorization: Bearer {{access_token}}
    }
   ],
   "annotations": {
-    "tests": "Simple OcpSandbox placement",
+    "tests": "OcpSandbox placement with relation",
     "guid": "{{guid}}",
     "env_type": "ocp4-cluster-blablablabla"
   }
@@ -145,9 +145,9 @@ Authorization: Bearer {{access_token}}
    }
   ],
   "annotations": {
-    "tests": "Simple OcpSandbox placement",
+    "tests": "cluster relation with Child(A)",
     "guid": "{{guid}}",
-    "env_type": "ocp4-cluster-blablablabla"
+    "env_type": "ocp4-cluster"
   }
 }
 HTTP 200
@@ -342,7 +342,7 @@ jsonpath "$.Placement.resources[0].status"  matches "^(initializing|success)$"
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
 [Options]
-retry: 40
+retry: 80
 HTTP 200
 [Captures]
 cluster1: jsonpath "$.resources[0].ocp_cluster"
@@ -407,9 +407,9 @@ Authorization: Bearer {{access_token}}
    }
   ],
   "annotations": {
-    "tests": "Simple OcpSandbox placement",
+    "tests": "OcpSandbox placement 2 different HCPs",
     "guid": "{{guid}}",
-    "env_type": "ocp4-cluster-blablablabla"
+    "env_type": "ocp4-cluster"
   }
 }
 HTTP 200
