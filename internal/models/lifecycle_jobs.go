@@ -280,3 +280,55 @@ func (j *LifecyclePlacementJob) GlobalStatus() (string, error) {
 	}
 	return status, nil
 }
+
+// AggregateLifecycleResults returns the aggregated lifecycle_result from all child resource jobs
+func (j *LifecyclePlacementJob) AggregateLifecycleResults() (Status, error) {
+	aggregated := Status{
+		Instances: []Instance{},
+	}
+
+	rows, err := j.DbPool.Query(
+		context.TODO(),
+		`SELECT id FROM lifecycle_resource_jobs
+         WHERE parent_id = $1
+         ORDER BY updated_at`,
+		j.ID,
+	)
+
+	if err != nil {
+		return aggregated, err
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var idR int
+		err := rows.Scan(&idR)
+		if err != nil {
+			return aggregated, err
+		}
+
+		job, err := GetLifecycleResourceJob(j.DbPool, idR)
+		if err != nil {
+			return aggregated, err
+		}
+
+		// Set the account info from the first job (they should all have the same placement)
+		if aggregated.AccountName == "" {
+			aggregated.AccountName = job.ResourceName
+			aggregated.AccountKind = job.ResourceType
+		}
+
+		// Append instances from child job's result
+		if job.Result.Instances != nil {
+			aggregated.Instances = append(aggregated.Instances, job.Result.Instances...)
+		}
+	}
+
+	if rows.Err() != nil {
+		log.Logger.Error("Error iterating over rows for aggregation", "err", rows.Err())
+		return aggregated, rows.Err()
+	}
+
+	return aggregated, nil
+}

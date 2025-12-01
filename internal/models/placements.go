@@ -76,6 +76,18 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 		}
 	}
 
+	// Refresh the status from DB to avoid race conditions with concurrent updates
+	var currentStatus string
+	err = p.DbPool.QueryRow(
+		context.Background(),
+		"SELECT status FROM placements WHERE id = $1",
+		p.ID,
+	).Scan(&currentStatus)
+	if err != nil {
+		return err
+	}
+	p.Status = currentStatus
+
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
 	if p.Status != "error" && p.Status != "deleting" {
@@ -111,6 +123,17 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 			}
 		}
 	}
+
+	// Refresh the status from DB to avoid race conditions with concurrent updates
+	err = p.DbPool.QueryRow(
+		context.Background(),
+		"SELECT status FROM placements WHERE id = $1",
+		p.ID,
+	).Scan(&currentStatus)
+	if err != nil {
+		return err
+	}
+	p.Status = currentStatus
 
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
@@ -284,6 +307,19 @@ func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider,
 		}
 	}
 
+	// Refresh the status from DB to avoid race conditions with concurrent updates
+	// (e.g., a delete operation setting status to "error" or "deleting")
+	var currentStatus string
+	err = p.DbPool.QueryRow(
+		context.Background(),
+		"SELECT status FROM placements WHERE id = $1",
+		p.ID,
+	).Scan(&currentStatus)
+	if err != nil {
+		return err
+	}
+	p.Status = currentStatus
+
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
 	if p.Status != "error" && p.Status != "deleting" {
@@ -423,8 +459,7 @@ func (p *Placement) GetLastStatus() ([]*LifecycleResourceJob, error) {
 	rows, err := p.DbPool.Query(
 		context.TODO(),
 		`SELECT id FROM lifecycle_resource_jobs
-		 WHERE lifecycle_action = 'status'
-		 AND parent_id = $1
+		 WHERE parent_id = $1
 		 ORDER BY updated_at`,
 		id,
 	)
