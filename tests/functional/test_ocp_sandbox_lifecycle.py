@@ -269,32 +269,33 @@ def verify_resource_states(status_result: Dict[str, Any], expected_states: Dict[
     Verify that resources in status_result have expected states.
 
     Args:
-        status_result: The lifecycle_result from status job containing 'instances' array
+        status_result: The lifecycle_result from status job containing 'ocp_resources' array
         expected_states: Dict mapping resource names to expected states (e.g., {"test-app": "running"})
         resource_type: Optional filter by resource type (e.g., "Deployment", "VirtualMachine")
 
     Returns:
         True if all expected resources have expected states
     """
-    instances = status_result.get("instances", [])
-    if not instances:
-        logger.warning("No instances found in status result")
+    # Use ocp_resources for OCP sandboxes
+    resources = status_result.get("ocp_resources", [])
+    if not resources:
+        logger.warning("No ocp_resources found in status result")
         return False
 
     all_match = True
     for name, expected_state in expected_states.items():
         found = False
-        for instance in instances:
-            if instance.get("instance_name") == name:
-                if resource_type and instance.get("instance_type") != resource_type:
+        for resource in resources:
+            if resource.get("name") == name:
+                if resource_type and resource.get("kind") != resource_type:
                     continue
                 found = True
-                actual_state = instance.get("state", "").lower()
+                actual_state = resource.get("state", "").lower()
                 expected_lower = expected_state.lower()
                 if actual_state == expected_lower:
-                    logger.info(f"SUCCESS: {name} ({instance.get('instance_type')}) state is '{actual_state}'")
+                    logger.info(f"SUCCESS: {name} ({resource.get('kind')}) state is '{actual_state}'")
                 else:
-                    logger.error(f"FAIL: {name} ({instance.get('instance_type')}) state is '{actual_state}', expected '{expected_state}'")
+                    logger.error(f"FAIL: {name} ({resource.get('kind')}) state is '{actual_state}', expected '{expected_state}'")
                     all_match = False
                 break
         if not found:

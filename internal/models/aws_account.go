@@ -377,21 +377,36 @@ func (a AwsAccount) Stop(ctx context.Context, creds *ststypes.Credentials, job *
 
 }
 
-type Instance struct {
+// AwsInstance represents an AWS EC2 instance
+type AwsInstance struct {
 	InstanceId   string `json:"instance_id,omitempty"`
 	InstanceName string `json:"instance_name,omitempty"`
-	InstanceType string `json:"instance_type,omitempty"`
+	InstanceType string `json:"instance_type,omitempty"` // EC2 instance type (e.g., t2.micro)
 	Region       string `json:"region,omitempty"`
 	State        string `json:"state,omitempty"`
 }
 
-// Status type
+// OcpResource represents a Kubernetes/OpenShift resource in a sandbox namespace
+type OcpResource struct {
+	UID           string `json:"uid,omitempty"`
+	Name          string `json:"name,omitempty"`
+	Kind          string `json:"kind,omitempty"` // Deployment, StatefulSet, Pod, VirtualMachine, etc.
+	Namespace     string `json:"namespace,omitempty"`
+	Cluster       string `json:"cluster,omitempty"`
+	State         string `json:"state,omitempty"`          // running, stopped, pending, etc.
+	Replicas      *int32 `json:"replicas,omitempty"`       // For Deployments/StatefulSets
+	ReadyReplicas *int32 `json:"ready_replicas,omitempty"` // For Deployments/StatefulSets
+	RunStrategy   string `json:"run_strategy,omitempty"`   // For VirtualMachines: Always, RerunOnFailure, Manual, Halted, Once
+}
+
+// Status type - contains lifecycle status for both AWS and OCP resources
 type Status struct {
-	AccountName string     `json:"account_name"`
-	AccountKind string     `json:"account_kind"`
-	Instances   []Instance `json:"instances"`
-	UpdatedAt   time.Time  `json:"updated_at,omitempty"`
-	Status      string     `json:"status,omitempty"`
+	AccountName  string        `json:"account_name"`
+	AccountKind  string        `json:"account_kind"`
+	AwsInstances []AwsInstance `json:"aws_instances,omitempty"` // AWS EC2 instances
+	OcpResources []OcpResource `json:"ocp_resources,omitempty"` // OCP/K8s resources
+	UpdatedAt    time.Time     `json:"updated_at,omitempty"`
+	Status       string        `json:"status,omitempty"`
 }
 
 func MakeStatus(job *LifecycleResourceJob) Status {
@@ -437,7 +452,7 @@ func (a AwsAccount) Status(ctx context.Context, creds *ststypes.Credentials, job
 
 	var errR error
 	var status Status
-	instances := make([]Instance, 0)
+	instances := make([]AwsInstance, 0)
 	// For each region, get all running instances
 	for _, region := range regions.Regions {
 		log.Logger.Debug("Looping to get instances status", "account", a.Name, "region", *region.RegionName)
@@ -462,7 +477,7 @@ func (a AwsAccount) Status(ctx context.Context, creds *ststypes.Credentials, job
 		// Build instances
 		for _, reservation := range ec2Instances.Reservations {
 			for _, instance := range reservation.Instances {
-				instances = append(instances, Instance{
+				instances = append(instances, AwsInstance{
 					InstanceId:   *instance.InstanceId,
 					InstanceType: string(instance.InstanceType),
 					Region:       *region.RegionName,
@@ -472,7 +487,7 @@ func (a AwsAccount) Status(ctx context.Context, creds *ststypes.Credentials, job
 		}
 	}
 
-	status.Instances = instances
+	status.AwsInstances = instances
 	status.AccountName = a.Name
 	status.AccountKind = a.Kind
 

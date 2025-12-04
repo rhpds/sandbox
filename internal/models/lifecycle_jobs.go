@@ -284,7 +284,8 @@ func (j *LifecyclePlacementJob) GlobalStatus() (string, error) {
 // AggregateLifecycleResults returns the aggregated lifecycle_result from all child resource jobs
 func (j *LifecyclePlacementJob) AggregateLifecycleResults() (Status, error) {
 	aggregated := Status{
-		Instances: []Instance{},
+		AwsInstances: []AwsInstance{},
+		OcpResources: []OcpResource{},
 	}
 
 	rows, err := j.DbPool.Query(
@@ -319,9 +320,14 @@ func (j *LifecyclePlacementJob) AggregateLifecycleResults() (Status, error) {
 			aggregated.AccountKind = job.ResourceType
 		}
 
-		// Append instances from child job's result
-		if job.Result.Instances != nil {
-			aggregated.Instances = append(aggregated.Instances, job.Result.Instances...)
+		// Append AWS instances from child job's result
+		if job.Result.AwsInstances != nil {
+			aggregated.AwsInstances = append(aggregated.AwsInstances, job.Result.AwsInstances...)
+		}
+
+		// Append OCP resources from child job's result
+		if job.Result.OcpResources != nil {
+			aggregated.OcpResources = append(aggregated.OcpResources, job.Result.OcpResources...)
 		}
 	}
 

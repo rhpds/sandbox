@@ -17,22 +17,8 @@ import (
 // Annotation key to store original replica count before stopping
 const OriginalReplicasAnnotation = "sandbox.redhat.com/original-replicas"
 
-// OcpResource represents a resource (pod or VM) in the sandbox for status reporting
-type OcpResource struct {
-	Name          string `json:"name"`
-	Kind          string `json:"kind"`
-	State         string `json:"state"`
-	Replicas      int32  `json:"replicas,omitempty"`
-	ReadyReplicas int32  `json:"ready_replicas,omitempty"`
-}
-
-// OcpSandboxStatus holds the status of all resources in an OcpSandbox
-type OcpSandboxStatus struct {
-	SandboxName string        `json:"sandbox_name"`
-	Namespace   string        `json:"namespace"`
-	Cluster     string        `json:"cluster"`
-	Resources   []OcpResource `json:"resources"`
-}
+// Annotation key to store original RunStrategy before stopping a VM
+const OriginalRunStrategyAnnotation = "sandbox.redhat.com/original-run-strategy"
 
 // getClusterClients returns kubernetes and dynamic clients for the sandbox's cluster
 func (a *OcpSandboxWithCreds) getClusterClients() (*kubernetes.Clientset, dynamic.Interface, error) {
@@ -247,27 +233,79 @@ func (a *OcpSandboxWithCreds) Stop(ctx context.Context, job *LifecycleResourceJo
 		log.Logger.Debug("Failed to list virtualmachines (might not be installed)", "error", err, "sandbox", a.Name)
 	} else {
 		for _, vm := range vms.Items {
-			running, found, _ := unstructured.NestedBool(vm.Object, "spec", "running")
-			if !found || !running {
-				continue // Already stopped or field not set
-			}
+			vmName := vm.GetName()
 
-			// Set spec.running to false
-			if err := unstructured.SetNestedField(vm.Object, false, "spec", "running"); err != nil {
-				log.Logger.Error("Failed to set running=false on VM", "error", err, "vm", vm.GetName(), "sandbox", a.Name)
-				lastErr = err
+			// Check if VM uses RunStrategy or running field
+			// RunStrategy and running are mutually exclusive in KubeVirt
+			runStrategy, runStrategyFound, _ := unstructured.NestedString(vm.Object, "spec", "runStrategy")
+			running, runningFound, _ := unstructured.NestedBool(vm.Object, "spec", "running")
+
+			if runStrategyFound && runStrategy != "" {
+				// VM uses RunStrategy
+				if runStrategy == "Halted" {
+					log.Logger.Debug("VM already halted via RunStrategy", "vm", vmName, "sandbox", a.Name)
+					continue
+				}
+
+				// Save original RunStrategy in annotation before stopping
+				annotations := vm.GetAnnotations()
+				if annotations == nil {
+					annotations = make(map[string]string)
+				}
+				// Only save if we haven't already (don't overwrite on repeated stops)
+				if _, exists := annotations[OriginalRunStrategyAnnotation]; !exists {
+					annotations[OriginalRunStrategyAnnotation] = runStrategy
+					vm.SetAnnotations(annotations)
+				}
+
+				// Set RunStrategy to Halted
+				if err := unstructured.SetNestedField(vm.Object, "Halted", "spec", "runStrategy"); err != nil {
+					log.Logger.Error("Failed to set runStrategy=Halted on VM", "error", err, "vm", vmName, "sandbox", a.Name)
+					lastErr = err
+					continue
+				}
+
+				log.Logger.Info("Stopping VM via RunStrategy", "vm", vmName, "originalStrategy", runStrategy, "sandbox", a.Name)
+
+			} else if runningFound {
+				// VM uses running field (legacy mode)
+				if !running {
+					log.Logger.Debug("VM already stopped via running field", "vm", vmName, "sandbox", a.Name)
+					continue
+				}
+
+				// Set spec.running to false
+				if err := unstructured.SetNestedField(vm.Object, false, "spec", "running"); err != nil {
+					log.Logger.Error("Failed to set running=false on VM", "error", err, "vm", vmName, "sandbox", a.Name)
+					lastErr = err
+					continue
+				}
+
+				log.Logger.Info("Stopping VM via running field", "vm", vmName, "sandbox", a.Name)
+
+			} else {
+				// Neither field found, skip
+				log.Logger.Debug("VM has neither running nor runStrategy field", "vm", vmName, "sandbox", a.Name)
 				continue
 			}
 
 			_, err := dynClient.Resource(vmGVR).Namespace(a.Namespace).Update(ctx, &vm, metav1.UpdateOptions{})
 			if err != nil {
-				log.Logger.Error("Failed to stop virtualmachine", "error", err, "vm", vm.GetName(), "sandbox", a.Name)
+				log.Logger.Error("Failed to stop virtualmachine", "error", err, "vm", vmName, "sandbox", a.Name)
 				lastErr = err
 				continue
 			}
-			log.Logger.Info("Stopped virtualmachine", "vm", vm.GetName(), "sandbox", a.Name)
+			log.Logger.Info("Stopped virtualmachine", "vm", vmName, "sandbox", a.Name)
 
 			if job != nil && job.DbPool != nil {
+				eventData := map[string]string{
+					"virtualmachine": vmName,
+					"namespace":      a.Namespace,
+					"cluster":        a.OcpSharedClusterConfigurationName,
+				}
+				if runStrategyFound && runStrategy != "" {
+					eventData["original_run_strategy"] = runStrategy
+				}
 				_, _ = job.DbPool.Exec(ctx,
 					`INSERT INTO lifecycle_events (event_type, service_uuid, resource_name, resource_type, event_data)
 					 VALUES ($1, $2, $3, $4, $5)`,
@@ -275,11 +313,7 @@ func (a *OcpSandboxWithCreds) Stop(ctx context.Context, job *LifecycleResourceJo
 					a.ServiceUuid,
 					a.Name,
 					a.Kind,
-					map[string]string{
-						"virtualmachine": vm.GetName(),
-						"namespace":      a.Namespace,
-						"cluster":        a.OcpSharedClusterConfigurationName,
-					},
+					eventData,
 				)
 			}
 		}
@@ -484,27 +518,90 @@ func (a *OcpSandboxWithCreds) Start(ctx context.Context, job *LifecycleResourceJ
 		log.Logger.Debug("Failed to list virtualmachines (might not be installed)", "error", err, "sandbox", a.Name)
 	} else {
 		for _, vm := range vms.Items {
-			running, found, _ := unstructured.NestedBool(vm.Object, "spec", "running")
-			if found && running {
-				continue // Already running
-			}
+			vmName := vm.GetName()
 
-			// Set spec.running to true
-			if err := unstructured.SetNestedField(vm.Object, true, "spec", "running"); err != nil {
-				log.Logger.Error("Failed to set running=true on VM", "error", err, "vm", vm.GetName(), "sandbox", a.Name)
-				lastErr = err
+			// Check if VM uses RunStrategy or running field
+			runStrategy, runStrategyFound, _ := unstructured.NestedString(vm.Object, "spec", "runStrategy")
+			running, runningFound, _ := unstructured.NestedBool(vm.Object, "spec", "running")
+
+			var restoredStrategy string
+
+			if runStrategyFound && runStrategy != "" {
+				// VM uses RunStrategy
+				if runStrategy != "Halted" {
+					log.Logger.Debug("VM already has non-Halted RunStrategy", "vm", vmName, "runStrategy", runStrategy, "sandbox", a.Name)
+					continue
+				}
+
+				// Check if we have saved the original RunStrategy
+				annotations := vm.GetAnnotations()
+				originalStrategy := ""
+				if annotations != nil {
+					originalStrategy = annotations[OriginalRunStrategyAnnotation]
+				}
+
+				if originalStrategy != "" {
+					// Restore original RunStrategy
+					if err := unstructured.SetNestedField(vm.Object, originalStrategy, "spec", "runStrategy"); err != nil {
+						log.Logger.Error("Failed to restore runStrategy on VM", "error", err, "vm", vmName, "sandbox", a.Name)
+						lastErr = err
+						continue
+					}
+					// Remove the annotation
+					delete(annotations, OriginalRunStrategyAnnotation)
+					vm.SetAnnotations(annotations)
+					restoredStrategy = originalStrategy
+					log.Logger.Info("Restoring VM RunStrategy", "vm", vmName, "originalStrategy", originalStrategy, "sandbox", a.Name)
+				} else {
+					// No saved strategy, default to Always
+					if err := unstructured.SetNestedField(vm.Object, "Always", "spec", "runStrategy"); err != nil {
+						log.Logger.Error("Failed to set runStrategy=Always on VM", "error", err, "vm", vmName, "sandbox", a.Name)
+						lastErr = err
+						continue
+					}
+					restoredStrategy = "Always"
+					log.Logger.Info("Starting VM with default RunStrategy", "vm", vmName, "runStrategy", "Always", "sandbox", a.Name)
+				}
+
+			} else if runningFound {
+				// VM uses running field (legacy mode)
+				if running {
+					log.Logger.Debug("VM already running via running field", "vm", vmName, "sandbox", a.Name)
+					continue
+				}
+
+				// Set spec.running to true
+				if err := unstructured.SetNestedField(vm.Object, true, "spec", "running"); err != nil {
+					log.Logger.Error("Failed to set running=true on VM", "error", err, "vm", vmName, "sandbox", a.Name)
+					lastErr = err
+					continue
+				}
+
+				log.Logger.Info("Starting VM via running field", "vm", vmName, "sandbox", a.Name)
+
+			} else {
+				// Neither field found, skip
+				log.Logger.Debug("VM has neither running nor runStrategy field", "vm", vmName, "sandbox", a.Name)
 				continue
 			}
 
 			_, err := dynClient.Resource(vmGVR).Namespace(a.Namespace).Update(ctx, &vm, metav1.UpdateOptions{})
 			if err != nil {
-				log.Logger.Error("Failed to start virtualmachine", "error", err, "vm", vm.GetName(), "sandbox", a.Name)
+				log.Logger.Error("Failed to start virtualmachine", "error", err, "vm", vmName, "sandbox", a.Name)
 				lastErr = err
 				continue
 			}
-			log.Logger.Info("Started virtualmachine", "vm", vm.GetName(), "sandbox", a.Name)
+			log.Logger.Info("Started virtualmachine", "vm", vmName, "sandbox", a.Name)
 
 			if job != nil && job.DbPool != nil {
+				eventData := map[string]string{
+					"virtualmachine": vmName,
+					"namespace":      a.Namespace,
+					"cluster":        a.OcpSharedClusterConfigurationName,
+				}
+				if restoredStrategy != "" {
+					eventData["restored_run_strategy"] = restoredStrategy
+				}
 				_, _ = job.DbPool.Exec(ctx,
 					`INSERT INTO lifecycle_events (event_type, service_uuid, resource_name, resource_type, event_data)
 					 VALUES ($1, $2, $3, $4, $5)`,
@@ -512,11 +609,7 @@ func (a *OcpSandboxWithCreds) Start(ctx context.Context, job *LifecycleResourceJ
 					a.ServiceUuid,
 					a.Name,
 					a.Kind,
-					map[string]string{
-						"virtualmachine": vm.GetName(),
-						"namespace":      a.Namespace,
-						"cluster":        a.OcpSharedClusterConfigurationName,
-					},
+					eventData,
 				)
 			}
 		}
@@ -528,9 +621,9 @@ func (a *OcpSandboxWithCreds) Start(ctx context.Context, job *LifecycleResourceJ
 // GetLifecycleStatus returns the status of all resources in the OcpSandbox namespace
 func (a *OcpSandboxWithCreds) GetLifecycleStatus(ctx context.Context, job *LifecycleResourceJob) (Status, error) {
 	status := Status{
-		AccountName: a.Name,
-		AccountKind: a.Kind,
-		Instances:   []Instance{},
+		AccountName:  a.Name,
+		AccountKind:  a.Kind,
+		OcpResources: []OcpResource{},
 	}
 
 	if a.Namespace == "" {
@@ -556,12 +649,16 @@ func (a *OcpSandboxWithCreds) GetLifecycleStatus(ctx context.Context, job *Lifec
 			} else if deploy.Status.ReadyReplicas < *deploy.Spec.Replicas {
 				state = "pending"
 			}
-			status.Instances = append(status.Instances, Instance{
-				InstanceId:   string(deploy.UID),
-				InstanceName: deploy.Name,
-				InstanceType: "Deployment",
-				State:        state,
-				Region:       a.OcpSharedClusterConfigurationName,
+			readyReplicas := deploy.Status.ReadyReplicas
+			status.OcpResources = append(status.OcpResources, OcpResource{
+				UID:           string(deploy.UID),
+				Name:          deploy.Name,
+				Kind:          "Deployment",
+				Namespace:     a.Namespace,
+				Cluster:       a.OcpSharedClusterConfigurationName,
+				State:         state,
+				Replicas:      deploy.Spec.Replicas,
+				ReadyReplicas: &readyReplicas,
 			})
 		}
 	}
@@ -578,12 +675,16 @@ func (a *OcpSandboxWithCreds) GetLifecycleStatus(ctx context.Context, job *Lifec
 			} else if sts.Status.ReadyReplicas < *sts.Spec.Replicas {
 				state = "pending"
 			}
-			status.Instances = append(status.Instances, Instance{
-				InstanceId:   string(sts.UID),
-				InstanceName: sts.Name,
-				InstanceType: "StatefulSet",
-				State:        state,
-				Region:       a.OcpSharedClusterConfigurationName,
+			readyReplicas := sts.Status.ReadyReplicas
+			status.OcpResources = append(status.OcpResources, OcpResource{
+				UID:           string(sts.UID),
+				Name:          sts.Name,
+				Kind:          "StatefulSet",
+				Namespace:     a.Namespace,
+				Cluster:       a.OcpSharedClusterConfigurationName,
+				State:         state,
+				Replicas:      sts.Spec.Replicas,
+				ReadyReplicas: &readyReplicas,
 			})
 		}
 	}
@@ -595,12 +696,13 @@ func (a *OcpSandboxWithCreds) GetLifecycleStatus(ctx context.Context, job *Lifec
 	} else {
 		for _, pod := range pods.Items {
 			state := string(pod.Status.Phase)
-			status.Instances = append(status.Instances, Instance{
-				InstanceId:   string(pod.UID),
-				InstanceName: pod.Name,
-				InstanceType: "Pod",
-				State:        state,
-				Region:       a.OcpSharedClusterConfigurationName,
+			status.OcpResources = append(status.OcpResources, OcpResource{
+				UID:       string(pod.UID),
+				Name:      pod.Name,
+				Kind:      "Pod",
+				Namespace: a.Namespace,
+				Cluster:   a.OcpSharedClusterConfigurationName,
+				State:     state,
 			})
 		}
 	}
@@ -617,23 +719,58 @@ func (a *OcpSandboxWithCreds) GetLifecycleStatus(ctx context.Context, job *Lifec
 		log.Logger.Debug("Failed to list virtualmachines (might not be installed)", "error", err, "sandbox", a.Name)
 	} else {
 		for _, vm := range vms.Items {
-			running, _, _ := unstructured.NestedBool(vm.Object, "spec", "running")
-			state := "stopped"
-			if running {
-				// Check the actual status
-				ready, _, _ := unstructured.NestedBool(vm.Object, "status", "ready")
-				if ready {
-					state = "running"
+			var state string
+			var runStrategyValue string
+
+			// Check if VM uses RunStrategy or running field
+			runStrategy, runStrategyFound, _ := unstructured.NestedString(vm.Object, "spec", "runStrategy")
+			running, runningFound, _ := unstructured.NestedBool(vm.Object, "spec", "running")
+
+			if runStrategyFound && runStrategy != "" {
+				// VM uses RunStrategy
+				runStrategyValue = runStrategy
+				if runStrategy == "Halted" {
+					state = "stopped"
 				} else {
-					state = "starting"
+					// Check the actual status for non-Halted strategies
+					ready, _, _ := unstructured.NestedBool(vm.Object, "status", "ready")
+					if ready {
+						state = "running"
+					} else {
+						// Check if VMI exists and its phase
+						printableStatus, _, _ := unstructured.NestedString(vm.Object, "status", "printableStatus")
+						if printableStatus != "" {
+							state = printableStatus
+						} else {
+							state = "starting"
+						}
+					}
 				}
+			} else if runningFound {
+				// VM uses running field (legacy mode)
+				if running {
+					ready, _, _ := unstructured.NestedBool(vm.Object, "status", "ready")
+					if ready {
+						state = "running"
+					} else {
+						state = "starting"
+					}
+				} else {
+					state = "stopped"
+				}
+			} else {
+				// Neither field found
+				state = "unknown"
 			}
-			status.Instances = append(status.Instances, Instance{
-				InstanceId:   string(vm.GetUID()),
-				InstanceName: vm.GetName(),
-				InstanceType: "VirtualMachine",
-				State:        state,
-				Region:       a.OcpSharedClusterConfigurationName,
+
+			status.OcpResources = append(status.OcpResources, OcpResource{
+				UID:         string(vm.GetUID()),
+				Name:        vm.GetName(),
+				Kind:        "VirtualMachine",
+				Namespace:   a.Namespace,
+				Cluster:     a.OcpSharedClusterConfigurationName,
+				State:       state,
+				RunStrategy: runStrategyValue,
 			})
 		}
 	}
@@ -654,12 +791,13 @@ func (a *OcpSandboxWithCreds) GetLifecycleStatus(ctx context.Context, job *Lifec
 			if phase == "" {
 				phase = "Unknown"
 			}
-			status.Instances = append(status.Instances, Instance{
-				InstanceId:   string(vmi.GetUID()),
-				InstanceName: vmi.GetName(),
-				InstanceType: "VirtualMachineInstance",
-				State:        phase,
-				Region:       a.OcpSharedClusterConfigurationName,
+			status.OcpResources = append(status.OcpResources, OcpResource{
+				UID:       string(vmi.GetUID()),
+				Name:      vmi.GetName(),
+				Kind:      "VirtualMachineInstance",
+				Namespace: a.Namespace,
+				Cluster:   a.OcpSharedClusterConfigurationName,
+				State:     phase,
 			})
 		}
 	}
