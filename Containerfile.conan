@@ -41,9 +41,10 @@ RUN mkdir -p -m 770  /home/opentlc-mgr/pool_management/output_dir_sandbox \
     net-tools \
     openssl \
     openssl-devel \
-    python39 \
-    python39-devel \
-    python39-pip \
+    python3.12 \
+    python3.12-pip \
+    python3.12-requests \
+    python3.12-devel \
     rsync \
     sshpass \
     tar \
@@ -78,9 +79,9 @@ RUN mkdir -p -m 770  /home/opentlc-mgr/pool_management/output_dir_sandbox \
 ##############################
 # Python
 ##############################
-    && alternatives --set python /usr/bin/python3.9 \
-    && alternatives --set python3 /usr/bin/python3.9 \
-    && alternatives --install /usr/bin/pip pip /usr/bin/pip3.9 1 \
+    && alternatives --set python /usr/bin/python3.12 \
+    && alternatives --set python3 /usr/bin/python3.12 \
+    && alternatives --install /usr/bin/pip pip /usr/bin/pip3.12 1 \
     && alternatives --list \
 ##############################
 # Python and Ansible Galaxy collections
@@ -103,6 +104,7 @@ COPY . /home/opentlc-mgr/pool_management/sandbox
 
 WORKDIR /home/opentlc-mgr/pool_management
 
+ENV LANG='en_US.UTF-8' LANGUAGE='en_US:en' LC_ALL='en_US.UTF-8'
 CMD ["/home/opentlc-mgr/pool_management/sandbox/conan/conan.sh"]
 
 ENV DESCRIPTION="Conan daemon - Cleanup of sandboxes"
