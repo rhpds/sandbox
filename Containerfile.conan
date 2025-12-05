@@ -27,6 +27,7 @@ RUN mkdir -p -m 770  /home/opentlc-mgr/pool_management/output_dir_sandbox \
     && dnf install -y \
     bash \
     bind-utils \
+    glibc-langpack-en \
     curl \
     findutils \
     gcc \
