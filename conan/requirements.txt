@@ -1,4 +1,6 @@
-ansible-core
+# Stay on latest 2.19 for now because of WARNINGS in some collections (aws,  ...)
+# TODO: remove the version pin when collections are fixed
+ansible-core<2.20
 boto3
 botocore
 cffi
