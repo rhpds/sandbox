@@ -84,6 +84,11 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 		p.ID,
 	).Scan(&currentStatus)
 	if err != nil {
+		// If the placement was deleted while we were loading resources,
+		// just return without error - the caller will handle the 404
+		if err == pgx.ErrNoRows {
+			return nil
+		}
 		return err
 	}
 	p.Status = currentStatus
@@ -131,6 +136,11 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 		p.ID,
 	).Scan(&currentStatus)
 	if err != nil {
+		// If the placement was deleted while we were loading resources,
+		// just return without error - the caller will handle the 404
+		if err == pgx.ErrNoRows {
+			return nil
+		}
 		return err
 	}
 	p.Status = currentStatus
@@ -316,6 +326,11 @@ func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider,
 		p.ID,
 	).Scan(&currentStatus)
 	if err != nil {
+		// If the placement was deleted while we were loading resources,
+		// just return without error - the caller will handle the 404
+		if err == pgx.ErrNoRows {
+			return nil
+		}
 		return err
 	}
 	p.Status = currentStatus

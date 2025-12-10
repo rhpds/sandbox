@@ -93,7 +93,7 @@ jsonpath "$.resources[0].credentials" count >= 1
 
 PUT {{host}}/api/v1/placements/{{uuid}}/status
 Authorization: Bearer {{access_token}}
-HTTP 200
+HTTP 202
 [Captures]
 status_request_id: jsonpath "$.request_id"
 [Asserts]
@@ -128,7 +128,7 @@ jsonpath "$.status" isCollection
 
 PUT {{host}}/api/v1/accounts/OcpSandbox/{{sandbox_name}}/status
 Authorization: Bearer {{access_token}}
-HTTP 200
+HTTP 202
 [Captures]
 account_status_request_id: jsonpath "$.request_id"
 [Asserts]
@@ -166,7 +166,7 @@ jsonpath "$.account_kind" == "OcpSandbox"
 
 PUT {{host}}/api/v1/placements/{{uuid}}/stop
 Authorization: Bearer {{access_token}}
-HTTP 200
+HTTP 202
 [Captures]
 stop_request_id: jsonpath "$.request_id"
 [Asserts]
@@ -191,7 +191,7 @@ jsonpath "$.status" == "success"
 
 PUT {{host}}/api/v1/placements/{{uuid}}/start
 Authorization: Bearer {{access_token}}
-HTTP 200
+HTTP 202
 [Captures]
 start_request_id: jsonpath "$.request_id"
 [Asserts]
@@ -216,7 +216,7 @@ jsonpath "$.status" == "success"
 
 PUT {{host}}/api/v1/accounts/OcpSandbox/{{sandbox_name}}/stop
 Authorization: Bearer {{access_token}}
-HTTP 200
+HTTP 202
 [Captures]
 account_stop_request_id: jsonpath "$.request_id"
 [Asserts]
@@ -240,7 +240,7 @@ jsonpath "$.status" == "success"
 
 PUT {{host}}/api/v1/accounts/OcpSandbox/{{sandbox_name}}/start
 Authorization: Bearer {{access_token}}
-HTTP 200
+HTTP 202
 [Captures]
 account_start_request_id: jsonpath "$.request_id"
 [Asserts]
@@ -264,7 +264,7 @@ jsonpath "$.status" == "success"
 
 PUT {{host}}/api/v1/accounts/OcpSandbox/{{sandbox_name}}/status
 Authorization: Bearer {{access_token}}
-HTTP 200
+HTTP 202
 [Captures]
 final_status_request_id: jsonpath "$.request_id"
 
