@@ -1313,9 +1313,12 @@ func (account *IBMResourceGroupSandboxWithCreds) Delete() error {
 
 				_, err := resourceControllerService.DeleteResourceInstance(deleteResourceInstanceOptions)
 				if err != nil {
-					log.Logger.Info("Failed to delete resource instance with IDxx", *instance.ID, err)
+					log.Logger.Info("Failed to delete resource instance",
+						"instanceID", *instance.ID,
+						"error", err)
 				} else {
-					log.Logger.Info("Successfully deleted resource instance with ID\n", *instance.ID, "success")
+					log.Logger.Info("Successfully deleted resource instance",
+						"instanceID", *instance.ID)
 				}
 			}
 			retryCount++
