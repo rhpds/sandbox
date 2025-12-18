@@ -2,7 +2,9 @@ package models
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/rhpds/sandbox/internal/log"
@@ -520,6 +522,104 @@ func GetAllPlacements(dbpool *pgxpool.Pool) (Placements, error) {
 	defer rows.Close()
 
 	var placements Placements
+
+	for rows.Next() {
+		var p Placement
+		err := rows.Scan(
+			&p.ID,
+			&p.ServiceUuid,
+			&p.Request,
+			&p.Annotations,
+			&p.Status,
+			&p.ToCleanup,
+			&p.CreatedAt,
+			&p.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+		p.DbPool = dbpool
+		placements = append(placements, p)
+	}
+
+	return placements, nil
+}
+
+// PlacementFilter holds optional filter parameters for querying placements
+type PlacementFilter struct {
+	Status      *string
+	ServiceUuid *string
+	ToCleanup   *bool
+	Annotations map[string]any
+	Limit       *int
+	Offset      *int
+}
+
+// GetPlacementsFiltered returns placements matching the given filters
+func GetPlacementsFiltered(dbpool *pgxpool.Pool, filter PlacementFilter) (Placements, error) {
+	query := `SELECT
+		id,
+		service_uuid,
+		request,
+		annotations,
+		status,
+		to_cleanup,
+		created_at,
+		updated_at
+	FROM placements
+	WHERE 1=1`
+
+	args := []any{}
+	argNum := 1
+
+	if filter.Status != nil {
+		query += fmt.Sprintf(" AND status = $%d", argNum)
+		args = append(args, *filter.Status)
+		argNum++
+	}
+
+	if filter.ServiceUuid != nil {
+		query += fmt.Sprintf(" AND service_uuid = $%d", argNum)
+		args = append(args, *filter.ServiceUuid)
+		argNum++
+	}
+
+	if filter.ToCleanup != nil {
+		query += fmt.Sprintf(" AND to_cleanup = $%d", argNum)
+		args = append(args, *filter.ToCleanup)
+		argNum++
+	}
+
+	if len(filter.Annotations) > 0 {
+		annotationsJSON, err := json.Marshal(filter.Annotations)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal annotations filter: %w", err)
+		}
+		query += fmt.Sprintf(" AND annotations @> $%d::jsonb", argNum)
+		args = append(args, string(annotationsJSON))
+		argNum++
+	}
+
+	query += " ORDER BY created_at DESC"
+
+	if filter.Limit != nil {
+		query += fmt.Sprintf(" LIMIT $%d", argNum)
+		args = append(args, *filter.Limit)
+		argNum++
+	}
+
+	if filter.Offset != nil {
+		query += fmt.Sprintf(" OFFSET $%d", argNum)
+		args = append(args, *filter.Offset)
+	}
+
+	rows, err := dbpool.Query(context.Background(), query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Initialize to empty slice so JSON serializes as [] not null
+	placements := Placements{}
 
 	for rows.Next() {
 		var p Placement

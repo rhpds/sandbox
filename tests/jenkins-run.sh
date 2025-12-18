@@ -25,21 +25,34 @@ _on_exit() {
             999.hurl
     fi
 
+    if [ ${#todeletelater[@]} -gt 0 ]; then
+        echo "Cleaning up created placements..."
+        for uuidfixture in "${todeletelater[@]}"; do
+            echo "Deleting placement for $uuidfixture"
+            hurl --variable host=http://localhost:$PORT \
+                --variable login_token=$apptoken \
+                --variable uuid=$uuidfixture \
+                --jobs 1 \
+                --test \
+                fixtures/delete-placement.hurl
+        done
+    fi
     # Kill entire process group of the API
-    [ -n "${apipid}" ] &&  kill -- -$apipid
+    [ -n "${apipid}" ] && kill -- -$apipid
 
     rm -rf $tmpdir
     cd $jobdir
 
     if [ -f ./.dev.pgenv ]; then
-        (. ./.dev.pgenv ;
-         podman run --rm \
-             --net=host \
-             --security-opt label=disable \
-             --userns=host \
-             -v $(pwd):/backup:z \
-             postgres:16-bullseye \
-             pg_dump "${DATABASE_URL}" -f /backup/db_dump.sql
+        (
+            . ./.dev.pgenv
+            podman run --rm \
+                --net=host \
+                --security-opt label=disable \
+                --userns=host \
+                -v $(pwd):/backup:z \
+                postgres:16-bullseye \
+                pg_dump "${DATABASE_URL}" -f /backup/db_dump.sql
         ) || echo "Warning: Failed to dump database"
     else
         echo "Warning: .dev.pgenv not found, skipping database dump"
@@ -54,7 +67,6 @@ _on_exit() {
 
 trap "_on_exit" EXIT
 
-
 set -e -o pipefail
 unset DBUS_SESSION_BUS_ADDRESS
 
@@ -62,7 +74,7 @@ unset DBUS_SESSION_BUS_ADDRESS
 mandatory_commands=(jq podman)
 
 for cmd in "${mandatory_commands[@]}"; do
-    if ! command -v $cmd &> /dev/null; then
+    if ! command -v $cmd &>/dev/null; then
         echo "$cmd could not be found"
         exit 1
     fi
@@ -75,7 +87,7 @@ podman pull --quiet docker.io/bitwarden/bws:0.5.0 || echo "Warning: Failed to pu
 
 # Run the local postgresql instance
 set +o pipefail
-POSTGRESQL_PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq)  | shuf 2>/dev/null | head -n 1 )
+POSTGRESQL_PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq) | shuf 2>/dev/null | head -n 1)
 if [ -z "$POSTGRESQL_PORT" ]; then
     echo "No free port found"
     exit 1
@@ -97,13 +109,12 @@ if [ ! -f ./.dev.pgenv ]; then
 fi
 
 # ensure all .down.sql files are working
-(. ./.dev.pgenv && migrate -database "${DATABASE_URL}" -path db/migrations down -all )
+(. ./.dev.pgenv && migrate -database "${DATABASE_URL}" -path db/migrations down -all)
 # Run migration again
 make migrate
 
 # Generate admin and app tokens
 make tokens
-
 
 # Ensure it compiles and passes the tests first
 make test
@@ -112,7 +123,7 @@ make test
 # Select a free port
 #PORT=54379
 set +o pipefail
-PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq)  | shuf 2>/dev/null | head -n 1 )
+PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq) | shuf 2>/dev/null | head -n 1)
 if [ -z "$PORT" ]; then
     echo "No free port found"
     exit 1
@@ -121,7 +132,7 @@ set -o pipefail
 export PORT
 
 echo "Running sandbox API on port $PORT"
-setsid make run-api &> $apilog &
+setsid make run-api &>$apilog &
 apipid=$!
 
 # Wait for the API to come up
@@ -132,7 +143,7 @@ while true; do
         echo "API not coming up"
         exit 1
     fi
-    if  [ "$(curl http://localhost:$PORT/ping -s)" == "." ]; then
+    if [ "$(curl http://localhost:$PORT/ping -s)" == "." ]; then
         break
     fi
 
@@ -158,14 +169,14 @@ for payload in sandbox-api-configs/ocp-shared-cluster-configurations/ocpvdev01*.
     [ -z "$cluster" ] && echo "Cluster name not found in $payload" && exit 1
     payload2=$tmpdir/$(basename $payload)
     token=$(podman run --rm \
-            -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
-            -e PROJECT_ID=$BWS_PROJECT_ID \
-            --security-opt label=disable \
-            --userns=host \
-            bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
-            | KEYVALUE="${cluster}.token" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
+        -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+        -e PROJECT_ID=$BWS_PROJECT_ID \
+        --security-opt label=disable \
+        --userns=host \
+        bitwarden/bws:0.5.0 secret list $BWS_PROJECT_ID |
+        KEYVALUE="${cluster}.token" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 
-    jq  --arg token $token '(.token = $token)'  < "$payload" > "$payload2"
+    jq --arg token $token '(.token = $token)' <"$payload" >"$payload2"
 
     # In bash, files in a * are sorted alphabetically by default
     # so a create will always happen before an update.
@@ -200,21 +211,21 @@ for payload in sandbox-api-configs/dns-account-configurations/dev*.json; do
     [ -z "$account" ] && echo "Account name not found in $payload" && exit 1
     payload2=$tmpdir/$(basename $payload)
     ACCESS_KEY_ID=$(podman run --rm \
-            -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
-            -e PROJECT_ID=$BWS_PROJECT_ID \
-            --security-opt label=disable \
-            --userns=host \
-            bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
-            | KEYVALUE="${account}.access_key_id" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
+        -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+        -e PROJECT_ID=$BWS_PROJECT_ID \
+        --security-opt label=disable \
+        --userns=host \
+        bitwarden/bws:0.5.0 secret list $BWS_PROJECT_ID |
+        KEYVALUE="${account}.access_key_id" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
     SECRET_ACCESS_KEY=$(podman run --rm \
-            -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
-            -e PROJECT_ID=$BWS_PROJECT_ID \
-            --security-opt label=disable \
-            --userns=host \
-            bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
-            | KEYVALUE="${account}.secret_access_key" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
+        -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+        -e PROJECT_ID=$BWS_PROJECT_ID \
+        --security-opt label=disable \
+        --userns=host \
+        bitwarden/bws:0.5.0 secret list $BWS_PROJECT_ID |
+        KEYVALUE="${account}.secret_access_key" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 
-    jq  --arg access_key_id $ACCESS_KEY_ID --arg secret_access_key $SECRET_ACCESS_KEY '(.aws_access_key_id = $access_key_id | .aws_secret_access_key = $secret_access_key)'  < $payload > $payload2 
+    jq --arg access_key_id $ACCESS_KEY_ID --arg secret_access_key $SECRET_ACCESS_KEY '(.aws_access_key_id = $access_key_id | .aws_secret_access_key = $secret_access_key)' <$payload >$payload2
     # In bash, files in a * are sorted alphabetically by default
     # so a create will always happen before an update.
     if [[ $payload =~ create.json$ ]]; then
@@ -249,14 +260,14 @@ for payload in sandbox-api-configs/ibm-resource-group-configurations/dev*.json; 
     [ -z "$account" ] && echo "Account name not found in $payload" && exit 1
     payload2=$tmpdir/$(basename $payload)
     APIKEY=$(podman run --rm \
-            -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
-            -e PROJECT_ID=$BWS_PROJECT_ID \
-            --security-opt label=disable \
-            --userns=host \
-            bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
-            | KEYVALUE="${account}.apikey" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
+        -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+        -e PROJECT_ID=$BWS_PROJECT_ID \
+        --security-opt label=disable \
+        --userns=host \
+        bitwarden/bws:0.5.0 secret list $BWS_PROJECT_ID |
+        KEYVALUE="${account}.apikey" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 
-    jq  --arg apikey $APIKEY '(.apikey = $apikey)'  < $payload > $payload2 
+    jq --arg apikey $APIKEY '(.apikey = $apikey)' <$payload >$payload2
     # In bash, files in a * are sorted alphabetically by default
     # so a create will always happen before an update.
     if [[ $payload =~ create.json$ ]]; then
@@ -277,8 +288,6 @@ for payload in sandbox-api-configs/ibm-resource-group-configurations/dev*.json; 
     fi
 done
 
-
-
 uuid=$(uuidgen -r)
 export uuid
 guid=tt-$(echo $uuid | tr -dc 'a-z0-9' | head -c 4)
@@ -289,6 +298,20 @@ tests=$1
 if [ -z "$tests" ]; then
     tests='*.hurl'
 fi
+
+todeletelater=()
+for i in {1..10}; do
+
+    uuidfixture=$(uuidgen -r)
+    todeletelater+=($uuidfixture)
+    guid=tt-$(echo $uuidfixture | tr -dc 'a-z0-9' | head -c 4)
+    hurl --variable host=http://localhost:$PORT \
+        --variable login_token=$apptoken \
+        --variable uuid=$uuidfixture \
+        --variable guid=$guid \
+        --jobs 1 \
+        fixtures/create-placement.hurl
+done
 
 hurl --test \
     --variable login_token=$apptoken \

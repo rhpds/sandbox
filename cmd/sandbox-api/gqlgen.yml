@@ -1,0 +1,37 @@
+# gqlgen configuration for sandbox-api GraphQL endpoint
+
+schema:
+  - graph/schema.graphqls
+
+exec:
+  filename: graph/generated.go
+  package: graph
+
+model:
+  filename: graph/model/models_gen.go
+  package: model
+
+resolver:
+  layout: follow-schema
+  dir: graph
+  package: graph
+  filename_template: "{name}.resolvers.go"
+
+# Map custom scalars and configure field resolvers
+models:
+  Int:
+    model:
+      - github.com/99designs/gqlgen/graphql.Int
+  Map:
+    model:
+      - github.com/99designs/gqlgen/graphql.Map
+  Any:
+    model:
+      - github.com/99designs/gqlgen/graphql.Any
+  Time:
+    model:
+      - github.com/99designs/gqlgen/graphql.Time
+  Placement:
+    fields:
+      resources:
+        resolver: true

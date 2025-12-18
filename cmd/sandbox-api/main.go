@@ -19,6 +19,8 @@ import (
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/jackc/pgx/v4/pgxpool"
 
+	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/rhpds/sandbox/cmd/sandbox-api/graph"
 	"github.com/rhpds/sandbox/internal/config"
 	sandboxdb "github.com/rhpds/sandbox/internal/dynamodb"
 	"github.com/rhpds/sandbox/internal/log"
@@ -362,6 +364,34 @@ func main() {
 		r.Get("/debug/pprof/cmdline", pprof.Cmdline)
 		r.Get("/debug/pprof/symbol", pprof.Symbol)
 	})
+
+	// ---------------------------------------------------------------------
+	// GraphQL Routes (Admin only)
+	// ---------------------------------------------------------------------
+	router.Group(func(r chi.Router) {
+		// ---------------------------------
+		// Middlewares
+		// ---------------------------------
+		r.Use(jwtauth.Verifier(tokenAuth))
+		r.Use(AuthenticatorAdmin)
+		// Note: No OpenAPI validation for GraphQL - it uses its own schema
+
+		// GraphQL handler
+		graphqlServer := handler.NewDefaultServer(graph.NewExecutableSchema(graph.Config{
+			Resolvers: &graph.Resolver{
+				DbPool:      dbPool,
+				AwsProvider: awsAccountProvider,
+				OcpProvider: OcpSandboxProvider,
+				DnsProvider: DNSSandboxProvider,
+				IbmProvider: IBMResourceGroupSandboxProvider,
+			},
+		}))
+		r.Handle("/api/v1/graphql", graphqlServer)
+	})
+
+	// GraphQL Playground - public UI, but queries require admin token
+	// Add {"Authorization": "Bearer <token>"} in HTTP HEADERS panel to run queries
+	router.Get("/api/v1/graphql/playground", graph.PlaygroundHandler("Sandbox GraphQL", "/api/v1/graphql"))
 
 	// ---------------------------------------------------------------------
 	// Login Routes

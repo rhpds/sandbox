@@ -1,0 +1,92 @@
+# GraphQL schema for sandbox-api Placements (readonly)
+#
+# Example queries:
+#
+# List placements (basic):
+#   { placements(limit: 10) { id serviceUuid status } }
+#
+# All fields on a placement:
+#   {
+#     placements(limit: 5) {
+#       id
+#       createdAt
+#       updatedAt
+#       serviceUuid
+#       status
+#       toCleanup
+#       annotations
+#       request
+#       resources
+#     }
+#   }
+#
+# Filter by status:
+#   { placements(status: "success", limit: 20) { id serviceUuid status annotations } }
+#
+# Filter by annotations (JSONB contains):
+#   { placements(annotations: {guid: "test-001"}) { id serviceUuid annotations } }
+#   { placements(annotations: {env_type: "ocp4-cluster"}) { id serviceUuid status } }
+#
+# Get placements pending cleanup:
+#   { placements(toCleanup: true) { id serviceUuid status } }
+#
+# Get a specific placement by UUID with resources:
+#   { placementByServiceUuid(serviceUuid: "your-uuid-here") { id status resources } }
+#
+# Pagination:
+#   { placements(limit: 10, offset: 20) { id serviceUuid status } }
+
+scalar Map
+scalar Any
+scalar Time
+
+type Query {
+  """
+  List placements with optional filters and pagination.
+
+  Examples:
+    { placements(limit: 10) { id serviceUuid status } }
+    { placements(status: "success") { id serviceUuid annotations } }
+    { placements(toCleanup: false, limit: 5) { id serviceUuid status } }
+  """
+  placements(
+    status: String
+    serviceUuid: String
+    toCleanup: Boolean
+    annotations: Map
+    limit: Int
+    offset: Int
+  ): [Placement!]!
+
+  """
+  Get a single placement by database ID.
+
+  Example:
+    { placement(id: 42) { serviceUuid status resources } }
+  """
+  placement(id: Int!): Placement
+
+  """
+  Get a single placement by service UUID.
+
+  Example:
+    { placementByServiceUuid(serviceUuid: "abc-123") { id status annotations resources } }
+  """
+  placementByServiceUuid(serviceUuid: String!): Placement
+}
+
+type Placement {
+  id: Int!
+  createdAt: Time!
+  updatedAt: Time!
+  serviceUuid: String!
+  status: String!
+  toCleanup: Boolean!
+  annotations: Map
+  request: Any
+  """
+  Resources associated with this placement (AWS, OCP, DNS, IBM sandboxes).
+  Loaded on demand from providers.
+  """
+  resources: [Any!]
+}
