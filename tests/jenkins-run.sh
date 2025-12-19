@@ -26,20 +26,21 @@ _on_exit() {
     fi
 
     # Kill entire process group of the API
-    [ -n "${apipid}" ] &&  kill -- -$apipid
+    [ -n "${apipid}" ] && kill -- -$apipid
 
     rm -rf $tmpdir
     cd $jobdir
 
     if [ -f ./.dev.pgenv ]; then
-        (. ./.dev.pgenv ;
-         podman run --rm \
-             --net=host \
-             --security-opt label=disable \
-             --userns=host \
-             -v $(pwd):/backup:z \
-             postgres:16-bullseye \
-             pg_dump "${DATABASE_URL}" -f /backup/db_dump.sql
+        (
+            . ./.dev.pgenv
+            podman run --rm \
+                --net=host \
+                --security-opt label=disable \
+                --userns=host \
+                -v $(pwd):/backup:z \
+                postgres:16-bullseye \
+                pg_dump "${DATABASE_URL}" -f /backup/db_dump.sql
         ) || echo "Warning: Failed to dump database"
     else
         echo "Warning: .dev.pgenv not found, skipping database dump"
@@ -56,7 +57,6 @@ _on_exit() {
 
 trap "_on_exit" EXIT
 
-
 set -e -o pipefail
 unset DBUS_SESSION_BUS_ADDRESS
 
@@ -64,7 +64,7 @@ unset DBUS_SESSION_BUS_ADDRESS
 mandatory_commands=(jq ss)
 
 for cmd in "${mandatory_commands[@]}"; do
-    if ! command -v $cmd &> /dev/null; then
+    if ! command -v $cmd &>/dev/null; then
         echo "$cmd could not be found"
         exit 1
     fi
@@ -75,7 +75,7 @@ run_api() {
     # Select a free port
     #PORT=54379
     set +o pipefail
-    PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq)  | shuf 2>/dev/null | head -n 1 )
+    PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq) | shuf 2>/dev/null | head -n 1)
     if [ -z "$PORT" ]; then
         echo "No free port found"
         exit 1
@@ -84,7 +84,7 @@ run_api() {
     export PORT
 
     echo "Running sandbox API on port $PORT"
-    setsid make run-api &> $apilog &
+    setsid make run-api &>$apilog &
     apipid=$!
 
     # Wait for the API to come up
@@ -95,7 +95,7 @@ run_api() {
             echo "API not coming up"
             exit 1
         fi
-        if  [ "$(curl http://localhost:$PORT/ping -s)" == "." ]; then
+        if [ "$(curl http://localhost:$PORT/ping -s)" == "." ]; then
             break
         fi
 
@@ -117,7 +117,7 @@ if [ "${DEPLOY_POSTGRES:-yes}" = "yes" ]; then
 
     # Run the local postgresql instance
     set +o pipefail
-    POSTGRESQL_PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq)  | shuf 2>/dev/null | head -n 1 )
+    POSTGRESQL_PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq) | shuf 2>/dev/null | head -n 1)
     if [ -z "$POSTGRESQL_PORT" ]; then
         echo "No free port found"
         exit 1
@@ -139,7 +139,7 @@ if [ "${DEPLOY_POSTGRES:-yes}" = "yes" ]; then
     fi
 
     # ensure all .down.sql files are working
-    (. ./.dev.pgenv && migrate -database "${DATABASE_URL}" -path db/migrations down -all )
+    (. ./.dev.pgenv && migrate -database "${DATABASE_URL}" -path db/migrations down -all)
     # Run migration again
     make migrate
 
@@ -166,14 +166,14 @@ if [ "${DEPLOY_POSTGRES:-yes}" = "yes" ]; then
         [ -z "$cluster" ] && echo "Cluster name not found in $payload" && exit 1
         payload2=$tmpdir/$(basename $payload)
         token=$(podman run --rm \
-                -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
-                -e PROJECT_ID=$BWS_PROJECT_ID \
-                --security-opt label=disable \
-                --userns=host \
-                bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
-                | KEYVALUE="${cluster}.token" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
+            -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+            -e PROJECT_ID=$BWS_PROJECT_ID \
+            --security-opt label=disable \
+            --userns=host \
+            bitwarden/bws:0.5.0 secret list $BWS_PROJECT_ID |
+            KEYVALUE="${cluster}.token" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 
-        jq  --arg token $token '(.token = $token)'  < "$payload" > "$payload2"
+        jq --arg token $token '(.token = $token)' <"$payload" >"$payload2"
 
         # In bash, files in a * are sorted alphabetically by default
         # so a create will always happen before an update.
@@ -208,21 +208,21 @@ if [ "${DEPLOY_POSTGRES:-yes}" = "yes" ]; then
         [ -z "$account" ] && echo "Account name not found in $payload" && exit 1
         payload2=$tmpdir/$(basename $payload)
         ACCESS_KEY_ID=$(podman run --rm \
-                -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
-                -e PROJECT_ID=$BWS_PROJECT_ID \
-                --security-opt label=disable \
-                --userns=host \
-                bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
-                | KEYVALUE="${account}.access_key_id" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
+            -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+            -e PROJECT_ID=$BWS_PROJECT_ID \
+            --security-opt label=disable \
+            --userns=host \
+            bitwarden/bws:0.5.0 secret list $BWS_PROJECT_ID |
+            KEYVALUE="${account}.access_key_id" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
         SECRET_ACCESS_KEY=$(podman run --rm \
-                -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
-                -e PROJECT_ID=$BWS_PROJECT_ID \
-                --security-opt label=disable \
-                --userns=host \
-                bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
-                | KEYVALUE="${account}.secret_access_key" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
+            -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+            -e PROJECT_ID=$BWS_PROJECT_ID \
+            --security-opt label=disable \
+            --userns=host \
+            bitwarden/bws:0.5.0 secret list $BWS_PROJECT_ID |
+            KEYVALUE="${account}.secret_access_key" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 
-        jq  --arg access_key_id $ACCESS_KEY_ID --arg secret_access_key $SECRET_ACCESS_KEY '(.aws_access_key_id = $access_key_id | .aws_secret_access_key = $secret_access_key)'  < $payload > $payload2 
+        jq --arg access_key_id $ACCESS_KEY_ID --arg secret_access_key $SECRET_ACCESS_KEY '(.aws_access_key_id = $access_key_id | .aws_secret_access_key = $secret_access_key)' <$payload >$payload2
         # In bash, files in a * are sorted alphabetically by default
         # so a create will always happen before an update.
         if [[ $payload =~ create.json$ ]]; then
@@ -257,14 +257,14 @@ if [ "${DEPLOY_POSTGRES:-yes}" = "yes" ]; then
         [ -z "$account" ] && echo "Account name not found in $payload" && exit 1
         payload2=$tmpdir/$(basename $payload)
         APIKEY=$(podman run --rm \
-                -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
-                -e PROJECT_ID=$BWS_PROJECT_ID \
-                --security-opt label=disable \
-                --userns=host \
-                bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
-                | KEYVALUE="${account}.apikey" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
+            -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+            -e PROJECT_ID=$BWS_PROJECT_ID \
+            --security-opt label=disable \
+            --userns=host \
+            bitwarden/bws:0.5.0 secret list $BWS_PROJECT_ID |
+            KEYVALUE="${account}.apikey" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 
-        jq  --arg apikey $APIKEY '(.apikey = $apikey)'  < $payload > $payload2 
+        jq --arg apikey $APIKEY '(.apikey = $apikey)' <$payload >$payload2
         # In bash, files in a * are sorted alphabetically by default
         # so a create will always happen before an update.
         if [[ $payload =~ create.json$ ]]; then
@@ -330,6 +330,6 @@ if [ "${RUN_LIFECYCLE_TESTS:-yes}" = "yes" ]; then
 
     # Run the Python lifecycle test
     SANDBOX_API_URL="http://localhost:$PORT" \
-    SANDBOX_LOGIN_TOKEN="$apptoken" \
-    python3 tests/functional/test_ocp_sandbox_lifecycle.py
+        SANDBOX_LOGIN_TOKEN="$apptoken" \
+        python3 tests/functional/test_ocp_sandbox_lifecycle.py
 fi
