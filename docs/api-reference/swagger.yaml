@@ -92,6 +92,54 @@ paths:
               - hour
               - minute
               - second
+        - in: query
+          name: status
+          description: Filter by placement status (e.g., success, error, new, initializing)
+          required: false
+          example: success
+          schema:
+            type: string
+        - in: query
+          name: service_uuid
+          description: Filter by service UUID
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: to_cleanup
+          description: Filter by cleanup flag
+          required: false
+          example: true
+          schema:
+            type: boolean
+        - in: query
+          name: limit
+          description: Maximum number of placements to return
+          required: false
+          example: 10
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: offset
+          description: Number of placements to skip (for pagination)
+          required: false
+          example: 0
+          schema:
+            type: integer
+            minimum: 0
+        - in: query
+          name: annotations
+          description: |
+            Filter by annotation key/value pairs using bracket notation.
+            Example: annotations[guid]=test-001&annotations[env_type]=ocp4-cluster
+          required: false
+          style: deepObject
+          explode: true
+          schema:
+            type: object
+            additionalProperties:
+              type: string
       tags:
         - placement
       operationId: getPlacements
@@ -99,6 +147,11 @@ paths:
       description: |
         The placements are returned.
         Only Admins are authorized to get all placements.
+
+        Filter examples:
+        - `/placements?status=success` - Filter by status
+        - `/placements?annotations[guid]=test-001` - Filter by annotation
+        - `/placements?limit=10&offset=0` - Pagination
 
         NOTE: the resources are not returned because that would generate too much data and take too much time. To get the information about accounts for a particular placement, query the `/placements/{uuid}` endpoint.
       responses:

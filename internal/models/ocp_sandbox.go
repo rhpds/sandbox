@@ -742,7 +742,8 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuid(serviceUuid string) ([]OcpSan
 			resources r
 		LEFT JOIN
 			ocp_shared_cluster_configurations oc ON oc.name = r.resource_data->>'ocp_cluster'
-		WHERE r.service_uuid = $1 AND r.resource_type = 'OcpSandbox'`,
+		WHERE r.service_uuid = $1 AND r.resource_type = 'OcpSandbox'
+		ORDER BY r.id`,
 		serviceUuid,
 	)
 
@@ -793,7 +794,8 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 			resources r
 		LEFT JOIN
 			ocp_shared_cluster_configurations oc ON oc.name = r.resource_data->>'ocp_cluster'
-		WHERE r.service_uuid = $1 AND r.resource_type = 'OcpSandbox'`,
+		WHERE r.service_uuid = $1 AND r.resource_type = 'OcpSandbox'
+		ORDER BY r.id`,
 		serviceUuid, a.VaultSecret,
 	)
 

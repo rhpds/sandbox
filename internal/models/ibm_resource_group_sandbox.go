@@ -461,7 +461,8 @@ func (a *IBMResourceGroupSandboxProvider) FetchAllByServiceUuid(serviceUuid stri
 			resources r
 		LEFT JOIN
 			ibm_resource_group_account_configurations oc ON oc.name = r.resource_data->>'ibm_resource_group_account'
-		WHERE r.service_uuid = $1 AND r.resource_type = 'IBMResourceGroupSandbox'`,
+		WHERE r.service_uuid = $1 AND r.resource_type = 'IBMResourceGroupSandbox'
+		ORDER BY r.id`,
 		serviceUuid,
 	)
 
@@ -512,7 +513,8 @@ func (a *IBMResourceGroupSandboxProvider) FetchAllByServiceUuidWithCreds(service
 			resources r
 		LEFT JOIN
 			ibm_resource_group_account_configurations oc ON oc.name = r.resource_data->>'ibm_resource_group_account'
-		WHERE r.service_uuid = $1 AND r.resource_type = 'IBMResourceGroupSandbox'`,
+		WHERE r.service_uuid = $1 AND r.resource_type = 'IBMResourceGroupSandbox'
+		ORDER BY r.id`,
 		serviceUuid, a.VaultSecret,
 	)
 
