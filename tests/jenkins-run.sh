@@ -25,6 +25,18 @@ _on_exit() {
             999.hurl
     fi
 
+    if [ ${#todeletelater[@]} -gt 0 ]; then
+        echo "Cleaning up created placements..."
+        for uuidfixture in "${todeletelater[@]}"; do
+            echo "Deleting placement for $uuidfixture"
+            hurl --variable host=http://localhost:$PORT \
+                --variable login_token=$apptoken \
+                --variable uuid=$uuidfixture \
+                --jobs 1 \
+                --test \
+                fixtures/delete-placement.hurl
+        done
+    fi
     # Kill entire process group of the API
     [ -n "${apipid}" ] && kill -- -$apipid
 
@@ -307,6 +319,20 @@ tests=$1
 if [ -z "$tests" ]; then
     tests='*.hurl'
 fi
+
+todeletelater=()
+for i in {1..10}; do
+
+    uuidfixture=$(uuidgen -r)
+    todeletelater+=($uuidfixture)
+    guid=tt-$(echo $uuidfixture | tr -dc 'a-z0-9' | head -c 4)
+    hurl --variable host=http://localhost:$PORT \
+        --variable login_token=$apptoken \
+        --variable uuid=$uuidfixture \
+        --variable guid=$guid \
+        --jobs 1 \
+        fixtures/create-placement.hurl
+done
 
 hurl --test \
     --variable login_token=$apptoken \

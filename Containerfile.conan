@@ -1,4 +1,4 @@
-ARG GO_VERSION=1.23
+ARG GO_VERSION=1.24
 # Switch back to Red Hat go-toolset when it supports go 1.22
 #FROM registry.access.redhat.com/ubi8/go-toolset:latest AS builder
 FROM docker.io/golang:${GO_VERSION}-bullseye as builder

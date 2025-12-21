@@ -527,7 +527,8 @@ func (a *DNSSandboxProvider) FetchAllByServiceUuid(serviceUuid string) ([]DNSSan
 			resources r
 		LEFT JOIN
 			dns_account_configurations oc ON oc.name = r.resource_data->>'dns_account'
-		WHERE r.service_uuid = $1 AND r.resource_type = 'DNSSandbox'`,
+		WHERE r.service_uuid = $1 AND r.resource_type = 'DNSSandbox'
+		ORDER BY r.id`,
 		serviceUuid,
 	)
 
@@ -578,7 +579,8 @@ func (a *DNSSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 			resources r
 		LEFT JOIN
 			dns_account_configurations oc ON oc.name = r.resource_data->>'dns_account'
-		WHERE r.service_uuid = $1 AND r.resource_type = 'DNSSandbox'`,
+		WHERE r.service_uuid = $1 AND r.resource_type = 'DNSSandbox'
+		ORDER BY r.id`,
 		serviceUuid, a.VaultSecret,
 	)
 

@@ -669,10 +669,60 @@ func (h *BaseHandler) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Get All placements
+// Get All placements with optional filtering
+// Query parameters:
+//   - status: filter by placement status
+//   - service_uuid: filter by service UUID
+//   - to_cleanup: filter by cleanup flag (true/false)
+//   - limit: maximum number of results
+//   - offset: skip first N results
+//   - annotations[key]: filter by annotation key/value (e.g., annotations[guid]=test-001)
 func (h *BaseHandler) GetPlacementsHandler(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
 
-	placements, err := models.GetAllPlacements(h.dbpool)
+	// Build filter from query parameters
+	filter := models.PlacementFilter{}
+
+	if status := query.Get("status"); status != "" {
+		filter.Status = &status
+	}
+
+	if serviceUuid := query.Get("service_uuid"); serviceUuid != "" {
+		filter.ServiceUuid = &serviceUuid
+	}
+
+	if toCleanup := query.Get("to_cleanup"); toCleanup != "" {
+		val := toCleanup == "true"
+		filter.ToCleanup = &val
+	}
+
+	if limitStr := query.Get("limit"); limitStr != "" {
+		if limit, err := strconv.Atoi(limitStr); err == nil {
+			filter.Limit = &limit
+		}
+	}
+
+	if offsetStr := query.Get("offset"); offsetStr != "" {
+		if offset, err := strconv.Atoi(offsetStr); err == nil {
+			filter.Offset = &offset
+		}
+	}
+
+	// Parse annotations query parameters (e.g., annotations[guid]=test-001)
+	annotations := make(map[string]any)
+	for key, values := range query {
+		if strings.HasPrefix(key, "annotations[") && strings.HasSuffix(key, "]") {
+			annotationKey := key[12 : len(key)-1] // Extract key from annotations[key]
+			if len(values) > 0 {
+				annotations[annotationKey] = values[0]
+			}
+		}
+	}
+	if len(annotations) > 0 {
+		filter.Annotations = annotations
+	}
+
+	placements, err := models.GetPlacementsFiltered(h.dbpool, filter)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
