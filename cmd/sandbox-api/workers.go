@@ -26,6 +26,15 @@ type Worker struct {
 	// Account provider to interact with the database
 	AwsAccountProvider models.AwsAccountProvider
 
+	// OcpSandbox provider to interact with OCP sandboxes
+	OcpSandboxProvider models.OcpSandboxProvider
+
+	// DNS sandbox provider
+	DNSSandboxProvider models.DNSSandboxProvider
+
+	// IBM Resource Group sandbox provider
+	IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider
+
 	// AWS client to manage the accounts
 	StsClient *sts.Client
 }
@@ -105,6 +114,64 @@ func (w Worker) Execute(j *models.LifecycleResourceJob) error {
 		case "status":
 			j.SetStatus("running")
 			status, err := sandbox.Status(ctx, assume.Credentials, j)
+			if err != nil {
+				j.SetStatus("error")
+				log.Logger.Error("Error getting status", "error", err)
+			}
+			log.Logger.Debug("Got status", "status", status)
+			return err
+		}
+
+	case "OcpSandbox":
+		// Fetch the OcpSandbox by name
+		ocpSandbox, err := w.OcpSandboxProvider.FetchByName(j.ResourceName)
+		if err != nil {
+			log.Logger.Error("Error fetching OcpSandbox by name", "error", err, "name", j.ResourceName)
+			return err
+		}
+
+		// Create OcpSandboxWithCreds and reload to get credentials
+		sandbox := &models.OcpSandboxWithCreds{
+			OcpSandbox: ocpSandbox,
+			Provider:   &w.OcpSandboxProvider,
+		}
+		if err := sandbox.Reload(); err != nil {
+			log.Logger.Error("Error reloading OcpSandbox with creds", "error", err, "name", j.ResourceName)
+			return err
+		}
+
+		log.Logger.Debug("Got OcpSandbox action", "action", j.Action, "sandbox", sandbox.Name)
+
+		ctx := context.TODO()
+		ctx = context.WithValue(ctx, "RequestID", j.RequestID)
+
+		// If job has a parent, add serviceUUID to context
+		if j.ParentID != 0 {
+			parentJob, err := models.GetLifecyclePlacementJob(w.Dbpool, j.ParentID)
+			if err != nil {
+				log.Logger.Error("Error getting parent job", "error", err)
+				return err
+			}
+
+			placement, err := models.GetPlacement(w.Dbpool, parentJob.PlacementID)
+			if err != nil {
+				log.Logger.Error("Error getting placement", "error", err)
+				return err
+			}
+
+			ctx = context.WithValue(ctx, "ServiceUUID", placement.ServiceUuid)
+		}
+
+		switch j.Action {
+		case "start":
+			j.SetStatus("running")
+			return sandbox.Start(ctx, j)
+		case "stop":
+			j.SetStatus("running")
+			return sandbox.Stop(ctx, j)
+		case "status":
+			j.SetStatus("running")
+			status, err := sandbox.GetLifecycleStatus(ctx, j)
 			if err != nil {
 				j.SetStatus("error")
 				log.Logger.Error("Error getting status", "error", err)
@@ -242,7 +309,7 @@ WorkerLoop:
 				}
 
 				// Get all accounts in the placement
-				if err := placement.LoadActiveResources(w.AwsAccountProvider); err != nil {
+				if err := placement.LoadActiveResourcesWithCreds(w.AwsAccountProvider, w.OcpSandboxProvider, w.DNSSandboxProvider, w.IBMResourceGroupSandboxProvider); err != nil {
 					log.Logger.Error("Error loading resources", "error", err, "placement", placement)
 					job.SetStatus("error")
 					continue WorkerLoop
@@ -253,17 +320,16 @@ WorkerLoop:
 				for _, account := range placement.Resources {
 					// Create a new LifecycleResourceJob for each account
 					// Detect type of the resource using reflection
-					switch account.(type) {
+					switch acc := account.(type) {
 					case models.AwsAccount:
-						awsAccount := account.(models.AwsAccount)
-						log.Logger.Debug("Creating resource job for account", "account", awsAccount)
+						log.Logger.Debug("Creating resource job for AWS account", "account", acc)
 
 						lifecycleResourceJob := models.LifecycleResourceJob{
 							ParentID:     job.ID,
 							Locality:     cc.LocalityID,
 							RequestID:    job.RequestID,
-							ResourceType: awsAccount.Kind,
-							ResourceName: awsAccount.Name,
+							ResourceType: acc.Kind,
+							ResourceName: acc.Name,
 							Action:       job.Action,
 							Status:       "new",
 							DbPool:       w.Dbpool,
@@ -274,7 +340,49 @@ WorkerLoop:
 							job.SetStatus("error")
 							continue ResourceLoop
 						}
-						log.Logger.Debug("Created resource job for account", "account", awsAccount, "job", lifecycleResourceJob)
+						log.Logger.Debug("Created resource job for account", "account", acc, "job", lifecycleResourceJob)
+
+					case models.AwsAccountWithCreds:
+						log.Logger.Debug("Creating resource job for AWS account with creds", "account", acc)
+
+						lifecycleResourceJob := models.LifecycleResourceJob{
+							ParentID:     job.ID,
+							Locality:     cc.LocalityID,
+							RequestID:    job.RequestID,
+							ResourceType: acc.Kind,
+							ResourceName: acc.Name,
+							Action:       job.Action,
+							Status:       "new",
+							DbPool:       w.Dbpool,
+						}
+
+						if err := lifecycleResourceJob.Create(); err != nil {
+							log.Logger.Error("Error creating lifecycle resource job", "error", err)
+							job.SetStatus("error")
+							continue ResourceLoop
+						}
+						log.Logger.Debug("Created resource job for account", "account", acc, "job", lifecycleResourceJob)
+
+					case models.OcpSandboxWithCreds:
+						log.Logger.Debug("Creating resource job for OcpSandbox", "sandbox", acc)
+
+						lifecycleResourceJob := models.LifecycleResourceJob{
+							ParentID:     job.ID,
+							Locality:     cc.LocalityID,
+							RequestID:    job.RequestID,
+							ResourceType: acc.Kind,
+							ResourceName: acc.Name,
+							Action:       job.Action,
+							Status:       "new",
+							DbPool:       w.Dbpool,
+						}
+
+						if err := lifecycleResourceJob.Create(); err != nil {
+							log.Logger.Error("Error creating lifecycle resource job for OcpSandbox", "error", err)
+							job.SetStatus("error")
+							continue ResourceLoop
+						}
+						log.Logger.Debug("Created resource job for OcpSandbox", "sandbox", acc, "job", lifecycleResourceJob)
 					}
 				}
 				job.SetStatus("successfully_dispatched")
@@ -373,8 +481,11 @@ func NewWorker(baseHandler BaseHandler) Worker {
 	})
 
 	return Worker{
-		Dbpool:             baseHandler.dbpool,
-		AwsAccountProvider: baseHandler.awsAccountProvider,
-		StsClient:          stsClient,
+		Dbpool:                          baseHandler.dbpool,
+		AwsAccountProvider:              baseHandler.awsAccountProvider,
+		OcpSandboxProvider:              baseHandler.OcpSandboxProvider,
+		DNSSandboxProvider:              baseHandler.DNSSandboxProvider,
+		IBMResourceGroupSandboxProvider: baseHandler.IBMResourceGroupSandboxProvider,
+		StsClient:                        stsClient,
 	}
 }
