@@ -490,6 +490,7 @@ func (a AwsAccount) Status(ctx context.Context, creds *ststypes.Credentials, job
 	status.AwsInstances = instances
 	status.AccountName = a.Name
 	status.AccountKind = a.Kind
+	status.UpdatedAt = time.Now()
 
 	// save status as json
 	_, err = job.DbPool.Exec(

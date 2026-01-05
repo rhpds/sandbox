@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/rhpds/sandbox/internal/log"
@@ -624,6 +625,7 @@ func (a *OcpSandboxWithCreds) GetLifecycleStatus(ctx context.Context, job *Lifec
 		AccountName:  a.Name,
 		AccountKind:  a.Kind,
 		OcpResources: []OcpResource{},
+		UpdatedAt:    time.Now(),
 	}
 
 	if a.Namespace == "" {

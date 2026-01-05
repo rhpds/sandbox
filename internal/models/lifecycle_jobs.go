@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
@@ -302,6 +303,8 @@ func (j *LifecyclePlacementJob) AggregateLifecycleResults() (Status, error) {
 
 	defer rows.Close()
 
+	var latestUpdatedAt time.Time
+
 	for rows.Next() {
 		var idR int
 		err := rows.Scan(&idR)
@@ -312,6 +315,11 @@ func (j *LifecyclePlacementJob) AggregateLifecycleResults() (Status, error) {
 		job, err := GetLifecycleResourceJob(j.DbPool, idR)
 		if err != nil {
 			return aggregated, err
+		}
+
+		// Track the latest updated_at from child jobs
+		if job.UpdatedAt.After(latestUpdatedAt) {
+			latestUpdatedAt = job.UpdatedAt
 		}
 
 		// Set the account info from the first job (they should all have the same placement)
@@ -334,6 +342,13 @@ func (j *LifecyclePlacementJob) AggregateLifecycleResults() (Status, error) {
 	if rows.Err() != nil {
 		log.Logger.Error("Error iterating over rows for aggregation", "err", rows.Err())
 		return aggregated, rows.Err()
+	}
+
+	// Set UpdatedAt to the latest from child jobs, or now if no children
+	if latestUpdatedAt.IsZero() {
+		aggregated.UpdatedAt = time.Now()
+	} else {
+		aggregated.UpdatedAt = latestUpdatedAt
 	}
 
 	return aggregated, nil

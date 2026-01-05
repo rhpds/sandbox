@@ -370,9 +370,9 @@ func (p *Placement) Create() error {
 			context.Background(),
 			`INSERT INTO placements
 			 (service_uuid, request, annotations)
-			 VALUES ($1, $2, $3) RETURNING id`,
+			 VALUES ($1, $2, $3) RETURNING id, created_at, updated_at`,
 			p.ServiceUuid, p.Request, p.Annotations,
-		).Scan(&id)
+		).Scan(&id, &p.CreatedAt, &p.UpdatedAt)
 
 		if err != nil {
 			return err

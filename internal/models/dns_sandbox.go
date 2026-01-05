@@ -397,8 +397,8 @@ func (a *DNSSandbox) Save(dbpool *pgxpool.Pool) error {
 		context.Background(),
 		`INSERT INTO resources
 		 (resource_name, resource_type, service_uuid, resource_data, status, cleanup_count)
-		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		a.Name, a.Kind, a.ServiceUuid, a, a.Status, a.CleanupCount).Scan(&a.ID); err != nil {
+		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at, updated_at`,
+		a.Name, a.Kind, a.ServiceUuid, a, a.Status, a.CleanupCount).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt); err != nil {
 		return err
 	}
 
@@ -455,9 +455,9 @@ func (a *DNSSandboxWithCreds) Save() error {
 		context.Background(),
 		`INSERT INTO resources
 			(resource_name, resource_type, service_uuid, to_cleanup, resource_data, resource_credentials, status, cleanup_count)
-			VALUES ($1, $2, $3, $4, $5, pgp_sym_encrypt($6::text, $7), $8, $9) RETURNING id`,
+			VALUES ($1, $2, $3, $4, $5, pgp_sym_encrypt($6::text, $7), $8, $9) RETURNING id, created_at, updated_at`,
 		a.Name, a.Kind, a.ServiceUuid, a.ToCleanup, withoutCreds, creds, a.Provider.VaultSecret, a.Status, a.CleanupCount,
-	).Scan(&a.ID); err != nil {
+	).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt); err != nil {
 		return err
 	}
 
