@@ -26,16 +26,31 @@ _on_exit() {
     fi
 
     if [ ${#todeletelater[@]} -gt 0 ]; then
-        echo "Cleaning up created placements..."
+        echo "Cleaning up ${#todeletelater[@]} fixture placements..."
+        local count=0
+        local total=${#todeletelater[@]}
+        local failed=0
+        local failed_uuids=()
         for uuidfixture in "${todeletelater[@]}"; do
-            echo "Deleting placement for $uuidfixture"
-            hurl --variable host=http://localhost:$PORT \
+            count=$((count + 1))
+            if hurl --variable host=http://localhost:$PORT \
                 --variable login_token=$apptoken \
                 --variable uuid=$uuidfixture \
                 --jobs 1 \
-                --test \
-                fixtures/delete-placement.hurl
+                fixtures/delete-placement.hurl >/dev/null 2>&1; then
+                echo "  [$count/$total] $uuidfixture"
+            else
+                echo "  [$count/$total] $uuidfixture (FAILED)"
+                failed=$((failed + 1))
+                failed_uuids+=($uuidfixture)
+            fi
         done
+        if [ $failed -gt 0 ]; then
+            echo "WARNING: Failed to cleanup $failed placement(s):"
+            for uuid in "${failed_uuids[@]}"; do
+                echo "  - $uuid"
+            done
+        fi
     fi
     # Kill entire process group of the API
     [ -n "${apipid}" ] && kill -- -$apipid
@@ -321,8 +336,8 @@ if [ -z "$tests" ]; then
 fi
 
 todeletelater=()
+echo "Creating 10 fixture placements..."
 for i in {1..10}; do
-
     uuidfixture=$(uuidgen -r)
     todeletelater+=($uuidfixture)
     guid=tt-$(echo $uuidfixture | tr -dc 'a-z0-9' | head -c 4)
@@ -331,7 +346,8 @@ for i in {1..10}; do
         --variable uuid=$uuidfixture \
         --variable guid=$guid \
         --jobs 1 \
-        fixtures/create-placement.hurl
+        fixtures/create-placement.hurl >/dev/null 2>&1
+    echo "  [$i/10] $uuidfixture"
 done
 
 hurl --test \

@@ -15,6 +15,7 @@ pipeline {
     parameters {
         string(name: 'tests', defaultValue: '*.hurl', description: 'what tests to run')
         string(name: 'sandbox-api-configs-ref', defaultValue: 'main', description: 'sandbox-api-configs branch or tag to use')
+        booleanParam(name: 'run_lifecycle_tests', defaultValue: true, description: 'Run OCP Lifecycle functional tests')
     }
 
     stages {
@@ -35,7 +36,9 @@ pipeline {
                     string(credentialsId: 'bw-ocp-shared-clusters-config-token', variable: 'BWS_ACCESS_TOKEN'),
                     string(credentialsId: 'bw-ocp-shared-clusters-config-project-id', variable: 'BWS_PROJECT_ID'),
                 ]) {
-                    sh "tests/jenkins-run.sh '${params.tests}'"
+                    withEnv(["RUN_LIFECYCLE_TESTS=${params.run_lifecycle_tests ? 'yes' : 'no'}"]) {
+                        sh "tests/jenkins-run.sh '${params.tests}'"
+                    }
                 }
             }
         }
