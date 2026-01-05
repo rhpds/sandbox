@@ -97,7 +97,7 @@ func (a *OcpSandboxWithCreds) Stop(ctx context.Context, job *LifecycleResourceJo
 				lastErr = err
 				continue
 			}
-			log.Logger.Info("Stopped deployment", "deployment", deploy.Name, "sandbox", a.Name)
+			log.Logger.Info("Stopped deployment", "deployment", deploy.Name, "sandbox", a.Name, "namespace", a.Namespace, "cluster", a.OcpSharedClusterConfigurationName, "service_uuid", a.ServiceUuid)
 
 			// Log lifecycle event
 			if job != nil && job.DbPool != nil {
@@ -143,7 +143,7 @@ func (a *OcpSandboxWithCreds) Stop(ctx context.Context, job *LifecycleResourceJo
 				lastErr = err
 				continue
 			}
-			log.Logger.Info("Stopped statefulset", "statefulset", sts.Name, "sandbox", a.Name)
+			log.Logger.Info("Stopped statefulset", "statefulset", sts.Name, "sandbox", a.Name, "namespace", a.Namespace, "cluster", a.OcpSharedClusterConfigurationName, "service_uuid", a.ServiceUuid)
 
 			if job != nil && job.DbPool != nil {
 				_, _ = job.DbPool.Exec(ctx,
@@ -200,7 +200,7 @@ func (a *OcpSandboxWithCreds) Stop(ctx context.Context, job *LifecycleResourceJo
 				lastErr = err
 				continue
 			}
-			log.Logger.Info("Stopped replicaset", "replicaset", rs.Name, "sandbox", a.Name)
+			log.Logger.Info("Stopped replicaset", "replicaset", rs.Name, "sandbox", a.Name, "namespace", a.Namespace, "cluster", a.OcpSharedClusterConfigurationName, "service_uuid", a.ServiceUuid)
 
 			if job != nil && job.DbPool != nil {
 				_, _ = job.DbPool.Exec(ctx,
@@ -295,7 +295,7 @@ func (a *OcpSandboxWithCreds) Stop(ctx context.Context, job *LifecycleResourceJo
 				lastErr = err
 				continue
 			}
-			log.Logger.Info("Stopped virtualmachine", "vm", vmName, "sandbox", a.Name)
+			log.Logger.Info("Stopped virtualmachine", "vm", vmName, "sandbox", a.Name, "namespace", a.Namespace, "cluster", a.OcpSharedClusterConfigurationName, "service_uuid", a.ServiceUuid)
 
 			if job != nil && job.DbPool != nil {
 				eventData := map[string]string{
@@ -371,7 +371,7 @@ func (a *OcpSandboxWithCreds) Start(ctx context.Context, job *LifecycleResourceJ
 				lastErr = err
 				continue
 			}
-			log.Logger.Info("Started deployment", "deployment", deploy.Name, "replicas", replicas, "sandbox", a.Name)
+			log.Logger.Info("Started deployment", "deployment", deploy.Name, "replicas", replicas, "sandbox", a.Name, "namespace", a.Namespace, "cluster", a.OcpSharedClusterConfigurationName, "service_uuid", a.ServiceUuid)
 
 			if job != nil && job.DbPool != nil {
 				_, _ = job.DbPool.Exec(ctx,
@@ -422,7 +422,7 @@ func (a *OcpSandboxWithCreds) Start(ctx context.Context, job *LifecycleResourceJ
 				lastErr = err
 				continue
 			}
-			log.Logger.Info("Started statefulset", "statefulset", sts.Name, "replicas", replicas, "sandbox", a.Name)
+			log.Logger.Info("Started statefulset", "statefulset", sts.Name, "replicas", replicas, "sandbox", a.Name, "namespace", a.Namespace, "cluster", a.OcpSharedClusterConfigurationName, "service_uuid", a.ServiceUuid)
 
 			if job != nil && job.DbPool != nil {
 				_, _ = job.DbPool.Exec(ctx,
@@ -485,7 +485,7 @@ func (a *OcpSandboxWithCreds) Start(ctx context.Context, job *LifecycleResourceJ
 				lastErr = err
 				continue
 			}
-			log.Logger.Info("Started replicaset", "replicaset", rs.Name, "replicas", replicas, "sandbox", a.Name)
+			log.Logger.Info("Started replicaset", "replicaset", rs.Name, "replicas", replicas, "sandbox", a.Name, "namespace", a.Namespace, "cluster", a.OcpSharedClusterConfigurationName, "service_uuid", a.ServiceUuid)
 
 			if job != nil && job.DbPool != nil {
 				_, _ = job.DbPool.Exec(ctx,
@@ -591,7 +591,7 @@ func (a *OcpSandboxWithCreds) Start(ctx context.Context, job *LifecycleResourceJ
 				lastErr = err
 				continue
 			}
-			log.Logger.Info("Started virtualmachine", "vm", vmName, "sandbox", a.Name)
+			log.Logger.Info("Started virtualmachine", "vm", vmName, "sandbox", a.Name, "namespace", a.Namespace, "cluster", a.OcpSharedClusterConfigurationName, "service_uuid", a.ServiceUuid)
 
 			if job != nil && job.DbPool != nil {
 				eventData := map[string]string{
