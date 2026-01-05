@@ -78,6 +78,23 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 		}
 	}
 
+	// Refresh the status from DB to avoid race conditions with concurrent updates
+	var currentStatus string
+	err = p.DbPool.QueryRow(
+		context.Background(),
+		"SELECT status FROM placements WHERE id = $1",
+		p.ID,
+	).Scan(&currentStatus)
+	if err != nil {
+		// If the placement was deleted while we were loading resources,
+		// just return without error - the caller will handle the 404
+		if err == pgx.ErrNoRows {
+			return nil
+		}
+		return err
+	}
+	p.Status = currentStatus
+
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
 	if p.Status != "error" && p.Status != "deleting" {
@@ -113,6 +130,22 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 			}
 		}
 	}
+
+	// Refresh the status from DB to avoid race conditions with concurrent updates
+	err = p.DbPool.QueryRow(
+		context.Background(),
+		"SELECT status FROM placements WHERE id = $1",
+		p.ID,
+	).Scan(&currentStatus)
+	if err != nil {
+		// If the placement was deleted while we were loading resources,
+		// just return without error - the caller will handle the 404
+		if err == pgx.ErrNoRows {
+			return nil
+		}
+		return err
+	}
+	p.Status = currentStatus
 
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
@@ -286,6 +319,24 @@ func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider,
 		}
 	}
 
+	// Refresh the status from DB to avoid race conditions with concurrent updates
+	// (e.g., a delete operation setting status to "error" or "deleting")
+	var currentStatus string
+	err = p.DbPool.QueryRow(
+		context.Background(),
+		"SELECT status FROM placements WHERE id = $1",
+		p.ID,
+	).Scan(&currentStatus)
+	if err != nil {
+		// If the placement was deleted while we were loading resources,
+		// just return without error - the caller will handle the 404
+		if err == pgx.ErrNoRows {
+			return nil
+		}
+		return err
+	}
+	p.Status = currentStatus
+
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
 	if p.Status != "error" && p.Status != "deleting" {
@@ -319,9 +370,9 @@ func (p *Placement) Create() error {
 			context.Background(),
 			`INSERT INTO placements
 			 (service_uuid, request, annotations)
-			 VALUES ($1, $2, $3) RETURNING id`,
+			 VALUES ($1, $2, $3) RETURNING id, created_at, updated_at`,
 			p.ServiceUuid, p.Request, p.Annotations,
-		).Scan(&id)
+		).Scan(&id, &p.CreatedAt, &p.UpdatedAt)
 
 		if err != nil {
 			return err
@@ -425,8 +476,7 @@ func (p *Placement) GetLastStatus() ([]*LifecycleResourceJob, error) {
 	rows, err := p.DbPool.Query(
 		context.TODO(),
 		`SELECT id FROM lifecycle_resource_jobs
-		 WHERE lifecycle_action = 'status'
-		 AND parent_id = $1
+		 WHERE parent_id = $1
 		 ORDER BY updated_at`,
 		id,
 	)

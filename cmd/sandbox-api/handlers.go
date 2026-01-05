@@ -1310,12 +1310,13 @@ func (h *BaseHandler) GetStatusRequestHandler(w http.ResponseWriter, r *http.Req
 				return
 			}
 
-			// If it's a resource request, just return the status
+			// If it's a resource request, return the status with lifecycle_result
 			w.WriteHeader(http.StatusOK)
 			render.Render(w, r, &v1.LifecycleResponse{
-				HTTPStatusCode: http.StatusOK,
-				RequestID:      RequestID,
-				Status:         job.Status,
+				HTTPStatusCode:  http.StatusOK,
+				RequestID:       RequestID,
+				Status:          job.Status,
+				LifecycleResult: job.Result,
 			})
 			return
 		}
@@ -1342,11 +1343,19 @@ func (h *BaseHandler) GetStatusRequestHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Aggregate lifecycle results from child resource jobs
+	aggregatedResult, err := job.AggregateLifecycleResults()
+	if err != nil {
+		log.Logger.Warn("Error aggregating lifecycle results", "error", err)
+		// Don't fail the request, just return empty result
+	}
+
 	w.WriteHeader(http.StatusOK)
 	render.Render(w, r, &v1.LifecycleResponse{
-		HTTPStatusCode: http.StatusOK,
-		RequestID:      RequestID,
-		Status:         status,
+		HTTPStatusCode:  http.StatusOK,
+		RequestID:       RequestID,
+		Status:          status,
+		LifecycleResult: aggregatedResult,
 	})
 }
 

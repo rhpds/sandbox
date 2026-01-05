@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
@@ -279,4 +280,76 @@ func (j *LifecyclePlacementJob) GlobalStatus() (string, error) {
 		return "unknown", err
 	}
 	return status, nil
+}
+
+// AggregateLifecycleResults returns the aggregated lifecycle_result from all child resource jobs
+func (j *LifecyclePlacementJob) AggregateLifecycleResults() (Status, error) {
+	aggregated := Status{
+		AwsInstances: []AwsInstance{},
+		OcpResources: []OcpResource{},
+	}
+
+	rows, err := j.DbPool.Query(
+		context.TODO(),
+		`SELECT id FROM lifecycle_resource_jobs
+         WHERE parent_id = $1
+         ORDER BY updated_at`,
+		j.ID,
+	)
+
+	if err != nil {
+		return aggregated, err
+	}
+
+	defer rows.Close()
+
+	var latestUpdatedAt time.Time
+
+	for rows.Next() {
+		var idR int
+		err := rows.Scan(&idR)
+		if err != nil {
+			return aggregated, err
+		}
+
+		job, err := GetLifecycleResourceJob(j.DbPool, idR)
+		if err != nil {
+			return aggregated, err
+		}
+
+		// Track the latest updated_at from child jobs
+		if job.UpdatedAt.After(latestUpdatedAt) {
+			latestUpdatedAt = job.UpdatedAt
+		}
+
+		// Set the account info from the first job (they should all have the same placement)
+		if aggregated.AccountName == "" {
+			aggregated.AccountName = job.ResourceName
+			aggregated.AccountKind = job.ResourceType
+		}
+
+		// Append AWS instances from child job's result
+		if job.Result.AwsInstances != nil {
+			aggregated.AwsInstances = append(aggregated.AwsInstances, job.Result.AwsInstances...)
+		}
+
+		// Append OCP resources from child job's result
+		if job.Result.OcpResources != nil {
+			aggregated.OcpResources = append(aggregated.OcpResources, job.Result.OcpResources...)
+		}
+	}
+
+	if rows.Err() != nil {
+		log.Logger.Error("Error iterating over rows for aggregation", "err", rows.Err())
+		return aggregated, rows.Err()
+	}
+
+	// Set UpdatedAt to the latest from child jobs, or now if no children
+	if latestUpdatedAt.IsZero() {
+		aggregated.UpdatedAt = time.Now()
+	} else {
+		aggregated.UpdatedAt = latestUpdatedAt
+	}
+
+	return aggregated, nil
 }
