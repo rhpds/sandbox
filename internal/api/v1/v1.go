@@ -77,8 +77,8 @@ type LifecycleResponse struct {
 }
 
 type AccountStatusResponse struct {
-	HTTPStatusCode int           `json:"http_code,omitempty"` // http response status code
-	Status         models.Status `json:"status,omitempty"`
+	HTTPStatusCode int `json:"http_code,omitempty"` // http response status code
+	models.Status
 }
 
 type PlacementStatusResponse struct {
