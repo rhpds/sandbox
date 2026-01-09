@@ -1267,6 +1267,7 @@ func (a *OcpSandboxProvider) Request(
 						"serviceUuid":                          serviceUuid,
 						"guid":                                 annotations["guid"],
 						"created-by":                           "sandbox-api",
+						"cost_management_optimizations":        "true",
 					},
 				},
 			}, metav1.CreateOptions{})
