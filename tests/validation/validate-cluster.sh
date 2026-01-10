@@ -12,17 +12,20 @@ _on_exit() {
     local exit_status=${1:-$?}
 
     # Kill entire process group of the API
-    [ -n "${apipid}" ] &&  kill -- -$apipid
+    [ -n "${apipid}" ] && kill -- -$apipid
 
     rm -rf $tmpdir
     cd $jobdir
 
-    (. ./.dev.pgenv ;
-     podman run --rm \
-         --net=host \
-         -v $(pwd):/backup:z \
-         postgres:16-bullseye \
-         pg_dump "${DATABASE_URL}" -f /backup/db_dump.sql
+    (
+        . ./.dev.pgenv
+        podman run --rm \
+            --net=host \
+            --security-opt label=disable \
+            --userns=host \
+            -v $(pwd):/backup:z \
+            postgres:16-bullseye \
+            pg_dump "${DATABASE_URL}" -f /backup/db_dump.sql
     )
     gzip -f $dbdump
     gzip -f $apilog
@@ -32,7 +35,6 @@ _on_exit() {
 }
 
 trap "_on_exit" EXIT
-
 
 set -e -o pipefail
 unset DBUS_SESSION_BUS_ADDRESS
@@ -49,7 +51,7 @@ fi
 mandatory_commands=(jq podman)
 
 for cmd in "${mandatory_commands[@]}"; do
-    if ! command -v $cmd &> /dev/null; then
+    if ! command -v $cmd &>/dev/null; then
         echo "$cmd could not be found"
         exit 1
     fi
@@ -63,7 +65,7 @@ podman pull --quiet docker.io/bitwarden/bws:0.5.0
 
 # Run the local postgresql instance
 set +o pipefail
-POSTGRESQL_PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq)  | shuf  | head -n 1 )
+POSTGRESQL_PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq) | shuf 2>/dev/null | head -n 1)
 if [ -z "$POSTGRESQL_PORT" ]; then
     echo "No free port found"
     exit 1
@@ -88,7 +90,7 @@ make tokens
 # Select a free port
 #PORT=54379
 set +o pipefail
-PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq)  | shuf  | head -n 1 )
+PORT=$(comm -23 <(seq 49152 65535) <(ss -tan | awk '{print $4}' | cut -d':' -f2 | grep "[0-9]\{1,5\}" | sort | uniq) | shuf 2>/dev/null | head -n 1)
 if [ -z "$PORT" ]; then
     echo "No free port found"
     exit 1
@@ -97,7 +99,7 @@ set -o pipefail
 export PORT
 
 echo "Running sandbox API on port $PORT"
-setsid make run-api &> $apilog &
+setsid make run-api &>$apilog &
 apipid=$!
 
 # Wait for the API to come up
@@ -108,7 +110,7 @@ while true; do
         echo "API not coming up"
         exit 1
     fi
-    if  [ "$(curl http://localhost:$PORT/ping -s)" == "." ]; then
+    if [ "$(curl http://localhost:$PORT/ping -s)" == "." ]; then
         break
     fi
 
@@ -139,13 +141,14 @@ load_cluster_conf() {
     [ -z "$cluster" ] && echo "Cluster name not found in $payload" && exit 1
     payload2=$tmpdir/$(basename $payload)
     token=$(podman run --rm \
-            -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
-            -e PROJECT_ID=$BWS_PROJECT_ID \
-            --security-opt seccomp=unconfined \
-            bitwarden/bws:0.5.0 secret list  $BWS_PROJECT_ID \
-            | KEYVALUE="${cluster}.token" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
+        -e BWS_ACCESS_TOKEN=$BWS_ACCESS_TOKEN \
+        -e PROJECT_ID=$BWS_PROJECT_ID \
+        --security-opt label=disable \
+        --userns=host \
+        bitwarden/bws:0.5.0 secret list $BWS_PROJECT_ID |
+        KEYVALUE="${cluster}.token" jq -r '.[] | select(.key==env.KEYVALUE) | .value')
 
-    jq  --arg token $token '(.token = $token)'  < "$payload" > "$payload2"
+    jq --arg token $token '(.token = $token)' <"$payload" >"$payload2"
 
     # In bash, files in a * are sorted alphabetically by default
     # so a create will always happen before an update.
@@ -192,7 +195,7 @@ fi
 get_cluster_conf() {
     local cluster=$1
     local route=http://localhost:$PORT
-    accesstoken=$(curl -s $route/api/v1/login  -H "Authorization: Bearer $admintoken"|jq -r .access_token)
+    accesstoken=$(curl -s $route/api/v1/login -H "Authorization: Bearer $admintoken" | jq -r .access_token)
 
     curl -s $route/api/v1/ocp-shared-cluster-configurations/$cluster \
         -H "Authorization: Bearer $accesstoken"
