@@ -1,6 +1,7 @@
 package dynamodb
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"sort"
@@ -53,6 +54,10 @@ type AwsAccountDynamoDB struct {
 	Comment            string  `json:"comment"`
 	AwsAccessKeyID     string  `json:"aws_access_key_id"`
 	AwsSecretAccessKey string  `json:"aws_secret_access_key"`
+	// CustomData holds encrypted JSON data for external account linking (e.g., RHSSO credentials)
+	CustomData string `json:"custom_data,omitempty"`
+	// RhssoUsername is a cleartext field for visibility/OPS (extracted from custom_data.rhsso.username)
+	RhssoUsername string `json:"rhsso_username,omitempty"`
 	// Conan
 	ToCleanup         bool              `json:"to_cleanup"`
 	ConanStatus       string            `json:"conan_status"`
@@ -109,6 +114,7 @@ func makeAccount(account AwsAccountDynamoDB) models.AwsAccount {
 		AccountID:         account.AccountID,
 		Zone:              account.Zone,
 		HostedZoneID:      account.HostedZoneID,
+		RhssoUsername:     account.RhssoUsername,
 		ConanStatus:       account.ConanStatus,
 		ConanHostname:     account.ConanHostname,
 		ConanCleanupCount: account.ConanCleanupCount,
@@ -190,6 +196,16 @@ func (provider *AwsAccountDynamoDBProvider) makeAccountWithCreds(account AwsAcco
 
 	// For now, an account only has one credential: an IAM key
 	result.Credentials = []any{iamKey}
+
+	// Decrypt and include custom_data if present
+	if account.CustomData != "" {
+		customData, err := provider.DecryptCustomData(account.CustomData)
+		if err != nil {
+			log.Logger.Error("Error decrypting custom_data", "account", account.Name, "error", err)
+		} else {
+			result.CustomData = customData
+		}
+	}
 
 	return result
 }
@@ -920,6 +936,51 @@ func (a *AwsAccountDynamoDBProvider) DecryptSecret(encrypted string) (string, er
 	}
 	str = strings.Trim(string(str), "\r\n\t ")
 	return str, nil
+}
+
+// DecryptCustomData decrypts an encrypted custom_data field and unmarshals it to a map.
+// Returns nil if the encrypted string is empty or not present.
+func (a *AwsAccountDynamoDBProvider) DecryptCustomData(encrypted string) (map[string]any, error) {
+	if encrypted == "" {
+		return nil, nil
+	}
+
+	decrypted, err := vault.Decrypt(encrypted, a.VaultSecret)
+	if err != nil {
+		return nil, err
+	}
+	decrypted = strings.Trim(decrypted, "\r\n\t ")
+
+	if decrypted == "" {
+		return nil, nil
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(decrypted), &result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// EncryptCustomData marshals a map to JSON and encrypts it.
+// Returns empty string if the data is nil or empty.
+func (a *AwsAccountDynamoDBProvider) EncryptCustomData(data map[string]any) (string, error) {
+	if data == nil || len(data) == 0 {
+		return "", nil
+	}
+
+	jsonBytes, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+
+	encrypted, err := vault.Encrypt(string(jsonBytes), a.VaultSecret)
+	if err != nil {
+		return "", err
+	}
+
+	return encrypted, nil
 }
 
 // GetAccountsByReservation returns the list of accounts from dynamodb for a specific reservation

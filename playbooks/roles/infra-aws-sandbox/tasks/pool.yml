@@ -80,11 +80,46 @@
       register: r_get_external_id
       changed_when: false
 
+    - name: Get custom_data (encrypted)
+      vars:
+        _data:
+          name:
+            S: "{{ account_name }}"
+      command: >-
+        {{ aws_cli }} --profile {{ dynamodb_profile | quote }}
+        --region {{ dynamodb_region | quote }}
+        dynamodb get-item
+        --table-name {{ dynamodb_table }}
+        --key '{{ _data | to_json }}'
+        --query 'Item.custom_data'
+        --output text
+      register: r_get_custom_data
+      changed_when: false
+
+    - name: Get rhsso_username (cleartext)
+      vars:
+        _data:
+          name:
+            S: "{{ account_name }}"
+      command: >-
+        {{ aws_cli }} --profile {{ dynamodb_profile | quote }}
+        --region {{ dynamodb_region | quote }}
+        dynamodb get-item
+        --table-name {{ dynamodb_table }}
+        --key '{{ _data | to_json }}'
+        --query 'Item.rhsso_username'
+        --output text
+      register: r_get_rhsso_username
+      changed_when: false
+
     - name: Save some values for after cleanup
       set_fact:
         external_id: "{{ r_get_external_id.stdout }}"
+        sandbox_custom_data: "{{ r_get_custom_data.stdout }}"
+        sandbox_rhsso_username: "{{ r_get_rhsso_username.stdout }}"
 
-    - when: sandbox_reservation | default("", true) not in ["", "None", "null"]
+    - name: Build additional_data with reservation and external_id
+      when: sandbox_reservation | default("", true) not in ["", "None", "null"]
       set_fact:
         additional_data:
           reservation:
@@ -92,9 +127,20 @@
           external_id:
             S: "{{ external_id }}"
 
-    - when: sandbox_reservation | default("", true) in ["", "None", "null"]
+    - name: Set empty additional_data if no reservation
+      when: sandbox_reservation | default("", true) in ["", "None", "null"]
       set_fact:
         additional_data: {}
+
+    - name: Add custom_data to additional_data if present
+      when: sandbox_custom_data | default("", true) not in ["", "None", "null"]
+      set_fact:
+        additional_data: "{{ additional_data | combine({'custom_data': {'S': sandbox_custom_data}}) }}"
+
+    - name: Add rhsso_username to additional_data if present
+      when: sandbox_rhsso_username | default("", true) not in ["", "None", "null"]
+      set_fact:
+        additional_data: "{{ additional_data | combine({'rhsso_username': {'S': sandbox_rhsso_username}}) }}"
 
     - name: Pre-Reset account information for validation
       vars:

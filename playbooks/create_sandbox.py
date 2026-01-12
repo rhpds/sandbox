@@ -45,6 +45,7 @@ parser.add_argument('--hcc', required=False, help='run the registration step for
 parser.add_argument('--rhsm-access', required=False, help='run the registration step for Gold images using access.redhat.com?', action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument('--validation', required=False, help='run the validation playbook?', action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument('--guess-strategy', required=False, help='How to guess the next number: smart, end', default='end')
+parser.add_argument('--custom-data', required=False, help='Custom data JSON string or path to a JSON file. Will be stored encrypted in DynamoDB.', default=None)
 
 args = parser.parse_args()
 
@@ -59,6 +60,32 @@ hcc = args.hcc
 rhsm_access = args.rhsm_access
 validation = args.validation
 guess_strategy = args.guess_strategy
+custom_data_arg = args.custom_data
+
+# Parse custom_data: can be a JSON string or a path to a JSON file
+custom_data = None
+custom_data_encrypted = None
+rhsso_username = None
+
+if custom_data_arg:
+    # Check if it's a file path
+    if os.path.isfile(custom_data_arg):
+        with open(custom_data_arg, 'r') as f:
+            custom_data = json.load(f)
+    else:
+        # Assume it's a JSON string
+        try:
+            custom_data = json.loads(custom_data_arg)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse custom-data as JSON: {e}")
+            sys.exit(1)
+
+    # Extract rhsso_username if present (from custom_data.rhsso.username)
+    if isinstance(custom_data, dict):
+        rhsso = custom_data.get('rhsso', {})
+        if isinstance(rhsso, dict) and 'username' in rhsso:
+            rhsso_username = rhsso['username']
+            logger.info(f"Extracted rhsso_username from custom_data", rhsso_username=rhsso_username)
 
 if log_level == 'debug':
     logger.info("Setting log level to DEBUG")
@@ -146,6 +173,13 @@ with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
     f.write(os.environ['INFRA_VAULT_SECRET'])
     INFRA_VAULT_SECRET_FILE = f.name
     logger.info(f"Created temporary file {INFRA_VAULT_SECRET_FILE}")
+
+# Encrypt custom_data if provided
+if custom_data is not None:
+    vault = Vault(os.environ['INFRA_VAULT_SECRET'])
+    custom_data_json = json.dumps(custom_data)
+    custom_data_encrypted = vault.dump(custom_data_json)
+    logger.info("Encrypted custom_data for storage")
 
 
 def set_str(dynamodb, sandbox, key, value):
@@ -397,6 +431,20 @@ def lock_sandbox(dynamodb, sandbox):
             'S': 'in progress'
         }
     }
+
+    # Add custom_data (encrypted) if provided
+    if custom_data_encrypted:
+        item['custom_data'] = {
+            'S': custom_data_encrypted
+        }
+        logger.info("Added encrypted custom_data to sandbox")
+
+    # Add rhsso_username (cleartext) if extracted from custom_data
+    if rhsso_username:
+        item['rhsso_username'] = {
+            'S': rhsso_username
+        }
+        logger.info("Added rhsso_username to sandbox", rhsso_username=rhsso_username)
 
     response = dynamodb.put_item(
         TableName=dynamodb_table,

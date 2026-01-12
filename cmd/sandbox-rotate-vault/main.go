@@ -90,6 +90,33 @@ func main() {
 
 		account.AwsSecretAccessKey = enc
 
+		// Build update expression and values
+		updateExpression := "SET aws_secret_access_key = :secret"
+		expressionAttrValues := map[string]*dynamodb.AttributeValue{
+			":secret": {
+				S: aws.String(enc),
+			},
+		}
+
+		// Rotate custom_data if present
+		if account.CustomData != "" {
+			customDataStr, err := vault.Decrypt(account.CustomData, old)
+			if err != nil {
+				fmt.Println("Error decrypting custom_data for", account.Name, ":", err)
+				// Skip custom_data rotation for this account, but continue with secret
+			} else {
+				customDataEnc, err := vault.Encrypt(customDataStr, new)
+				if err != nil {
+					fmt.Println("Error encrypting custom_data for", account.Name, ":", err)
+					os.Exit(1)
+				}
+				updateExpression += ", custom_data = :customdata"
+				expressionAttrValues[":customdata"] = &dynamodb.AttributeValue{
+					S: aws.String(customDataEnc),
+				}
+			}
+		}
+
 		// Update dynamodb item
 		_, err = accountProvider.Svc.UpdateItem(&dynamodb.UpdateItemInput{
 			TableName: aws.String(os.Getenv("dynamodb_table")),
@@ -98,12 +125,8 @@ func main() {
 					S: aws.String(account.Name),
 				},
 			},
-			UpdateExpression: aws.String("SET aws_secret_access_key = :tc"),
-			ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-				":tc": {
-					S: aws.String(enc),
-				},
-			},
+			UpdateExpression:          aws.String(updateExpression),
+			ExpressionAttributeValues: expressionAttrValues,
 		})
 		if err != nil {
 			log.Logger.Error("error updating the sandbox secret", "name", account.Name, "error", err)

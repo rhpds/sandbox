@@ -2949,6 +2949,12 @@ components:
         hosted_zone_id:
           type: string
           example: Z019612345AH4C7KTTZJ0
+        rhsso_username:
+          type: string
+          description: |
+            Cleartext RHSSO username for visibility and operations.
+            Extracted from custom_data.rhsso.username when present.
+          example: rhpds-user-abc123
         to_cleanup:
           type: boolean
           default: false
@@ -2995,6 +3001,17 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/Credentials'
+            custom_data:
+              type: object
+              description: |
+                Decrypted custom data for external account linking (e.g., RHSSO credentials).
+                This field contains personalized data associated with the account.
+                The data is stored encrypted in DynamoDB and decrypted when returned.
+              additionalProperties: true
+              example:
+                rhsso:
+                  username: rhpds-user-abc123
+                  password: secret-password
 
 
     OcpSandbox:
