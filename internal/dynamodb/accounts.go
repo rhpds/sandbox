@@ -337,6 +337,15 @@ func (a *AwsAccountDynamoDBProvider) FetchByName(name string) (models.AwsAccount
 	return makeAccount(account), nil
 }
 
+// FetchByNameWithCreds returns an account with credentials and custom_data by name
+func (a *AwsAccountDynamoDBProvider) FetchByNameWithCreds(name string) (models.AwsAccountWithCreds, error) {
+	account, err := GetAccount(a.Svc, name)
+	if err != nil {
+		return models.AwsAccountWithCreds{}, err
+	}
+	return a.makeAccountWithCreds(account), nil
+}
+
 // FetchAll returns the list of all accounts from dynamodb
 func (a *AwsAccountDynamoDBProvider) FetchAll() ([]models.AwsAccount, error) {
 	filter := expression.Name("name").AttributeExists()

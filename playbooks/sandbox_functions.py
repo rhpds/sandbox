@@ -3,6 +3,19 @@
 import os
 from ansible_vault import Vault
 
+
+def decrypt_vaulted_str(secret: str) -> str:
+    '''Decrypt the vaulted secret'''
+    vault = Vault(os.environ['INFRA_VAULT_SECRET'])
+    return vault.load(secret)
+
+
+def encrypt_vaulted_str(plaintext: str) -> str:
+    '''Encrypt a string using ansible-vault format'''
+    vault = Vault(os.environ['INFRA_VAULT_SECRET'])
+    return vault.dump(plaintext)
+
+
 def extract_sandbox_number(sandbox):
     """Extract the number from the sandbox name, for example sandbox1234 returns 1234"""
     return int(sandbox.split('sandbox')[1])
@@ -22,10 +35,6 @@ def get_sandbox(dynamodb, dynamodb_table, sandbox):
         return response['Item']
     else:
         return {}
-
-def decrypt_vaulted_str(secret):
-    '''Decrypt the vaulted secret'''
-    return Vault(os.environ['INFRA_VAULT_SECRET']).load_raw(secret).decode('utf-8')
 
 def get_all_sandboxes(dynamodb, dynamodb_table):
     response = dynamodb.scan(

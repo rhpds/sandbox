@@ -95,6 +95,7 @@ type AwsAccountProvider interface {
 	FetchAllSorted(by string) ([]AwsAccount, error)
 	FetchAllToCleanup() ([]AwsAccount, error)
 	FetchByName(name string) (AwsAccount, error)
+	FetchByNameWithCreds(name string) (AwsAccountWithCreds, error)
 	MarkForCleanup(name string) error
 	MarkForCleanupByServiceUuid(serviceUuid string) error
 	Request(service_uuid string, reservation string, count int, annotations Annotations) ([]AwsAccountWithCreds, error)

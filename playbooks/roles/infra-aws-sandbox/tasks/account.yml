@@ -82,7 +82,7 @@
     - account_id is not defined
   block:
   - name: Save status of the sandbox
-    when: update_stage
+    when: update_stage | default(false) | bool
     vars:
       step1: "1 - Account Creation Started"
       _data:
@@ -128,7 +128,7 @@
       retries: 40
       changed_when: false
 
-    - when: update_stage and _describestatus.stdout == 'FAILED'
+    - when: (update_stage | default(false) | bool) and _describestatus.stdout == 'FAILED'
       block:
         - name: Save failed status of the sandbox
           command: >-

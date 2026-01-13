@@ -3,7 +3,7 @@
   environment:
     AWS_ACCESS_KEY_ID: ""
     AWS_SECRET_ACCESS_KEY: ""
-  sts_assume_role:
+  amazon.aws.sts_assume_role:
     profile: "{{ aws_master_profile }}"
     role_arn: "arn:aws:iam::{{ account_id }}:role/OrganizationAccountAccessRole"
     role_session_name: "AssumeSandbox"

@@ -581,13 +581,25 @@ paths:
         - account
       operationId: getAccount
       summary: Get information about an account
+      parameters:
+        - name: full
+          in: query
+          required: false
+          description: |
+            If true, return full account data including credentials and custom_data.
+            Only applicable for AwsSandbox kind.
+          schema:
+            type: boolean
+            default: false
       responses:
         '200':
-          description: The account
+          description: The account. If full=true, returns AwsAccountWithCreds including credentials and custom_data.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Account"
+                oneOf:
+                  - $ref: "#/components/schemas/Account"
+                  - $ref: "#/components/schemas/AwsAccountWithCreds"
         '404':
           description: getAccount account not found
           content:

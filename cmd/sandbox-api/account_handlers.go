@@ -176,15 +176,45 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 
 // GetAccountHandler returns an account
 // GET /accounts/{kind}/{account}
+// Query params:
+//   - full=true: include credentials and custom_data (returns AwsAccountWithCreds)
 func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Request) {
 	// Grab the parameters from Params
 	accountName := chi.URLParam(r, "account")
 	kind := chi.URLParam(r, "kind")
+	full := r.URL.Query().Get("full") == "true"
 
 	switch kind {
 	case "AwsSandbox", "aws":
+		if full {
+			// Get the account with credentials and custom_data
+			sandbox, err := h.awsAccountProvider.FetchByNameWithCreds(accountName)
+			if err != nil {
+				if err == models.ErrAccountNotFound {
+					log.Logger.Warn("GET account", "error", err)
+					w.WriteHeader(http.StatusNotFound)
+					render.Render(w, r, &v1.Error{
+						HTTPStatusCode: http.StatusNotFound,
+						Message:        "Account not found",
+					})
+					return
+				}
+				log.Logger.Error("GET account", "error", err)
 
-		// Get the account from DynamoDB
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: 500,
+					Message:        "Error reading account",
+				})
+				return
+			}
+			// Print account with credentials using JSON
+			w.WriteHeader(http.StatusOK)
+			render.Render(w, r, &sandbox)
+			return
+		}
+
+		// Get the account from DynamoDB (basic info only)
 		sandbox, err := h.awsAccountProvider.FetchByName(accountName)
 		if err != nil {
 			if err == models.ErrAccountNotFound {
