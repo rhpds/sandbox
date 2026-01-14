@@ -3031,6 +3031,15 @@ components:
                 rhsso:
                   username: rhpds-user-abc123
                   password: secret-password
+            warnings:
+              type: array
+              description: |
+                Non-fatal errors encountered when processing the account (e.g., decryption failures).
+                If present, indicates that some data may be missing or invalid.
+              items:
+                type: string
+              example:
+                - "failed to decrypt custom_data: invalid character '\\'' looking for beginning of value"
 
 
     OcpSandbox:

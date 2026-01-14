@@ -934,8 +934,31 @@ if hcc:
         logger.info("Policy created", policy_name=policy_name, md5=md5_policy)
     else:
         # update permission
+        policy_arn = f"arn:aws:iam::{account_id}:policy/{policy_name}"
+
+        # AWS allows max 5 policy versions - delete oldest non-default if at limit
+        versions_response = iam_client.list_policy_versions(PolicyArn=policy_arn)
+        versions = versions_response.get("Versions", [])
+
+        if len(versions) >= 5:
+            # Find oldest non-default version to delete
+            non_default_versions = [v for v in versions if not v["IsDefaultVersion"]]
+            if non_default_versions:
+                # Sort by create date, delete oldest
+                non_default_versions.sort(key=lambda v: v["CreateDate"])
+                oldest = non_default_versions[0]
+                iam_client.delete_policy_version(
+                    PolicyArn=policy_arn,
+                    VersionId=oldest["VersionId"],
+                )
+                logger.info(
+                    "Deleted old policy version",
+                    policy_name=policy_name,
+                    version_id=oldest["VersionId"],
+                )
+
         response = iam_client.create_policy_version(
-            PolicyArn=f"arn:aws:iam::{account_id}:policy/{policy_name}",
+            PolicyArn=policy_arn,
             PolicyDocument=json.dumps(policy),
             SetAsDefault=True,
         )

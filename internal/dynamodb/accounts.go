@@ -202,6 +202,7 @@ func (provider *AwsAccountDynamoDBProvider) makeAccountWithCreds(account AwsAcco
 		customData, err := provider.DecryptCustomData(account.CustomData)
 		if err != nil {
 			log.Logger.Error("Error decrypting custom_data", "account", account.Name, "error", err)
+			result.Warnings = append(result.Warnings, "failed to decrypt custom_data: "+err.Error())
 		} else {
 			result.CustomData = customData
 		}

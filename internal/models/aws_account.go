@@ -67,6 +67,8 @@ type AwsAccountWithCreds struct {
 	Provider    AwsAccountProvider `json:"-"`
 	// CustomData holds decrypted JSON data for external account linking (e.g., RHSSO credentials)
 	CustomData map[string]any `json:"custom_data,omitempty"`
+	// Warnings contains any non-fatal errors encountered (e.g., decryption failures)
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type AwsIamKey struct {
