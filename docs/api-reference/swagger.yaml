@@ -588,6 +588,7 @@ paths:
           description: |
             If true, return full account data including credentials and custom_data.
             Only applicable for AwsSandbox kind.
+            **ADMIN ONLY** - requires admin role, returns 403 Forbidden for non-admin users.
           schema:
             type: boolean
             default: false
@@ -600,6 +601,12 @@ paths:
                 oneOf:
                   - $ref: "#/components/schemas/Account"
                   - $ref: "#/components/schemas/AwsAccountWithCreds"
+        '403':
+          description: Forbidden - admin role required for full=true parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         '404':
           description: getAccount account not found
           content:

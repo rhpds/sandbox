@@ -117,6 +117,7 @@ custom_data = None
 custom_data_encrypted = None
 rhsso_username = None
 
+logger.info(f"custom_data_arg received: {bool(custom_data_arg)}")
 if custom_data_arg:
     # Check if it's a file path
     if os.path.isfile(custom_data_arg):
@@ -434,37 +435,71 @@ if sandbox_data:
 
 def lock_sandbox(dynamodb, sandbox):
     """Lock the sandbox name"""
-    item = {
-        "name": {"S": new_sandbox},
-        "available": {"BOOL": False},
-        "to_cleanup": {"BOOL": False},
-        "reservation": {"S": "untested"},
-        "comment": {"S": "Creating new sandbox"},
-        "stage": {"S": STAGE0},
-        "creation_status": {"S": "in progress"},
-    }
+    logger.debug(f"lock_sandbox called with retry={retry}")
+    if retry:
+        # For retry, use update_item to preserve existing fields
+        update_expr = "SET available = :avail, to_cleanup = :cleanup, reservation = :res, #c = :comment, stage = :stage, creation_status = :status"
+        expr_attr_names = {"#c": "comment"}
+        expr_attr_values = {
+            ":avail": {"BOOL": False},
+            ":cleanup": {"BOOL": False},
+            ":res": {"S": "untested"},
+            ":comment": {"S": "Creating new sandbox (retry)"},
+            ":stage": {"S": STAGE0},
+            ":status": {"S": "in progress"},
+        }
 
-    # Add custom_data (encrypted) if provided
-    if custom_data_encrypted:
-        item["custom_data"] = {"S": custom_data_encrypted}
-        logger.info("Added encrypted custom_data to sandbox")
+        # Add custom_data (encrypted) if provided
+        if custom_data_encrypted:
+            update_expr += ", custom_data = :customdata"
+            expr_attr_values[":customdata"] = {"S": custom_data_encrypted}
+            logger.info("Added encrypted custom_data to sandbox")
 
-    # Add rhsso_username (cleartext) if extracted from custom_data
-    if rhsso_username:
-        item["rhsso_username"] = {"S": rhsso_username}
-        logger.info("Added rhsso_username to sandbox", rhsso_username=rhsso_username)
+        # Add rhsso_username (cleartext) if extracted from custom_data
+        if rhsso_username:
+            update_expr += ", rhsso_username = :rhsso"
+            expr_attr_values[":rhsso"] = {"S": rhsso_username}
+            logger.info(
+                "Added rhsso_username to sandbox", rhsso_username=rhsso_username
+            )
 
-    response = dynamodb.put_item(
-        TableName=dynamodb_table,
-        # If retry, no condition is needed
-        ConditionExpression=(
-            "attribute_not_exists(#n)"
-            if not retry
-            else "attribute_exists(#n) or attribute_not_exists(#n)"
-        ),
-        ExpressionAttributeNames={"#n": "name"},
-        Item=item,
-    )
+        response = dynamodb.update_item(
+            TableName=dynamodb_table,
+            Key={"name": {"S": new_sandbox}},
+            UpdateExpression=update_expr,
+            ExpressionAttributeNames=expr_attr_names,
+            ExpressionAttributeValues=expr_attr_values,
+        )
+    else:
+        # For new sandbox, use put_item
+        item = {
+            "name": {"S": new_sandbox},
+            "available": {"BOOL": False},
+            "to_cleanup": {"BOOL": False},
+            "reservation": {"S": "untested"},
+            "comment": {"S": "Creating new sandbox"},
+            "stage": {"S": STAGE0},
+            "creation_status": {"S": "in progress"},
+        }
+
+        # Add custom_data (encrypted) if provided
+        if custom_data_encrypted:
+            item["custom_data"] = {"S": custom_data_encrypted}
+            logger.info("Added encrypted custom_data to sandbox")
+
+        # Add rhsso_username (cleartext) if extracted from custom_data
+        if rhsso_username:
+            item["rhsso_username"] = {"S": rhsso_username}
+            logger.info(
+                "Added rhsso_username to sandbox", rhsso_username=rhsso_username
+            )
+
+        response = dynamodb.put_item(
+            TableName=dynamodb_table,
+            ConditionExpression="attribute_not_exists(#n)",
+            ExpressionAttributeNames={"#n": "name"},
+            Item=item,
+        )
 
     if response["ResponseMetadata"]["HTTPStatusCode"] != 200:
         logger.error("Failed to lock the sandbox name")

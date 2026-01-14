@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/jwtauth/v5"
+	"github.com/go-chi/render"
 	"github.com/jackc/pgx/v4"
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
-
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/render"
 )
 
 type AccountHandler struct {
@@ -177,12 +177,36 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 // GetAccountHandler returns an account
 // GET /accounts/{kind}/{account}
 // Query params:
-//   - full=true: include credentials and custom_data (returns AwsAccountWithCreds)
+//   - full=true: include credentials and custom_data (returns AwsAccountWithCreds) - ADMIN ONLY
 func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Request) {
 	// Grab the parameters from Params
 	accountName := chi.URLParam(r, "account")
 	kind := chi.URLParam(r, "kind")
 	full := r.URL.Query().Get("full") == "true"
+
+	// Check admin role if full=true is requested
+	if full {
+		_, claims, err := jwtauth.FromContext(r.Context())
+
+		if err != nil {
+			log.Logger.Info("Error authenticating request", "error", err, "claims", claims)
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        err.Error(),
+			})
+			return
+		}
+
+		if claims["role"] != "admin" {
+			w.WriteHeader(http.StatusForbidden)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusForbidden,
+				Message:        "Admin role required for full=true parameter",
+			})
+			return
+		}
+	}
 
 	switch kind {
 	case "AwsSandbox", "aws":

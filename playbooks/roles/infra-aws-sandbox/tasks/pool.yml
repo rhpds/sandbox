@@ -14,6 +14,54 @@
 - debug:
     var: _getaccount
 
+# Fetch fields to preserve during CREATE/RESET operations
+# These are fetched once and reused by both CREATE and RESET blocks
+- name: Set account_exists flag
+  set_fact:
+    account_exists: "{{ 'Item' in (_getaccount.stdout | default('{}') | from_json) }}"
+
+- name: Get preserved fields from existing account
+  vars:
+    _data:
+      name:
+        S: "{{ account_name }}"
+  command: >-
+    {{ aws_cli }} --profile {{ dynamodb_profile | quote }}
+    --region {{ dynamodb_region | quote }}
+    dynamodb get-item
+    --table-name {{ dynamodb_table }}
+    --key '{{ _data | to_json }}'
+    --query 'Item.{custom_data: custom_data.S, rhsso_username: rhsso_username.S, reservation: reservation.S, external_id: external_id.S}'
+    --output json
+  register: r_get_preserved
+  changed_when: false
+  when: account_exists | bool
+
+- name: Parse preserved fields from existing account
+  set_fact:
+    _preserved: "{{ r_get_preserved.stdout | from_json }}"
+  when: account_exists | bool
+
+- name: Initialize preserved fields if account doesn't exist
+  set_fact:
+    _preserved:
+      custom_data: null
+      rhsso_username: null
+      reservation: null
+      external_id: null
+  when: not (account_exists | bool)
+
+- name: Build preserved_fields for put-item operations
+  set_fact:
+    preserved_fields: >-
+      {{
+        {}
+        | combine({'custom_data': {'S': _preserved.custom_data}} if _preserved.custom_data not in [None, '', 'None', 'null'] else {})
+        | combine({'rhsso_username': {'S': _preserved.rhsso_username}} if _preserved.rhsso_username not in [None, '', 'None', 'null'] else {})
+        | combine({'reservation': {'S': _preserved.reservation}} if _preserved.reservation not in [None, '', 'None', 'null'] else {})
+        | combine({'external_id': {'S': _preserved.external_id}} if _preserved.external_id not in [None, '', 'None', 'null'] else {})
+      }}
+
 - name: Create account in DB if it doesn't exist
   vars:
     _data:
@@ -35,113 +83,15 @@
     {{ aws_cli }} --profile {{ dynamodb_profile }} --region {{ dynamodb_region }}
     dynamodb put-item
     --table-name {{ dynamodb_table }}
-    --item '{{ _data | to_json }}'
+    --item '{{ _data | combine(preserved_fields | default({}), recursive=True) | to_json }}'
   register: _putaccount
-  when: _getaccount.stdout == '' or (force_create | default(false) | bool) or (update_stage | default(false) | bool)
+  when: not (account_exists | bool) or (force_create | default(false) | bool) or (update_stage | default(false) | bool)
 
 - debug:
     var: _putaccount
 
 - when: operation == 'RESET'
   block:
-    - name: Get sandbox reservation
-      vars:
-        _data:
-          name:
-            S: "{{ account_name }}"
-      command: >-
-        {{ aws_cli }} --profile {{ dynamodb_profile | quote }}
-        --region {{ dynamodb_region | quote }}
-        dynamodb get-item
-        --table-name {{ dynamodb_table }}
-        --key '{{ _data | to_json }}'
-        --query 'Item.reservation'
-        --output text
-      register: r_get_reservation
-      changed_when: false
-
-    - name: Save some values for after cleanup
-      set_fact:
-        sandbox_reservation: "{{ r_get_reservation.stdout }}"
-
-    - name: Get external_id
-      vars:
-        _data:
-          name:
-            S: "{{ account_name }}"
-      command: >-
-        {{ aws_cli }} --profile {{ dynamodb_profile | quote }}
-        --region {{ dynamodb_region | quote }}
-        dynamodb get-item
-        --table-name {{ dynamodb_table }}
-        --key '{{ _data | to_json }}'
-        --query 'Item.external_id'
-        --output text
-      register: r_get_external_id
-      changed_when: false
-
-    - name: Get custom_data (encrypted)
-      vars:
-        _data:
-          name:
-            S: "{{ account_name }}"
-      command: >-
-        {{ aws_cli }} --profile {{ dynamodb_profile | quote }}
-        --region {{ dynamodb_region | quote }}
-        dynamodb get-item
-        --table-name {{ dynamodb_table }}
-        --key '{{ _data | to_json }}'
-        --query 'Item.custom_data'
-        --output text
-      register: r_get_custom_data
-      changed_when: false
-
-    - name: Get rhsso_username (cleartext)
-      vars:
-        _data:
-          name:
-            S: "{{ account_name }}"
-      command: >-
-        {{ aws_cli }} --profile {{ dynamodb_profile | quote }}
-        --region {{ dynamodb_region | quote }}
-        dynamodb get-item
-        --table-name {{ dynamodb_table }}
-        --key '{{ _data | to_json }}'
-        --query 'Item.rhsso_username'
-        --output text
-      register: r_get_rhsso_username
-      changed_when: false
-
-    - name: Save some values for after cleanup
-      set_fact:
-        external_id: "{{ r_get_external_id.stdout }}"
-        sandbox_custom_data: "{{ r_get_custom_data.stdout }}"
-        sandbox_rhsso_username: "{{ r_get_rhsso_username.stdout }}"
-
-    - name: Build additional_data with reservation and external_id
-      when: sandbox_reservation | default("", true) not in ["", "None", "null"]
-      set_fact:
-        additional_data:
-          reservation:
-            S: "{{ sandbox_reservation }}"
-          external_id:
-            S: "{{ external_id }}"
-
-    - name: Set empty additional_data if no reservation
-      when: sandbox_reservation | default("", true) in ["", "None", "null"]
-      set_fact:
-        additional_data: {}
-
-    - name: Add custom_data to additional_data if present
-      when: sandbox_custom_data | default("", true) not in ["", "None", "null"]
-      set_fact:
-        additional_data: "{{ additional_data | combine({'custom_data': {'S': sandbox_custom_data}}) }}"
-
-    - name: Add rhsso_username to additional_data if present
-      when: sandbox_rhsso_username | default("", true) not in ["", "None", "null"]
-      set_fact:
-        additional_data: "{{ additional_data | combine({'rhsso_username': {'S': sandbox_rhsso_username}}) }}"
-
     - name: Pre-Reset account information for validation
       vars:
         _data:
@@ -166,7 +116,7 @@
         --region {{ dynamodb_region }}
         dynamodb put-item
         --table-name {{ dynamodb_table }}
-        --item '{{ _data | combine(additional_data | default({}), recursive=True) | to_json }}'
+        --item '{{ _data | combine(preserved_fields | default({}), recursive=True) | to_json }}'
 
     - name: Validate Sandbox
       include_tasks: validate.yaml
@@ -193,5 +143,5 @@
         --region {{ dynamodb_region }}
         dynamodb put-item
         --table-name {{ dynamodb_table }}
-        --item '{{ _data | combine(additional_data | default({}), recursive=True) | to_json }}'
+        --item '{{ _data | combine(preserved_fields | default({}), recursive=True) | to_json }}'
       register: _resetaccount
