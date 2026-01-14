@@ -526,6 +526,12 @@ paths:
         description: Filter accounts by placement UUID (usually anarchy UUID)
         schema:
           $ref: '#/components/schemas/UUID'
+      - name: reservation
+        in: query
+        description: Filter accounts by reservation name
+        schema:
+          type: string
+        example: summit
     get:
       tags:
         - account

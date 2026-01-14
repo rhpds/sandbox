@@ -40,6 +40,7 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 
 	kind := chi.URLParam(r, "kind")
 	serviceUuid := r.URL.Query().Get("service_uuid")
+	reservation := r.URL.Query().Get("reservation")
 
 	// Get available from Query
 	available := r.URL.Query().Get("available")
@@ -52,14 +53,13 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 			accounts []models.AwsAccount
 		)
 		if serviceUuid != "" {
-			// Get the account from DynamoDB
 			accounts, err = h.awsAccountProvider.FetchAllByServiceUuid(serviceUuid)
+		} else if reservation != "" {
+			accounts, err = h.awsAccountProvider.FetchAllByReservation(reservation)
+		} else if available == "true" {
+			accounts, err = h.awsAccountProvider.FetchAllAvailable()
 		} else {
-			if available != "" && available == "true" {
-				accounts, err = h.awsAccountProvider.FetchAllAvailable()
-			} else {
-				accounts, err = h.awsAccountProvider.FetchAll()
-			}
+			accounts, err = h.awsAccountProvider.FetchAll()
 		}
 		accountlist = make([]interface{}, len(accounts))
 		for i, acc := range accounts {
