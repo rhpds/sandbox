@@ -3,6 +3,33 @@
 import os
 from ansible_vault import Vault
 
+
+def decrypt_vaulted_str(secret: str) -> str:
+    '''Decrypt the vaulted secret (raw, no YAML parsing)'''
+    vault = Vault(os.environ['INFRA_VAULT_SECRET'])
+    # Ensure input is bytes if the library expects it
+    if isinstance(secret, str):
+        secret = secret.encode('utf-8')
+    result = vault.load_raw(secret)
+    # Decode bytes to string if needed
+    if isinstance(result, bytes):
+        return result.decode('utf-8')
+    return result
+
+
+def encrypt_vaulted_str(plaintext: str) -> str:
+    '''Encrypt a string using ansible-vault format (raw, no YAML serialization)'''
+    vault = Vault(os.environ['INFRA_VAULT_SECRET'])
+    # Ensure input is bytes
+    if isinstance(plaintext, str):
+        plaintext = plaintext.encode('utf-8')
+    result = vault.dump_raw(plaintext)
+    # Return as string
+    if isinstance(result, bytes):
+        return result.decode('utf-8')
+    return result
+
+
 def extract_sandbox_number(sandbox):
     """Extract the number from the sandbox name, for example sandbox1234 returns 1234"""
     return int(sandbox.split('sandbox')[1])
@@ -22,10 +49,6 @@ def get_sandbox(dynamodb, dynamodb_table, sandbox):
         return response['Item']
     else:
         return {}
-
-def decrypt_vaulted_str(secret):
-    '''Decrypt the vaulted secret'''
-    return Vault(os.environ['INFRA_VAULT_SECRET']).load_raw(secret).decode('utf-8')
 
 def get_all_sandboxes(dynamodb, dynamodb_table):
     response = dynamodb.scan(

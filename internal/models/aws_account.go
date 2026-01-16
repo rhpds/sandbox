@@ -37,6 +37,9 @@ type AwsAccount struct {
 	Zone         string `json:"zone"`
 	HostedZoneID string `json:"hosted_zone_id"`
 
+	// RhssoUsername is a cleartext field for visibility/OPS (extracted from custom_data.rhsso.username)
+	RhssoUsername string `json:"rhsso_username,omitempty"`
+
 	ConanStatus       string    `json:"conan_status,omitempty"`
 	ConanTimestamp    time.Time `json:"conan_timestamp,omitempty"`
 	ConanHostname     string    `json:"conan_hostname,omitempty"`
@@ -62,6 +65,10 @@ type AwsAccountWithCreds struct {
 
 	Credentials []any              `json:"credentials"`
 	Provider    AwsAccountProvider `json:"-"`
+	// CustomData holds decrypted JSON data for external account linking (e.g., RHSSO credentials)
+	CustomData map[string]any `json:"custom_data,omitempty"`
+	// Warnings contains any non-fatal errors encountered (e.g., decryption failures)
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type AwsIamKey struct {
@@ -90,6 +97,7 @@ type AwsAccountProvider interface {
 	FetchAllSorted(by string) ([]AwsAccount, error)
 	FetchAllToCleanup() ([]AwsAccount, error)
 	FetchByName(name string) (AwsAccount, error)
+	FetchByNameWithCreds(name string) (AwsAccountWithCreds, error)
 	MarkForCleanup(name string) error
 	MarkForCleanupByServiceUuid(serviceUuid string) error
 	Request(service_uuid string, reservation string, count int, annotations Annotations) ([]AwsAccountWithCreds, error)

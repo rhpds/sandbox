@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/jwtauth/v5"
+	"github.com/go-chi/render"
 	"github.com/jackc/pgx/v4"
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
-
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/render"
 )
 
 type AccountHandler struct {
@@ -40,6 +40,7 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 
 	kind := chi.URLParam(r, "kind")
 	serviceUuid := r.URL.Query().Get("service_uuid")
+	reservation := r.URL.Query().Get("reservation")
 
 	// Get available from Query
 	available := r.URL.Query().Get("available")
@@ -52,14 +53,13 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 			accounts []models.AwsAccount
 		)
 		if serviceUuid != "" {
-			// Get the account from DynamoDB
 			accounts, err = h.awsAccountProvider.FetchAllByServiceUuid(serviceUuid)
+		} else if reservation != "" {
+			accounts, err = h.awsAccountProvider.FetchAllByReservation(reservation)
+		} else if available == "true" {
+			accounts, err = h.awsAccountProvider.FetchAllAvailable()
 		} else {
-			if available != "" && available == "true" {
-				accounts, err = h.awsAccountProvider.FetchAllAvailable()
-			} else {
-				accounts, err = h.awsAccountProvider.FetchAll()
-			}
+			accounts, err = h.awsAccountProvider.FetchAll()
 		}
 		accountlist = make([]interface{}, len(accounts))
 		for i, acc := range accounts {
@@ -176,15 +176,69 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 
 // GetAccountHandler returns an account
 // GET /accounts/{kind}/{account}
+// Query params:
+//   - full=true: include credentials and custom_data (returns AwsAccountWithCreds) - ADMIN ONLY
 func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Request) {
 	// Grab the parameters from Params
 	accountName := chi.URLParam(r, "account")
 	kind := chi.URLParam(r, "kind")
+	full := r.URL.Query().Get("full") == "true"
+
+	// Check admin role if full=true is requested
+	if full {
+		_, claims, err := jwtauth.FromContext(r.Context())
+
+		if err != nil {
+			log.Logger.Info("Error authenticating request", "error", err, "claims", claims)
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        err.Error(),
+			})
+			return
+		}
+
+		if claims["role"] != "admin" {
+			w.WriteHeader(http.StatusForbidden)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusForbidden,
+				Message:        "Admin role required for full=true parameter",
+			})
+			return
+		}
+	}
 
 	switch kind {
 	case "AwsSandbox", "aws":
+		if full {
+			// Get the account with credentials and custom_data
+			sandbox, err := h.awsAccountProvider.FetchByNameWithCreds(accountName)
+			if err != nil {
+				if err == models.ErrAccountNotFound {
+					log.Logger.Warn("GET account", "error", err)
+					w.WriteHeader(http.StatusNotFound)
+					render.Render(w, r, &v1.Error{
+						HTTPStatusCode: http.StatusNotFound,
+						Message:        "Account not found",
+					})
+					return
+				}
+				log.Logger.Error("GET account", "error", err)
 
-		// Get the account from DynamoDB
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: 500,
+					Message:        "Error reading account",
+				})
+				return
+			}
+			// Print account with credentials using JSON
+			w.WriteHeader(http.StatusOK)
+			render.Render(w, r, &sandbox)
+			return
+		}
+
+		// Get the account from DynamoDB (basic info only)
 		sandbox, err := h.awsAccountProvider.FetchByName(accountName)
 		if err != nil {
 			if err == models.ErrAccountNotFound {

@@ -526,6 +526,12 @@ paths:
         description: Filter accounts by placement UUID (usually anarchy UUID)
         schema:
           $ref: '#/components/schemas/UUID'
+      - name: reservation
+        in: query
+        description: Filter accounts by reservation name
+        schema:
+          type: string
+        example: summit
     get:
       tags:
         - account
@@ -581,13 +587,32 @@ paths:
         - account
       operationId: getAccount
       summary: Get information about an account
+      parameters:
+        - name: full
+          in: query
+          required: false
+          description: |
+            If true, return full account data including credentials and custom_data.
+            Only applicable for AwsSandbox kind.
+            **ADMIN ONLY** - requires admin role, returns 403 Forbidden for non-admin users.
+          schema:
+            type: boolean
+            default: false
       responses:
         '200':
-          description: The account
+          description: The account. If full=true, returns AwsAccountWithCreds including credentials and custom_data.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Account"
+                oneOf:
+                  - $ref: "#/components/schemas/Account"
+                  - $ref: "#/components/schemas/AwsAccountWithCreds"
+        '403':
+          description: Forbidden - admin role required for full=true parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         '404':
           description: getAccount account not found
           content:
@@ -2949,6 +2974,12 @@ components:
         hosted_zone_id:
           type: string
           example: Z019612345AH4C7KTTZJ0
+        rhsso_username:
+          type: string
+          description: |
+            Cleartext RHSSO username for visibility and operations.
+            Extracted from custom_data.rhsso.username when present.
+          example: rhpds-user-abc123
         to_cleanup:
           type: boolean
           default: false
@@ -2995,6 +3026,26 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/Credentials'
+            custom_data:
+              type: object
+              description: |
+                Decrypted custom data for external account linking (e.g., RHSSO credentials).
+                This field contains personalized data associated with the account.
+                The data is stored encrypted in DynamoDB and decrypted when returned.
+              additionalProperties: true
+              example:
+                rhsso:
+                  username: rhpds-user-abc123
+                  password: secret-password
+            warnings:
+              type: array
+              description: |
+                Non-fatal errors encountered when processing the account (e.g., decryption failures).
+                If present, indicates that some data may be missing or invalid.
+              items:
+                type: string
+              example:
+                - "failed to decrypt custom_data: invalid character '\\'' looking for beginning of value"
 
 
     OcpSandbox:
