@@ -181,6 +181,7 @@ type LifecycleEvent struct {
 }
 
 func GetLifecycleInstanceEvents(dbpool *pgxpool.Pool) ([]LifecycleEvent, error) {
+	// TODO: support OcpSandbox
 	rows, err := dbpool.Query(
 		context.Background(),
 		`SELECT resource_type,
