@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       image:
-        description: Image (api, admin, conan)
+        description: Image (api, admin, conan, metrics)
         type: string
         default: api
       tag:
