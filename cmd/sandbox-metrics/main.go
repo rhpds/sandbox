@@ -187,7 +187,7 @@ func GetLifecycleInstanceEvents(dbpool *pgxpool.Pool) ([]LifecycleEvent, error) 
                 event_data->>'region' as iregion,
                 event_data->>'instance_type' as itype,
                 event_type, count(*)
-         FROM lifecycle_events GROUP BY resource_type, iregion, itype, event_type;`,
+         FROM lifecycle_events WHERE resource_type = 'AwsSandbox' GROUP BY resource_type, iregion, itype, event_type;`,
 	)
 
 	if err != nil {
