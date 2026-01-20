@@ -692,6 +692,26 @@ func (a *OcpSandboxWithCreds) SetStatus(status string) error {
 	return err
 }
 
+// SetStatusWithMessage sets both the status and error_message fields atomically.
+// This is useful for error states where we want to persist the reason for the failure.
+func (a *OcpSandboxWithCreds) SetStatusWithMessage(status string, message string) error {
+	a.Status = status
+	a.ErrorMessage = message
+	_, err := a.Provider.DbPool.Exec(
+		context.Background(),
+		`UPDATE resources
+		 SET status = $1,
+			 resource_data = jsonb_set(jsonb_set(resource_data, '{status}', to_jsonb($2::text)), '{error_message}', to_jsonb($3::text))
+		 WHERE id = $4`,
+		status, status, message, a.ID,
+	)
+	if err != nil {
+		log.Logger.Error("SetStatusWithMessage failed", "error", err, "id", a.ID, "status", status, "message", message)
+	}
+
+	return err
+}
+
 func (a *OcpSandboxWithCreds) GetStatus() (string, error) {
 	var status string
 	err := a.Provider.DbPool.QueryRow(
@@ -1101,6 +1121,22 @@ func (a *OcpSandboxProvider) Request(
 	//--------------------------------------------------
 	// The following is async
 	task := func() {
+		// Check for fail_book parameter for functional testing (via annotations)
+		// This allows tests to simulate booking failures and verify error_message is properly set
+		// Usage: annotations["sandbox.test/fail_book"] = "true"
+		//        annotations["sandbox.test/fail_reason"] = "Custom error message"
+		if value, exists := annotations["sandbox.test/fail_book"]; exists && (value == "yes" || value == "true") {
+			failReason := "Simulated booking failure for testing"
+			if reason, hasReason := annotations["sandbox.test/fail_reason"]; hasReason && reason != "" {
+				failReason = reason
+			}
+			log.Logger.Info("fail_book triggered for testing", "reason", failReason, "name", rnew.Name, "id", rnew.ID)
+			if err := rnew.SetStatusWithMessage("error", failReason); err != nil {
+				log.Logger.Error("fail_book: SetStatusWithMessage failed", "error", err, "name", rnew.Name, "id", rnew.ID)
+			}
+			return
+		}
+
 	providerLoop:
 		for _, cluster := range candidateClusters {
 			rnew.SetStatus("scheduling")
@@ -1112,28 +1148,28 @@ func (a *OcpSandboxProvider) Request(
 			config, err := cluster.CreateRestConfig()
 			if err != nil {
 				log.Logger.Error("Error creating OCP config", "error", err)
-				rnew.SetStatus("error")
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create OCP config for cluster %s: %v", cluster.Name, err))
 				continue providerLoop
 			}
 
 			clientset, err := kubernetes.NewForConfig(config)
 			if err != nil {
 				log.Logger.Error("Error creating OCP client", "error", err)
-				rnew.SetStatus("error")
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create OCP client for cluster %s: %v", cluster.Name, err))
 				continue providerLoop
 			}
 
 			clientsetMetrics, err := metricsv.NewForConfig(config)
 			if err != nil {
 				log.Logger.Error("Error creating OCP metrics client", "error", err)
-				rnew.SetStatus("error")
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create OCP metrics client for cluster %s: %v", cluster.Name, err))
 				continue providerLoop
 			}
 
 			nodes, err := clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: cluster.UsageNodeSelector})
 			if err != nil {
 				log.Logger.Error("Error listing OCP nodes", "error", err)
-				rnew.SetStatus("error")
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to list nodes on cluster %s: %v", cluster.Name, err))
 				continue providerLoop
 			}
 
@@ -1206,7 +1242,7 @@ func (a *OcpSandboxProvider) Request(
 				"name", rnew.Name,
 				"serviceUuid", rnew.ServiceUuid,
 				"reason", "no cluster available")
-			rnew.SetStatus("error")
+			rnew.SetStatusWithMessage("error", "No cluster available: all clusters are either at capacity or unreachable")
 			return
 		}
 
@@ -1216,14 +1252,14 @@ func (a *OcpSandboxProvider) Request(
 
 		if err := rnew.Save(); err != nil {
 			log.Logger.Error("Error saving OCP account", "error", err)
-			rnew.SetStatus("error")
+			rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to save OCP account: %v", err))
 			return
 		}
 
 		config, err := selectedCluster.CreateRestConfig()
 		if err != nil {
 			log.Logger.Error("Error creating OCP config", "error", err)
-			rnew.SetStatus("error")
+			rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create OCP config for cluster %s: %v", selectedCluster.Name, err))
 			return
 		}
 
@@ -1231,7 +1267,7 @@ func (a *OcpSandboxProvider) Request(
 		clientset, err := kubernetes.NewForConfig(config)
 		if err != nil {
 			log.Logger.Error("Error creating OCP client", "error", err)
-			rnew.SetStatus("error")
+			rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create OCP client for cluster %s: %v", selectedCluster.Name, err))
 			return
 		}
 
@@ -1239,7 +1275,7 @@ func (a *OcpSandboxProvider) Request(
 		dynclientset, err := dynamic.NewForConfig(config)
 		if err != nil {
 			log.Logger.Error("Error creating OCP client", "error", err)
-			rnew.SetStatus("error")
+			rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create dynamic OCP client for cluster %s: %v", selectedCluster.Name, err))
 			return
 		}
 
@@ -1279,7 +1315,7 @@ func (a *OcpSandboxProvider) Request(
 					delay = delay * 2
 					if delay > 90*time.Second {
 						log.Logger.Error("Timeout creating OCP namespace", "error", err)
-						rnew.SetStatus("error")
+						rnew.SetStatusWithMessage("error", fmt.Sprintf("Timeout waiting for namespace %s to be available: %v", namespaceName, err))
 						return
 					}
 
@@ -1287,14 +1323,14 @@ func (a *OcpSandboxProvider) Request(
 				}
 
 				log.Logger.Error("Error creating OCP namespace", "error", err)
-				rnew.SetStatus("error")
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create namespace %s: %v", namespaceName, err))
 				return
 			}
 
 			rnew.Namespace = namespaceName
 			if err := rnew.Save(); err != nil {
 				log.Logger.Error("Error saving OCP account", "error", err)
-				rnew.SetStatus("error")
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to save OCP account after namespace creation: %v", err))
 				return
 			}
 			break
@@ -1317,11 +1353,7 @@ func (a *OcpSandboxProvider) Request(
 				// Check if the requested quota is provided and not empty
 				if requestedQuota == nil || len(*requestedQuota) == 0 {
 					log.Logger.Error("Error creating OCP quota", "error", "requested quota is required")
-					rnew.ErrorMessage = "Quota is required for this cluster and should be specified in the request"
-					if err := rnew.Save(); err != nil {
-						log.Logger.Error("Error saving OCP account", "error", err)
-					}
-					rnew.SetStatus("error")
+					rnew.SetStatusWithMessage("error", "Quota is required for this cluster and should be specified in the request")
 					return
 				}
 			}
@@ -1339,7 +1371,7 @@ func (a *OcpSandboxProvider) Request(
 
 			if err := rnew.Save(); err != nil {
 				log.Logger.Error("Error saving OCP account", "error", err)
-				rnew.SetStatus("error")
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to save OCP account after quota configuration: %v", err))
 				return
 			}
 
@@ -1349,7 +1381,7 @@ func (a *OcpSandboxProvider) Request(
 				if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
 					log.Logger.Error("Error cleaning up the namespace", "error", err)
 				}
-				rnew.SetStatus("error")
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create resource quota in namespace %s: %v", namespaceName, err))
 				return
 			}
 
@@ -1370,14 +1402,14 @@ func (a *OcpSandboxProvider) Request(
 					if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
 						log.Logger.Error("Error cleaning up the namespace", "error", err)
 					}
-					rnew.SetStatus("error")
+					rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create limit range in namespace %s: %v", namespaceName, err))
 					return
 				}
 
 				rnew.LimitRange = limitRange
 				if err := rnew.Save(); err != nil {
 					log.Logger.Error("Error saving OCP account", "error", err)
-					rnew.SetStatus("error")
+					rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to save OCP account after limit range creation: %v", err))
 					return
 				}
 			}
@@ -1399,7 +1431,7 @@ func (a *OcpSandboxProvider) Request(
 			if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
 				log.Logger.Error("Error cleaning up the namespace", "error", err)
 			}
-			rnew.SetStatus("error")
+			rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create service account '%s' in namespace %s: %v", serviceAccountName, namespaceName, err))
 			return
 		}
 
@@ -1431,7 +1463,7 @@ func (a *OcpSandboxProvider) Request(
 			if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
 				log.Logger.Error("Error cleaning up the namespace", "error", err)
 			}
-			rnew.SetStatus("error")
+			rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create role binding for service account '%s' in namespace %s: %v", serviceAccountName, namespaceName, err))
 			return
 		}
 		creds := []any{}
@@ -1445,7 +1477,7 @@ func (a *OcpSandboxProvider) Request(
 			} else {
 				log.Logger.Error("console_url in AdditionalVars is not a string", "value", consoleUrl)
 				rnew.OcpConsoleUrl = ""
-				rnew.SetStatus("error")
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("console_url in cluster %s AdditionalVars is not a string", selectedCluster.Name))
 				return
 			}
 		}
@@ -1600,7 +1632,7 @@ func (a *OcpSandboxProvider) Request(
 				if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
 					log.Logger.Error("Error cleaning up the namespace", "error", err)
 				}
-				rnew.SetStatus("error")
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create role binding for Keycloak user '%s' in namespace %s: %v", userAccountName, namespaceName, err))
 				return
 			}
 
@@ -1635,7 +1667,7 @@ func (a *OcpSandboxProvider) Request(
 				if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
 					log.Logger.Error("Error cleaning up the namespace", "error", err)
 				}
-				rnew.SetStatus("error")
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create HCP role binding for service account '%s' in namespace %s: %v", serviceAccountName, namespaceName, err))
 				return
 			}
 		}
@@ -1709,7 +1741,7 @@ func (a *OcpSandboxProvider) Request(
 						if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
 							log.Logger.Error("Error cleaning up the namespace", "error", err)
 						}
-						rnew.SetStatus("error")
+						rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create CNV images role binding for namespace %s: %v", namespaceName, err))
 						return
 					}
 				}
@@ -1771,7 +1803,7 @@ func (a *OcpSandboxProvider) Request(
 					if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
 						log.Logger.Error("Error deleting OCP secret for SA", "error", err)
 					}
-					rnew.SetStatus("error")
+					rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create service account token secret in namespace %s: %v", namespaceName, err))
 					return
 				}
 			}
@@ -1790,7 +1822,7 @@ func (a *OcpSandboxProvider) Request(
 				if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
 					log.Logger.Error("Error creating OCP service account", "error", err)
 				}
-				rnew.SetStatus("error")
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to list secrets in namespace %s: %v", namespaceName, err))
 				return
 			}
 
@@ -1811,7 +1843,7 @@ func (a *OcpSandboxProvider) Request(
 			retryCount++
 			if retryCount >= maxRetries {
 				log.Logger.Error("Max retries reached, service account secret not found")
-				rnew.SetStatus("error")
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("Timeout waiting for service account token secret in namespace %s after %d retries", namespaceName, maxRetries))
 				return
 			}
 
@@ -1994,7 +2026,7 @@ func (account *OcpSandboxWithCreds) Delete() error {
 
 			// Curative and auto-healing action, set status to error
 			if status == "initializing" || status == "scheduling" {
-				if err := account.SetStatus("error"); err != nil {
+				if err := account.SetStatusWithMessage("error", fmt.Sprintf("Resource stuck in '%s' state during deletion, auto-healed to error", status)); err != nil {
 					log.Logger.Error("Cannot set status", "error", err)
 					return err
 				}
@@ -2029,12 +2061,12 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		if err != nil {
 			if err == pgx.ErrNoRows {
 				log.Logger.Error("Ocp cluster doesn't exist for resource", "name", account.Name)
-				account.SetStatus("error")
+				account.SetStatusWithMessage("error", "OCP cluster configuration not found for this resource")
 				return errors.New("Ocp cluster doesn't exist for resource")
 			}
 
 			log.Logger.Error("Ocp cluster query error", "err", err)
-			account.SetStatus("error")
+			account.SetStatusWithMessage("error", fmt.Sprintf("Failed to query OCP cluster configuration: %v", err))
 			return err
 		}
 	}
@@ -2070,14 +2102,14 @@ func (account *OcpSandboxWithCreds) Delete() error {
 	cluster, err := account.Provider.GetOcpSharedClusterConfigurationByName(account.OcpSharedClusterConfigurationName)
 	if err != nil {
 		log.Logger.Error("Error getting OCP shared cluster configuration", "error", err)
-		account.SetStatus("error")
+		account.SetStatusWithMessage("error", fmt.Sprintf("Failed to get OCP cluster configuration '%s': %v", account.OcpSharedClusterConfigurationName, err))
 		return err
 	}
 
 	config, err := cluster.CreateRestConfig()
 	if err != nil {
 		log.Logger.Error("Error creating OCP config", "error", err, "name", account.Name)
-		account.SetStatus("error")
+		account.SetStatusWithMessage("error", fmt.Sprintf("Failed to create OCP config for cluster %s during deletion: %v", account.OcpSharedClusterConfigurationName, err))
 		return err
 	}
 
@@ -2085,7 +2117,7 @@ func (account *OcpSandboxWithCreds) Delete() error {
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		log.Logger.Error("Error creating OCP client", "error", err, "name", account.Name)
-		account.SetStatus("error")
+		account.SetStatusWithMessage("error", fmt.Sprintf("Failed to create OCP client for cluster %s during deletion: %v", account.OcpSharedClusterConfigurationName, err))
 		return err
 	}
 
@@ -2093,7 +2125,7 @@ func (account *OcpSandboxWithCreds) Delete() error {
 	dynclientset, err := dynamic.NewForConfig(config)
 	if err != nil {
 		log.Logger.Error("Error creating OCP client", "error", err, "name", account.Name)
-		account.SetStatus("error")
+		account.SetStatusWithMessage("error", fmt.Sprintf("Failed to create dynamic OCP client for cluster %s during deletion: %v", account.OcpSharedClusterConfigurationName, err))
 		return err
 	}
 
@@ -2112,14 +2144,14 @@ func (account *OcpSandboxWithCreds) Delete() error {
 		}
 
 		log.Logger.Error("Error getting OCP namespace", "error", err, "name", account.Name)
-		account.SetStatus("error")
+		account.SetStatusWithMessage("error", fmt.Sprintf("Failed to get namespace %s during deletion: %v", account.Namespace, err))
 		return err
 	}
 	// Delete the Namespace
 	err = clientset.CoreV1().Namespaces().Delete(context.TODO(), account.Namespace, metav1.DeleteOptions{})
 	if err != nil {
 		log.Logger.Error("Error deleting OCP namespace", "error", err, "name", account.Name)
-		account.SetStatus("error")
+		account.SetStatusWithMessage("error", fmt.Sprintf("Failed to delete namespace %s: %v", account.Namespace, err))
 		return err
 	}
 
@@ -2134,7 +2166,7 @@ func (account *OcpSandboxWithCreds) Delete() error {
 	if _, err := clientset.RbacV1().RoleBindings("cnv-images").Get(context.TODO(), rbName, metav1.GetOptions{}); err == nil {
 		if err := clientset.RbacV1().RoleBindings("cnv-images").Delete(context.TODO(), rbName, metav1.DeleteOptions{}); err != nil {
 			log.Logger.Error("Error deleting rolebinding on cnv-images", "error", err)
-			account.SetStatus("error")
+			account.SetStatusWithMessage("error", fmt.Sprintf("Failed to delete CNV images role binding %s: %v", rbName, err))
 			return err
 		}
 	}
@@ -2149,7 +2181,7 @@ func (account *OcpSandboxWithCreds) Delete() error {
 	if _, err := dynclientset.Resource(cephBlockPoolRadosNamespaceGVR).Namespace("openshift-storage").Get(context.TODO(), account.Namespace, metav1.GetOptions{}); err == nil {
 		if err := dynclientset.Resource(cephBlockPoolRadosNamespaceGVR).Namespace("openshift-storage").Delete(context.TODO(), account.Namespace, metav1.DeleteOptions{}); err != nil {
 			log.Logger.Error("Error deleting rolebinding on CephBlockPoolRadosNamespace", "error", err)
-			account.SetStatus("error")
+			account.SetStatusWithMessage("error", fmt.Sprintf("Failed to delete CephBlockPoolRadosNamespace %s: %v", account.Namespace, err))
 			return err
 		}
 	}
@@ -2183,7 +2215,7 @@ func (account *OcpSandboxWithCreds) Delete() error {
 				log.Logger.Info("Keycloak user CR already gone", "name", account.Name)
 			} else {
 				log.Logger.Error("Error deleting KeycloakUser", "error", err, "name", account.Name)
-				account.SetStatus("error")
+				account.SetStatusWithMessage("error", fmt.Sprintf("Failed to delete KeycloakUser %s: %v", userAccountName, err))
 				return err
 			}
 		} else {
@@ -2202,7 +2234,7 @@ func (account *OcpSandboxWithCreds) Delete() error {
 
 				if retries == 29 {
 					log.Logger.Error("KeycloakUser deletion verification timed out", "user", userAccountName)
-					account.SetStatus("error")
+					account.SetStatusWithMessage("error", fmt.Sprintf("Timeout waiting for KeycloakUser %s deletion confirmation", userAccountName))
 					return fmt.Errorf("Error deleting KeycloakUser: %w", err)
 				}
 			}
@@ -2227,7 +2259,7 @@ func (account *OcpSandboxWithCreds) Delete() error {
 				log.Logger.Info("OpenShift user already gone", "user", userAccountName)
 			} else {
 				log.Logger.Error("Error getting OpenShift user", "error", err, "user", userAccountName)
-				account.SetStatus("error")
+				account.SetStatusWithMessage("error", fmt.Sprintf("Failed to get OpenShift user %s: %v", userAccountName, err))
 				return err
 			}
 		} else {
@@ -2250,7 +2282,7 @@ func (account *OcpSandboxWithCreds) Delete() error {
 							log.Logger.Info("Identity already gone", "identity", identity)
 						} else {
 							log.Logger.Error("Error deleting identity", "error", err, "identity", identity)
-							account.SetStatus("error")
+							account.SetStatusWithMessage("error", fmt.Sprintf("Failed to delete identity %s: %v", identity, err))
 							return err
 						}
 					} else {
@@ -2266,7 +2298,7 @@ func (account *OcpSandboxWithCreds) Delete() error {
 					log.Logger.Info("OpenShift user already gone", "user", userAccountName)
 				} else {
 					log.Logger.Error("Error deleting OpenShift user", "error", err, "user", userAccountName)
-					account.SetStatus("error")
+					account.SetStatusWithMessage("error", fmt.Sprintf("Failed to delete OpenShift user %s: %v", userAccountName, err))
 					return err
 				}
 			} else {

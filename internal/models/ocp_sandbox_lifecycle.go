@@ -56,6 +56,22 @@ func (a *OcpSandboxWithCreds) getClusterClients() (*kubernetes.Clientset, dynami
 func (a *OcpSandboxWithCreds) Stop(ctx context.Context, job *LifecycleResourceJob) error {
 	log.Logger.Info("OcpSandbox Stop called", "sandbox", a.Name, "namespace", a.Namespace, "cluster", a.OcpSharedClusterConfigurationName)
 
+	// Check for fail_stop parameter for functional testing (via annotations)
+	// This allows tests to simulate stop failures and verify error_message is properly set
+	// Usage: annotations["sandbox.test/fail_stop"] = "true"
+	//        annotations["sandbox.test/fail_reason"] = "Custom error message"
+	if value, exists := a.Annotations["sandbox.test/fail_stop"]; exists && (value == "yes" || value == "true") {
+		failReason := "Simulated stop failure for testing"
+		if reason, hasReason := a.Annotations["sandbox.test/fail_reason"]; hasReason && reason != "" {
+			failReason = reason
+		}
+		log.Logger.Info("fail_stop triggered for testing", "reason", failReason, "name", a.Name, "id", a.ID)
+		if err := a.SetStatusWithMessage("error", failReason); err != nil {
+			log.Logger.Error("fail_stop: SetStatusWithMessage failed", "error", err, "name", a.Name, "id", a.ID)
+		}
+		return errors.New(failReason)
+	}
+
 	if a.Namespace == "" {
 		log.Logger.Warn("Namespace is empty, nothing to stop", "sandbox", a.Name)
 		return nil
@@ -327,6 +343,22 @@ func (a *OcpSandboxWithCreds) Stop(ctx context.Context, job *LifecycleResourceJo
 // For Deployments/StatefulSets/ReplicaSets: restores original replicas from annotation
 // For VirtualMachines: sets spec.running to true
 func (a *OcpSandboxWithCreds) Start(ctx context.Context, job *LifecycleResourceJob) error {
+	// Check for fail_start parameter for functional testing (via annotations)
+	// This allows tests to simulate start failures and verify error_message is properly set
+	// Usage: annotations["sandbox.test/fail_start"] = "true"
+	//        annotations["sandbox.test/fail_reason"] = "Custom error message"
+	if value, exists := a.Annotations["sandbox.test/fail_start"]; exists && (value == "yes" || value == "true") {
+		failReason := "Simulated start failure for testing"
+		if reason, hasReason := a.Annotations["sandbox.test/fail_reason"]; hasReason && reason != "" {
+			failReason = reason
+		}
+		log.Logger.Info("fail_start triggered for testing", "reason", failReason, "name", a.Name, "id", a.ID)
+		if err := a.SetStatusWithMessage("error", failReason); err != nil {
+			log.Logger.Error("fail_start: SetStatusWithMessage failed", "error", err, "name", a.Name, "id", a.ID)
+		}
+		return errors.New(failReason)
+	}
+
 	if a.Namespace == "" {
 		log.Logger.Warn("Namespace is empty, nothing to start", "sandbox", a.Name)
 		return nil
