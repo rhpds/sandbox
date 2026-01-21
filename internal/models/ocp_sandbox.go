@@ -1238,11 +1238,19 @@ func (a *OcpSandboxProvider) Request(
 		}
 
 		if selectedCluster.Name == "" {
-			log.Logger.Error("Error electing cluster",
-				"name", rnew.Name,
-				"serviceUuid", rnew.ServiceUuid,
-				"reason", "no cluster available")
-			rnew.SetStatusWithMessage("error", "No cluster available: all clusters are either at capacity or unreachable")
+			if len(candidateClusters) == 0 {
+				log.Logger.Error("No candidate clusters found",
+					"name", rnew.Name,
+					"serviceUuid", rnew.ServiceUuid,
+					"cloudSelector", cloudSelector)
+				rnew.SetStatusWithMessage("error", "No cluster available: cloud_selector may be too restrictive or no clusters are configured")
+			} else {
+				log.Logger.Error("All candidate clusters at capacity or unreachable",
+					"name", rnew.Name,
+					"serviceUuid", rnew.ServiceUuid,
+					"candidateClusters", len(candidateClusters))
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("No cluster available: tried %d cluster(s), all are at capacity or unreachable", len(candidateClusters)))
+			}
 			return
 		}
 
