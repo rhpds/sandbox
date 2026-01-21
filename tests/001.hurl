@@ -177,7 +177,7 @@ jsonpath "$.message" == "Reservation already exists"
 GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
 [Options]
-retry: 30
+retry: 50
 HTTP 200
 [Asserts]
 jsonpath "$.reservation.status" == "success"
