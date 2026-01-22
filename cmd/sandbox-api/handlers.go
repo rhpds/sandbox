@@ -592,30 +592,62 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 				result.Message = "No matching OCP shared clusters found"
 				overallAvailable = false
 			} else {
-				log.Logger.Info("Dry-run check for OCP successful", "clusters", candidateClusters)
-				result.Available = true
-				result.Message = "Matching OCP shared clusters found"
-				result.SchedulableClusterCount = len(candidateClusters)
-				// Apply priorities using CloudPreference
-				if len(request.CloudPreference) > 0 {
-					candidateClusters = models.ApplyPriorityWeight(
-						candidateClusters,
-						request.CloudPreference,
-						1,
-					)
-				}
-				// Simulate the placement to inform the next resource in the loop.
-				// We'll hypothetically "place" it on the first available cluster.
-				if request.Alias != "" {
-					// Create a temporary, hypothetical account object with the chosen cluster.
-					// The actual fields needed depend on your scheduling logic, but OcpCluster is the most likely one.
-					hypotheticalAccount := models.OcpSandboxWithCreds{
-						OcpSandbox: models.OcpSandbox{
-							OcpSharedClusterConfigurationName: candidateClusters[0].Name, // Using the first candidate
-							Alias:                             request.Alias,
-						},
+				// Filter out clusters that have reached their max_placements limit
+				availableClusters := models.OcpSharedClusterConfigurations{}
+				for _, cluster := range candidateClusters {
+					if cluster.MaxPlacements != nil {
+						currentCount, err := cluster.GetAccountCount()
+						if err != nil {
+							log.Logger.Error("Dry-run error getting account count",
+								"cluster", cluster.Name,
+								"error", err)
+							continue
+						}
+						if currentCount >= *cluster.MaxPlacements {
+							log.Logger.Info("Dry-run: cluster at max_placements limit",
+								"cluster", cluster.Name,
+								"currentCount", currentCount,
+								"maxPlacements", *cluster.MaxPlacements,
+							)
+							continue
+						}
 					}
-					multipleOcpAccounts = append(multipleOcpAccounts, hypotheticalAccount)
+					availableClusters = append(availableClusters, cluster)
+				}
+
+				if len(availableClusters) == 0 {
+					log.Logger.Info("Dry-run check for OCP failed: all clusters at max_placements limit")
+					result.Available = false
+					result.Message = "All matching OCP shared clusters are at their max_placements limit"
+					overallAvailable = false
+				} else {
+					log.Logger.Info("Dry-run check for OCP successful", "clusters", availableClusters)
+					result.Available = true
+					result.Message = "Matching OCP shared clusters found"
+					result.SchedulableClusterCount = len(availableClusters)
+					candidateClusters = availableClusters
+
+					// Apply priorities using CloudPreference
+					if len(request.CloudPreference) > 0 {
+						candidateClusters = models.ApplyPriorityWeight(
+							candidateClusters,
+							request.CloudPreference,
+							1,
+						)
+					}
+					// Simulate the placement to inform the next resource in the loop.
+					// We'll hypothetically "place" it on the first available cluster.
+					if request.Alias != "" {
+						// Create a temporary, hypothetical account object with the chosen cluster.
+						// The actual fields needed depend on your scheduling logic, but OcpCluster is the most likely one.
+						hypotheticalAccount := models.OcpSandboxWithCreds{
+							OcpSandbox: models.OcpSandbox{
+								OcpSharedClusterConfigurationName: candidateClusters[0].Name, // Using the first candidate
+								Alias:                             request.Alias,
+							},
+						}
+						multipleOcpAccounts = append(multipleOcpAccounts, hypotheticalAccount)
+					}
 				}
 			}
 
