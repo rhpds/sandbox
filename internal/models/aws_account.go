@@ -216,12 +216,41 @@ func (a AwsAccount) Start(ctx context.Context, creds *ststypes.Credentials, job 
 		// Start all instances
 		for _, reservation := range instances.Reservations {
 			for _, instance := range reservation.Instances {
+				currentState := string(instance.State.Name)
 				_, err := ec2ClientRegional.StartInstances(context.TODO(), &ec2.StartInstancesInput{
 					InstanceIds: []string{*instance.InstanceId},
 				})
 
 				if err != nil {
-					log.Logger.Error("Error starting instance", "account", a.Name, "error", err)
+					// Fetch current state to provide better error context
+					describeResult, describeErr := ec2ClientRegional.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{
+						InstanceIds: []string{*instance.InstanceId},
+					})
+
+					actualState := currentState
+					if describeErr == nil && len(describeResult.Reservations) > 0 && len(describeResult.Reservations[0].Instances) > 0 {
+						actualState = string(describeResult.Reservations[0].Instances[0].State.Name)
+					}
+
+					// If instance is already starting or running, treat as success
+					if actualState == "pending" || actualState == "running" {
+						log.Logger.Info("Instance already starting or started",
+							"account", a.Name,
+							"instance_id", *instance.InstanceId,
+							"instance_state", actualState,
+							"region", *region.RegionName,
+						)
+						continue
+					}
+
+					// Otherwise log the error with state information
+					log.Logger.Error("Error starting instance",
+						"account", a.Name,
+						"instance_id", *instance.InstanceId,
+						"instance_state", actualState,
+						"region", *region.RegionName,
+						"error", err,
+					)
 					errR = err
 					continue
 				}
@@ -329,15 +358,44 @@ func (a AwsAccount) Stop(ctx context.Context, creds *ststypes.Credentials, job *
 			continue
 		}
 
-		// Start all instances
+		// Stop all instances
 		for _, reservation := range instances.Reservations {
 			for _, instance := range reservation.Instances {
+				currentState := string(instance.State.Name)
 				_, err := ec2ClientRegional.StopInstances(context.TODO(), &ec2.StopInstancesInput{
 					InstanceIds: []string{*instance.InstanceId},
 				})
 
 				if err != nil {
-					log.Logger.Error("Error stopping instance", "account", a.Name, "error", err)
+					// Fetch current state to provide better error context
+					describeResult, describeErr := ec2ClientRegional.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{
+						InstanceIds: []string{*instance.InstanceId},
+					})
+
+					actualState := currentState
+					if describeErr == nil && len(describeResult.Reservations) > 0 && len(describeResult.Reservations[0].Instances) > 0 {
+						actualState = string(describeResult.Reservations[0].Instances[0].State.Name)
+					}
+
+					// If instance is already stopping or stopped, treat as success
+					if actualState == "stopping" || actualState == "stopped" {
+						log.Logger.Info("Instance already stopping or stopped",
+							"account", a.Name,
+							"instance_id", *instance.InstanceId,
+							"instance_state", actualState,
+							"region", *region.RegionName,
+						)
+						continue
+					}
+
+					// Otherwise log the error with state information
+					log.Logger.Error("Error stopping instance",
+						"account", a.Name,
+						"instance_id", *instance.InstanceId,
+						"instance_state", actualState,
+						"region", *region.RegionName,
+						"error", err,
+					)
 					errR = err
 					continue
 				}
