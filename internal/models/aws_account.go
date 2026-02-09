@@ -44,6 +44,10 @@ type AwsAccount struct {
 	ConanTimestamp    time.Time `json:"conan_timestamp,omitempty"`
 	ConanHostname     string    `json:"conan_hostname,omitempty"`
 	ConanCleanupCount int       `json:"conan_cleanup_count,omitempty"`
+	// Stage tracks the account creation progress (e.g., "0 - created in DB only", "4 - Account Validated and Ready")
+	Stage string `json:"stage,omitempty"`
+	// CreationStatus tracks the creation outcome: "in progress", "failed", "validation failed", "validation timed out", or "success"
+	CreationStatus string `json:"creation_status,omitempty"`
 }
 
 func (a *AwsAccount) Render(w http.ResponseWriter, r *http.Request) error {

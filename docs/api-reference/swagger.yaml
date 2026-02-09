@@ -630,6 +630,21 @@ paths:
         - account
       operationId: deleteAccount
       summary: Delete an account
+      parameters:
+        - name: force
+          in: query
+          required: false
+          description: |
+            If false or absent, first it ensures:
+                - the account is marked for cleanup
+                - cleanup was attempted at least 3 times
+                - cleanup is not in progress
+            If true, won't apply the checks and will force the deletion.
+
+            Only applicable for AwsSandbox kind.
+          schema:
+            type: boolean
+            default: false
       description: |-
         Delete an account by its name.
 

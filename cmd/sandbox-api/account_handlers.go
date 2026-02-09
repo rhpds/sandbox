@@ -649,6 +649,7 @@ func (h *BaseHandler) DeleteAccountHandler(w http.ResponseWriter, r *http.Reques
 	// Grab the parameters from Params
 	accountName := chi.URLParam(r, "account")
 	kind := chi.URLParam(r, "kind")
+	force := r.URL.Query().Get("force") == "true"
 
 	switch kind {
 	case "AwsSandbox", "AwsAccount", "aws_account":
@@ -678,31 +679,38 @@ func (h *BaseHandler) DeleteAccountHandler(w http.ResponseWriter, r *http.Reques
 		// - the account is marked for cleanup
 		// - cleanup was attempted at least 3 times
 		// - cleanup is not in progress
-		if sandbox.ToCleanup == false {
-			w.WriteHeader(http.StatusConflict)
-			render.Render(w, r, &v1.Error{
-				HTTPStatusCode: http.StatusConflict,
-				Message:        "Account must be marked for cleanup before deletion",
-			})
-			return
-		}
+		//
+		// Exception: If the account's creation_status indicates an error (not "success"),
+		// it means the account creation failed, so we can delete it without cleanup requirements.
+		isFailedCreation := sandbox.CreationStatus != "" && sandbox.CreationStatus != "success"
 
-		if sandbox.ConanCleanupCount < 3 {
-			w.WriteHeader(http.StatusConflict)
-			render.Render(w, r, &v1.Error{
-				HTTPStatusCode: http.StatusConflict,
-				Message:        "Cleanup must be attempted at least 3 times before deletion",
-			})
-			return
-		}
+		if !force && !isFailedCreation {
+			if sandbox.ToCleanup == false {
+				w.WriteHeader(http.StatusConflict)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusConflict,
+					Message:        "Account must be marked for cleanup before deletion",
+				})
+				return
+			}
 
-		if sandbox.ConanStatus == "cleanup in progress" {
-			w.WriteHeader(http.StatusConflict)
-			render.Render(w, r, &v1.Error{
-				HTTPStatusCode: http.StatusConflict,
-				Message:        "Cleanup is in progress",
-			})
-			return
+			if sandbox.ConanCleanupCount < 3 {
+				w.WriteHeader(http.StatusConflict)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusConflict,
+					Message:        "Cleanup must be attempted at least 3 times before deletion",
+				})
+				return
+			}
+
+			if sandbox.ConanStatus == "cleanup in progress" {
+				w.WriteHeader(http.StatusConflict)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusConflict,
+					Message:        "Cleanup is in progress",
+				})
+				return
+			}
 		}
 
 		// Close the AWS account using CloseAccount
