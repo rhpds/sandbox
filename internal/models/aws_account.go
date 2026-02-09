@@ -265,35 +265,41 @@ func (a AwsAccount) Start(ctx context.Context, creds *ststypes.Credentials, job 
 				)
 
 				// save event as json in DB
-				_, err = job.DbPool.Exec(
-					ctx,
-					`INSERT INTO lifecycle_events (event_type, service_uuid, resource_name, resource_type, event_data)
-					 VALUES ($1, $2, $3, $4, $5)`,
-					"start_instance",
-					ctx.Value("ServiceUUID"),
-					a.Name,
-					a.Kind,
-					// Save cloud provider name, instance id, instance type, region
-					struct {
-						AccountName  string `json:"account_name"`
-						AccountID    string `json:"account_id"`
-						InstanceID   string `json:"instance_id"`
-						InstanceType string `json:"instance_type"`
-						Region       string `json:"region"`
-						Locality     string `json:"locality"`
-					}{
-						AccountName:  a.Name,
-						AccountID:    a.AccountID,
-						InstanceID:   *instance.InstanceId,
-						InstanceType: string(instance.InstanceType),
-						Region:       *region.RegionName,
-						Locality:     sconfig.LocalityID,
-					},
-				)
+				// Use ServiceUUID from context (placement-based) or fall back to account's ServiceUuid
+				serviceUUID, _ := ctx.Value("ServiceUUID").(string)
+				if serviceUUID == "" {
+					serviceUUID = a.ServiceUuid
+				}
+				if serviceUUID != "" {
+					_, err = job.DbPool.Exec(
+						ctx,
+						`INSERT INTO lifecycle_events (event_type, service_uuid, resource_name, resource_type, event_data)
+						 VALUES ($1, $2, $3, $4, $5)`,
+						"start_instance",
+						serviceUUID,
+						a.Name,
+						a.Kind,
+						// Save cloud provider name, instance id, instance type, region
+						struct {
+							AccountName  string `json:"account_name"`
+							AccountID    string `json:"account_id"`
+							InstanceID   string `json:"instance_id"`
+							InstanceType string `json:"instance_type"`
+							Region       string `json:"region"`
+							Locality     string `json:"locality"`
+						}{
+							AccountName:  a.Name,
+							AccountID:    a.AccountID,
+							InstanceID:   *instance.InstanceId,
+							InstanceType: string(instance.InstanceType),
+							Region:       *region.RegionName,
+							Locality:     sconfig.LocalityID,
+						},
+					)
 
-				if err != nil {
-					log.Logger.Error("Error saving event", "error", err, "event", "start_instance")
-
+					if err != nil {
+						log.Logger.Error("Error saving event", "error", err, "event", "start_instance")
+					}
 				}
 
 			}
@@ -410,34 +416,41 @@ func (a AwsAccount) Stop(ctx context.Context, creds *ststypes.Credentials, job *
 				)
 
 				// save event as json in DB
-				_, err = job.DbPool.Exec(
-					ctx,
-					`INSERT INTO lifecycle_events (event_type, service_uuid, resource_name, resource_type, event_data)
-					 VALUES ($1, $2, $3, $4, $5)`,
-					"stop_instance",
-					ctx.Value("ServiceUUID"),
-					a.Name,
-					a.Kind,
-					// Save cloud provider name, instance id, instance type, region
-					struct {
-						AccountName  string `json:"account_name"`
-						AccountID    string `json:"account_id"`
-						InstanceID   string `json:"instance_id"`
-						InstanceType string `json:"instance_type"`
-						Region       string `json:"region"`
-						Locality     string `json:"locality"`
-					}{
-						AccountName:  a.Name,
-						AccountID:    a.AccountID,
-						InstanceID:   *instance.InstanceId,
-						InstanceType: string(instance.InstanceType),
-						Region:       *region.RegionName,
-						Locality:     sconfig.LocalityID,
-					},
-				)
+				// Use ServiceUUID from context (placement-based) or fall back to account's ServiceUuid
+				serviceUUID, _ := ctx.Value("ServiceUUID").(string)
+				if serviceUUID == "" {
+					serviceUUID = a.ServiceUuid
+				}
+				if serviceUUID != "" {
+					_, err = job.DbPool.Exec(
+						ctx,
+						`INSERT INTO lifecycle_events (event_type, service_uuid, resource_name, resource_type, event_data)
+						 VALUES ($1, $2, $3, $4, $5)`,
+						"stop_instance",
+						serviceUUID,
+						a.Name,
+						a.Kind,
+						// Save cloud provider name, instance id, instance type, region
+						struct {
+							AccountName  string `json:"account_name"`
+							AccountID    string `json:"account_id"`
+							InstanceID   string `json:"instance_id"`
+							InstanceType string `json:"instance_type"`
+							Region       string `json:"region"`
+							Locality     string `json:"locality"`
+						}{
+							AccountName:  a.Name,
+							AccountID:    a.AccountID,
+							InstanceID:   *instance.InstanceId,
+							InstanceType: string(instance.InstanceType),
+							Region:       *region.RegionName,
+							Locality:     sconfig.LocalityID,
+						},
+					)
 
-				if err != nil {
-					log.Logger.Error("Error saving event", "error", err, "event", "stop_instance")
+					if err != nil {
+						log.Logger.Error("Error saving event", "error", err, "event", "stop_instance")
+					}
 				}
 			}
 		}
