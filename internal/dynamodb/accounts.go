@@ -65,6 +65,10 @@ type AwsAccountDynamoDB struct {
 	ConanHostname     string            `json:"conan_hostname"`
 	ConanCleanupCount int               `json:"conan_cleanup_count"`
 	Annotations       map[string]string `json:"annotations,omitempty"`
+	// Stage tracks the account creation progress (e.g., "0 - created in DB only", "4 - Account Validated and Ready")
+	Stage string `json:"stage,omitempty"`
+	// CreationStatus tracks the creation outcome: "in progress", "failed", "validation failed", "validation timed out", or "success"
+	CreationStatus string `json:"creation_status,omitempty"`
 }
 
 // buildAccounts returns the list of accounts from dynamodb scan output
@@ -127,6 +131,8 @@ func makeAccount(account AwsAccountDynamoDB) models.AwsAccount {
 	a.ToCleanup = account.ToCleanup
 	a.Available = account.Available
 	a.ServiceUuid = account.ServiceUUID
+	a.Stage = account.Stage
+	a.CreationStatus = account.CreationStatus
 
 	ti, err := strconv.ParseInt(strconv.FormatFloat(account.UpdateTime, 'f', 0, 64), 10, 64)
 	if err != nil {

@@ -250,6 +250,15 @@ HTTP 404
 jsonpath "$.message" == "No OCP shared cluster configuration found"
 
 #################################################################################
+# Ensure the placement is deleted before starting
+#################################################################################
+DELETE {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 40
+HTTP 404
+
+#################################################################################
 # Create a new placement with a multiple Ocp
 #################################################################################
 
