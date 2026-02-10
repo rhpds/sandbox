@@ -1362,6 +1362,79 @@ func (h *BaseHandler) GetStatusRequestHandler(w http.ResponseWriter, r *http.Req
 // Regex to ensure a string is alpha-numeric + underscore + dash
 var nameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
+// getOrCreateReservationFromDynamo looks up a reservation in the DB, and if not found,
+// checks DynamoDB for accounts with that reservation name and auto-creates the DB record.
+// DynamoDB is the source of truth for aws reservations.
+// Returns the reservation, or an error with an HTTP-friendly message and status code.
+func (h *BaseHandler) getOrCreateReservationFromDynamo(name string) (*models.Reservation, string, int, error) {
+	reservation, err := models.GetReservationByName(h.dbpool, name)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			// Check DynamoDB for accounts with this reservation
+			dynamoCount, countErr := h.awsAccountProvider.CountReservation(name)
+			if countErr != nil {
+				log.Logger.Error("getOrCreateReservationFromDynamo", "error", countErr)
+				return nil, "Error checking DynamoDB for reservation", http.StatusInternalServerError, countErr
+			}
+
+			if dynamoCount == 0 {
+				return nil, "Reservation not found", http.StatusNotFound, fmt.Errorf("reservation %s not found", name)
+			}
+
+			// Auto-create the reservation from DynamoDB state
+			log.Logger.Info("Auto-creating reservation from DynamoDB",
+				"name", name, "count", dynamoCount)
+
+			reservation = &models.Reservation{
+				Name:   name,
+				Status: "success",
+				Request: models.ReservationRequest{
+					Name: name,
+					Resources: []models.ResourceRequest{
+						{Kind: "AwsSandbox", Count: dynamoCount},
+					},
+				},
+			}
+
+			if saveErr := reservation.Save(h.dbpool); saveErr != nil {
+				log.Logger.Error("getOrCreateReservationFromDynamo", "error", saveErr)
+				return nil, "Error auto-creating reservation", http.StatusInternalServerError, saveErr
+			}
+		} else {
+			log.Logger.Error("getOrCreateReservationFromDynamo", "error", err)
+			return nil, "Error getting reservation", http.StatusInternalServerError, err
+		}
+	}
+
+	return reservation, "", 0, nil
+}
+
+// reconcileReservationWithDynamo reconciles the reservation's AwsSandbox resource count
+// with the actual count from DynamoDB. If they differ, the DB record is updated.
+func (h *BaseHandler) reconcileReservationWithDynamo(reservation *models.Reservation) {
+	dynamoCount, countErr := h.awsAccountProvider.CountReservation(reservation.Name)
+	if countErr != nil {
+		log.Logger.Error("Error counting reservation in DynamoDB", "error", countErr)
+		return
+	}
+
+	for i, resource := range reservation.Request.Resources {
+		if resource.Kind == "AwsSandbox" || resource.Kind == "AwsAccount" || resource.Kind == "aws_account" {
+			if resource.Count != dynamoCount {
+				log.Logger.Info("Reconciling reservation count",
+					"name", reservation.Name,
+					"db_count", resource.Count,
+					"dynamo_count", dynamoCount)
+				reservation.Request.Resources[i].Count = dynamoCount
+				if saveErr := reservation.Save(h.dbpool); saveErr != nil {
+					log.Logger.Error("Error saving reconciled reservation", "error", saveErr)
+				}
+			}
+			break
+		}
+	}
+}
+
 // CreateReservationHandler creates a new reservation
 func (h *BaseHandler) CreateReservationHandler(w http.ResponseWriter, r *http.Request) {
 	reservationRequest := models.ReservationRequest{}
@@ -1473,17 +1546,14 @@ func (h *BaseHandler) CreateReservationHandler(w http.ResponseWriter, r *http.Re
 func (h *BaseHandler) RenameReservationHandler(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
-	reservation, err := models.GetReservationByName(h.dbpool, name)
-
+	reservation, errMsg, statusCode, err := h.getOrCreateReservationFromDynamo(name)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			w.WriteHeader(http.StatusNotFound)
-			render.Render(w, r, &v1.Error{
-				HTTPStatusCode: http.StatusNotFound,
-				Message:        "Reservation not found",
-			})
-			return
-		}
+		w.WriteHeader(statusCode)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: statusCode,
+			Message:        errMsg,
+		})
+		return
 	}
 
 	// Get the new name from the request body
@@ -1542,7 +1612,10 @@ func (h *BaseHandler) RenameReservationHandler(w http.ResponseWriter, r *http.Re
 
 	reservation.UpdateStatus(h.dbpool, "updating")
 	// Rename the reservation, call reservation.Rename (async)
-	go reservation.Rename(h.dbpool, h.awsAccountProvider, newName)
+	go func() {
+		h.reconcileReservationWithDynamo(reservation)
+		reservation.Rename(h.dbpool, h.awsAccountProvider, newName)
+	}()
 
 	w.WriteHeader(http.StatusAccepted)
 	render.Render(w, r, &v1.ReservationResponse{
@@ -1603,25 +1676,13 @@ func (h *BaseHandler) DeleteReservationHandler(w http.ResponseWriter, r *http.Re
 func (h *BaseHandler) UpdateReservationHandler(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
-	reservation, err := models.GetReservationByName(h.dbpool, name)
-
+	reservation, errMsg, statusCode, err := h.getOrCreateReservationFromDynamo(name)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			w.WriteHeader(http.StatusNotFound)
-			render.Render(w, r, &v1.Error{
-				HTTPStatusCode: http.StatusNotFound,
-				Message:        "Reservation not found",
-			})
-			return
-		}
-
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(statusCode)
 		render.Render(w, r, &v1.Error{
-			Err:            err,
-			HTTPStatusCode: http.StatusInternalServerError,
-			Message:        "Error getting reservation",
+			HTTPStatusCode: statusCode,
+			Message:        errMsg,
 		})
-		log.Logger.Error("UpdateReservationHandler", "error", err)
 		return
 	}
 
@@ -1665,7 +1726,10 @@ func (h *BaseHandler) UpdateReservationHandler(w http.ResponseWriter, r *http.Re
 	}
 
 	// Async Update the reservation
-	go reservation.Update(h.dbpool, h.awsAccountProvider, reservationReq)
+	go func() {
+		h.reconcileReservationWithDynamo(reservation)
+		reservation.Update(h.dbpool, h.awsAccountProvider, reservationReq)
+	}()
 
 	w.WriteHeader(http.StatusAccepted)
 	render.Render(w, r, &v1.ReservationResponse{
