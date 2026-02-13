@@ -240,6 +240,7 @@ type UpdateOcpSharedConfigurationRequest struct {
 	MaxCpuUsagePercentage     *float64            `json:"max_cpu_usage_percentage,omitempty"`
 	UsageNodeSelector         *string             `json:"usage_node_selector,omitempty"`
 	LimitRange                *v1.LimitRange      `json:"limit_range,omitempty"`
+	MaxPlacements             *int                `json:"max_placements,omitempty"`
 }
 
 func (j *UpdateOcpSharedConfigurationRequest) Bind(r *http.Request) error {
