@@ -1301,18 +1301,21 @@ func (a *OcpSandboxProvider) Request(
 		for {
 			// Create the Namespace
 			// Add serviceUuid as label to the namespace
-
+			namespaceLabels := map[string]string{
+              "mutatepods.kubemacpool.io":            "ignore",
+              "mutatevirtualmachines.kubemacpool.io": "ignore",
+              "serviceUuid":                          serviceUuid,
+              "guid":                                 annotations["guid"],
+              "created-by":                           "sandbox-api",
+              "cost_management_optimizations":        "true",
+      }
+			if annotations["namespace_userdefinednetwork"] != "" {
+				namespaceLabels["k8s.ovn.org/primary-user-defined-network"] = ""
+			}
 			_, err = clientset.CoreV1().Namespaces().Create(context.TODO(), &v1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: namespaceName,
-					Labels: map[string]string{
-						"mutatepods.kubemacpool.io":            "ignore",
-						"mutatevirtualmachines.kubemacpool.io": "ignore",
-						"serviceUuid":                          serviceUuid,
-						"guid":                                 annotations["guid"],
-						"created-by":                           "sandbox-api",
-						"cost_management_optimizations":        "true",
-					},
+					Labels: namespaceLabels, 
 				},
 			}, metav1.CreateOptions{})
 
@@ -1510,6 +1513,47 @@ func (a *OcpSandboxProvider) Request(
 					log.Logger.Info("Successfully detected console URL", "cluster", selectedCluster.Name, "console_url", rnew.OcpConsoleUrl)
 				}
 			}
+		}
+		// Create UserDefinedNetwork inside the namespace if requested
+		if annotations["namespace_userdefinednetwork"] != "" {
+			// Define the GroupVersionResource
+			userDefinedNetworkGVR := schema.GroupVersionResource{
+				Group:    "k8s.ovn.org",
+				Version:  "v1",
+				Resource: "userdefinednetworks",
+			}
+
+			// Create the KeycloakUser object as an unstructured object
+			userDefinedNetwork := &unstructured.Unstructured{
+				Object: map[string]any{
+					"apiVersion": "k8s.ovn.org/v1",
+					"kind":       "UserDefinedNetwork",
+					"metadata": map[string]any{
+						"name":      namespaceName + "-udn",
+						"namespace": namespaceName, // The namespace where Keycloak is installed
+					},
+					"spec": map[string]any{
+					  "topology": "Layer2",
+						"layer2": map[string]any{
+							"role": "Primary",
+							"subnets": []string{
+								"10.200.0.0/16",
+							},
+							"ipam": map[string]any{
+									"lifecycle": "Persistent",
+							},
+						},
+					},
+				},
+			}
+			_, err = dynclientset.Resource(userDefinedNetworkGVR).Namespace(namespaceName).Create(context.TODO(), userDefinedNetwork, metav1.CreateOptions{})
+			if err != nil {
+				log.Logger.Error("Error creating UserDefinedNetwork", "error", err)
+			} else {
+				log.Logger.Debug("UserDefinedNetwork created successfully")
+			}
+
+
 		}
 
 		// Create an user if the keycloak option was enabled
