@@ -1523,13 +1523,24 @@ func (a *OcpSandboxProvider) Request(
 				Resource: "userdefinednetworks",
 			}
 
+			udnName := namespaceName[:min(59, len(namespaceName))] + "-udn"// truncate to 59 + "-udn" max 63
+
+
+			// Default subnet
+			udnSubnet := "10.200.0.0/16"
+
+			// Override default subnet
+			if annotations["namespace_userdefinednetwork_subnet"] != "" {
+				udnSubnet = annotations["namespace_userdefinednetwork_subnet"]
+			}
+		
 			// Create the KeycloakUser object as an unstructured object
 			userDefinedNetwork := &unstructured.Unstructured{
 				Object: map[string]any{
 					"apiVersion": "k8s.ovn.org/v1",
 					"kind":       "UserDefinedNetwork",
 					"metadata": map[string]any{
-						"name":      namespaceName + "-udn",
+						"name":      udnName,
 						"namespace": namespaceName, // The namespace where Keycloak is installed
 					},
 					"spec": map[string]any{
@@ -1537,7 +1548,7 @@ func (a *OcpSandboxProvider) Request(
 						"layer2": map[string]any{
 							"role": "Primary",
 							"subnets": []string{
-								"10.200.0.0/16",
+								udnSubnet,
 							},
 							"ipam": map[string]any{
 									"lifecycle": "Persistent",
@@ -1549,6 +1560,7 @@ func (a *OcpSandboxProvider) Request(
 			_, err = dynclientset.Resource(userDefinedNetworkGVR).Namespace(namespaceName).Create(context.TODO(), userDefinedNetwork, metav1.CreateOptions{})
 			if err != nil {
 				log.Logger.Error("Error creating UserDefinedNetwork", "error", err)
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create UserDefineNetwork '%s' in namespace %s: %v", udnName, namespaceName, err))
 			} else {
 				log.Logger.Debug("UserDefinedNetwork created successfully")
 			}
