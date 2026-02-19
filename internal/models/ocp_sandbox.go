@@ -1621,19 +1621,27 @@ func (a *OcpSandboxProvider) Request(
 				Version:  "v1",
 				Resource: "routes",
 			}
-			// Get the console route from the openshift-console namespace
-			res, err := dynclientset.Resource(routeGVR).Namespace("openshift-console").Get(context.TODO(), "console", metav1.GetOptions{})
-			if err != nil {
-				log.Logger.Warn("Could not get console route", "error", err, "cluster", selectedCluster.Name)
-			} else {
+			// Get the console route from the openshift-console namespace, with retry
+			for attempt := 0; attempt < 3; attempt++ {
+				res, err := dynclientset.Resource(routeGVR).Namespace("openshift-console").Get(context.TODO(), "console", metav1.GetOptions{})
+				if err != nil {
+					log.Logger.Warn("Could not get console route", "error", err, "cluster", selectedCluster.Name, "attempt", attempt+1)
+					time.Sleep(2 * time.Second)
+					continue
+				}
 				// Extract the host from the unstructured data
 				host, found, err := unstructured.NestedString(res.Object, "spec", "host")
 				if err != nil || !found {
-					log.Logger.Warn("Could not find 'spec.host' in console route", "found", found, "error", err, "cluster", selectedCluster.Name)
-				} else {
-					rnew.OcpConsoleUrl = "https://" + host
-					log.Logger.Info("Successfully detected console URL", "cluster", selectedCluster.Name, "console_url", rnew.OcpConsoleUrl)
+					log.Logger.Warn("Could not find 'spec.host' in console route", "found", found, "error", err, "cluster", selectedCluster.Name, "attempt", attempt+1)
+					time.Sleep(2 * time.Second)
+					continue
 				}
+				rnew.OcpConsoleUrl = "https://" + host
+				log.Logger.Info("Successfully detected console URL", "cluster", selectedCluster.Name, "console_url", rnew.OcpConsoleUrl)
+				break
+			}
+			if rnew.OcpConsoleUrl == "" {
+				log.Logger.Warn("Failed to detect console URL after retries", "cluster", selectedCluster.Name)
 			}
 		}
 
