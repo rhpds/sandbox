@@ -85,50 +85,46 @@ func multipleKind(resources []v1.ResourceRequest, kind string) bool {
 	return false
 }
 
-func parseClusterCondition(clusterCondition string) []models.ClusterRelation {
-	// Define a custom language with tracking logic for relations
+func parseClusterCondition(clusterCondition string, availableAliases map[string]string) ([]models.ClusterRelation, error) {
 	var relations []models.ClusterRelation
-	language := gval.NewLanguage(gval.Parentheses(), gval.PropositionalLogic(),
-		gval.Function("same", func(args ...interface{}) (interface{}, error) {
+	var parseErr error
+
+	makeRefFunc := func(relation string) func(args ...interface{}) (interface{}, error) {
+		return func(args ...interface{}) (interface{}, error) {
 			if len(args) != 1 {
-				return nil, fmt.Errorf("same() requires exactly 1 argument")
+				return nil, fmt.Errorf("%s() requires exactly 1 argument", relation)
 			}
-			ref := fmt.Sprintf("%v", args[0])
+			ref, ok := args[0].(string)
+			if !ok || ref == "" {
+				parseErr = fmt.Errorf("%s() argument must be a valid alias identifier", relation)
+				return false, parseErr
+			}
 			relations = append(relations, models.ClusterRelation{
-				Relation:  "same",
+				Relation:  relation,
 				Reference: ref,
 			})
 			return true, nil
-		}),
-		gval.Function("different", func(args ...interface{}) (interface{}, error) {
-			if len(args) != 1 {
-				return nil, fmt.Errorf("same() requires exactly 1 argument")
-			}
-			ref := fmt.Sprintf("%v", args[0])
-			relations = append(relations, models.ClusterRelation{
-				Relation:  "different",
-				Reference: ref,
-			})
-			return true, nil
-		}),
-		gval.Function("child", func(args ...interface{}) (interface{}, error) {
-			if len(args) != 1 {
-				return nil, fmt.Errorf("same() requires exactly 1 argument")
-			}
-			ref := fmt.Sprintf("%v", args[0])
-			relations = append(relations, models.ClusterRelation{
-				Relation:  "child",
-				Reference: ref,
-			})
-			return true, nil
-		}),
-	)
-	_, err := language.Evaluate(clusterCondition, map[string]interface{}{})
-	if err != nil {
-		log.Logger.Error("Error evaluating cluster condition", "error", err)
-		return []models.ClusterRelation{}
+		}
 	}
-	return relations
+
+	language := gval.NewLanguage(
+		gval.Parentheses(),
+		gval.PropositionalLogic(),
+		gval.Function("same", makeRefFunc("same")),
+		gval.Function("different", makeRefFunc("different")),
+		gval.Function("child", makeRefFunc("child")),
+	)
+
+	// Pass available aliases as context so gval resolves identifiers
+	// like "A" to the string "A" instead of nil.
+	_, err := language.Evaluate(clusterCondition, availableAliases)
+	if err != nil {
+		return nil, fmt.Errorf("invalid cluster_condition %q: %w", clusterCondition, err)
+	}
+	if parseErr != nil {
+		return nil, parseErr
+	}
+	return relations, nil
 }
 
 // cleanupResources runs the Delete method on a slice of deletable resources in a goroutine.
@@ -260,6 +256,16 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 	resources := []any{}
 	multipleOcp := multipleKind(placementRequest.Resources, "OcpSandbox")
 	multipleDNS := multipleKind(placementRequest.Resources, "DNSSandbox")
+
+	// Build a map of available aliases for cluster_condition validation.
+	// gval uses this map as context so identifiers like "A" resolve to "A" (string)
+	// instead of nil.
+	availableAliases := make(map[string]string)
+	for _, res := range placementRequest.Resources {
+		if res.Alias != "" {
+			availableAliases[res.Alias] = res.Alias
+		}
+	}
 	for _, request := range placementRequest.Resources {
 		switch request.Kind {
 		case "AwsSandbox", "AwsAccount", "aws_account":
@@ -300,11 +306,23 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 			// Create the placement in OCP
 			var clusterRelation []models.ClusterRelation
 			if request.ClusterCondition != "" {
-				clusterRelation = parseClusterCondition(request.ClusterCondition)
+				var parseErr error
+				clusterRelation, parseErr = parseClusterCondition(request.ClusterCondition, availableAliases)
+				if parseErr != nil {
+					cleanupResources(tocleanup)
+					w.WriteHeader(http.StatusBadRequest)
+					render.Render(w, r, &v1.Error{
+						Err:            parseErr,
+						HTTPStatusCode: http.StatusBadRequest,
+						Message:        "Invalid cluster_condition",
+						ErrorMultiline: []string{parseErr.Error()},
+					})
+					return
+				}
 			} else {
 				clusterRelation = request.ClusterRelation
 			}
-			log.Logger.Info("ClusterRelation", "alias", request.Alias, "clusterRelation", request.ClusterRelation)
+			log.Logger.Info("ClusterRelation", "alias", request.Alias, "clusterRelation", clusterRelation)
 
 			account, err := h.OcpSandboxProvider.Request(
 				placementRequest.ServiceUuid,
@@ -509,6 +527,13 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 	overallAvailable := true
 	multipleOcpAccounts := []models.OcpSandboxWithCreds{} // Needed for OCP scheduling logic
 
+	availableAliasesDryRun := make(map[string]string)
+	for _, res := range placementRequest.Resources {
+		if res.Alias != "" {
+			availableAliasesDryRun[res.Alias] = res.Alias
+		}
+	}
+
 	for _, request := range placementRequest.Resources {
 		result := &v1.ResourceDryRunResult{
 			Kind: request.Kind,
@@ -532,7 +557,18 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 		case "OcpSandbox":
 			var clusterRelation []models.ClusterRelation
 			if request.ClusterCondition != "" {
-				clusterRelation = parseClusterCondition(request.ClusterCondition)
+				var parseErr error
+				clusterRelation, parseErr = parseClusterCondition(request.ClusterCondition, availableAliasesDryRun)
+				if parseErr != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					render.Render(w, r, &v1.Error{
+						Err:            parseErr,
+						HTTPStatusCode: http.StatusBadRequest,
+						Message:        "Invalid cluster_condition",
+						ErrorMultiline: []string{parseErr.Error()},
+					})
+					return
+				}
 			} else {
 				clusterRelation = request.ClusterRelation
 			}

@@ -988,6 +988,12 @@ func (a *OcpSandboxProvider) waitForClusterRelations(
 		referencedAliases[rel.Reference] = true
 	}
 
+	log.Logger.Info("waitForClusterRelations started",
+		"alias", selfAlias,
+		"serviceUuid", serviceUuid,
+		"referencedAliases", referencedAliases,
+	)
+
 	deadline := time.Now().Add(clusterRelationTimeout)
 
 	for time.Now().Before(deadline) {
@@ -1027,6 +1033,11 @@ func (a *OcpSandboxProvider) waitForClusterRelations(
 					})
 				}
 			}
+			log.Logger.Info("Cluster relation dependencies resolved",
+				"alias", selfAlias,
+				"serviceUuid", serviceUuid,
+				"resolvedCount", len(result),
+			)
 			return result, nil
 		}
 
