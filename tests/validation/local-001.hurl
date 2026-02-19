@@ -66,7 +66,7 @@ Authorization: Bearer {{access_token}}
     "env_type": "test"
   }
 }
-HTTP 200
+HTTP 202
 [Asserts]
 jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
@@ -157,7 +157,7 @@ Authorization: Bearer {{access_token}}
     "env_type": "validate-cluster"
   }
 }
-HTTP 200
+HTTP 202
 [Captures]
 sandbox_name: jsonpath "$.Placement.resources[0].name"
 [Asserts]
@@ -220,7 +220,7 @@ Authorization: Bearer {{access_token}}
     "env_type": "cluster-validation"
   }
 }
-HTTP 200
+HTTP 202
 [Captures]
 sandbox_name: jsonpath "$.Placement.resources[0].name"
 [Asserts]
@@ -315,7 +315,7 @@ Authorization: Bearer {{access_token}}
     "env_type": "validate-cluster"
   }
 }
-HTTP 200
+HTTP 202
 [Captures]
 sandbox_name: jsonpath "$.Placement.resources[0].name"
 [Asserts]

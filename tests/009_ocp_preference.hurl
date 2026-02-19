@@ -59,7 +59,7 @@ Authorization: Bearer {{access_token}}
     "env_type": "tests"
   }
 }
-HTTP 200
+HTTP 202
 [Asserts]
 jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
@@ -116,7 +116,7 @@ Authorization: Bearer {{access_token}}
     "env_type": "tests"
   }
 }
-HTTP 200
+HTTP 202
 [Asserts]
 jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
@@ -173,7 +173,7 @@ Authorization: Bearer {{access_token}}
     "env_type": "tests"
   }
 }
-HTTP 200
+HTTP 202
 [Asserts]
 jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
@@ -230,7 +230,7 @@ Authorization: Bearer {{access_token}}
     "env_type": "tests"
   }
 }
-HTTP 200
+HTTP 202
 [Asserts]
 jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"

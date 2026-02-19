@@ -260,7 +260,6 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 	resources := []any{}
 	multipleOcp := multipleKind(placementRequest.Resources, "OcpSandbox")
 	multipleDNS := multipleKind(placementRequest.Resources, "DNSSandbox")
-	multipleOcpAccounts := []models.OcpSandboxWithCreds{}
 	for _, request := range placementRequest.Resources {
 		switch request.Kind {
 		case "AwsSandbox", "AwsAccount", "aws_account":
@@ -306,7 +305,6 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 				clusterRelation = request.ClusterRelation
 			}
 			log.Logger.Info("ClusterRelation", "alias", request.Alias, "clusterRelation", request.ClusterRelation)
-			var async_request bool = request.Alias == ""
 
 			account, err := h.OcpSandboxProvider.Request(
 				placementRequest.ServiceUuid,
@@ -316,9 +314,7 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 				request.Quota,
 				request.LimitRange,
 				multipleOcp,
-				multipleOcpAccounts,
 				r.Context(),
-				async_request,
 				request.Alias,
 				clusterRelation,
 			)
@@ -357,9 +353,6 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 				return
 			}
 			tocleanup = append(tocleanup, &account)
-			if multipleOcp && request.Alias != "" {
-				multipleOcpAccounts = append(multipleOcpAccounts, account)
-			}
 			resources = append(resources, account)
 
 		case "DNSSandbox":
@@ -486,11 +479,11 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(http.StatusAccepted)
 	render.Render(w, r, &v1.PlacementResponse{
 		Placement:      placement,
 		Message:        "Placement Created",
-		HTTPStatusCode: http.StatusOK,
+		HTTPStatusCode: http.StatusAccepted,
 	})
 }
 

@@ -43,7 +43,7 @@ Authorization: Bearer {{access_token}}
     "sandbox.test/fail_reason": "Test booking failure: cluster unreachable"
   }
 }
-HTTP 200
+HTTP 202
 [Captures]
 sandbox_name: jsonpath "$.Placement.resources[0].name"
 [Asserts]
@@ -115,7 +115,7 @@ Authorization: Bearer {{access_token}}
     "sandbox.test/fail_book": "true"
   }
 }
-HTTP 200
+HTTP 202
 [Captures]
 sandbox_name2: jsonpath "$.Placement.resources[0].name"
 [Asserts]
