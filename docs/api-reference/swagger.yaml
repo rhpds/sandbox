@@ -187,21 +187,80 @@ paths:
       operationId: createPlacements
       tags:
         - placement
+      description: |
+        Create a new placement request. Resources are provisioned asynchronously.
+        The response returns immediately with HTTP 202 and resources in `initializing` status.
+        Use `GET /placements/{uuid}` to poll for completion (status `success`).
       requestBody:
         description: JSON object to specify UUID and other annotations when requesting a resource.
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/PlacementRequest"
+            examples:
+              simple:
+                summary: Simple AWS placement
+                value:
+                  service_uuid: 13a8b15c-e752-4727-ac78-600e8833e575
+                  resources:
+                    - kind: AwsSandbox
+                      count: 2
+              cluster_relation:
+                summary: OCP placement with cluster relations
+                value:
+                  service_uuid: 13a8b15c-e752-4727-ac78-600e8833e575
+                  resources:
+                    - kind: OcpSandbox
+                      alias: cluster
+                      cloud_selector:
+                        purpose: dev
+                    - kind: OcpSandbox
+                      cluster_condition: "same(cluster)"
+                      cloud_selector:
+                        purpose: dev
+                    - kind: OcpSandbox
+                      cluster_condition: "different(cluster)"
+                      cloud_selector:
+                        purpose: dev
+                  annotations:
+                    guid: myguid
+                    env_type: ocp4-cluster
       responses:
         '200':
-          description: The Placement, containing the allocated resource(s), with credentials.
+          description: |
+            Idempotent replay. A placement with the same `service_uuid` and an identical
+            request already exists. The existing placement is returned as-is (no new
+            resources are created).
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PlacementWithCreds"
+                $ref: "#/components/schemas/PlacementResponse"
+        '202':
+          description: |
+            Placement accepted. Resources are being provisioned asynchronously.
+            Poll `GET /placements/{uuid}` until the placement status is `success`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlacementResponse"
+        '400':
+          description: |
+            Bad request. For example, an invalid `cluster_condition` expression
+            or a `cluster_condition` referencing an alias that does not exist in the request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         '404':
-          description: NotFound
+          description: NotFound. No schedulable cluster found matching `cloud_selector`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: |
+            Conflict. A placement with the same `service_uuid` already exists
+            but with a different request body.
           content:
             application/json:
               schema:
@@ -2682,10 +2741,31 @@ components:
           example: 1
         alias:
           type: string
+          description: |
+            A label for this resource within the placement request.
+            Used by `cluster_condition` in sibling resources to reference this resource.
+            Must be unique within the placement request.
+          example: cluster
         cluster_condition:
           type: string
+          description: |
+            An expression that constrains cluster scheduling relative to sibling resources.
+            Uses `same(<alias>)`, `different(<alias>)`, or `child(<alias>)` functions,
+            combined with `&&` (AND).
+
+            - `same(A)`: schedule on the same cluster as the resource with alias `A`
+            - `different(A)`: schedule on a different cluster than alias `A`
+            - `child(A)`: schedule on a child (HCP) cluster of the cluster used by alias `A`
+
+            All referenced aliases must exist in the placement request.
+            Resources with `cluster_condition` wait for their referenced siblings
+            to be provisioned before scheduling begins.
+          example: "same(cluster) && different(other)"
         cluster_relation:
           type: array
+          description: |
+            Explicit cluster relation constraints (alternative to `cluster_condition`).
+            Prefer using `cluster_condition` for new integrations.
           items:
             type: object
             properties:
@@ -2813,6 +2893,21 @@ components:
           properties:
             resources:
               $ref: "#/components/schemas/ResourcesWithCreds"
+
+    PlacementResponse:
+      description: |
+        Response returned when a placement is created.
+        Contains the placement (with resources in `initializing` status) and a message.
+      type: object
+      properties:
+        http_code:
+          type: integer
+          example: 202
+        message:
+          type: string
+          example: Placement Created
+        Placement:
+          $ref: '#/components/schemas/PlacementWithCreds'
 
     Account:
       oneOf:
@@ -3098,6 +3193,10 @@ components:
         ingress_domain:
           type: string
           example: apps.ocp-cluster-1.com
+        alias:
+          type: string
+          description: The alias assigned to this resource in the placement request.
+          example: cluster
         status:
           type: string
           enum:
@@ -3106,6 +3205,10 @@ components:
             - success
             - error
             - deleting
+        error_message:
+          type: string
+          description: Error details when the resource status is `error`.
+          example: "Failed to create namespace: quota exceeded"
         cluster_additional_vars:
           type: object
           example:
