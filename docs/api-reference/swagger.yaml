@@ -243,6 +243,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlacementResponse"
+              example:
+                http_code: 200
+                message: Placement Already Exists
+                Placement:
+                  service_uuid: 0b42186c-b21d-11ec-a820-0a58ac14e20a
+                  status: success
+                  resources:
+                    - name: sandbox123
+                      kind: AwsSandbox
+                      account_id: '0123456'
+                      zone: sandbox123.domain.com
+                      hosted_zone_id: Z019612345AH4C7KTTZJ0
+                      available: false
+                      to_cleanup: false
+                  annotations:
+                    guid: abcde
+                    env_type: ocp4-cluster
+                  created_at: '2023-03-13T09:42:33+01:00'
+                  updated_at: '2023-03-13T09:42:33+01:00'
         '202':
           description: |
             Placement accepted. Resources are being provisioned asynchronously.
@@ -251,6 +270,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlacementResponse"
+              example:
+                http_code: 202
+                message: Placement Created
+                Placement:
+                  service_uuid: 0b42186c-b21d-11ec-a820-0a58ac14e20a
+                  status: initializing
+                  resources:
+                    - name: sandbox123
+                      kind: AwsSandbox
+                      account_id: '0123456'
+                      zone: sandbox123.domain.com
+                      hosted_zone_id: Z019612345AH4C7KTTZJ0
+                      available: false
+                      to_cleanup: false
+                  annotations:
+                    guid: abcde
+                    env_type: ocp4-cluster
+                  created_at: '2023-03-13T09:42:33+01:00'
+                  updated_at: '2023-03-13T09:42:33+01:00'
         '400':
           description: |
             Bad request. For example, an invalid `cluster_condition` expression
@@ -692,7 +730,7 @@ paths:
           content:
             application/json:
               schema:
-                oneOf:
+                anyOf:
                   - $ref: "#/components/schemas/Account"
                   - $ref: "#/components/schemas/AwsAccountWithCreds"
               examples:
@@ -2981,7 +3019,24 @@ components:
           type: string
           example: Placement Created
         Placement:
-          $ref: '#/components/schemas/PlacementWithCreds'
+          allOf:
+            - $ref: '#/components/schemas/PlacementWithCreds'
+          example:
+            service_uuid: 0b42186c-b21d-11ec-a820-0a58ac14e20a
+            status: initializing
+            resources:
+              - name: sandbox123
+                kind: AwsSandbox
+                account_id: '0123456'
+                zone: sandbox123.domain.com
+                hosted_zone_id: Z019612345AH4C7KTTZJ0
+                available: false
+                to_cleanup: false
+            annotations:
+              guid: abcde
+              env_type: ocp4-cluster
+            created_at: '2023-03-13T09:42:33+01:00'
+            updated_at: '2023-03-13T09:42:33+01:00'
 
     Account:
       description: A sandbox account, one of AwsAccount, AzureAccount, OcpSandbox, DNSSandbox, or IBMResourceGroupSandbox
@@ -3051,6 +3106,9 @@ components:
       example:
         - name: sandbox123
           kind: AwsSandbox
+          account_id: '0123456'
+          zone: sandbox123.domain.com
+          hosted_zone_id: Z019612345AH4C7KTTZJ0
           available: true
           to_cleanup: false
 
