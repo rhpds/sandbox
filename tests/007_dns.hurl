@@ -246,7 +246,7 @@ Authorization: Bearer {{access_token}}
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
-HTTP 200
+HTTP 202
 [Asserts]
 jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"
@@ -356,7 +356,7 @@ Authorization: Bearer {{access_token}}
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
-HTTP 200
+HTTP 202
 [Captures]
 sandbox_name: jsonpath "$.Placement.resources[0].name"
 [Asserts]
@@ -492,7 +492,7 @@ Authorization: Bearer {{access_token}}
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
-HTTP 200
+HTTP 202
 [Captures]
 sandbox_name: jsonpath "$.Placement.resources[0].name"
 [Asserts]
@@ -564,7 +564,7 @@ Authorization: Bearer {{access_token}}
     "env_type": "ocp4-cluster-blablablabla"
   }
 }
-HTTP 200
+HTTP 202
 [Asserts]
 jsonpath "$.message" == "Placement Created"
 jsonpath "$.Placement.service_uuid" == "{{uuid}}"

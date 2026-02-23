@@ -29,4 +29,4 @@ Authorization: Bearer {{access_token}}
     "created_by": "fixture"
   }
 }
-HTTP 200
+HTTP 202

@@ -968,6 +968,91 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(
 	return clusters, nil
 }
 
+const (
+	clusterRelationPollInterval = 2 * time.Second
+	clusterRelationTimeout      = 5 * time.Minute
+)
+
+// waitForClusterRelations polls the database until all referenced OcpSandbox
+// entries (by alias) have completed scheduling. Returns the resolved sibling
+// accounts for use in GetSchedulableClusters.
+func (a *OcpSandboxProvider) waitForClusterRelations(
+	serviceUuid string,
+	relations []ClusterRelation,
+	selfAlias string,
+) ([]OcpSandboxWithCreds, error) {
+
+	// Collect distinct referenced aliases
+	referencedAliases := make(map[string]bool)
+	for _, rel := range relations {
+		referencedAliases[rel.Reference] = true
+	}
+
+	log.Logger.Info("waitForClusterRelations started",
+		"alias", selfAlias,
+		"serviceUuid", serviceUuid,
+		"referencedAliases", referencedAliases,
+	)
+
+	deadline := time.Now().Add(clusterRelationTimeout)
+
+	for time.Now().Before(deadline) {
+		siblings, err := a.FetchAllByServiceUuid(serviceUuid)
+		if err != nil {
+			return nil, fmt.Errorf("error fetching sibling sandboxes: %w", err)
+		}
+
+		allResolved := true
+		for refAlias := range referencedAliases {
+			found := false
+			for _, sibling := range siblings {
+				if sibling.Alias == refAlias {
+					found = true
+					if sibling.Status == "error" {
+						return nil, fmt.Errorf(
+							"referenced resource with alias '%s' has failed, cannot resolve cluster relation",
+							refAlias)
+					}
+					if sibling.Status != "success" {
+						allResolved = false
+					}
+					break
+				}
+			}
+			if !found {
+				allResolved = false
+			}
+		}
+
+		if allResolved {
+			var result []OcpSandboxWithCreds
+			for _, sibling := range siblings {
+				if sibling.Alias != "" && sibling.Alias != selfAlias {
+					result = append(result, OcpSandboxWithCreds{
+						OcpSandbox: sibling,
+					})
+				}
+			}
+			log.Logger.Info("Cluster relation dependencies resolved",
+				"alias", selfAlias,
+				"serviceUuid", serviceUuid,
+				"resolvedCount", len(result),
+			)
+			return result, nil
+		}
+
+		log.Logger.Info("Waiting for cluster relation dependencies",
+			"alias", selfAlias,
+			"serviceUuid", serviceUuid,
+		)
+		time.Sleep(clusterRelationPollInterval)
+	}
+
+	return nil, fmt.Errorf(
+		"timeout after %v waiting for cluster relation dependencies to resolve",
+		clusterRelationTimeout)
+}
+
 func (a *OcpSharedClusterConfiguration) CreateRestConfig() (*rest.Config, error) {
 	if a.Token != "" {
 		return &rest.Config{
@@ -1055,9 +1140,7 @@ func (a *OcpSandboxProvider) Request(
 	requestedQuota *v1.ResourceList,
 	requestedLimitRange *v1.LimitRange,
 	multiple bool,
-	multipleAccounts []OcpSandboxWithCreds,
 	ctx context.Context,
-	asyncRequest bool,
 	alias string,
 	clusterRelation []ClusterRelation,
 ) (OcpSandboxWithCreds, error) {
@@ -1070,24 +1153,33 @@ func (a *OcpSandboxProvider) Request(
 		return OcpSandboxWithCreds{}, errors.New("guid not found in annotations")
 	}
 
-	// Version with OcpSharedClusterConfiguration methods
-	candidateClusters, err := a.GetSchedulableClusters(cloudSelector, clusterRelation, multipleAccounts, alias)
-	if err != nil {
-		log.Logger.Error("Error getting schedulable clusters", "error", err)
-		return OcpSandboxWithCreds{}, err
-	}
-	if len(candidateClusters) == 0 {
-		log.Logger.Error("No OCP shared cluster configuration found", "cloudSelector", cloudSelector)
-		return OcpSandboxWithCreds{}, ErrNoSchedule
-	}
+	hasRelations := len(clusterRelation) > 0
 
-	// Apply priorities using CloudPreference
-	if len(cloudPreference) > 0 {
-		candidateClusters = ApplyPriorityWeight(
-			candidateClusters,
-			cloudPreference,
-			1,
-		)
+	// For resources WITHOUT cluster relations, resolve schedulable clusters
+	// synchronously so we can fail fast with ErrNoSchedule.
+	// For resources WITH cluster relations, scheduling is deferred to the
+	// async task because it depends on sibling resources completing first.
+	var candidateClusters OcpSharedClusterConfigurations
+	if !hasRelations {
+		var err error
+		candidateClusters, err = a.GetSchedulableClusters(cloudSelector, clusterRelation, nil, alias)
+		if err != nil {
+			log.Logger.Error("Error getting schedulable clusters", "error", err)
+			return OcpSandboxWithCreds{}, err
+		}
+		if len(candidateClusters) == 0 {
+			log.Logger.Error("No OCP shared cluster configuration found", "cloudSelector", cloudSelector)
+			return OcpSandboxWithCreds{}, ErrNoSchedule
+		}
+
+		// Apply priorities using CloudPreference
+		if len(cloudPreference) > 0 {
+			candidateClusters = ApplyPriorityWeight(
+				candidateClusters,
+				cloudPreference,
+				1,
+			)
+		}
 	}
 
 	// Determine guid, auto increment the guid if there are multiple resources
@@ -1135,6 +1227,39 @@ func (a *OcpSandboxProvider) Request(
 				log.Logger.Error("fail_book: SetStatusWithMessage failed", "error", err, "name", rnew.Name, "id", rnew.ID)
 			}
 			return
+		}
+
+		// For resources WITH cluster relations, resolve dependencies and
+		// schedule clusters inside the async task.
+		if hasRelations {
+			resolvedSiblings, err := a.waitForClusterRelations(serviceUuid, clusterRelation, alias)
+			if err != nil {
+				log.Logger.Error("Error waiting for cluster relations", "error", err,
+					"alias", alias, "serviceUuid", serviceUuid)
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to resolve cluster relations: %v", err))
+				return
+			}
+
+			candidateClusters, err = a.GetSchedulableClusters(cloudSelector, clusterRelation, resolvedSiblings, alias)
+			if err != nil {
+				log.Logger.Error("Error getting schedulable clusters", "error", err)
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to get schedulable clusters: %v", err))
+				return
+			}
+			if len(candidateClusters) == 0 {
+				log.Logger.Error("No OCP shared cluster configuration found",
+					"cloudSelector", cloudSelector, "alias", alias)
+				rnew.SetStatusWithMessage("error", "No cluster available: cloud_selector may be too restrictive or cluster relations cannot be satisfied")
+				return
+			}
+
+			if len(cloudPreference) > 0 {
+				candidateClusters = ApplyPriorityWeight(
+					candidateClusters,
+					cloudPreference,
+					1,
+				)
+			}
 		}
 
 	providerLoop:
@@ -1496,19 +1621,27 @@ func (a *OcpSandboxProvider) Request(
 				Version:  "v1",
 				Resource: "routes",
 			}
-			// Get the console route from the openshift-console namespace
-			res, err := dynclientset.Resource(routeGVR).Namespace("openshift-console").Get(context.TODO(), "console", metav1.GetOptions{})
-			if err != nil {
-				log.Logger.Warn("Could not get console route", "error", err, "cluster", selectedCluster.Name)
-			} else {
+			// Get the console route from the openshift-console namespace, with retry
+			for attempt := 0; attempt < 3; attempt++ {
+				res, err := dynclientset.Resource(routeGVR).Namespace("openshift-console").Get(context.TODO(), "console", metav1.GetOptions{})
+				if err != nil {
+					log.Logger.Warn("Could not get console route", "error", err, "cluster", selectedCluster.Name, "attempt", attempt+1)
+					time.Sleep(2 * time.Second)
+					continue
+				}
 				// Extract the host from the unstructured data
 				host, found, err := unstructured.NestedString(res.Object, "spec", "host")
 				if err != nil || !found {
-					log.Logger.Warn("Could not find 'spec.host' in console route", "found", found, "error", err, "cluster", selectedCluster.Name)
-				} else {
-					rnew.OcpConsoleUrl = "https://" + host
-					log.Logger.Info("Successfully detected console URL", "cluster", selectedCluster.Name, "console_url", rnew.OcpConsoleUrl)
+					log.Logger.Warn("Could not find 'spec.host' in console route", "found", found, "error", err, "cluster", selectedCluster.Name, "attempt", attempt+1)
+					time.Sleep(2 * time.Second)
+					continue
 				}
+				rnew.OcpConsoleUrl = "https://" + host
+				log.Logger.Info("Successfully detected console URL", "cluster", selectedCluster.Name, "console_url", rnew.OcpConsoleUrl)
+				break
+			}
+			if rnew.OcpConsoleUrl == "" {
+				log.Logger.Warn("Failed to detect console URL after retries", "cluster", selectedCluster.Name)
 			}
 		}
 
@@ -1518,26 +1651,37 @@ func (a *OcpSandboxProvider) Request(
 			userAccountName := "sandbox-" + annotations["guid"]
 
 			// Check if we already have a Keycloak user from any previously created account
+			// by querying the DB for sibling resources in the same placement.
 			var password string
 			var userAlreadyCreated bool
+
+			siblingAccounts, fetchErr := a.FetchAllByServiceUuidWithCreds(serviceUuid)
+			if fetchErr != nil {
+				log.Logger.Warn("Error fetching sibling credentials for Keycloak reuse", "error", fetchErr)
+			}
 		searchLoop:
-			for _, maccount := range multipleAccounts {
-				// Look for KeycloakCredential in the account's credentials
+			for _, maccount := range siblingAccounts {
+				if maccount.Name == rnew.Name {
+					continue // Skip self
+				}
 				for _, cred := range maccount.Credentials {
-					if keycloakCred, ok := cred.(KeycloakCredential); ok {
-						if keycloakCred.Kind == "KeycloakUser" && keycloakCred.Username == userAccountName {
-							password = keycloakCred.Password
-							// Check if user was created on the same cluster to determine userAlreadyCreated flag
-							userAlreadyCreated = maccount.OcpSharedClusterConfigurationName == selectedCluster.Name
-							log.Logger.Debug("Reusing existing Keycloak credentials",
-								"alias", maccount.Alias,
-								"user", userAccountName,
-								"fromCluster", maccount.OcpSharedClusterConfigurationName,
-								"currentCluster", selectedCluster.Name,
-								"userAlreadyCreated", userAlreadyCreated,
-							)
-							break searchLoop
+					credMap, ok := cred.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					if credMap["kind"] == "KeycloakUser" && credMap["username"] == userAccountName {
+						if pw, ok := credMap["password"].(string); ok {
+							password = pw
 						}
+						userAlreadyCreated = maccount.OcpSharedClusterConfigurationName == selectedCluster.Name
+						log.Logger.Debug("Reusing existing Keycloak credentials",
+							"alias", maccount.Alias,
+							"user", userAccountName,
+							"fromCluster", maccount.OcpSharedClusterConfigurationName,
+							"currentCluster", selectedCluster.Name,
+							"userAlreadyCreated", userAlreadyCreated,
+						)
+						break searchLoop
 					}
 				}
 			}
@@ -1877,11 +2021,7 @@ func (a *OcpSandboxProvider) Request(
 		log.Logger.Info("Ocp sandbox booked", "account", rnew.Name, "service_uuid", rnew.ServiceUuid,
 			"cluster", rnew.OcpSharedClusterConfigurationName, "namespace", rnew.Namespace)
 	}
-	if asyncRequest {
-		go task()
-	} else {
-		task()
-	}
+	go task()
 	//--------------------------------------------------
 
 	return rnew, nil

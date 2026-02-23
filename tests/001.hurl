@@ -284,7 +284,7 @@ Authorization: Bearer {{access_token}}
     }
   ]
 }
-HTTP 200
+HTTP 202
 [Captures]
 account: jsonpath "$.Placement.resources[0].name"
 [Asserts]
