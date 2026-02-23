@@ -1,0 +1,8 @@
+extends: [[vacuum:oas, recommended]]
+rules:
+  # API uses snake_case by design
+  camel-case-properties: off
+  # Duplicate descriptions are natural in OpenAPI specs (shared Authorization headers, error responses)
+  description-duplication: off
+  # Discriminated oneOf schemas cause false positives in example validation
+  oas3-valid-schema-example: off
