@@ -136,11 +136,20 @@ run_api() {
 
 # Check if we need to deploy postgres
 if [ "${DEPLOY_POSTGRES:-yes}" = "yes" ]; then
-
-    # pull needed images
-    podman pull --quiet quay.io/rhpds/sandbox-admin:latest || echo "Warning: Failed to pull sandbox-admin image"
-    podman pull --quiet docker.io/library/postgres:16-bullseye || echo "Warning: Failed to pull postgres image"
-    podman pull --quiet docker.io/bitwarden/bws:0.5.0 || echo "Warning: Failed to pull bws image"
+    # Check and pull sandbox-admin
+    if ! podman image exists quay.io/rhpds/sandbox-admin:latest; then
+        podman pull --quiet quay.io/rhpds/sandbox-admin:latest || echo "Warning: Failed to pull sandbox-admin"
+    fi
+    
+    # Check and pull postgres
+    if ! podman image exists docker.io/library/postgres:16-bullseye; then
+        podman pull --quiet docker.io/library/postgres:16-bullseye || echo "Warning: Failed to pull postgres"
+    fi
+    
+    # Check and pull bws
+    if ! podman image exists docker.io/bitwarden/bws:0.5.0; then
+        podman pull --quiet docker.io/bitwarden/bws:0.5.0 || echo "Warning: Failed to pull bws"
+    fi
 
     # Run the local postgresql instance
     set +o pipefail
