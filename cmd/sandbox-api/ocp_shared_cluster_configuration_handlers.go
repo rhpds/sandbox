@@ -358,6 +358,16 @@ func (h *BaseHandler) UpdateOcpSharedClusterConfigurationHandler(w http.Response
 		ocpSharedClusterConfiguration.UsageNodeSelector = *input.UsageNodeSelector
 	}
 
+	// Handle MaxPlacements: if set to -1, clear the limit (set to nil)
+	// Any value >= 0 sets the limit
+	if input.MaxPlacements != nil {
+		if *input.MaxPlacements < 0 {
+			ocpSharedClusterConfiguration.MaxPlacements = nil
+		} else {
+			ocpSharedClusterConfiguration.MaxPlacements = input.MaxPlacements
+		}
+	}
+
 	if err := ocpSharedClusterConfiguration.Save(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{

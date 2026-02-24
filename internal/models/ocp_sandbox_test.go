@@ -287,3 +287,166 @@ func TestApplyQuota(t *testing.T) {
 	}
 
 }
+
+func TestOcpSharedClusterConfigurationMaxPlacements(t *testing.T) {
+	// Test JSON marshaling/unmarshaling of MaxPlacements field
+	t.Run("MaxPlacements nil when not set", func(t *testing.T) {
+		cluster := OcpSharedClusterConfiguration{
+			Name:      "test-cluster",
+			ApiUrl:    "https://api.test.com",
+			IngressDomain: "apps.test.com",
+		}
+
+		if cluster.MaxPlacements != nil {
+			t.Errorf("MaxPlacements should be nil by default, got %v", *cluster.MaxPlacements)
+		}
+	})
+
+	t.Run("MaxPlacements set from JSON", func(t *testing.T) {
+		jsonCluster := []byte(`{
+			"name": "test-cluster",
+			"api_url": "https://api.test.com",
+			"ingress_domain": "apps.test.com",
+			"max_placements": 10
+		}`)
+
+		var cluster OcpSharedClusterConfiguration
+		if err := json.Unmarshal(jsonCluster, &cluster); err != nil {
+			t.Fatalf("Failed to unmarshal cluster: %v", err)
+		}
+
+		if cluster.MaxPlacements == nil {
+			t.Fatal("MaxPlacements should not be nil after unmarshaling")
+		}
+
+		if *cluster.MaxPlacements != 10 {
+			t.Errorf("MaxPlacements should be 10, got %d", *cluster.MaxPlacements)
+		}
+	})
+
+	t.Run("MaxPlacements omitted from JSON when nil", func(t *testing.T) {
+		cluster := OcpSharedClusterConfiguration{
+			Name:      "test-cluster",
+			ApiUrl:    "https://api.test.com",
+			IngressDomain: "apps.test.com",
+		}
+
+		jsonData, err := json.Marshal(cluster)
+		if err != nil {
+			t.Fatalf("Failed to marshal cluster: %v", err)
+		}
+
+		// Check that max_placements is not in the JSON output
+		var result map[string]interface{}
+		if err := json.Unmarshal(jsonData, &result); err != nil {
+			t.Fatalf("Failed to unmarshal result: %v", err)
+		}
+
+		if _, exists := result["max_placements"]; exists {
+			t.Error("max_placements should not be present in JSON when nil")
+		}
+	})
+
+	t.Run("MaxPlacements included in JSON when set", func(t *testing.T) {
+		maxPlacements := 5
+		cluster := OcpSharedClusterConfiguration{
+			Name:          "test-cluster",
+			ApiUrl:        "https://api.test.com",
+			IngressDomain: "apps.test.com",
+			MaxPlacements: &maxPlacements,
+		}
+
+		jsonData, err := json.Marshal(cluster)
+		if err != nil {
+			t.Fatalf("Failed to marshal cluster: %v", err)
+		}
+
+		var result map[string]interface{}
+		if err := json.Unmarshal(jsonData, &result); err != nil {
+			t.Fatalf("Failed to unmarshal result: %v", err)
+		}
+
+		val, exists := result["max_placements"]
+		if !exists {
+			t.Fatal("max_placements should be present in JSON when set")
+		}
+
+		// JSON unmarshals numbers as float64
+		if val.(float64) != 5 {
+			t.Errorf("max_placements should be 5, got %v", val)
+		}
+	})
+}
+
+func TestMaxPlacementsCheck(t *testing.T) {
+	// Test the logic for checking if a cluster has reached its max placements limit
+	// This tests the condition: cluster.MaxPlacements != nil && currentCount >= *cluster.MaxPlacements
+
+	t.Run("No limit when MaxPlacements is nil", func(t *testing.T) {
+		cluster := OcpSharedClusterConfiguration{
+			Name:          "test-cluster",
+			MaxPlacements: nil,
+		}
+
+		// When MaxPlacements is nil, the limit should not be enforced
+		if cluster.MaxPlacements != nil {
+			t.Error("MaxPlacements should be nil, limit should not be enforced")
+		}
+	})
+
+	t.Run("Under limit when currentCount < maxPlacements", func(t *testing.T) {
+		maxPlacements := 10
+		currentCount := 5
+		cluster := OcpSharedClusterConfiguration{
+			Name:          "test-cluster",
+			MaxPlacements: &maxPlacements,
+		}
+
+		atLimit := cluster.MaxPlacements != nil && currentCount >= *cluster.MaxPlacements
+		if atLimit {
+			t.Errorf("Should not be at limit: currentCount=%d, maxPlacements=%d", currentCount, maxPlacements)
+		}
+	})
+
+	t.Run("At limit when currentCount == maxPlacements", func(t *testing.T) {
+		maxPlacements := 10
+		currentCount := 10
+		cluster := OcpSharedClusterConfiguration{
+			Name:          "test-cluster",
+			MaxPlacements: &maxPlacements,
+		}
+
+		atLimit := cluster.MaxPlacements != nil && currentCount >= *cluster.MaxPlacements
+		if !atLimit {
+			t.Errorf("Should be at limit: currentCount=%d, maxPlacements=%d", currentCount, maxPlacements)
+		}
+	})
+
+	t.Run("Over limit when currentCount > maxPlacements", func(t *testing.T) {
+		maxPlacements := 10
+		currentCount := 15
+		cluster := OcpSharedClusterConfiguration{
+			Name:          "test-cluster",
+			MaxPlacements: &maxPlacements,
+		}
+
+		atLimit := cluster.MaxPlacements != nil && currentCount >= *cluster.MaxPlacements
+		if !atLimit {
+			t.Errorf("Should be over limit: currentCount=%d, maxPlacements=%d", currentCount, maxPlacements)
+		}
+	})
+
+	t.Run("Zero max placements blocks all", func(t *testing.T) {
+		maxPlacements := 0
+		currentCount := 0
+		cluster := OcpSharedClusterConfiguration{
+			Name:          "test-cluster",
+			MaxPlacements: &maxPlacements,
+		}
+
+		atLimit := cluster.MaxPlacements != nil && currentCount >= *cluster.MaxPlacements
+		if !atLimit {
+			t.Errorf("Should be at limit with maxPlacements=0: currentCount=%d", currentCount)
+		}
+	})
+}

@@ -105,6 +105,12 @@ type OcpSharedClusterConfiguration struct {
 	// the value if the labels match. More matching labels means higher weight.
 	// The clusters with the highest weight will be selected first.
 	Weight int `json:"weight,omitempty"`
+
+	// MaxPlacements limits the number of OcpSandbox resources that can be
+	// scheduled on this cluster. If nil/not set, no limit is enforced.
+	// This is useful for dedicated-shared scenarios where you want to limit
+	// the number of "seats" or persons on a particular cluster.
+	MaxPlacements *int `json:"max_placements,omitempty"`
 }
 
 // WithoutCredentials Method to return the OcpSharedClusterConfiguration without any credentials
@@ -336,8 +342,9 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 			strict_default_sandbox_quota,
 			quota_required,
 			skip_quota,
-			limit_range)
-			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+			limit_range,
+			max_placements)
+			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 			RETURNING id`,
 		p.Name,
 		p.ApiUrl,
@@ -356,6 +363,7 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 		p.QuotaRequired,
 		p.SkipQuota,
 		p.LimitRange,
+		p.MaxPlacements,
 	).Scan(&p.ID); err != nil {
 		return err
 	}
@@ -386,7 +394,8 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 			 strict_default_sandbox_quota = $15,
 			 quota_required = $16,
 			 skip_quota = $17,
-			 limit_range = $18
+			 limit_range = $18,
+			 max_placements = $19
 		 WHERE id = $10`,
 		p.Name,
 		p.ApiUrl,
@@ -406,6 +415,7 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 		p.QuotaRequired,
 		p.SkipQuota,
 		p.LimitRange,
+		p.MaxPlacements,
 	); err != nil {
 		return err
 	}
@@ -474,7 +484,8 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 			strict_default_sandbox_quota,
 			quota_required,
 			skip_quota,
-			limit_range
+			limit_range,
+			max_placements
 		 FROM ocp_shared_cluster_configurations WHERE name = $2`,
 		p.VaultSecret, name,
 	)
@@ -500,6 +511,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 		&cluster.QuotaRequired,
 		&cluster.SkipQuota,
 		&cluster.LimitRange,
+		&cluster.MaxPlacements,
 	); err != nil {
 		return OcpSharedClusterConfiguration{}, err
 	}
@@ -534,7 +546,8 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			strict_default_sandbox_quota,
 			quota_required,
 			skip_quota,
-			limit_range
+			limit_range,
+			max_placements
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
 	)
@@ -566,6 +579,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			&cluster.QuotaRequired,
 			&cluster.SkipQuota,
 			&cluster.LimitRange,
+			&cluster.MaxPlacements,
 		); err != nil {
 			return []OcpSharedClusterConfiguration{}, err
 		}
@@ -1269,6 +1283,25 @@ func (a *OcpSandboxProvider) Request(
 			log.Logger.Info("Cluster",
 				"name", cluster.Name,
 				"ApiUrl", cluster.ApiUrl)
+
+			// Check max_placements limit before connecting to the cluster
+			if cluster.MaxPlacements != nil {
+				currentCount, err := cluster.GetAccountCount()
+				if err != nil {
+					log.Logger.Error("Error getting account count for cluster",
+						"cluster", cluster.Name,
+						"error", err)
+					continue providerLoop
+				}
+				if currentCount >= *cluster.MaxPlacements {
+					log.Logger.Info("Cluster at max_placements limit",
+						"cluster", cluster.Name,
+						"currentCount", currentCount,
+						"maxPlacements", *cluster.MaxPlacements,
+					)
+					continue providerLoop
+				}
+			}
 
 			config, err := cluster.CreateRestConfig()
 			if err != nil {

@@ -2059,12 +2059,21 @@ paths:
                             cpu: "0.5"
                             memory: 1Gi
                           type: Container
+                max_placements:
+                  type: integer
+                  example: 50
+                  description: |-
+                    Maximum number of OcpSandbox resources that can be scheduled on this cluster.
+                    If not set (null), no limit is enforced.
+                    Set to -1 to clear/remove the limit.
+                    Set to 0 to block all new placements.
             example:
               strict_default_sandbox_quota: true
               quota_required: true
               skip_quota: false
               max_memory_usage_percentage: 70
               max_cpu_usage_percentage: 80
+              max_placements: 50
               usage_node_selector: 'node-role.kubernetes.io/compute='
               token: '...'
               additional_vars:
@@ -3809,6 +3818,14 @@ components:
                     cpu: "0.5"
                     memory: 1Gi
                   type: Container
+        max_placements:
+          type: integer
+          description: |-
+            Maximum number of OcpSandbox resources that can be scheduled on this cluster.
+            If not set (null), no limit is enforced.
+            This is useful for dedicated-shared scenarios where you want to limit
+            the number of "seats" or persons on a particular cluster.
+          example: 50
 
       example:
         name: ocp-cluster-1
