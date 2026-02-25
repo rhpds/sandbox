@@ -335,6 +335,7 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 				r.Context(),
 				request.Alias,
 				clusterRelation,
+				request.KeycloakUserPrefix,
 			)
 			if err != nil {
 				cleanupResources(tocleanup)

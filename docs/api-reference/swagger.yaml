@@ -2901,6 +2901,13 @@ components:
           $ref: "#/components/schemas/Annotations"
         cloud_preference:
           $ref: "#/components/schemas/Annotations"
+        keycloak_user_prefix:
+          type: string
+          description: |
+            Prefix for the Keycloak username created when `keycloak` is enabled in `cloud_selector`.
+            The resulting username will be `<prefix><guid>`.
+            Defaults to `user-` if not specified.
+          example: "user-"
         annotations:
           $ref: "#/components/schemas/Annotations"
         quota:

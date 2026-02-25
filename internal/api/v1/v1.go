@@ -113,17 +113,18 @@ func (p *PlacementResponse) Render(w http.ResponseWriter, r *http.Request) error
 }
 
 type ResourceRequest struct {
-	Alias            string                   `json:"alias,omitempty"`
-	Annotations      models.Annotations       `json:"annotations,omitempty"`
-	CloudPreference  models.Annotations       `json:"cloud_preference,omitempty"`
-	CloudSelector    models.Annotations       `json:"cloud_selector,omitempty"`
-	ClusterCondition string                   `json:"cluster_condition,omitempty"`
-	ClusterRelation  []models.ClusterRelation `json:"cluster_relation,omitempty"`
-	Count            int                      `json:"count"`
-	Kind             string                   `json:"kind"`
-	LimitRange       *v1.LimitRange           `json:"limit_range,omitempty"`
-	Quota            *v1.ResourceList         `json:"quota,omitempty"`
-	RequestedQuota   *v1.ResourceQuota        `json:"-"` // plumbing
+	Alias               string                   `json:"alias,omitempty"`
+	Annotations         models.Annotations       `json:"annotations,omitempty"`
+	CloudPreference     models.Annotations       `json:"cloud_preference,omitempty"`
+	CloudSelector       models.Annotations       `json:"cloud_selector,omitempty"`
+	ClusterCondition    string                   `json:"cluster_condition,omitempty"`
+	ClusterRelation     []models.ClusterRelation `json:"cluster_relation,omitempty"`
+	Count               int                      `json:"count"`
+	Kind                string                   `json:"kind"`
+	KeycloakUserPrefix  string                   `json:"keycloak_user_prefix,omitempty"`
+	LimitRange          *v1.LimitRange           `json:"limit_range,omitempty"`
+	Quota               *v1.ResourceList         `json:"quota,omitempty"`
+	RequestedQuota      *v1.ResourceQuota        `json:"-"` // plumbing
 }
 
 type ReservationResponse struct {
