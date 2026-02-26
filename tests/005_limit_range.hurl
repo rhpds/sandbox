@@ -278,3 +278,89 @@ Authorization: Bearer {{access_token}}
 [Options]
 retry: 40
 HTTP 404
+
+#################################################################################
+# Create a new placement using the shorthand limit_range format
+#################################################################################
+DELETE {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 6
+HTTP 404
+
+POST {{host}}/api/v1/placements
+Authorization: Bearer {{access_token}}
+{
+  "service_uuid": "{{uuid}}",
+  "resources": [
+    {
+      "kind": "OcpSandbox",
+      "cloud_selector": {
+        "quota": "yes"
+      },
+      "limit_range": {
+        "default": {
+          "cpu": "4",
+          "memory": "8Gi"
+        },
+        "defaultRequest": {
+          "cpu": "2",
+          "memory": "4Gi"
+        }
+      }
+    }
+  ],
+  "annotations": {
+    "tests": "OcpSandbox placement with shorthand limit range",
+    "guid": "{{guid}}",
+    "env_type": "ocp4-cluster-foo"
+  }
+}
+HTTP 202
+[Captures]
+sandbox_name: jsonpath "$.Placement.resources[0].name"
+[Asserts]
+jsonpath "$.message" == "Placement Created"
+jsonpath "$.Placement.service_uuid" == "{{uuid}}"
+jsonpath "$.Placement.resources" count == 1
+jsonpath "$.Placement.resources[0].status" == "initializing"
+
+#################################################################################
+# Wait until the placement is succesfull and resources are ready
+#################################################################################
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 40
+HTTP 200
+[Asserts]
+jsonpath "$.service_uuid" == "{{uuid}}"
+jsonpath "$.status" == "success"
+jsonpath "$.resources" count == 1
+jsonpath "$.resources[0].status" == "success"
+jsonpath "$.resources[0].limit_range.spec.limits" count == 1
+jsonpath "$.resources[0].limit_range.spec.limits[0].default.cpu" == "4"
+jsonpath "$.resources[0].limit_range.spec.limits[0].default.memory" == "8Gi"
+jsonpath "$.resources[0].limit_range.spec.limits[0].defaultRequest.cpu" == "2"
+jsonpath "$.resources[0].limit_range.spec.limits[0].defaultRequest.memory" == "4Gi"
+
+#################################################################################
+# Delete placement
+#################################################################################
+DELETE {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+HTTP 202
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+HTTP 200
+[Asserts]
+jsonpath "$.status" == "deleting"
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+[Options]
+retry: 40
+HTTP 404
