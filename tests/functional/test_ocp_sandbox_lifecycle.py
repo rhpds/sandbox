@@ -602,12 +602,13 @@ def run_tests():
         logger.info("Step 1: Creating placement for OcpSandbox")
         logger.info("=" * 60)
 
+        cloud_selector = {"purpose": "dev", "hcp": "no"}
+        if OCP_CLUSTER_NAME:
+            cloud_selector["name"] = OCP_CLUSTER_NAME
         resources = [{
             "kind": "OcpSandbox",
-            "cloud_selector": {"purpose": "dev", "hcp": "no"}
+            "cloud_selector": cloud_selector
         }]
-        if OCP_CLUSTER_NAME:
-            resources[0]["ocp_shared_cluster_configuration_name"] = OCP_CLUSTER_NAME
 
         # Generate a short guid for the test
         test_guid = f"lt-{test_uuid[:8]}"

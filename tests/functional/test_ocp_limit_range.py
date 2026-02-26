@@ -171,9 +171,12 @@ def run_tests():
         logger.info("Step 1: Creating placement with shorthand limit_range")
         logger.info("=" * 60)
 
+        cloud_selector = {"purpose": "dev", "hcp": "no"}
+        if OCP_CLUSTER_NAME:
+            cloud_selector["name"] = OCP_CLUSTER_NAME
         resources = [{
             "kind": "OcpSandbox",
-            "cloud_selector": {"purpose": "dev"},
+            "cloud_selector": cloud_selector,
             "limit_range": {
                 "default": {
                     "cpu": "4",
@@ -185,8 +188,6 @@ def run_tests():
                 }
             }
         }]
-        if OCP_CLUSTER_NAME:
-            resources[0]["ocp_shared_cluster_configuration_name"] = OCP_CLUSTER_NAME
 
         test_guid = f"lr-{test_uuid[:8]}"
         annotations = {

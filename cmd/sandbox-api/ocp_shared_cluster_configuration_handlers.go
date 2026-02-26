@@ -368,6 +368,18 @@ func (h *BaseHandler) UpdateOcpSharedClusterConfigurationHandler(w http.Response
 		}
 	}
 
+	if input.DeployerAdminSATokenTTL != nil {
+		ocpSharedClusterConfiguration.DeployerAdminSATokenTTL = *input.DeployerAdminSATokenTTL
+	}
+
+	if input.DeployerAdminSATokenRefreshInterval != nil {
+		ocpSharedClusterConfiguration.DeployerAdminSATokenRefreshInterval = *input.DeployerAdminSATokenRefreshInterval
+	}
+
+	if input.DeployerAdminSATokenTargetVar != nil {
+		ocpSharedClusterConfiguration.DeployerAdminSATokenTargetVar = *input.DeployerAdminSATokenTargetVar
+	}
+
 	if err := ocpSharedClusterConfiguration.Save(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
@@ -376,6 +388,12 @@ func (h *BaseHandler) UpdateOcpSharedClusterConfigurationHandler(w http.Response
 			ErrorMultiline: []string{err.Error()},
 		})
 		return
+	}
+
+	// If deployer-admin SA token config changed, signal the background
+	// rotation goroutine to pick it up immediately.
+	if input.DeployerAdminSATokenTTL != nil || input.DeployerAdminSATokenRefreshInterval != nil || input.DeployerAdminSATokenTargetVar != nil {
+		h.OcpSandboxProvider.TriggerRotation()
 	}
 
 	w.WriteHeader(http.StatusOK)

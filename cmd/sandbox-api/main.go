@@ -213,6 +213,9 @@ func main() {
 
 	go worker.WatchLifecycleDBChannels(context.Background())
 
+	// Start background admin SA token rotation for OCP clusters
+	OcpSandboxProvider.StartDeployerAdminSATokenRotation(ctx)
+
 	logLevel := slog.LevelInfo
 	if os.Getenv("DEBUG") == "true" {
 		logLevel = slog.LevelDebug

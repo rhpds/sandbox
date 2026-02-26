@@ -2067,6 +2067,18 @@ paths:
                     If not set (null), no limit is enforced.
                     Set to -1 to clear/remove the limit.
                     Set to 0 to block all new placements.
+                deployer_admin_sa_token_ttl:
+                  type: string
+                  example: "3h"
+                  description: TTL for the deployer-admin service account token.
+                deployer_admin_sa_token_refresh_interval:
+                  type: string
+                  example: "1h"
+                  description: How often to rotate the deployer-admin service account token.
+                deployer_admin_sa_token_target_var:
+                  type: string
+                  example: "cluster_admin_agnosticd_sa_token"
+                  description: Variable name in cluster_additional_vars for the deployer-admin SA token.
             example:
               strict_default_sandbox_quota: true
               quota_required: true
@@ -3860,6 +3872,48 @@ components:
             This is useful for dedicated-shared scenarios where you want to limit
             the number of "seats" or persons on a particular cluster.
           example: 50
+        deployer_admin_sa_token_ttl:
+          type: string
+          description: |-
+            TTL for the deployer-admin service account token, passed to the
+            Kubernetes TokenRequest API. Supports human-friendly durations:
+            "12m" (minutes), "3h" (hours), "1d" (days).
+            Empty string means the feature is disabled.
+          example: "3h"
+        deployer_admin_sa_token_refresh_interval:
+          type: string
+          description: |-
+            How often the background goroutine rotates the deployer-admin
+            service account token. Must be shorter than deployer_admin_sa_token_ttl
+            so the token is always valid between refreshes.
+          example: "1h"
+        deployer_admin_sa_token_target_var:
+          type: string
+          description: |-
+            Variable name used in cluster_additional_vars for the deployer-admin SA token.
+            Default: "cluster_admin_deployer_sa_token".
+          example: "cluster_admin_agnosticd_sa_token"
+        deployer_admin_sa_token:
+          type: string
+          description: |-
+            The current rotated deployer-admin service account token.
+            Managed by the background rotation goroutine.
+          example: "eyJhbGciOiJSUzI1NiIsImtpZCI6..."
+        data:
+          type: object
+          description: |-
+            Internal plumbing data. Adding new fields here does not
+            require a DB migration.
+          properties:
+            deployer_admin_sa_token_updated_at:
+              type: string
+              format: date-time
+              description: When the deployer-admin SA token was last rotated.
+              example: "2025-01-15T10:30:00Z"
+            deployer_admin_sa_token_rotation_count:
+              type: integer
+              description: Number of times the deployer-admin SA token has been rotated.
+              example: 42
 
       example:
         name: ocp-cluster-1
