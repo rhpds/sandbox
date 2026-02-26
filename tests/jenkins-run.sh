@@ -384,3 +384,20 @@ if [ "${RUN_LIFECYCLE_TESTS:-yes}" = "yes" ]; then
         SANDBOX_LOGIN_TOKEN="$apptoken" \
         python3 tests/functional/test_ocp_sandbox_lifecycle.py
 fi
+
+# Run Python OcpSandbox limit range tests if requested
+if [ "${RUN_LIMIT_RANGE_TESTS:-yes}" = "yes" ]; then
+    echo ""
+    echo "=========================================="
+    echo "Running OcpSandbox limit range tests"
+    echo "=========================================="
+    cd $jobdir
+
+    # Install Python dependencies if needed
+    pip3 install -q requests urllib3 2>/dev/null || true
+
+    # Run the Python limit range test
+    SANDBOX_API_URL="http://localhost:$PORT" \
+        SANDBOX_LOGIN_TOKEN="$apptoken" \
+        python3 tests/functional/test_ocp_limit_range.py
+fi

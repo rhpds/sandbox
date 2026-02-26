@@ -2926,19 +2926,46 @@ components:
         limit_range:
           type: object
           description: |-
-            Limit Range for the sandbox
-            This allows to set the default limit and request for pods
+            Limit Range for the sandbox.
+            This allows to set the default limit and request for pods.
             see https://kubernetes.io/docs/concepts/policy/limit-range/
+
+            Two formats are accepted:
+
+            **Full format** (standard Kubernetes LimitRange spec):
+            ```
+            limit_range:
+              spec:
+                limits:
+                  - type: Container
+                    default:
+                      cpu: "1"
+                      memory: 2Gi
+                    defaultRequest:
+                      cpu: "0.5"
+                      memory: 1Gi
+            ```
+
+            **Shorthand format** (default and defaultRequest at the top level):
+            ```
+            limit_range:
+              default:
+                cpu: "1"
+                memory: 2Gi
+              defaultRequest:
+                cpu: "0.5"
+                memory: 1Gi
+            ```
+
+            The shorthand format is automatically converted to a full
+            LimitRange with type "Container".
           example:
-            spec:
-              limits:
-                - default:
-                    cpu: "1"
-                    memory: 2Gi
-                  defaultRequest:
-                    cpu: "0.5"
-                    memory: 1Gi
-                  type: Container
+            default:
+              cpu: "1"
+              memory: 2Gi
+            defaultRequest:
+              cpu: "0.5"
+              memory: 1Gi
 
     PlacementRequest:
       description: |-

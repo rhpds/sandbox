@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -124,6 +125,50 @@ type ResourceRequest struct {
 	LimitRange       *v1.LimitRange           `json:"limit_range,omitempty"`
 	Quota            *v1.ResourceList         `json:"quota,omitempty"`
 	RequestedQuota   *v1.ResourceQuota        `json:"-"` // plumbing
+}
+
+// UnmarshalJSON handles the shorthand limit_range format where "default"
+// and "defaultRequest" are at the top level instead of inside spec.limits[].
+func (r *ResourceRequest) UnmarshalJSON(data []byte) error {
+	// Use an alias to prevent infinite recursion.
+	type ResourceRequestAlias ResourceRequest
+	alias := (*ResourceRequestAlias)(r)
+	if err := json.Unmarshal(data, alias); err != nil {
+		return err
+	}
+
+	// If LimitRange was provided but spec.limits is empty, the caller may
+	// have used the shorthand format:
+	//   {"default": {"cpu":"1"}, "defaultRequest": {"cpu":"0.5"}}
+	// Re-parse the raw limit_range JSON to recover those fields.
+	if r.LimitRange != nil && len(r.LimitRange.Spec.Limits) == 0 {
+		var raw struct {
+			LimitRange json.RawMessage `json:"limit_range,omitempty"`
+		}
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return err
+		}
+		if len(raw.LimitRange) > 0 {
+			var shorthand struct {
+				Default        v1.ResourceList `json:"default"`
+				DefaultRequest v1.ResourceList `json:"defaultRequest"`
+			}
+			if err := json.Unmarshal(raw.LimitRange, &shorthand); err != nil {
+				return err
+			}
+			if shorthand.Default != nil || shorthand.DefaultRequest != nil {
+				r.LimitRange.Spec.Limits = []v1.LimitRangeItem{
+					{
+						Type:           v1.LimitTypeContainer,
+						Default:        shorthand.Default,
+						DefaultRequest: shorthand.DefaultRequest,
+					},
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 type ReservationResponse struct {
