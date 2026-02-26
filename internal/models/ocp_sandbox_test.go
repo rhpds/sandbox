@@ -450,3 +450,52 @@ func TestMaxPlacementsCheck(t *testing.T) {
 		}
 	})
 }
+
+func TestKeycloakUsername(t *testing.T) {
+	tests := []struct {
+		name     string
+		prefix   string
+		guid     string
+		expected string
+	}{
+		{
+			name:     "empty prefix defaults to user-",
+			prefix:   "",
+			guid:     "abc123",
+			expected: "user-abc123",
+		},
+		{
+			name:     "custom prefix sandbox-",
+			prefix:   "sandbox-",
+			guid:     "abc123",
+			expected: "sandbox-abc123",
+		},
+		{
+			name:     "custom prefix without trailing dash",
+			prefix:   "dev",
+			guid:     "xyz789",
+			expected: "devxyz789",
+		},
+		{
+			name:     "single char prefix",
+			prefix:   "u",
+			guid:     "8589b",
+			expected: "u8589b",
+		},
+		{
+			name:     "long guid",
+			prefix:   "user-",
+			guid:     "8589b-long-guid",
+			expected: "user-8589b-long-guid",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := KeycloakUsername(tc.prefix, tc.guid)
+			if got != tc.expected {
+				t.Errorf("KeycloakUsername(%q, %q) = %q, want %q", tc.prefix, tc.guid, got, tc.expected)
+			}
+		})
+	}
+}

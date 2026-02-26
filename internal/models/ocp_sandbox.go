@@ -180,6 +180,15 @@ type TokenResponse struct {
 
 var nameRegex = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
 
+// KeycloakUsername returns the Keycloak username for a given prefix and GUID.
+// If prefix is empty, it defaults to "user-".
+func KeycloakUsername(prefix, guid string) string {
+	if prefix == "" {
+		prefix = "user-"
+	}
+	return prefix + guid
+}
+
 // GenerateRandomPassword generates a random password of specified length.
 func generateRandomPassword(length int) (string, error) {
 	bytes := make([]byte, length)
@@ -1157,6 +1166,7 @@ func (a *OcpSandboxProvider) Request(
 	ctx context.Context,
 	alias string,
 	clusterRelation []ClusterRelation,
+	keycloakUserPrefix string,
 ) (OcpSandboxWithCreds, error) {
 
 	var selectedCluster OcpSharedClusterConfiguration
@@ -1681,7 +1691,7 @@ func (a *OcpSandboxProvider) Request(
 		// Create an user if the keycloak option was enabled
 		if value, exists := cloudSelector["keycloak"]; exists && (value == "yes" || value == "true") {
 			// Use the original GUID (from annotations) to ensure same username across sandboxes on the same cluster
-			userAccountName := "sandbox-" + annotations["guid"]
+			userAccountName := KeycloakUsername(keycloakUserPrefix, annotations["guid"])
 
 			// Check if we already have a Keycloak user from any previously created account
 			// by querying the DB for sibling resources in the same placement.
