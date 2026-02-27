@@ -160,15 +160,53 @@ func main() {
 				token = pgp_sym_encrypt( pgp_sym_decrypt(token::bytea, $1), $2)`,
 		old, new); err != nil {
 
-		log.Logger.Error("Error updating kubeconfig", "error", err)
+		log.Logger.Error("Error updating ocp_shared_cluster_configurations", "error", err)
 		os.Exit(1)
 	}
+
+	if _, err = dbPool.Exec(
+		context.Background(),
+		`UPDATE ocp_shared_cluster_configurations
+			SET deployer_admin_sa_token = pgp_sym_encrypt( pgp_sym_decrypt(deployer_admin_sa_token::bytea, $1), $2)
+			WHERE deployer_admin_sa_token IS NOT NULL`,
+		old, new); err != nil {
+
+		log.Logger.Error("Error updating ocp_shared_cluster_configurations deployer_admin_sa_token", "error", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("done ocp_shared_cluster_configurations")
+
 	if _, err = dbPool.Exec(
 		context.Background(),
 		"UPDATE resources SET resource_credentials = pgp_sym_encrypt( pgp_sym_decrypt(resource_credentials::bytea, $1), $2)",
 		old, new); err != nil {
 
-		log.Logger.Error("Error updating kubeconfig", "error", err)
+		log.Logger.Error("Error updating resources", "error", err)
 		os.Exit(1)
 	}
+
+	fmt.Println("done resources")
+
+	if _, err = dbPool.Exec(
+		context.Background(),
+		"UPDATE dns_account_configurations SET aws_secret_access_key = pgp_sym_encrypt( pgp_sym_decrypt(aws_secret_access_key::bytea, $1), $2)",
+		old, new); err != nil {
+
+		log.Logger.Error("Error updating dns_account_configurations", "error", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("done dns_account_configurations")
+
+	if _, err = dbPool.Exec(
+		context.Background(),
+		"UPDATE ibm_resource_group_account_configurations SET apikey = pgp_sym_encrypt( pgp_sym_decrypt(apikey::bytea, $1), $2)",
+		old, new); err != nil {
+
+		log.Logger.Error("Error updating ibm_resource_group_account_configurations", "error", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("done ibm_resource_group_account_configurations")
 }
