@@ -118,7 +118,7 @@ run_api() {
     retries=0
     echo -n "Waiting for API to come up"
     while true; do
-        if [ $retries -gt 40 ]; then
+        if [ $retries -gt 60 ]; then
             echo "API not coming up"
             exit 1
         fi
@@ -165,8 +165,21 @@ if [ "${DEPLOY_POSTGRES:-yes}" = "yes" ]; then
     export POSTGRESQL_POD
     make run-local-pg
 
+    # Wait for PostgreSQL to be ready to accept connections
+    retries=0
+    echo -n "Waiting for PostgreSQL to be ready on port $POSTGRESQL_PORT"
+    while ! podman exec $POSTGRESQL_POD pg_isready -h 127.0.0.1 -p 5432 -q 2>/dev/null; do
+        if [ $retries -gt 10 ]; then
+            echo " PostgreSQL not coming up"
+            exit 1
+        fi
+        sleep 2
+        echo -n .
+        retries=$((retries + 1))
+    done
+    echo
+
     # DB migrations
-    sleep 2
     make migrate
     # Check if .dev.pgenv was created successfully
     if [ ! -f ./.dev.pgenv ]; then
