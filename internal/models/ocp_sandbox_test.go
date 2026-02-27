@@ -460,10 +460,10 @@ func TestKeycloakUsername(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "empty prefix defaults to user-",
+			name:     "empty prefix defaults to sandbox-",
 			prefix:   "",
 			guid:     "abc123",
-			expected: "user-abc123",
+			expected: "sandbox-abc123",
 		},
 		{
 			name:     "custom prefix sandbox-",
