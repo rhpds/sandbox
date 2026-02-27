@@ -2,6 +2,7 @@ package models
 
 import (
 	"testing"
+	"time"
 	// json
 	"encoding/json"
 
@@ -498,4 +499,290 @@ func TestKeycloakUsername(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseHumanDuration(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected time.Duration
+		wantErr  bool
+	}{
+		{
+			name:     "30 seconds",
+			input:    "30s",
+			expected: 30 * time.Second,
+		},
+		{
+			name:     "5 seconds",
+			input:    "5s",
+			expected: 5 * time.Second,
+		},
+		{
+			name:     "12 minutes",
+			input:    "12m",
+			expected: 12 * time.Minute,
+		},
+		{
+			name:     "1 hour",
+			input:    "1h",
+			expected: 1 * time.Hour,
+		},
+		{
+			name:     "1 day",
+			input:    "1d",
+			expected: 24 * time.Hour,
+		},
+		{
+			name:     "2 days",
+			input:    "2d",
+			expected: 48 * time.Hour,
+		},
+		{
+			name:     "0 hours",
+			input:    "0h",
+			expected: 0,
+		},
+		{
+			name:    "empty string",
+			input:   "",
+			wantErr: true,
+		},
+		{
+			name:    "letters only",
+			input:   "abc",
+			wantErr: true,
+		},
+		{
+			name:    "invalid unit",
+			input:   "1x",
+			wantErr: true,
+		},
+		{
+			name:    "single character",
+			input:   "h",
+			wantErr: true,
+		},
+		{
+			name:    "no number",
+			input:   "m",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ParseHumanDuration(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("ParseHumanDuration(%q) expected error, got %v", tc.input, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("ParseHumanDuration(%q) unexpected error: %v", tc.input, err)
+				return
+			}
+			if got != tc.expected {
+				t.Errorf("ParseHumanDuration(%q) = %v, want %v", tc.input, got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestOcpSharedClusterConfigurationDeployerAdminSAToken(t *testing.T) {
+	t.Run("Fields omitted from JSON when empty", func(t *testing.T) {
+		cluster := OcpSharedClusterConfiguration{
+			Name:          "test-cluster",
+			ApiUrl:        "https://api.test.com",
+			IngressDomain: "apps.test.com",
+		}
+
+		jsonData, err := json.Marshal(cluster)
+		if err != nil {
+			t.Fatalf("Failed to marshal cluster: %v", err)
+		}
+
+		var result map[string]interface{}
+		if err := json.Unmarshal(jsonData, &result); err != nil {
+			t.Fatalf("Failed to unmarshal result: %v", err)
+		}
+
+		for _, field := range []string{
+			"deployer_admin_sa_token_ttl",
+			"deployer_admin_sa_token_refresh_interval",
+			"deployer_admin_sa_token_target_var",
+			"deployer_admin_sa_token",
+		} {
+			if _, exists := result[field]; exists {
+				t.Errorf("%s should not be present in JSON when empty", field)
+			}
+		}
+	})
+
+	t.Run("Fields present in JSON when set", func(t *testing.T) {
+		cluster := OcpSharedClusterConfiguration{
+			Name:                        "test-cluster",
+			ApiUrl:                      "https://api.test.com",
+			IngressDomain:               "apps.test.com",
+			DeployerAdminSATokenTTL:             "3h",
+			DeployerAdminSATokenRefreshInterval: "1h",
+			DeployerAdminSATokenTargetVar:       "my_admin_token",
+			DeployerAdminSAToken:                "test-token-value",
+		}
+
+		jsonData, err := json.Marshal(cluster)
+		if err != nil {
+			t.Fatalf("Failed to marshal cluster: %v", err)
+		}
+
+		var result map[string]interface{}
+		if err := json.Unmarshal(jsonData, &result); err != nil {
+			t.Fatalf("Failed to unmarshal result: %v", err)
+		}
+
+		expected := map[string]string{
+			"deployer_admin_sa_token_ttl":              "3h",
+			"deployer_admin_sa_token_refresh_interval": "1h",
+			"deployer_admin_sa_token_target_var":       "my_admin_token",
+			"deployer_admin_sa_token":                  "test-token-value",
+		}
+
+		for field, want := range expected {
+			val, exists := result[field]
+			if !exists {
+				t.Fatalf("%s should be present in JSON when set", field)
+			}
+			if val.(string) != want {
+				t.Errorf("%s should be %q, got %v", field, want, val)
+			}
+		}
+	})
+
+	t.Run("Fields set from JSON", func(t *testing.T) {
+		jsonCluster := []byte(`{
+			"name": "test-cluster",
+			"api_url": "https://api.test.com",
+			"ingress_domain": "apps.test.com",
+			"deployer_admin_sa_token_ttl": "3h",
+			"deployer_admin_sa_token_refresh_interval": "1h",
+			"deployer_admin_sa_token_target_var": "custom_var"
+		}`)
+
+		var cluster OcpSharedClusterConfiguration
+		if err := json.Unmarshal(jsonCluster, &cluster); err != nil {
+			t.Fatalf("Failed to unmarshal cluster: %v", err)
+		}
+
+		if cluster.DeployerAdminSATokenTTL != "3h" {
+			t.Errorf("DeployerAdminSATokenTTL should be '3h', got %q", cluster.DeployerAdminSATokenTTL)
+		}
+
+		if cluster.DeployerAdminSATokenRefreshInterval != "1h" {
+			t.Errorf("DeployerAdminSATokenRefreshInterval should be '1h', got %q", cluster.DeployerAdminSATokenRefreshInterval)
+		}
+
+		if cluster.DeployerAdminSATokenTargetVar != "custom_var" {
+			t.Errorf("DeployerAdminSATokenTargetVar should be 'custom_var', got %q", cluster.DeployerAdminSATokenTargetVar)
+		}
+	})
+}
+
+func TestClusterData(t *testing.T) {
+	t.Run("ClusterData has no rotation count when zero value", func(t *testing.T) {
+		cluster := OcpSharedClusterConfiguration{
+			Name:          "test-cluster",
+			ApiUrl:        "https://api.test.com",
+			IngressDomain: "apps.test.com",
+		}
+
+		jsonData, err := json.Marshal(cluster)
+		if err != nil {
+			t.Fatalf("Failed to marshal cluster: %v", err)
+		}
+
+		var result map[string]interface{}
+		if err := json.Unmarshal(jsonData, &result); err != nil {
+			t.Fatalf("Failed to unmarshal result: %v", err)
+		}
+
+		data, exists := result["data"]
+		if !exists {
+			t.Fatal("data should be present in JSON")
+		}
+
+		dataMap, ok := data.(map[string]interface{})
+		if !ok {
+			t.Fatalf("data should be a map, got %T", data)
+		}
+
+		if _, exists := dataMap["deployer_admin_sa_token_rotation_count"]; exists {
+			t.Error("deployer_admin_sa_token_rotation_count should not be present when zero")
+		}
+	})
+
+	t.Run("ClusterData present in JSON when set", func(t *testing.T) {
+		now := time.Now().UTC().Truncate(time.Second)
+		cluster := OcpSharedClusterConfiguration{
+			Name:          "test-cluster",
+			ApiUrl:        "https://api.test.com",
+			IngressDomain: "apps.test.com",
+			Data: ClusterData{
+				DeployerAdminSATokenUpdatedAt:     now,
+				DeployerAdminSATokenRotationCount: 5,
+			},
+		}
+
+		jsonData, err := json.Marshal(cluster)
+		if err != nil {
+			t.Fatalf("Failed to marshal cluster: %v", err)
+		}
+
+		var result map[string]interface{}
+		if err := json.Unmarshal(jsonData, &result); err != nil {
+			t.Fatalf("Failed to unmarshal result: %v", err)
+		}
+
+		data, exists := result["data"]
+		if !exists {
+			t.Fatal("data should be present in JSON when set")
+		}
+
+		dataMap, ok := data.(map[string]interface{})
+		if !ok {
+			t.Fatalf("data should be a map, got %T", data)
+		}
+
+		if count, ok := dataMap["deployer_admin_sa_token_rotation_count"].(float64); !ok || int(count) != 5 {
+			t.Errorf("deployer_admin_sa_token_rotation_count should be 5, got %v", dataMap["deployer_admin_sa_token_rotation_count"])
+		}
+	})
+
+	t.Run("ClusterData round-trips through JSON", func(t *testing.T) {
+		now := time.Now().UTC().Truncate(time.Second)
+		original := ClusterData{
+			DeployerAdminSATokenUpdatedAt:     now,
+			DeployerAdminSATokenRotationCount: 42,
+		}
+
+		jsonData, err := json.Marshal(original)
+		if err != nil {
+			t.Fatalf("Failed to marshal: %v", err)
+		}
+
+		var decoded ClusterData
+		if err := json.Unmarshal(jsonData, &decoded); err != nil {
+			t.Fatalf("Failed to unmarshal: %v", err)
+		}
+
+		if !decoded.DeployerAdminSATokenUpdatedAt.Equal(original.DeployerAdminSATokenUpdatedAt) {
+			t.Errorf("DeployerAdminSATokenUpdatedAt mismatch: got %v, want %v",
+				decoded.DeployerAdminSATokenUpdatedAt, original.DeployerAdminSATokenUpdatedAt)
+		}
+
+		if decoded.DeployerAdminSATokenRotationCount != original.DeployerAdminSATokenRotationCount {
+			t.Errorf("DeployerAdminSATokenRotationCount should be %d, got %d",
+				original.DeployerAdminSATokenRotationCount, decoded.DeployerAdminSATokenRotationCount)
+		}
+	})
 }

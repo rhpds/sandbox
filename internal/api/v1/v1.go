@@ -286,7 +286,10 @@ type UpdateOcpSharedConfigurationRequest struct {
 	MaxCpuUsagePercentage     *float64            `json:"max_cpu_usage_percentage,omitempty"`
 	UsageNodeSelector         *string             `json:"usage_node_selector,omitempty"`
 	LimitRange                *v1.LimitRange      `json:"limit_range,omitempty"`
-	MaxPlacements             *int                `json:"max_placements,omitempty"`
+	MaxPlacements               *int                `json:"max_placements,omitempty"`
+	DeployerAdminSATokenTTL             *string             `json:"deployer_admin_sa_token_ttl,omitempty"`
+	DeployerAdminSATokenRefreshInterval *string             `json:"deployer_admin_sa_token_refresh_interval,omitempty"`
+	DeployerAdminSATokenTargetVar       *string             `json:"deployer_admin_sa_token_target_var,omitempty"`
 }
 
 func (j *UpdateOcpSharedConfigurationRequest) Bind(r *http.Request) error {

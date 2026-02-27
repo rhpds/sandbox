@@ -339,37 +339,51 @@ guid=tt-$(echo $uuid | tr -dc 'a-z0-9' | head -c 4)
 export guid
 cd tests/
 
-tests=$1
-if [ -z "$tests" ]; then
-    tests='*.hurl'
-fi
-
 todeletelater=()
-echo "Creating 10 fixture placements..."
-for i in {1..10}; do
-    uuidfixture=$(uuidgen -r)
-    todeletelater+=($uuidfixture)
-    guid=tt-$(echo $uuidfixture | tr -dc 'a-z0-9' | head -c 4)
-    hurl --variable host=http://localhost:$PORT \
+
+# Jenkins auto-injects booleanParam as lowercase env vars (e.g. run_hurl_tests="true"/"false").
+# Also support uppercase versions set via withEnv/environment directive.
+RUN_HURL_TESTS="${RUN_HURL_TESTS:-${run_hurl_tests:-true}}"
+RUN_LIFECYCLE_TESTS="${RUN_LIFECYCLE_TESTS:-${run_lifecycle_tests:-true}}"
+RUN_LIMIT_RANGE_TESTS="${RUN_LIMIT_RANGE_TESTS:-${run_limit_range_tests:-true}}"
+RUN_ADMIN_SA_TESTS="${RUN_ADMIN_SA_TESTS:-${run_admin_sa_tests:-true}}"
+
+echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS"
+
+if [ "$RUN_HURL_TESTS" != "false" ] && [ "$RUN_HURL_TESTS" != "no" ]; then
+    tests=$1
+    if [ -z "$tests" ]; then
+        tests='*.hurl'
+    fi
+
+    echo "Creating 10 fixture placements..."
+    for i in {1..10}; do
+        uuidfixture=$(uuidgen -r)
+        todeletelater+=($uuidfixture)
+        guid=tt-$(echo $uuidfixture | tr -dc 'a-z0-9' | head -c 4)
+        hurl --variable host=http://localhost:$PORT \
+            --variable login_token=$apptoken \
+            --variable uuid=$uuidfixture \
+            --variable guid=$guid \
+            --jobs 1 \
+            fixtures/create-placement.hurl >/dev/null 2>&1
+        echo "  [$i/10] $uuidfixture"
+    done
+
+    hurl --test \
         --variable login_token=$apptoken \
-        --variable uuid=$uuidfixture \
+        --variable login_token_admin=$admintoken \
+        --variable host=http://localhost:$PORT \
+        --variable uuid=$uuid \
         --variable guid=$guid \
         --jobs 1 \
-        fixtures/create-placement.hurl >/dev/null 2>&1
-    echo "  [$i/10] $uuidfixture"
-done
-
-hurl --test \
-    --variable login_token=$apptoken \
-    --variable login_token_admin=$admintoken \
-    --variable host=http://localhost:$PORT \
-    --variable uuid=$uuid \
-    --variable guid=$guid \
-    --jobs 1 \
-    $tests
+        $tests
+else
+    echo "Skipping HURL integration tests (RUN_HURL_TESTS=${RUN_HURL_TESTS})"
+fi
 
 # Run Python OcpSandbox lifecycle tests if requested
-if [ "${RUN_LIFECYCLE_TESTS:-yes}" = "yes" ]; then
+if [ "${RUN_LIFECYCLE_TESTS}" != "false" ] && [ "${RUN_LIFECYCLE_TESTS}" != "no" ]; then
     echo ""
     echo "=========================================="
     echo "Running OcpSandbox lifecycle tests"
@@ -386,7 +400,7 @@ if [ "${RUN_LIFECYCLE_TESTS:-yes}" = "yes" ]; then
 fi
 
 # Run Python OcpSandbox limit range tests if requested
-if [ "${RUN_LIMIT_RANGE_TESTS:-yes}" = "yes" ]; then
+if [ "${RUN_LIMIT_RANGE_TESTS}" != "false" ] && [ "${RUN_LIMIT_RANGE_TESTS}" != "no" ]; then
     echo ""
     echo "=========================================="
     echo "Running OcpSandbox limit range tests"
@@ -400,4 +414,58 @@ if [ "${RUN_LIMIT_RANGE_TESTS:-yes}" = "yes" ]; then
     SANDBOX_API_URL="http://localhost:$PORT" \
         SANDBOX_LOGIN_TOKEN="$apptoken" \
         python3 tests/functional/test_ocp_limit_range.py
+fi
+
+# Run Python admin SA token tests if requested
+if [ "${RUN_ADMIN_SA_TESTS}" != "false" ] && [ "${RUN_ADMIN_SA_TESTS}" != "no" ]; then
+    echo ""
+    echo "=========================================="
+    echo "Running admin SA token tests"
+    echo "=========================================="
+    cd $jobdir
+
+    # Enable admin SA token on ocpvdev01 dynamically for testing
+    echo "Enabling admin SA token on ocpvdev01..."
+    admin_access_token=$(curl -s -H "Authorization: Bearer $admintoken" \
+        "http://localhost:$PORT/api/v1/login" | jq -r '.access_token')
+
+    curl -s -X PUT \
+        -H "Authorization: Bearer $admin_access_token" \
+        -H "Content-Type: application/json" \
+        -d '{"deployer_admin_sa_token_ttl": "3h", "deployer_admin_sa_token_refresh_interval": "5s", "deployer_admin_sa_token_target_var": "cluster_admin_agnosticd_sa_token"}' \
+        "http://localhost:$PORT/api/v1/ocp-shared-cluster-configurations/ocpvdev01/update"
+    echo ""
+
+    # Wait for the background token rotation to populate the token
+    echo "Waiting for background token rotation..."
+    retries=0
+    while [ $retries -lt 30 ]; do
+        cluster_json=$(curl -s -H "Authorization: Bearer $admin_access_token" \
+            "http://localhost:$PORT/api/v1/ocp-shared-cluster-configurations/ocpvdev01")
+        deployer_admin_sa_token=$(echo "$cluster_json" | jq -r '.deployer_admin_sa_token // empty')
+        if [ -n "$deployer_admin_sa_token" ]; then
+            echo "Admin SA token is available"
+            break
+        fi
+        sleep 2
+        retries=$((retries + 1))
+        echo -n "."
+    done
+    echo ""
+
+    if [ -z "$deployer_admin_sa_token" ]; then
+        echo "ERROR: Admin SA token not populated after 60 seconds"
+        exit 1
+    fi
+
+    # Install Python dependencies if needed
+    pip3 install -q requests urllib3 2>/dev/null || true
+
+    # Run the Python admin SA token test
+    SANDBOX_API_URL="http://localhost:$PORT" \
+        SANDBOX_LOGIN_TOKEN="$apptoken" \
+        SANDBOX_ADMIN_LOGIN_TOKEN="$admintoken" \
+        ADMIN_SA_TARGET_VAR="cluster_admin_agnosticd_sa_token" \
+        OCP_CLUSTER_NAME="ocpvdev01" \
+        python3 tests/functional/test_ocp_admin_sa.py
 fi

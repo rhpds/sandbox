@@ -1,0 +1,9 @@
+BEGIN;
+
+ALTER TABLE ocp_shared_cluster_configurations DROP COLUMN deployer_admin_sa_token_ttl;
+ALTER TABLE ocp_shared_cluster_configurations DROP COLUMN deployer_admin_sa_token_refresh_interval;
+ALTER TABLE ocp_shared_cluster_configurations DROP COLUMN deployer_admin_sa_token_target_var;
+ALTER TABLE ocp_shared_cluster_configurations DROP COLUMN deployer_admin_sa_token;
+ALTER TABLE ocp_shared_cluster_configurations DROP COLUMN data;
+
+COMMIT;

@@ -14,12 +14,16 @@ import (
 	"sync"
 	"time"
 
+	"strconv"
+
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/rhpds/sandbox/internal/log"
+	authenticationv1 "k8s.io/api/authentication/v1"
 	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -47,6 +51,10 @@ const (
 type OcpSandboxProvider struct {
 	DbPool      *pgxpool.Pool `json:"-"`
 	VaultSecret string        `json:"-"`
+
+	// RotateNow is a channel that signals the background rotation goroutine
+	// to wake up and run immediately (e.g. after a config update).
+	RotateNow chan struct{}
 }
 
 type OcpSharedClusterConfiguration struct {
@@ -111,6 +119,36 @@ type OcpSharedClusterConfiguration struct {
 	// This is useful for dedicated-shared scenarios where you want to limit
 	// the number of "seats" or persons on a particular cluster.
 	MaxPlacements *int `json:"max_placements,omitempty"`
+
+	// DeployerAdminSATokenTTL is the TTL passed to the Kubernetes TokenRequest API for
+	// the deployer-admin service account token.
+	// Supports formats: "12m", "1h", "2h", "1d". Empty string means disabled.
+	// Should be greater than DeployerAdminSATokenRefreshInterval to ensure overlap.
+	DeployerAdminSATokenTTL string `json:"deployer_admin_sa_token_ttl,omitempty"`
+
+	// DeployerAdminSATokenRefreshInterval controls how often the background goroutine
+	// rotates the deployer-admin SA token. Supports formats: "12m", "1h", "1d".
+	// Default: "1h". Must be less than DeployerAdminSATokenTTL.
+	DeployerAdminSATokenRefreshInterval string `json:"deployer_admin_sa_token_refresh_interval,omitempty"`
+
+	// DeployerAdminSATokenTargetVar is the variable name used in credentials output for the deployer-admin SA token.
+	// Default: "cluster_admin_deployer_sa_token"
+	DeployerAdminSATokenTargetVar string `json:"deployer_admin_sa_token_target_var,omitempty"`
+
+	// DeployerAdminSAToken holds the current rotated deployer-admin SA token.
+	// This is managed by the background rotation goroutine.
+	DeployerAdminSAToken string `json:"deployer_admin_sa_token,omitempty"`
+
+	// Data holds internal plumbing data stored as JSONB.
+	// Adding new fields here does not require a DB migration.
+	Data ClusterData `json:"data,omitempty"`
+}
+
+// ClusterData holds internal plumbing data for an OcpSharedClusterConfiguration.
+// Stored as JSONB in the 'data' column. New fields can be added without DB migration.
+type ClusterData struct {
+	DeployerAdminSATokenUpdatedAt     time.Time `json:"deployer_admin_sa_token_updated_at,omitempty"`
+	DeployerAdminSATokenRotationCount int       `json:"deployer_admin_sa_token_rotation_count,omitempty"`
 }
 
 // WithoutCredentials Method to return the OcpSharedClusterConfiguration without any credentials
@@ -124,6 +162,7 @@ func (p *OcpSharedClusterConfiguration) WithoutCredentials() OcpSharedClusterCon
 	withoutCreds.VaultSecret = ""
 	// Remove sensitive fields
 	withoutCreds.AdditionalVars = nil
+	withoutCreds.DeployerAdminSAToken = ""
 
 	return withoutCreds
 }
@@ -196,6 +235,49 @@ func generateRandomPassword(length int) (string, error) {
 		return "", err
 	}
 	return base64.URLEncoding.EncodeToString(bytes), nil
+}
+
+// ParseHumanDuration parses human-friendly duration strings.
+// nilIfEmpty returns a *string pointer: nil if s is empty, &s otherwise.
+// Used to pass SQL NULL for empty encrypted fields.
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// Supported formats: "30s" (seconds), "12m" (minutes), "1h" (hours), "1d" (days).
+// Returns error for invalid formats.
+func ParseHumanDuration(s string) (time.Duration, error) {
+	if s == "" {
+		return 0, fmt.Errorf("empty duration string")
+	}
+
+	if len(s) < 2 {
+		return 0, fmt.Errorf("invalid duration format: %q", s)
+	}
+
+	unit := s[len(s)-1]
+	valueStr := s[:len(s)-1]
+
+	value, err := strconv.Atoi(valueStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration format: %q", s)
+	}
+
+	switch unit {
+	case 's':
+		return time.Duration(value) * time.Second, nil
+	case 'm':
+		return time.Duration(value) * time.Minute, nil
+	case 'h':
+		return time.Duration(value) * time.Hour, nil
+	case 'd':
+		return time.Duration(value) * 24 * time.Hour, nil
+	default:
+		return 0, fmt.Errorf("invalid duration unit %q in %q, supported: s, m, h, d", string(unit), s)
+	}
 }
 
 // MakeOcpSharedClusterConfiguration creates a new OcpSharedClusterConfiguration
@@ -352,8 +434,13 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 			quota_required,
 			skip_quota,
 			limit_range,
-			max_placements)
-			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+			max_placements,
+			deployer_admin_sa_token_ttl,
+			deployer_admin_sa_token_refresh_interval,
+			deployer_admin_sa_token_target_var,
+			deployer_admin_sa_token,
+			data)
+			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, pgp_sym_encrypt($22::text, $5), $23)
 			RETURNING id`,
 		p.Name,
 		p.ApiUrl,
@@ -373,6 +460,11 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 		p.SkipQuota,
 		p.LimitRange,
 		p.MaxPlacements,
+		p.DeployerAdminSATokenTTL,
+		p.DeployerAdminSATokenRefreshInterval,
+		p.DeployerAdminSATokenTargetVar,
+		nilIfEmpty(p.DeployerAdminSAToken),
+		p.Data,
 	).Scan(&p.ID); err != nil {
 		return err
 	}
@@ -404,7 +496,12 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 			 quota_required = $16,
 			 skip_quota = $17,
 			 limit_range = $18,
-			 max_placements = $19
+			 max_placements = $19,
+			 deployer_admin_sa_token_ttl = $20,
+			 deployer_admin_sa_token_refresh_interval = $21,
+			 deployer_admin_sa_token_target_var = $22,
+			 deployer_admin_sa_token = pgp_sym_encrypt($23::text, $5),
+			 data = $24
 		 WHERE id = $10`,
 		p.Name,
 		p.ApiUrl,
@@ -425,6 +522,11 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 		p.SkipQuota,
 		p.LimitRange,
 		p.MaxPlacements,
+		p.DeployerAdminSATokenTTL,
+		p.DeployerAdminSATokenRefreshInterval,
+		p.DeployerAdminSATokenTargetVar,
+		nilIfEmpty(p.DeployerAdminSAToken),
+		p.Data,
 	); err != nil {
 		return err
 	}
@@ -494,7 +596,12 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 			quota_required,
 			skip_quota,
 			limit_range,
-			max_placements
+			max_placements,
+			deployer_admin_sa_token_ttl,
+			deployer_admin_sa_token_refresh_interval,
+			deployer_admin_sa_token_target_var,
+			COALESCE(pgp_sym_decrypt(deployer_admin_sa_token, $1), ''),
+			data
 		 FROM ocp_shared_cluster_configurations WHERE name = $2`,
 		p.VaultSecret, name,
 	)
@@ -521,6 +628,11 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 		&cluster.SkipQuota,
 		&cluster.LimitRange,
 		&cluster.MaxPlacements,
+		&cluster.DeployerAdminSATokenTTL,
+		&cluster.DeployerAdminSATokenRefreshInterval,
+		&cluster.DeployerAdminSATokenTargetVar,
+		&cluster.DeployerAdminSAToken,
+		&cluster.Data,
 	); err != nil {
 		return OcpSharedClusterConfiguration{}, err
 	}
@@ -556,7 +668,12 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			quota_required,
 			skip_quota,
 			limit_range,
-			max_placements
+			max_placements,
+			deployer_admin_sa_token_ttl,
+			deployer_admin_sa_token_refresh_interval,
+			deployer_admin_sa_token_target_var,
+			COALESCE(pgp_sym_decrypt(deployer_admin_sa_token, $1), ''),
+			data
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
 	)
@@ -589,6 +706,11 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			&cluster.SkipQuota,
 			&cluster.LimitRange,
 			&cluster.MaxPlacements,
+			&cluster.DeployerAdminSATokenTTL,
+			&cluster.DeployerAdminSATokenRefreshInterval,
+			&cluster.DeployerAdminSATokenTargetVar,
+			&cluster.DeployerAdminSAToken,
+			&cluster.Data,
 		); err != nil {
 			return []OcpSharedClusterConfiguration{}, err
 		}
@@ -832,7 +954,9 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 			r.status,
 			r.cleanup_count,
 			pgp_sym_decrypt(r.resource_credentials, $2),
-			COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars
+			COALESCE(oc.additional_vars, '{}'::jsonb) AS cluster_additional_vars,
+			COALESCE(pgp_sym_decrypt(oc.deployer_admin_sa_token, $2), '') AS deployer_admin_sa_token,
+			COALESCE(oc.deployer_admin_sa_token_target_var, '') AS deployer_admin_sa_token_target_var
 		FROM
 			resources r
 		LEFT JOIN
@@ -850,6 +974,7 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 		var account OcpSandboxWithCreds
 
 		creds := ""
+		var adminSAToken, adminSATokenTargetVar string
 		if err := rows.Scan(
 			&account,
 			&account.ID,
@@ -861,12 +986,50 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 			&account.CleanupCount,
 			&creds,
 			&account.ClusterAdditionalVars,
+			&adminSAToken,
+			&adminSATokenTargetVar,
 		); err != nil {
 			return accounts, err
 		}
 		// Unmarshal creds into account.Credentials
 		if err := json.Unmarshal([]byte(creds), &account.Credentials); err != nil {
 			return accounts, err
+		}
+
+		// Inject deployer-admin SA token from cluster config into credentials and ClusterAdditionalVars
+		if adminSAToken != "" {
+			targetVar := adminSATokenTargetVar
+			if targetVar == "" {
+				targetVar = "cluster_admin_deployer_sa_token"
+			}
+
+			// Update or add the deployer-admin credential
+			found := false
+			for i, cred := range account.Credentials {
+				credMap, ok := cred.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if credMap["name"] == "deployer-admin" && credMap["kind"] == "ServiceAccount" {
+					credMap["token"] = adminSAToken
+					account.Credentials[i] = credMap
+					found = true
+					break
+				}
+			}
+			if !found {
+				account.Credentials = append(account.Credentials, map[string]interface{}{
+					"kind":  "ServiceAccount",
+					"name":  "deployer-admin",
+					"token": adminSAToken,
+				})
+			}
+
+			// Add the token to ClusterAdditionalVars
+			if account.ClusterAdditionalVars == nil {
+				account.ClusterAdditionalVars = make(map[string]any)
+			}
+			account.ClusterAdditionalVars[targetVar] = adminSAToken
 		}
 
 		account.ServiceUuid = serviceUuid
@@ -1088,6 +1251,125 @@ func (a *OcpSharedClusterConfiguration) CreateRestConfig() (*rest.Config, error)
 	}
 
 	return clientcmd.RESTConfigFromKubeConfig([]byte(a.Kubeconfig))
+}
+
+// CreateDeployerAdminSAToken creates a short-lived token for the deployer-admin service account
+// in the rhdp-serviceaccounts namespace with cluster-admin privileges.
+// It idempotently creates the namespace, service account, and cluster role binding.
+func (cluster *OcpSharedClusterConfiguration) CreateDeployerAdminSAToken() (string, error) {
+	if cluster.DeployerAdminSATokenTTL == "" {
+		return "", fmt.Errorf("deployer_admin_sa_token_ttl is not set")
+	}
+
+	duration, err := ParseHumanDuration(cluster.DeployerAdminSATokenTTL)
+	if err != nil {
+		return "", fmt.Errorf("invalid deployer_admin_sa_token_ttl: %w", err)
+	}
+
+	config, err := cluster.CreateRestConfig()
+	if err != nil {
+		return "", fmt.Errorf("error creating REST config: %w", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return "", fmt.Errorf("error creating kubernetes client: %w", err)
+	}
+
+	const (
+		namespaceName = "rhdp-serviceaccounts"
+		saName        = "deployer-admin"
+		crbName       = "deployer-admin-cluster-admin"
+	)
+
+	// Get-or-create namespace
+	_, err = clientset.CoreV1().Namespaces().Get(context.TODO(), namespaceName, metav1.GetOptions{})
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			_, err = clientset.CoreV1().Namespaces().Create(context.TODO(), &v1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: namespaceName,
+					Labels: map[string]string{
+						"created-by": "sandbox-api",
+					},
+				},
+			}, metav1.CreateOptions{})
+			if err != nil && !k8serrors.IsAlreadyExists(err) {
+				return "", fmt.Errorf("error creating namespace %s: %w", namespaceName, err)
+			}
+		} else {
+			return "", fmt.Errorf("error getting namespace %s: %w", namespaceName, err)
+		}
+	}
+
+	// Get-or-create ServiceAccount
+	_, err = clientset.CoreV1().ServiceAccounts(namespaceName).Get(context.TODO(), saName, metav1.GetOptions{})
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			_, err = clientset.CoreV1().ServiceAccounts(namespaceName).Create(context.TODO(), &v1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: saName,
+					Labels: map[string]string{
+						"created-by": "sandbox-api",
+					},
+				},
+			}, metav1.CreateOptions{})
+			if err != nil && !k8serrors.IsAlreadyExists(err) {
+				return "", fmt.Errorf("error creating service account %s: %w", saName, err)
+			}
+		} else {
+			return "", fmt.Errorf("error getting service account %s: %w", saName, err)
+		}
+	}
+
+	// Get-or-create ClusterRoleBinding
+	_, err = clientset.RbacV1().ClusterRoleBindings().Get(context.TODO(), crbName, metav1.GetOptions{})
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			_, err = clientset.RbacV1().ClusterRoleBindings().Create(context.TODO(), &rbacv1.ClusterRoleBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: crbName,
+					Labels: map[string]string{
+						"created-by": "sandbox-api",
+					},
+				},
+				RoleRef: rbacv1.RoleRef{
+					APIGroup: rbacv1.GroupName,
+					Kind:     "ClusterRole",
+					Name:     "cluster-admin",
+				},
+				Subjects: []rbacv1.Subject{
+					{
+						Kind:      "ServiceAccount",
+						Name:      saName,
+						Namespace: namespaceName,
+					},
+				},
+			}, metav1.CreateOptions{})
+			if err != nil && !k8serrors.IsAlreadyExists(err) {
+				return "", fmt.Errorf("error creating cluster role binding %s: %w", crbName, err)
+			}
+		} else {
+			return "", fmt.Errorf("error getting cluster role binding %s: %w", crbName, err)
+		}
+	}
+
+	// Create token using TokenRequest API
+	expirationSeconds := int64(duration.Seconds())
+	tokenRequest := &authenticationv1.TokenRequest{
+		Spec: authenticationv1.TokenRequestSpec{
+			ExpirationSeconds: &expirationSeconds,
+		},
+	}
+
+	tokenResponse, err := clientset.CoreV1().ServiceAccounts(namespaceName).CreateToken(
+		context.TODO(), saName, tokenRequest, metav1.CreateOptions{},
+	)
+	if err != nil {
+		return "", fmt.Errorf("error creating token for service account %s: %w", saName, err)
+	}
+
+	return tokenResponse.Status.Token, nil
 }
 
 func (a *OcpSharedClusterConfiguration) TestConnection() error {
@@ -2051,6 +2333,16 @@ func (a *OcpSandboxProvider) Request(
 				Name:  serviceAccountName,
 				Token: string(saSecret.Data["token"]),
 			})
+
+		// Add pre-rotated deployer-admin SA token if configured and available
+		if selectedCluster.DeployerAdminSAToken != "" {
+			creds = append(creds, OcpServiceAccount{
+				Kind:  "ServiceAccount",
+				Name:  "deployer-admin",
+				Token: selectedCluster.DeployerAdminSAToken,
+			})
+		}
+
 		rnew.Credentials = creds
 		rnew.Status = "success"
 
@@ -2145,6 +2437,184 @@ func NewOcpSandboxProvider(dbpool *pgxpool.Pool, vaultSecret string) OcpSandboxP
 		DbPool:      dbpool,
 		VaultSecret: vaultSecret,
 	}
+}
+
+// SaveDeployerAdminSAToken persists only the deployer-admin SA token for this cluster config.
+// It atomically updates the data JSONB column with the current timestamp and
+// increments the rotation count.
+func (p *OcpSharedClusterConfiguration) SaveDeployerAdminSAToken(token string) error {
+	now := time.Now().UTC()
+	newData := p.Data
+	newData.DeployerAdminSATokenUpdatedAt = now
+	newData.DeployerAdminSATokenRotationCount++
+
+	_, err := p.DbPool.Exec(
+		context.Background(),
+		`UPDATE ocp_shared_cluster_configurations
+		 SET deployer_admin_sa_token = pgp_sym_encrypt($1::text, $2),
+		     data = $3
+		 WHERE id = $4`,
+		token, p.VaultSecret, newData, p.ID,
+	)
+	if err != nil {
+		return err
+	}
+	p.DeployerAdminSAToken = token
+	p.Data = newData
+	return nil
+}
+
+// RotateDeployerAdminSATokens iterates over all cluster configurations that have
+// deployer_admin_sa_token_ttl set, creates a fresh token, and saves it to the DB.
+func (a *OcpSandboxProvider) RotateDeployerAdminSATokens() {
+	clusters, err := a.GetOcpSharedClusterConfigurations()
+	if err != nil {
+		log.Logger.Error("RotateDeployerAdminSATokens: error fetching cluster configurations", "error", err)
+		return
+	}
+
+	const maxRetries = 3
+
+	for _, cluster := range clusters {
+		if cluster.DeployerAdminSATokenTTL == "" {
+			continue
+		}
+
+		// Check if the token needs refresh
+		refreshInterval, err := ParseHumanDuration(cluster.DeployerAdminSATokenRefreshInterval)
+		if err != nil {
+			log.Logger.Error("RotateDeployerAdminSATokens: invalid refresh interval",
+				"cluster", cluster.Name,
+				"interval", cluster.DeployerAdminSATokenRefreshInterval,
+				"error", err)
+			continue
+		}
+
+		elapsed := time.Since(cluster.Data.DeployerAdminSATokenUpdatedAt)
+		if elapsed < refreshInterval {
+			log.Logger.Debug("RotateDeployerAdminSATokens: token still fresh, skipping",
+				"cluster", cluster.Name,
+				"age", elapsed,
+				"refresh_interval", refreshInterval)
+			continue
+		}
+
+		log.Logger.Info("RotateDeployerAdminSATokens: rotating token",
+			"cluster", cluster.Name,
+			"ttl", cluster.DeployerAdminSATokenTTL,
+			"age", elapsed)
+
+		var lastErr error
+		for attempt := 0; attempt < maxRetries; attempt++ {
+			if attempt > 0 {
+				backoff := time.Duration(1<<uint(attempt-1)) * 5 * time.Second // 5s, 10s
+				log.Logger.Warn("RotateDeployerAdminSATokens: retrying after failure",
+					"cluster", cluster.Name,
+					"attempt", attempt+1,
+					"backoff", backoff,
+					"error", lastErr)
+				time.Sleep(backoff)
+			}
+
+			token, err := cluster.CreateDeployerAdminSAToken()
+			if err != nil {
+				lastErr = err
+				continue
+			}
+
+			if err := cluster.SaveDeployerAdminSAToken(token); err != nil {
+				lastErr = err
+				continue
+			}
+
+			lastErr = nil
+			log.Logger.Info("RotateDeployerAdminSATokens: token rotated successfully",
+				"cluster", cluster.Name)
+			break
+		}
+
+		if lastErr != nil {
+			log.Logger.Error("RotateDeployerAdminSATokens: failed after all retries",
+				"cluster", cluster.Name,
+				"attempts", maxRetries,
+				"error", lastErr)
+		}
+	}
+}
+
+// StartDeployerAdminSATokenRotation starts a background goroutine that periodically
+// rotates deployer-admin SA tokens for all cluster configurations that have the feature enabled.
+// It runs an initial rotation immediately, then repeats at the minimum refresh interval
+// found across all enabled clusters.
+func (a *OcpSandboxProvider) StartDeployerAdminSATokenRotation(ctx context.Context) {
+	a.RotateNow = make(chan struct{}, 1)
+
+	// Run initial rotation immediately
+	a.RotateDeployerAdminSATokens()
+
+	go func() {
+		for {
+			// Determine the shortest refresh interval across all clusters
+			interval := a.getDeployerAdminSATokenRefreshInterval()
+			if interval == 0 {
+				// No clusters have the feature enabled; check again in 30 seconds
+				interval = 30 * time.Second
+			}
+
+			log.Logger.Info("DeployerAdminSATokenRotation: next rotation",
+				"interval", interval)
+
+			select {
+			case <-ctx.Done():
+				log.Logger.Info("DeployerAdminSATokenRotation: context cancelled, stopping")
+				return
+			case <-a.RotateNow:
+				a.RotateDeployerAdminSATokens()
+			case <-time.After(interval):
+				a.RotateDeployerAdminSATokens()
+			}
+		}
+	}()
+}
+
+// TriggerRotation sends a non-blocking signal to the background rotation goroutine
+// to wake up and run immediately.
+func (a *OcpSandboxProvider) TriggerRotation() {
+	select {
+	case a.RotateNow <- struct{}{}:
+	default:
+		// Already signalled, don't block
+	}
+}
+
+// getDeployerAdminSATokenRefreshInterval returns the shortest deployer_admin_sa_token_refresh_interval
+// across all cluster configurations that have the feature enabled.
+// Returns 0 if no clusters have the feature enabled.
+func (a *OcpSandboxProvider) getDeployerAdminSATokenRefreshInterval() time.Duration {
+	clusters, err := a.GetOcpSharedClusterConfigurations()
+	if err != nil {
+		log.Logger.Error("getDeployerAdminSATokenRefreshInterval: error fetching clusters", "error", err)
+		return 0
+	}
+
+	var minInterval time.Duration
+	for _, cluster := range clusters {
+		if cluster.DeployerAdminSATokenRefreshInterval == "" {
+			continue
+		}
+		d, err := ParseHumanDuration(cluster.DeployerAdminSATokenRefreshInterval)
+		if err != nil {
+			log.Logger.Error("getDeployerAdminSATokenRefreshInterval: invalid refresh interval",
+				"cluster", cluster.Name,
+				"value", cluster.DeployerAdminSATokenRefreshInterval,
+				"error", err)
+			continue
+		}
+		if minInterval == 0 || d < minInterval {
+			minInterval = d
+		}
+	}
+	return minInterval
 }
 
 func (a *OcpSandboxProvider) FetchAll() ([]OcpSandbox, error) {
