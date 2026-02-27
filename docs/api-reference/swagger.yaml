@@ -2918,8 +2918,8 @@ components:
           description: |
             Prefix for the Keycloak username created when `keycloak` is enabled in `cloud_selector`.
             The resulting username will be `<prefix><guid>`.
-            Defaults to `user-` if not specified.
-          example: "user-"
+            Defaults to `sandbox-` if not specified.
+          example: "sandbox-"
         annotations:
           $ref: "#/components/schemas/Annotations"
         quota:

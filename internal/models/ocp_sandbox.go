@@ -22,8 +22,8 @@ import (
 	authenticationv1 "k8s.io/api/authentication/v1"
 	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -220,10 +220,10 @@ type TokenResponse struct {
 var nameRegex = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
 
 // KeycloakUsername returns the Keycloak username for a given prefix and GUID.
-// If prefix is empty, it defaults to "user-".
+// If prefix is empty, it defaults to "sandbox-".
 func KeycloakUsername(prefix, guid string) string {
 	if prefix == "" {
-		prefix = "user-"
+		prefix = "sandbox-"
 	}
 	return prefix + guid
 }
@@ -2561,7 +2561,7 @@ func (a *OcpSandboxProvider) StartDeployerAdminSATokenRotation(ctx context.Conte
 				interval = 30 * time.Second
 			}
 
-			log.Logger.Info("DeployerAdminSATokenRotation: next rotation",
+			log.Logger.Debug("DeployerAdminSATokenRotation: next rotation",
 				"interval", interval)
 
 			select {
