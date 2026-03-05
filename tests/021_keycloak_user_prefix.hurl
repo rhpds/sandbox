@@ -2,7 +2,7 @@
 # Test keycloak_user_prefix feature for OcpSandbox placements
 #
 # This feature allows setting a custom prefix for the Keycloak username.
-# Default prefix is "user-" (e.g. user-abc12). Can be overridden via the
+# Default prefix is "sandbox-" (e.g. sandbox-abc12). Can be overridden via the
 # keycloak_user_prefix field in the resource request.
 #################################################################################
 
@@ -20,7 +20,7 @@ jsonpath "$.access_token" isString
 
 #################################################################################
 # 1. Default prefix: keycloak enabled without keycloak_user_prefix
-#    Username should be "user-<guid>"
+#    Username should be "sandbox-<guid>"
 #################################################################################
 
 POST {{host}}/api/v1/placements
@@ -36,7 +36,7 @@ Authorization: Bearer {{access_token}}
     }
   ],
   "annotations": {
-    "tests": "keycloak_user_prefix default (user-)",
+    "tests": "keycloak_user_prefix default (sandbox-)",
     "guid": "{{guid}}",
     "env_type": "ocp4-cluster-foo"
   }
@@ -59,8 +59,8 @@ jsonpath "$.status" == "success"
 jsonpath "$.resources[0].status" == "success"
 jsonpath "$.resources[0].credentials[?(@.kind == 'KeycloakUser')].username" count == 1
 jsonpath "$.resources[0].credentials[?(@.kind == 'KeycloakUser')].password" count == 1
-# Default prefix must be "user-"
-jsonpath "$.resources[0].credentials[?(@.kind == 'KeycloakUser')].username" contains "user-{{guid}}"
+# Default prefix must be "sandbox-"
+jsonpath "$.resources[0].credentials[?(@.kind == 'KeycloakUser')].username" contains "sandbox-{{guid}}"
 
 # Cleanup
 
@@ -75,8 +75,8 @@ retry: 40
 HTTP 404
 
 #################################################################################
-# 2. Custom prefix: keycloak_user_prefix = "sandbox-"
-#    Username should be "sandbox-<guid>"
+# 2. Custom prefix: keycloak_user_prefix = "dev-"
+#    Username should be "dev-<guid>"
 #################################################################################
 
 POST {{host}}/api/v1/placements
@@ -89,11 +89,11 @@ Authorization: Bearer {{access_token}}
       "cloud_selector": {
         "keycloak": "yes"
       },
-      "keycloak_user_prefix": "sandbox-"
+      "keycloak_user_prefix": "dev-"
     }
   ],
   "annotations": {
-    "tests": "keycloak_user_prefix custom (sandbox-)",
+    "tests": "keycloak_user_prefix custom (dev-)",
     "guid": "{{guid}}",
     "env_type": "ocp4-cluster-foo"
   }
@@ -115,8 +115,8 @@ jsonpath "$.status" == "success"
 jsonpath "$.resources[0].status" == "success"
 jsonpath "$.resources[0].credentials[?(@.kind == 'KeycloakUser')].username" count == 1
 jsonpath "$.resources[0].credentials[?(@.kind == 'KeycloakUser')].password" count == 1
-# Custom prefix must be "sandbox-"
-jsonpath "$.resources[0].credentials[?(@.kind == 'KeycloakUser')].username" contains "sandbox-{{guid}}"
+# Custom prefix must be "dev-"
+jsonpath "$.resources[0].credentials[?(@.kind == 'KeycloakUser')].username" contains "dev-{{guid}}"
 
 # Cleanup
 

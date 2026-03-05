@@ -190,7 +190,7 @@ func TestKeycloakUserPrefixBind(t *testing.T) {
 			expectedUsername: "sandbox-8589b",
 		},
 		{
-			name: "omitted prefix defaults to user- in username",
+			name: "omitted prefix defaults to sandbox- in username",
 			requestJSON: `{
 				"service_uuid": "13a8b15c-e752-4727-ac78-600e8833e575",
 				"resources": [{
@@ -201,7 +201,7 @@ func TestKeycloakUserPrefixBind(t *testing.T) {
 				"annotations": {"guid": "abc123"}
 			}`,
 			expectedPrefix:   "",
-			expectedUsername: "user-abc123",
+			expectedUsername: "sandbox-abc123",
 		},
 		{
 			name: "explicit user- prefix",
