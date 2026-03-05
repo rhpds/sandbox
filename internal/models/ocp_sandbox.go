@@ -1025,11 +1025,16 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 				})
 			}
 
-			// Add the token to ClusterAdditionalVars
+			// Add the token to ClusterAdditionalVars under the "deployer" key
 			if account.ClusterAdditionalVars == nil {
 				account.ClusterAdditionalVars = make(map[string]any)
 			}
-			account.ClusterAdditionalVars[targetVar] = adminSAToken
+			deployer, ok := account.ClusterAdditionalVars["deployer"].(map[string]any)
+			if !ok {
+				deployer = make(map[string]any)
+				account.ClusterAdditionalVars["deployer"] = deployer
+			}
+			deployer[targetVar] = adminSAToken
 		}
 
 		account.ServiceUuid = serviceUuid

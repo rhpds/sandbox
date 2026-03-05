@@ -299,19 +299,25 @@ def run_tests():
         logger.info("Step 4: Verifying target var in cluster_additional_vars")
         logger.info("=" * 60)
 
-        if ADMIN_SA_TARGET_VAR in cluster_additional_vars:
-            var_token = cluster_additional_vars[ADMIN_SA_TARGET_VAR]
+        deployer_vars = cluster_additional_vars.get("deployer", {})
+        if not isinstance(deployer_vars, dict):
+            raise Exception(
+                f"cluster_additional_vars['deployer'] is not a dict: {type(deployer_vars)}"
+            )
+
+        if ADMIN_SA_TARGET_VAR in deployer_vars:
+            var_token = deployer_vars[ADMIN_SA_TARGET_VAR]
             if var_token == admin_token:
                 logger.info(
-                    f"SUCCESS: {ADMIN_SA_TARGET_VAR} present in cluster_additional_vars and matches credential token"
+                    f"SUCCESS: deployer.{ADMIN_SA_TARGET_VAR} present in cluster_additional_vars and matches credential token"
                 )
             else:
                 logger.warning(
-                    f"Token in {ADMIN_SA_TARGET_VAR} differs from credential token (may be expected if rotated)"
+                    f"Token in deployer.{ADMIN_SA_TARGET_VAR} differs from credential token (may be expected if rotated)"
                 )
         else:
             raise Exception(
-                f"{ADMIN_SA_TARGET_VAR} not found in cluster_additional_vars"
+                f"{ADMIN_SA_TARGET_VAR} not found in cluster_additional_vars.deployer"
             )
 
         # Step 5: Fetch placement again and verify token is still valid
