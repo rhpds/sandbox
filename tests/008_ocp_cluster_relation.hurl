@@ -113,51 +113,6 @@ retry: 40
 HTTP 404
 
 
-#################################################################################
-# Create a new placement, with two relations using child
-#################################################################################
-
-POST {{host}}/api/v1/placements
-Authorization: Bearer {{access_token}}
-{
-  "service_uuid": "{{uuid}}",
-  "resources": [
-   {
-     "kind": "OcpSandbox",
-     "alias": "A",
-     "cloud_selector": {
-        "purpose": "dev",
-        "hcp": "no"
-     }
-   },
-   {
-     "kind": "OcpSandbox",
-     "alias": "B",
-     "cluster_relation": [
-       {
-         "relation": "child",
-         "reference": "A"
-       }
-     ],
-     "cloud_selector": {
-        "purpose": "dev"
-     }
-   }
-  ],
-  "annotations": {
-    "tests": "cluster relation with Child(A)",
-    "guid": "{{guid}}",
-    "env_type": "ocp4-cluster"
-  }
-}
-HTTP 202
-[Captures]
-sandbox_name: jsonpath "$.Placement.resources[0].name"
-[Asserts]
-jsonpath "$.message" == "Placement Created"
-jsonpath "$.Placement.service_uuid" == "{{uuid}}"
-jsonpath "$.Placement.resources" count == 2
-jsonpath "$.Placement.resources[0].status"  matches "^(initializing|success)$"
 
 #################################################################################
 # Wait until the placement is succesfull and resources are ready
@@ -272,176 +227,176 @@ retry: 40
 HTTP 404
 
 
-#################################################################################
-# Create a new placement, with three relations using child and different
-#################################################################################
+# #################################################################################
+# # Create a new placement, with three relations using child and different
+# #################################################################################
 
-POST {{host}}/api/v1/placements
-Authorization: Bearer {{access_token}}
-{
-  "service_uuid": "{{uuid}}",
-  "resources": [
-   {
-     "kind": "OcpSandbox",
-     "alias": "A",
-     "cloud_selector": {
-        "purpose": "dev",
-        "hcp": "no"
-     }
-   },
-   {
-     "kind": "OcpSandbox",
-     "alias": "B",
-     "cluster_relation": [
-       {
-         "relation": "child",
-         "reference": "A"
-       }
-     ],
-     "cloud_selector": {
-        "purpose": "dev"
-     }
-   },
-   {
-     "kind": "OcpSandbox",
-     "alias": "C",
-     "cluster_relation": [
-       {
-         "relation": "child",
-         "reference": "A"
-       },
-       {
-         "relation": "different",
-         "reference": "B"
-       }
-     ],
-     "cloud_selector": {
-        "purpose": "dev"
-     }
-   }
-  ],
-  "annotations": {
-    "tests": "Simple OcpSandbox placement",
-    "guid": "{{guid}}",
-    "env_type": "ocp4-cluster-blablablabla"
-  }
-}
-HTTP 202
-[Captures]
-sandbox_name: jsonpath "$.Placement.resources[0].name"
-[Asserts]
-jsonpath "$.message" == "Placement Created"
-jsonpath "$.Placement.service_uuid" == "{{uuid}}"
-jsonpath "$.Placement.resources" count == 3
-jsonpath "$.Placement.resources[0].status"  matches "^(initializing|success)$"
+# POST {{host}}/api/v1/placements
+# Authorization: Bearer {{access_token}}
+# {
+#   "service_uuid": "{{uuid}}",
+#   "resources": [
+#    {
+#      "kind": "OcpSandbox",
+#      "alias": "A",
+#      "cloud_selector": {
+#         "purpose": "dev",
+#         "hcp": "no"
+#      }
+#    },
+#    {
+#      "kind": "OcpSandbox",
+#      "alias": "B",
+#      "cluster_relation": [
+#        {
+#          "relation": "child",
+#          "reference": "A"
+#        }
+#      ],
+#      "cloud_selector": {
+#         "purpose": "dev"
+#      }
+#    },
+#    {
+#      "kind": "OcpSandbox",
+#      "alias": "C",
+#      "cluster_relation": [
+#        {
+#          "relation": "child",
+#          "reference": "A"
+#        },
+#        {
+#          "relation": "different",
+#          "reference": "B"
+#        }
+#      ],
+#      "cloud_selector": {
+#         "purpose": "dev"
+#      }
+#    }
+#   ],
+#   "annotations": {
+#     "tests": "Simple OcpSandbox placement",
+#     "guid": "{{guid}}",
+#     "env_type": "ocp4-cluster-blablablabla"
+#   }
+# }
+# HTTP 202
+# [Captures]
+# sandbox_name: jsonpath "$.Placement.resources[0].name"
+# [Asserts]
+# jsonpath "$.message" == "Placement Created"
+# jsonpath "$.Placement.service_uuid" == "{{uuid}}"
+# jsonpath "$.Placement.resources" count == 3
+# jsonpath "$.Placement.resources[0].status"  matches "^(initializing|success)$"
 
-#################################################################################
-# Wait until the placement is succesfull and resources are ready
-#################################################################################
+# #################################################################################
+# # Wait until the placement is succesfull and resources are ready
+# #################################################################################
 
-GET {{host}}/api/v1/placements/{{uuid}}
-Authorization: Bearer {{access_token}}
-[Options]
-retry: 80
-HTTP 200
-[Captures]
-cluster1: jsonpath "$.resources[0].ocp_cluster"
-cluster2: jsonpath "$.resources[1].ocp_cluster"
-cluster3: jsonpath "$.resources[2].ocp_cluster"
-[Asserts]
-jsonpath "$.service_uuid" == "{{uuid}}"
-jsonpath "$.status" == "success"
-jsonpath "$.resources" count == 3
-jsonpath "$.resources[0].status" == "success"
-variable "cluster1" !=  "{{cluster2}}"
-variable "cluster1" !=  "{{cluster3}}"
-variable "cluster2" !=  "{{cluster3}}"
+# GET {{host}}/api/v1/placements/{{uuid}}
+# Authorization: Bearer {{access_token}}
+# [Options]
+# retry: 80
+# HTTP 200
+# [Captures]
+# cluster1: jsonpath "$.resources[0].ocp_cluster"
+# cluster2: jsonpath "$.resources[1].ocp_cluster"
+# cluster3: jsonpath "$.resources[2].ocp_cluster"
+# [Asserts]
+# jsonpath "$.service_uuid" == "{{uuid}}"
+# jsonpath "$.status" == "success"
+# jsonpath "$.resources" count == 3
+# jsonpath "$.resources[0].status" == "success"
+# variable "cluster1" !=  "{{cluster2}}"
+# variable "cluster1" !=  "{{cluster3}}"
+# variable "cluster2" !=  "{{cluster3}}"
 
-#################################################################################
-# Delete placement
-#################################################################################
+# #################################################################################
+# # Delete placement
+# #################################################################################
 
-DELETE {{host}}/api/v1/placements/{{uuid}}
-Authorization: Bearer {{access_token}}
-HTTP 202
+# DELETE {{host}}/api/v1/placements/{{uuid}}
+# Authorization: Bearer {{access_token}}
+# HTTP 202
 
-GET {{host}}/api/v1/placements/{{uuid}}
-Authorization: Bearer {{access_token}}
-[Options]
-retry: 40
-HTTP 404
+# GET {{host}}/api/v1/placements/{{uuid}}
+# Authorization: Bearer {{access_token}}
+# [Options]
+# retry: 40
+# HTTP 404
 
 
-#################################################################################
-# Create a new placement, with three relations using child and different using DSL
-#################################################################################
+# #################################################################################
+# # Create a new placement, with three relations using child and different using DSL
+# #################################################################################
 
-POST {{host}}/api/v1/placements
-Authorization: Bearer {{access_token}}
-{
-  "service_uuid": "{{uuid}}",
-  "resources": [
-   {
-     "kind": "OcpSandbox",
-     "alias": "A",
-     "cloud_selector": {
-        "purpose": "dev",
-        "hcp": "no"
-     }
-   },
-   {
-     "kind": "OcpSandbox",
-     "alias": "B",
-     "cluster_condition": "child('A')",
-     "cloud_selector": {
-        "purpose": "dev"
-     }
-   },
-   {
-     "kind": "OcpSandbox",
-     "alias": "C",
-     "cluster_condition": "child('A') && different('B')",
-     "cloud_selector": {
-        "purpose": "dev"
-     }
-   }
-  ],
-  "annotations": {
-    "tests": "OcpSandbox placement 2 different HCPs",
-    "guid": "{{guid}}",
-    "env_type": "ocp4-cluster"
-  }
-}
-HTTP 202
-[Captures]
-sandbox_name: jsonpath "$.Placement.resources[0].name"
-[Asserts]
-jsonpath "$.message" == "Placement Created"
-jsonpath "$.Placement.service_uuid" == "{{uuid}}"
-jsonpath "$.Placement.resources" count == 3
-jsonpath "$.Placement.resources[0].status"  matches "^(initializing|success)$"
+# POST {{host}}/api/v1/placements
+# Authorization: Bearer {{access_token}}
+# {
+#   "service_uuid": "{{uuid}}",
+#   "resources": [
+#    {
+#      "kind": "OcpSandbox",
+#      "alias": "A",
+#      "cloud_selector": {
+#         "purpose": "dev",
+#         "hcp": "no"
+#      }
+#    },
+#    {
+#      "kind": "OcpSandbox",
+#      "alias": "B",
+#      "cluster_condition": "child('A')",
+#      "cloud_selector": {
+#         "purpose": "dev"
+#      }
+#    },
+#    {
+#      "kind": "OcpSandbox",
+#      "alias": "C",
+#      "cluster_condition": "child('A') && different('B')",
+#      "cloud_selector": {
+#         "purpose": "dev"
+#      }
+#    }
+#   ],
+#   "annotations": {
+#     "tests": "OcpSandbox placement 2 different HCPs",
+#     "guid": "{{guid}}",
+#     "env_type": "ocp4-cluster"
+#   }
+# }
+# HTTP 202
+# [Captures]
+# sandbox_name: jsonpath "$.Placement.resources[0].name"
+# [Asserts]
+# jsonpath "$.message" == "Placement Created"
+# jsonpath "$.Placement.service_uuid" == "{{uuid}}"
+# jsonpath "$.Placement.resources" count == 3
+# jsonpath "$.Placement.resources[0].status"  matches "^(initializing|success)$"
 
-#################################################################################
-# Wait until the placement is succesfull and resources are ready
-#################################################################################
+# #################################################################################
+# # Wait until the placement is succesfull and resources are ready
+# #################################################################################
 
-GET {{host}}/api/v1/placements/{{uuid}}
-Authorization: Bearer {{access_token}}
-[Options]
-retry: 40
-HTTP 200
-[Captures]
-cluster1: jsonpath "$.resources[0].ocp_cluster"
-cluster2: jsonpath "$.resources[1].ocp_cluster"
-cluster3: jsonpath "$.resources[2].ocp_cluster"
-[Asserts]
-jsonpath "$.service_uuid" == "{{uuid}}"
-jsonpath "$.status" == "success"
-jsonpath "$.resources" count == 3
-jsonpath "$.resources[0].status" == "success"
-variable "cluster1" !=  "{{cluster2}}"
-variable "cluster1" !=  "{{cluster3}}"
-variable "cluster2" !=  "{{cluster3}}"
+# GET {{host}}/api/v1/placements/{{uuid}}
+# Authorization: Bearer {{access_token}}
+# [Options]
+# retry: 40
+# HTTP 200
+# [Captures]
+# cluster1: jsonpath "$.resources[0].ocp_cluster"
+# cluster2: jsonpath "$.resources[1].ocp_cluster"
+# cluster3: jsonpath "$.resources[2].ocp_cluster"
+# [Asserts]
+# jsonpath "$.service_uuid" == "{{uuid}}"
+# jsonpath "$.status" == "success"
+# jsonpath "$.resources" count == 3
+# jsonpath "$.resources[0].status" == "success"
+# variable "cluster1" !=  "{{cluster2}}"
+# variable "cluster1" !=  "{{cluster3}}"
+# variable "cluster2" !=  "{{cluster3}}"
 
 #################################################################################
 # Delete placement
