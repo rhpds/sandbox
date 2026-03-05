@@ -257,69 +257,69 @@ HTTP 404
 # Create a new placement DRY-RUN, with three relations using child and different
 #################################################################################
 
-# POST {{host}}/api/v1/placements/dry-run
-# Authorization: Bearer {{access_token}}
-# {
-#   "service_uuid": "{{uuid}}",
-#   "resources": [
-#    {
-#      "kind": "OcpSandbox",
-#      "alias": "A",
-#      "cloud_selector": {
-#         "purpose": "dev",
-#         "hcp": "no"
-#      }
-#    },
-#    {
-#      "kind": "OcpSandbox",
-#      "alias": "B",
-#      "cluster_relation": [
-#        {
-#          "relation": "child",
-#          "reference": "A"
-#        }
-#      ],
-#      "cloud_selector": {
-#         "purpose": "dev"
-#      }
-#    },
-#    {
-#      "kind": "OcpSandbox",
-#      "alias": "C",
-#      "cluster_relation": [
-#        {
-#          "relation": "child",
-#          "reference": "A"
-#        },
-#        {
-#          "relation": "different",
-#          "reference": "B"
-#        }
-#      ],
-#      "cloud_selector": {
-#         "purpose": "dev"
-#      }
-#    }
-#   ],
-#   "annotations": {
-#     "tests": "relation OcpSandbox placement",
-#     "guid": "{{guid}}",
-#     "env_type": "ocp4-cluster-rel"
-#   }
-# }
-# HTTP 200
-# [Asserts]
-# jsonpath "$.overallAvailable" == true
-# jsonpath "$.results" count == 3
-# jsonpath "$.results[0].kind" == "OcpSandbox"
-# jsonpath "$.results[0].available" == true
-# jsonpath "$.results[0].schedulable_cluster_count" > 0
-# jsonpath "$.results[1].kind" == "OcpSandbox"
-# jsonpath "$.results[1].available" == true
-# jsonpath "$.results[1].schedulable_cluster_count" > 0
-# jsonpath "$.results[2].kind" == "OcpSandbox"
-# jsonpath "$.results[2].available" == true
-# jsonpath "$.results[2].schedulable_cluster_count" > 0
+POST {{host}}/api/v1/placements/dry-run
+Authorization: Bearer {{access_token}}
+{
+  "service_uuid": "{{uuid}}",
+  "resources": [
+   {
+     "kind": "OcpSandbox",
+     "alias": "A",
+     "cloud_selector": {
+        "purpose": "dev",
+        "hcp": "no"
+     }
+   },
+   {
+     "kind": "OcpSandbox",
+     "alias": "B",
+     "cluster_relation": [
+       {
+         "relation": "child",
+         "reference": "A"
+       }
+     ],
+     "cloud_selector": {
+        "purpose": "dev"
+     }
+   },
+   {
+     "kind": "OcpSandbox",
+     "alias": "C",
+     "cluster_relation": [
+       {
+         "relation": "child",
+         "reference": "A"
+       },
+       {
+         "relation": "different",
+         "reference": "B"
+       }
+     ],
+     "cloud_selector": {
+        "purpose": "dev"
+     }
+   }
+  ],
+  "annotations": {
+    "tests": "relation OcpSandbox placement",
+    "guid": "{{guid}}",
+    "env_type": "ocp4-cluster-rel"
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.overallAvailable" == true
+jsonpath "$.results" count == 3
+jsonpath "$.results[0].kind" == "OcpSandbox"
+jsonpath "$.results[0].available" == true
+jsonpath "$.results[0].schedulable_cluster_count" > 0
+jsonpath "$.results[1].kind" == "OcpSandbox"
+jsonpath "$.results[1].available" == true
+jsonpath "$.results[1].schedulable_cluster_count" > 0
+jsonpath "$.results[2].kind" == "OcpSandbox"
+jsonpath "$.results[2].available" == true
+jsonpath "$.results[2].schedulable_cluster_count" > 0
 
 #################################################################################
 # Verify that NO placement was actually created after all dry-run calls
