@@ -29,6 +29,10 @@ jsonpath "$.access_token_exp" isString
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+HTTP *
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
 [Options]
 retry: 40
 HTTP 404
@@ -87,6 +91,10 @@ jsonpath "$.resources[0].ocp_cluster" == "ocpvdev01"
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+HTTP 202
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
 [Options]
 retry: 40
 HTTP 404
@@ -144,6 +152,10 @@ jsonpath "$.resources[0].ocp_cluster" == "ocpvdev01"
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+HTTP 202
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
 [Options]
 retry: 40
 HTTP 404
@@ -201,6 +213,10 @@ jsonpath "$.resources[0].ocp_cluster" == "ocpvdev01"
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+HTTP 202
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
 [Options]
 retry: 40
 HTTP 404
@@ -257,6 +273,10 @@ jsonpath "$.resources[0].ocp_cluster" == "ocpvdev01"
 # delete the placement
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
+HTTP 202
+
+GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
 [Options]
 retry: 40

@@ -360,8 +360,9 @@ RUN_HURL_TESTS="${RUN_HURL_TESTS:-${run_hurl_tests:-true}}"
 RUN_LIFECYCLE_TESTS="${RUN_LIFECYCLE_TESTS:-${run_lifecycle_tests:-true}}"
 RUN_LIMIT_RANGE_TESTS="${RUN_LIMIT_RANGE_TESTS:-${run_limit_range_tests:-true}}"
 RUN_ADMIN_SA_TESTS="${RUN_ADMIN_SA_TESTS:-${run_admin_sa_tests:-true}}"
+RUN_ONBOARD_TESTS="${RUN_ONBOARD_TESTS:-${run_onboard_tests:-true}}"
 
-echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS"
+echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS RUN_ONBOARD_TESTS=$RUN_ONBOARD_TESTS"
 
 if [ "$RUN_HURL_TESTS" != "false" ] && [ "$RUN_HURL_TESTS" != "no" ]; then
     tests=$1
@@ -481,4 +482,25 @@ if [ "${RUN_ADMIN_SA_TESTS}" != "false" ] && [ "${RUN_ADMIN_SA_TESTS}" != "no" ]
         ADMIN_SA_TARGET_VAR="cluster_admin_agnosticd_sa_token" \
         OCP_CLUSTER_NAME="ocpvdev01" \
         python3 tests/functional/test_ocp_admin_sa.py
+fi
+
+# Run Python OCP shared cluster onboard/offboard tests if requested
+if [ "${RUN_ONBOARD_TESTS}" != "false" ] && [ "${RUN_ONBOARD_TESTS}" != "no" ]; then
+    echo ""
+    echo "=========================================="
+    echo "Running OCP shared cluster onboard/offboard tests"
+    echo "=========================================="
+    cd $jobdir
+
+    # Install Python dependencies if needed
+    pip3 install -q requests urllib3 2>/dev/null || true
+
+    # Run the Python onboard/offboard test
+    SANDBOX_API_URL="http://localhost:$PORT" \
+        SANDBOX_LOGIN_TOKEN="$apptoken" \
+        SANDBOX_ADMIN_LOGIN_TOKEN="$admintoken" \
+        OCP_CLUSTER_NAME="ocpvdev01" \
+        python3 tests/functional/test_ocp_onboard.py
+else
+    echo "Skipping OCP onboard/offboard tests (RUN_ONBOARD_TESTS=${RUN_ONBOARD_TESTS})"
 fi

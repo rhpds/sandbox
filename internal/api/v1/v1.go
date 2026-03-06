@@ -296,6 +296,28 @@ func (j *UpdateOcpSharedConfigurationRequest) Bind(r *http.Request) error {
 	return nil
 }
 
+// OffboardPlacementInfo describes a placement found during cluster offboarding.
+type OffboardPlacementInfo struct {
+	PlacementID  int      `json:"placement_id"`
+	ServiceUuid  string   `json:"service_uuid"`
+	Status       string   `json:"status,omitempty"`
+	ClusterNames []string `json:"cluster_names,omitempty"`
+}
+
+// OffboardReport is the response returned by the offboard endpoint.
+type OffboardReport struct {
+	ClusterName                       string                 `json:"cluster_name"`
+	ClusterDisabled                   bool                   `json:"cluster_disabled"`
+	PlacementsDeleted                 []OffboardPlacementInfo `json:"placements_deleted"`
+	PlacementsRequiringManualCleanup  []OffboardPlacementInfo `json:"placements_requiring_manual_cleanup"`
+	ClusterDeleted                    bool                   `json:"cluster_deleted"`
+	Message                           string                 `json:"message"`
+}
+
+func (r *OffboardReport) Render(w http.ResponseWriter, rr *http.Request) error {
+	return nil
+}
+
 type UpdateDNSAccountConfigurationRequest struct {
 	Annotations        *models.Annotations `json:"annotations,omitempty"`
 	AwsAccessKeyID     string              `json:"aws_access_key_id"`

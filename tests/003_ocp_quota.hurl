@@ -91,6 +91,10 @@ HTTP 404
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+HTTP *
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
 [Options]
 retry: 6
 HTTP 404

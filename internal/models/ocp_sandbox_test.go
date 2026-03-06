@@ -786,3 +786,51 @@ func TestClusterData(t *testing.T) {
 		}
 	})
 }
+
+func TestValidateClusterAnnotations(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		wantErr     bool
+	}{
+		{
+			name:        "valid annotations",
+			annotations: map[string]string{"purpose": "dev", "cloud": "cnv-shared", "name": "test-cluster"},
+			wantErr:     false,
+		},
+		{
+			name:        "forbidden cloud=cnv",
+			annotations: map[string]string{"purpose": "dev", "cloud": "cnv"},
+			wantErr:     true,
+		},
+		{
+			name:        "forbidden cloud=CNV case insensitive",
+			annotations: map[string]string{"cloud": "CNV"},
+			wantErr:     true,
+		},
+		{
+			name:        "cloud=cnv-dedicated-shared is allowed",
+			annotations: map[string]string{"cloud": "cnv-dedicated-shared"},
+			wantErr:     false,
+		},
+		{
+			name:        "no cloud annotation is fine",
+			annotations: map[string]string{"purpose": "dev"},
+			wantErr:     false,
+		},
+		{
+			name:        "empty annotations",
+			annotations: map[string]string{},
+			wantErr:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateClusterAnnotations(tt.annotations)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateClusterAnnotations() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

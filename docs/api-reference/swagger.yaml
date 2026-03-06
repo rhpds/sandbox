@@ -1822,6 +1822,85 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+    put:
+      summary: Create or update an OcpSharedClusterConfiguration (upsert)
+      description: |-
+        If the cluster does not exist, it creates it (HTTP 201).
+        If the cluster already exists, it replaces all fields (HTTP 200).
+        The name in the URL path must match the name in the request body.
+        On update, the deployer_admin_sa_token is preserved if not provided
+        in the request body (it is managed by the background rotation goroutine).
+        Certain annotation values are forbidden (e.g. cloud: cnv) unless ?force=true is set.
+      operationId: upsertOcpSharedClusterConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration
+          schema:
+            type: string
+          example: ocp-cluster-1
+        - name: force
+          in: query
+          required: false
+          description: |-
+            Set to 'true' to bypass annotation validation.
+            Use this when you intentionally need to set restricted annotation
+            values (e.g. cloud: cnv for a real CNV cluster).
+          schema:
+            type: string
+            enum: ['true']
+      requestBody:
+        description: Full OcpSharedClusterConfiguration object.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OcpSharedClusterConfiguration"
+            example:
+              name: ocp-cluster-1
+              api_url: https://api.ocp-cluster-1.com:6443
+              ingress_domain: apps.ocp-cluster-1.com
+              token: "..."
+              annotations:
+                purpose: dev
+                name: ocp-cluster-1
+      responses:
+        '200':
+          description: OcpSharedClusterConfiguration updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: OCP shared cluster configuration updated
+        '201':
+          description: OcpSharedClusterConfiguration created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: OCP shared cluster configuration created
+        '400':
+          description: Invalid request (bad payload or forbidden annotations)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: upsertOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Delete an OcpSharedClusterConfiguration
       operationId: deleteOcpSharedClusterConfiguration
@@ -1965,6 +2044,114 @@ paths:
                 $ref: "#/components/schemas/Error"
         default:
           description: disableOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ocp-shared-cluster-configurations/{name}/offboard:
+    delete:
+      summary: Offboard an OcpSharedClusterConfiguration
+      description: |-
+        Performs a full offboarding of a shared cluster:
+        1. Disables the cluster to prevent new scheduling
+        2. Finds all placements targeting this cluster
+        3. If any placements span multiple clusters, returns 409 (manual cleanup required)
+        4. If no placements exist, deletes the cluster config and returns 200
+        5. If cluster is NOT reachable and no ?force=true, returns 409
+        6. If cluster is NOT reachable and ?force=true, force-deletes everything from DB synchronously (200)
+        7. If cluster IS reachable, starts an async offboard job (202) for namespace cleanup
+        8. Poll GET /ocp-shared-cluster-configurations/{name}/offboard for async job status
+
+        This is the recommended way to remove a shared cluster from the fleet.
+      operationId: offboardOcpSharedClusterConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration to offboard
+          schema:
+            type: string
+          example: ocp-cluster-1
+        - name: force
+          in: query
+          required: false
+          description: Force offboard even if the cluster is not reachable. Deletes resources and placements from DB without cleaning up namespaces on the actual cluster.
+          schema:
+            type: boolean
+          example: true
+      responses:
+        '200':
+          description: Offboard completed synchronously (no placements to clean up)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OffboardReport"
+              example:
+                cluster_name: ocp-cluster-1
+                cluster_disabled: true
+                placements_deleted: []
+                placements_requiring_manual_cleanup: []
+                cluster_deleted: true
+                message: "Cluster offboarded successfully. No placements found. Cluster configuration removed."
+        '202':
+          description: Offboard job accepted. Poll GET for status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleResponse"
+              example:
+                request_id: "abc123"
+                status: "initializing"
+                message: "Offboard started for cluster ocp-cluster-1. 2 placement(s) to process."
+        '404':
+          description: OcpSharedClusterConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: Conflict - multi-cluster placements exist or cluster unreachable without force
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OffboardReport"
+        default:
+          description: offboardOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      summary: Get offboard job status
+      description: Returns the latest offboard job status for the given cluster. Poll this endpoint after DELETE returns 202.
+      operationId: getOffboardOcpSharedClusterConfigurationStatus
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration
+          schema:
+            type: string
+          example: ocp-cluster-1
+      responses:
+        '200':
+          description: Offboard job status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        '404':
+          description: No offboard job found for this cluster
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: Unexpected error
           content:
             application/json:
               schema:
@@ -4115,3 +4302,59 @@ components:
             ocp_version:
               type: string
               example: 4.16.0
+
+    OffboardReport:
+      description: Report returned by the offboard endpoint
+      type: object
+      properties:
+        cluster_name:
+          type: string
+          description: Name of the cluster being offboarded
+          example: ocp-cluster-1
+        cluster_disabled:
+          type: boolean
+          description: Whether the cluster was disabled
+          example: true
+        placements_deleted:
+          type: array
+          description: Placements that were marked for deletion (only targeted this cluster)
+          items:
+            $ref: "#/components/schemas/OffboardPlacementInfo"
+          example:
+            - placement_id: 42
+              service_uuid: "550e8400-e29b-41d4-a716-446655440000"
+              status: "marked for deletion"
+        placements_requiring_manual_cleanup:
+          type: array
+          description: Placements that span multiple clusters and require manual intervention
+          items:
+            $ref: "#/components/schemas/OffboardPlacementInfo"
+          example: []
+        cluster_deleted:
+          type: boolean
+          description: Whether the cluster configuration was deleted
+          example: true
+        message:
+          type: string
+          description: Summary message
+          example: Cluster offboarded successfully. All placements marked for deletion and cluster configuration removed.
+
+    OffboardPlacementInfo:
+      description: Information about a placement found during offboarding
+      type: object
+      properties:
+        placement_id:
+          type: integer
+          example: 42
+        service_uuid:
+          type: string
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        status:
+          type: string
+          example: "marked for deletion"
+        cluster_names:
+          type: array
+          description: All clusters targeted by this placement (present for multi-cluster placements)
+          items:
+            type: string
+          example: ["ocp-cluster-1", "ocp-cluster-2"]
