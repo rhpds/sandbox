@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/render"
 	"github.com/jackc/pgx/v4"
 	"github.com/rhpds/sandbox/internal/api/v1"
+	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/models"
 )
 
@@ -400,6 +401,358 @@ func (h *BaseHandler) UpdateOcpSharedClusterConfigurationHandler(w http.Response
 	render.Render(w, r, &v1.SimpleMessage{
 		Message: "OCP shared cluster configuration updated",
 	})
+}
+
+// UpsertOcpSharedClusterConfigurationHandler creates or updates an OcpSharedClusterConfiguration.
+// If the cluster does not exist, it creates it (HTTP 201).
+// If the cluster already exists, it replaces all fields (HTTP 200).
+func (h *BaseHandler) UpsertOcpSharedClusterConfigurationHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	newConfig := models.MakeOcpSharedClusterConfiguration()
+	if err := render.Bind(r, newConfig); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid request payload",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	if newConfig.Name != name {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "name in URL path must match name in request body",
+		})
+		return
+	}
+
+	// Validate annotations unless ?force=true is set
+	if r.URL.Query().Get("force") != "true" {
+		if err := models.ValidateClusterAnnotations(newConfig.Annotations); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusBadRequest,
+				Message:        err.Error() + " (use ?force=true to override)",
+			})
+			return
+		}
+	} else {
+		log.Logger.Warn("Annotation validation bypassed with ?force=true",
+			"cluster", newConfig.Name,
+			"annotations", newConfig.Annotations)
+	}
+
+	newConfig.DbPool = h.OcpSandboxProvider.DbPool
+	newConfig.VaultSecret = h.OcpSandboxProvider.VaultSecret
+
+	existing, err := h.OcpSandboxProvider.GetOcpSharedClusterConfigurationByName(name)
+	if err != nil && err != pgx.ErrNoRows {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to check existing OCP shared cluster configuration",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	if err == pgx.ErrNoRows {
+		// Create path
+
+		// Handle MaxPlacements: -1 means "no limit" (nil)
+		if newConfig.MaxPlacements != nil && *newConfig.MaxPlacements < 0 {
+			newConfig.MaxPlacements = nil
+		}
+
+		if err := newConfig.Save(); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Failed to save OCP shared cluster configuration",
+				ErrorMultiline: []string{err.Error()},
+			})
+			return
+		}
+
+		// Trigger token rotation if deployer-admin SA token is configured
+		if newConfig.DeployerAdminSATokenTTL != "" {
+			h.OcpSandboxProvider.TriggerRotation()
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		render.Render(w, r, &v1.SimpleMessage{
+			Message: "OCP shared cluster configuration created",
+		})
+	} else {
+		// Update: preserve the DB ID so Save() calls Update()
+		newConfig.ID = existing.ID
+
+		// Preserve deployer admin SA token if not provided in the request
+		// (the token is managed by the background rotation goroutine)
+		if newConfig.DeployerAdminSAToken == "" {
+			newConfig.DeployerAdminSAToken = existing.DeployerAdminSAToken
+		}
+
+		// Preserve internal data (rotation count, timestamps, etc.)
+		newConfig.Data = existing.Data
+
+		// Handle MaxPlacements: -1 means "clear the limit" (same as the update endpoint)
+		if newConfig.MaxPlacements != nil && *newConfig.MaxPlacements < 0 {
+			newConfig.MaxPlacements = nil
+		}
+
+		if err := newConfig.Save(); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Failed to update OCP shared cluster configuration",
+				ErrorMultiline: []string{err.Error()},
+			})
+			return
+		}
+
+		// If deployer-admin SA token config changed, signal the background
+		// rotation goroutine to pick it up immediately.
+		if newConfig.DeployerAdminSATokenTTL != existing.DeployerAdminSATokenTTL ||
+			newConfig.DeployerAdminSATokenRefreshInterval != existing.DeployerAdminSATokenRefreshInterval ||
+			newConfig.DeployerAdminSATokenTargetVar != existing.DeployerAdminSATokenTargetVar {
+			h.OcpSandboxProvider.TriggerRotation()
+		}
+
+		w.WriteHeader(http.StatusOK)
+		render.Render(w, r, &v1.SimpleMessage{
+			Message: "OCP shared cluster configuration updated",
+		})
+	}
+}
+
+// OffboardOcpSharedClusterConfigurationHandler handles the full offboarding of a shared cluster.
+//
+// Flow:
+//  1. Disable the cluster to prevent new scheduling.
+//  2. Find all placements targeting this cluster.
+//  3. If any placements span multiple clusters, return 409 (manual intervention required).
+//  4. If no placements exist, delete the cluster config synchronously and return 200.
+//  5. If placements exist, check cluster reachability.
+//  6. If cluster is NOT reachable and no ?force=true, return 409.
+//  7. If cluster is NOT reachable and ?force=true, force-delete everything from DB synchronously (200).
+//  8. If cluster IS reachable, create an async offboard job (202) for namespace cleanup.
+//
+// The offboard job status can be polled via GET /ocp-shared-cluster-configurations/{name}/offboard.
+func (h *BaseHandler) OffboardOcpSharedClusterConfigurationHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	force := r.URL.Query().Get("force") == "true"
+
+	cluster, err := h.OcpSandboxProvider.GetOcpSharedClusterConfigurationByName(name)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "OCP shared cluster configuration not found",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to get OCP shared cluster configuration",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	report := v1.OffboardReport{
+		ClusterName:                      name,
+		PlacementsDeleted:                []v1.OffboardPlacementInfo{},
+		PlacementsRequiringManualCleanup: []v1.OffboardPlacementInfo{},
+	}
+
+	// Step 1: Disable the cluster to prevent new scheduling
+	if cluster.Valid {
+		if err := cluster.Disable(); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Failed to disable OCP shared cluster configuration",
+				ErrorMultiline: []string{err.Error()},
+			})
+			return
+		}
+	}
+	report.ClusterDisabled = true
+
+	// Step 2: Find all placements targeting this cluster
+	placementInfos, err := h.OcpSandboxProvider.GetPlacementsByClusterName(name)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to get placements for cluster",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	// Step 3: If any placements span multiple clusters, reject with 409
+	var singleClusterPlacements []models.ClusterPlacementInfo
+	for _, pi := range placementInfos {
+		if !pi.OnlyThisCluster {
+			report.PlacementsRequiringManualCleanup = append(report.PlacementsRequiringManualCleanup, v1.OffboardPlacementInfo{
+				PlacementID:  pi.PlacementID,
+				ServiceUuid:  pi.ServiceUuid,
+				Status:       pi.Status,
+				ClusterNames: pi.ClusterNames,
+			})
+		} else {
+			singleClusterPlacements = append(singleClusterPlacements, pi)
+		}
+	}
+
+	if len(report.PlacementsRequiringManualCleanup) > 0 {
+		w.WriteHeader(http.StatusConflict)
+		report.Message = fmt.Sprintf(
+			"Cannot offboard: %d placement(s) span multiple clusters and must be deleted manually before offboarding. "+
+				"Delete these placements first, then retry the offboard.",
+			len(report.PlacementsRequiringManualCleanup),
+		)
+		render.Render(w, r, &report)
+		return
+	}
+
+	// Step 4: No placements — delete cluster config synchronously
+	if len(singleClusterPlacements) == 0 {
+		if err := cluster.Delete(); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Failed to delete OCP shared cluster configuration",
+				ErrorMultiline: []string{err.Error()},
+			})
+			return
+		}
+		report.ClusterDeleted = true
+		report.Message = "Cluster offboarded successfully. No placements found. Cluster configuration removed."
+		w.WriteHeader(http.StatusOK)
+		render.Render(w, r, &report)
+		return
+	}
+
+	// Step 5: There are single-cluster placements. Check cluster reachability.
+	clusterReachable := cluster.TestConnection() == nil
+
+	// Step 6: Cluster not reachable and no force — tell user to use ?force=true
+	if !clusterReachable && !force {
+		w.WriteHeader(http.StatusConflict)
+		report.Message = fmt.Sprintf(
+			"Cluster is not reachable and has %d placement(s). Cannot clean up namespaces on the cluster. "+
+				"Use ?force=true to delete placements and resources from the database without cleaning up the actual cluster.",
+			len(singleClusterPlacements),
+		)
+		render.Render(w, r, &report)
+		return
+	}
+
+	// Step 7: Force-delete (cluster not reachable + force=true) — synchronous DB-only cleanup
+	if !clusterReachable && force {
+		for _, pi := range singleClusterPlacements {
+			log.Logger.Warn("Force-deleting placement without cluster cleanup",
+				"cluster", name,
+				"service_uuid", pi.ServiceUuid,
+			)
+			if err := models.ForceDeleteResourcesAndPlacement(h.dbpool, pi.ServiceUuid, name); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        fmt.Sprintf("Failed to force-delete placement %s", pi.ServiceUuid),
+					ErrorMultiline: []string{err.Error()},
+				})
+				return
+			}
+			report.PlacementsDeleted = append(report.PlacementsDeleted, v1.OffboardPlacementInfo{
+				PlacementID: pi.PlacementID,
+				ServiceUuid: pi.ServiceUuid,
+				Status:      "force deleted",
+			})
+		}
+
+		if err := cluster.Delete(); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Failed to delete OCP shared cluster configuration",
+				ErrorMultiline: []string{err.Error()},
+			})
+			return
+		}
+		report.ClusterDeleted = true
+		report.Message = fmt.Sprintf(
+			"Cluster offboarded with force. %d placement(s) removed from database without cluster cleanup. Cluster configuration removed.",
+			len(report.PlacementsDeleted),
+		)
+		w.WriteHeader(http.StatusOK)
+		render.Render(w, r, &report)
+		return
+	}
+
+	// Step 8: Cluster is reachable — create async offboard job for namespace cleanup
+	job, err := h.OcpSandboxProvider.CreateOffboardJob(
+		r.Context(),
+		name,
+		singleClusterPlacements,
+		h.awsAccountProvider,
+		h.DNSSandboxProvider,
+		h.IBMResourceGroupSandboxProvider,
+	)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to create offboard job",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+	render.Render(w, r, &v1.LifecycleResponse{
+		RequestID: job.RequestID,
+		Status:    job.Status,
+		Message: fmt.Sprintf(
+			"Offboard started for cluster %s. %d placement(s) to process. Poll GET /api/v1/ocp-shared-cluster-configurations/%s/offboard for status.",
+			name, len(singleClusterPlacements), name,
+		),
+	})
+}
+
+// GetOffboardOcpSharedClusterConfigurationHandler returns the status of the latest offboard job for a cluster.
+func (h *BaseHandler) GetOffboardOcpSharedClusterConfigurationHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	job, err := h.OcpSandboxProvider.GetOffboardJob(r.Context(), name)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "No offboard job found for this cluster",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to get offboard job",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, job)
 }
 
 // PostOcpSharedClustersStatusHandler is a placeholder for a handler that would
