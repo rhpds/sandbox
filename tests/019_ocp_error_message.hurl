@@ -19,6 +19,10 @@ jsonpath "$.access_token" isString
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+HTTP *
+
+GET {{host}}/api/v1/placements/{{uuid}}
+Authorization: Bearer {{access_token}}
 [Options]
 retry: 60
 HTTP 404

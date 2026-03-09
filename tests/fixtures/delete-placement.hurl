@@ -19,7 +19,7 @@ DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
 HTTP 202
 
-DELETE {{host}}/api/v1/placements/{{uuid}}
+GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
 [Options]
 retry: 40

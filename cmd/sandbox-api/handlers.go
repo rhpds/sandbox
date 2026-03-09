@@ -869,6 +869,17 @@ func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// If already deleting, don't spawn another background goroutine.
+	// Multiple goroutines racing on the same service_uuid can delete
+	// resources belonging to a newly created placement that reuses the uuid.
+	if placement.Status == "deleting" {
+		w.WriteHeader(http.StatusAccepted)
+		render.Render(w, r, &v1.SimpleMessage{
+			Message: "Placement already marked for deletion",
+		})
+		return
+	}
+
 	if err := placement.MarkForCleanup(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{

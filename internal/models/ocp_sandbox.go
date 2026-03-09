@@ -358,6 +358,28 @@ func MakeOcpSharedClusterConfiguration() *OcpSharedClusterConfiguration {
 	return p
 }
 
+// forbiddenAnnotations defines annotation key-value pairs that are not allowed
+// on OcpSharedClusterConfigurations. These are reserved values that could
+// conflict with production infrastructure if set incorrectly.
+var forbiddenAnnotations = map[string][]string{
+	"cloud": {"cnv"},
+}
+
+// ValidateClusterAnnotations checks that the given annotations do not contain
+// any forbidden key-value pairs.
+func ValidateClusterAnnotations(annotations map[string]string) error {
+	for key, forbiddenValues := range forbiddenAnnotations {
+		if val, ok := annotations[key]; ok {
+			for _, fv := range forbiddenValues {
+				if strings.EqualFold(val, fv) {
+					return fmt.Errorf("annotation '%s: %s' is not allowed; use a more specific value (e.g. 'cnv-shared', 'cnv-dedicated-shared')", key, val)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // Bind and Render
 func (p *OcpSharedClusterConfiguration) Bind(r *http.Request) error {
 	// Ensure the name is not empty
@@ -569,6 +591,289 @@ func (p *OcpSharedClusterConfiguration) GetAccountCount() (int, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+// ClusterPlacementInfo describes a placement that has resources on a given cluster.
+type ClusterPlacementInfo struct {
+	PlacementID     int      `json:"placement_id"`
+	ServiceUuid     string   `json:"service_uuid"`
+	Status          string   `json:"status"`
+	ClusterNames    []string `json:"cluster_names"`
+	OnlyThisCluster bool     `json:"only_this_cluster"`
+}
+
+// GetPlacementsByClusterName returns all placements that have OcpSandbox resources
+// targeting the given cluster. For each placement, it also reports all clusters
+// targeted by that placement, so callers can identify placements that span
+// multiple clusters (requiring manual intervention during offboarding).
+func (p *OcpSandboxProvider) GetPlacementsByClusterName(clusterName string) ([]ClusterPlacementInfo, error) {
+	rows, err := p.DbPool.Query(
+		context.Background(),
+		`SELECT
+			p.id AS placement_id,
+			p.service_uuid,
+			p.status,
+			array_agg(DISTINCT r2.resource_data->>'ocp_cluster') AS cluster_names
+		FROM placements p
+		JOIN resources r ON r.service_uuid = p.service_uuid
+			AND r.resource_type = 'OcpSandbox'
+			AND r.resource_data->>'ocp_cluster' = $1
+		JOIN resources r2 ON r2.service_uuid = p.service_uuid
+			AND r2.resource_type = 'OcpSandbox'
+		GROUP BY p.id, p.service_uuid, p.status`,
+		clusterName,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error querying placements by cluster name: %w", err)
+	}
+	defer rows.Close()
+
+	var results []ClusterPlacementInfo
+	for rows.Next() {
+		var info ClusterPlacementInfo
+		if err := rows.Scan(
+			&info.PlacementID,
+			&info.ServiceUuid,
+			&info.Status,
+			&info.ClusterNames,
+		); err != nil {
+			return nil, fmt.Errorf("error scanning placement row: %w", err)
+		}
+		info.OnlyThisCluster = len(info.ClusterNames) == 1 && info.ClusterNames[0] == clusterName
+		results = append(results, info)
+	}
+
+	return results, nil
+}
+
+// ForceDeleteResourcesAndPlacement deletes all OcpSandbox resources for a placement
+// on a given cluster directly from the database, then deletes the placement row.
+// This bypasses cluster interaction and is intended for offboarding unreachable clusters.
+func ForceDeleteResourcesAndPlacement(dbpool *pgxpool.Pool, serviceUuid string, clusterName string) error {
+	// Delete OcpSandbox resources for this placement on this cluster
+	_, err := dbpool.Exec(
+		context.Background(),
+		`DELETE FROM resources
+		 WHERE service_uuid = $1
+		   AND resource_type = 'OcpSandbox'
+		   AND resource_data->>'ocp_cluster' = $2`,
+		serviceUuid, clusterName,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to delete resources for placement %s on cluster %s: %w", serviceUuid, clusterName, err)
+	}
+
+	// Check if the placement has any remaining resources
+	var remaining int
+	err = dbpool.QueryRow(
+		context.Background(),
+		"SELECT COUNT(*) FROM resources WHERE service_uuid = $1",
+		serviceUuid,
+	).Scan(&remaining)
+	if err != nil {
+		return fmt.Errorf("failed to check remaining resources for placement %s: %w", serviceUuid, err)
+	}
+
+	// Only delete placement if no resources remain
+	if remaining == 0 {
+		_, err = dbpool.Exec(
+			context.Background(),
+			"DELETE FROM placements WHERE service_uuid = $1",
+			serviceUuid,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to delete placement %s: %w", serviceUuid, err)
+		}
+	}
+
+	return nil
+}
+
+// OffboardDetails holds the parameters and report for an async offboard job.
+type OffboardDetails struct {
+	ClusterName string         `json:"cluster_name"`
+	Report      OffboardReport `json:"report"`
+}
+
+// OffboardReport is the result of an offboard operation, stored in the job body.
+type OffboardReport struct {
+	ClusterDisabled                   bool                    `json:"cluster_disabled"`
+	PlacementsDeleted                 []OffboardPlacementInfo `json:"placements_deleted"`
+	PlacementsRequiringManualCleanup  []OffboardPlacementInfo `json:"placements_requiring_manual_cleanup"`
+	ClusterDeleted                    bool                    `json:"cluster_deleted"`
+	Message                           string                  `json:"message"`
+}
+
+// OffboardPlacementInfo describes a placement found during cluster offboarding.
+type OffboardPlacementInfo struct {
+	PlacementID  int      `json:"placement_id"`
+	ServiceUuid  string   `json:"service_uuid"`
+	Status       string   `json:"status,omitempty"`
+	ClusterNames []string `json:"cluster_names,omitempty"`
+}
+
+// CreateOffboardJob creates a new async offboard job and starts the background goroutine.
+// This is only used when the cluster is reachable and namespace cleanup is needed.
+func (a *OcpSandboxProvider) CreateOffboardJob(
+	ctx context.Context,
+	clusterName string,
+	singleClusterPlacements []ClusterPlacementInfo,
+	awsProvider AwsAccountProvider,
+	dnsProvider DNSSandboxProvider,
+	ibmProvider IBMResourceGroupSandboxProvider,
+) (*Job, error) {
+	store := NewJobStore(a.DbPool)
+
+	job := &Job{
+		JobType: "ocp_offboard",
+	}
+
+	if err := store.CreateJob(ctx, job); err != nil {
+		log.Logger.Error("Error creating offboard job", "error", err)
+		return nil, err
+	}
+
+	details := OffboardDetails{
+		ClusterName: clusterName,
+		Report: OffboardReport{
+			ClusterDisabled:   true,
+			PlacementsDeleted: []OffboardPlacementInfo{},
+		},
+	}
+	if err := SetJobBody(job, details); err != nil {
+		return nil, err
+	}
+	if err := store.UpdateJob(ctx, job); err != nil {
+		return nil, err
+	}
+
+	go a.ExecuteOffboard(job, clusterName, singleClusterPlacements, awsProvider, dnsProvider, ibmProvider)
+
+	return job, nil
+}
+
+// ExecuteOffboard runs the offboard operation in the background.
+// This is only called when the cluster is reachable and placements need namespace cleanup.
+func (a *OcpSandboxProvider) ExecuteOffboard(
+	job *Job,
+	clusterName string,
+	placements []ClusterPlacementInfo,
+	awsProvider AwsAccountProvider,
+	dnsProvider DNSSandboxProvider,
+	ibmProvider IBMResourceGroupSandboxProvider,
+) {
+	ctx := context.Background()
+	store := NewJobStore(a.DbPool)
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.Logger.Error("Panic in offboard goroutine", "error", r, "cluster", clusterName)
+			job.Status = "error"
+			job.CompletedAt = time.Now()
+			details := OffboardDetails{
+				ClusterName: clusterName,
+				Report: OffboardReport{
+					ClusterDisabled: true,
+					Message:         fmt.Sprintf("Internal error during offboard: %v", r),
+				},
+			}
+			SetJobBody(job, details)
+			store.UpdateJob(ctx, job)
+		}
+	}()
+
+	// Mark as running
+	store.SetJobStatus(ctx, job, "running")
+
+	report := OffboardReport{
+		ClusterDisabled:   true,
+		PlacementsDeleted: []OffboardPlacementInfo{},
+	}
+
+	// Delete placements via the normal path (namespace cleanup)
+	for _, pi := range placements {
+		placement, err := GetPlacementByServiceUuid(a.DbPool, pi.ServiceUuid)
+		if err != nil {
+			log.Logger.Error("Failed to get placement for offboard", "error", err, "service_uuid", pi.ServiceUuid)
+			report.PlacementsDeleted = append(report.PlacementsDeleted, OffboardPlacementInfo{
+				PlacementID: pi.PlacementID,
+				ServiceUuid: pi.ServiceUuid,
+				Status:      fmt.Sprintf("error: %v", err),
+			})
+			continue
+		}
+
+		placement.Delete(awsProvider, *a, dnsProvider, ibmProvider)
+
+		report.PlacementsDeleted = append(report.PlacementsDeleted, OffboardPlacementInfo{
+			PlacementID: pi.PlacementID,
+			ServiceUuid: pi.ServiceUuid,
+			Status:      "deleted",
+		})
+	}
+
+	// Delete cluster configuration
+	// Re-fetch in case it changed
+	cluster, err := a.GetOcpSharedClusterConfigurationByName(clusterName)
+	if err != nil {
+		log.Logger.Error("Failed to re-fetch cluster config for deletion", "error", err, "cluster", clusterName)
+		job.Status = "error"
+		job.CompletedAt = time.Now()
+		report.Message = fmt.Sprintf("Placements cleaned up but failed to re-fetch cluster config for deletion: %v", err)
+		details := OffboardDetails{ClusterName: clusterName, Report: report}
+		SetJobBody(job, details)
+		store.UpdateJob(ctx, job)
+		return
+	}
+
+	if err := cluster.Delete(); err != nil {
+		log.Logger.Error("Failed to delete cluster config", "error", err, "cluster", clusterName)
+		job.Status = "error"
+		job.CompletedAt = time.Now()
+		report.Message = fmt.Sprintf("Placements cleaned up but failed to delete cluster config: %v", err)
+		details := OffboardDetails{ClusterName: clusterName, Report: report}
+		SetJobBody(job, details)
+		store.UpdateJob(ctx, job)
+		return
+	}
+
+	report.ClusterDeleted = true
+	report.Message = fmt.Sprintf(
+		"Cluster offboarded successfully. %d placement(s) deleted. Cluster configuration removed.",
+		len(report.PlacementsDeleted),
+	)
+
+	job.Status = "success"
+	job.CompletedAt = time.Now()
+	details := OffboardDetails{ClusterName: clusterName, Report: report}
+	SetJobBody(job, details)
+	store.UpdateJob(ctx, job)
+
+	log.Logger.Info("Offboard completed successfully", "cluster", clusterName, "placements_deleted", len(report.PlacementsDeleted))
+}
+
+// GetOffboardJob retrieves the latest offboard job for a given cluster name.
+func (a *OcpSandboxProvider) GetOffboardJob(ctx context.Context, clusterName string) (*Job, error) {
+	var j Job
+	err := a.DbPool.QueryRow(
+		ctx,
+		`SELECT id, request_id, COALESCE(placement_id, 0), COALESCE(parent_job_id, 0),
+		 locality, status, job_type, body, created_at, updated_at,
+		 COALESCE(completed_at, '1970-01-01T00:00:00Z')
+		 FROM jobs
+		 WHERE job_type = 'ocp_offboard'
+		   AND body->>'cluster_name' = $1
+		 ORDER BY created_at DESC LIMIT 1`,
+		clusterName,
+	).Scan(&j.ID, &j.RequestID, &j.PlacementID, &j.ParentJobID,
+		&j.Locality, &j.Status, &j.JobType, &j.Body,
+		&j.CreatedAt, &j.UpdatedAt, &j.CompletedAt)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &j, nil
 }
 
 // GetOcpSharedClusterConfigurationByName returns an OcpSharedClusterConfiguration by name
@@ -2268,26 +2573,32 @@ func (a *OcpSandboxProvider) Request(
 			},
 			Type: v1.SecretTypeServiceAccountToken,
 		}
-		_, err = clientset.CoreV1().Secrets(namespaceName).Create(context.TODO(), secret, metav1.CreateOptions{})
-
-		if err != nil {
-			log.Logger.Error("Error creating secret for SA", "error", err)
-
-			// If "status unknown for quota"  is in the error, sleep 1s + retry
-			if strings.Contains(err.Error(), "status unknown for quota") {
-				log.Logger.Warn("Status unknown for quota, sleeping 1s and retrying")
-				time.Sleep(time.Second)
-				_, err = clientset.CoreV1().Secrets(namespaceName).Create(context.TODO(), secret, metav1.CreateOptions{})
-				if err != nil {
-					log.Logger.Error("Error creating secret for SA after retry", "error", err)
-
-					// Delete the namespace
-					if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
-						log.Logger.Error("Error deleting OCP secret for SA", "error", err)
-					}
-					rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create service account token secret in namespace %s: %v", namespaceName, err))
-					return
+		// Retry loop: after namespace (re)creation the ResourceQuota admission
+		// controller may not be ready yet, producing "status unknown for quota".
+		{
+			quotaRetryDelay := time.Second
+			var createErr error
+			for attempt := 1; attempt <= 5; attempt++ {
+				_, createErr = clientset.CoreV1().Secrets(namespaceName).Create(context.TODO(), secret, metav1.CreateOptions{})
+				if createErr == nil {
+					break
 				}
+				if !strings.Contains(createErr.Error(), "status unknown for quota") {
+					break
+				}
+				log.Logger.Warn("Status unknown for quota, retrying",
+					"attempt", attempt, "delay", quotaRetryDelay)
+				time.Sleep(quotaRetryDelay)
+				quotaRetryDelay *= 2
+			}
+			if createErr != nil {
+				log.Logger.Error("Error creating secret for SA", "error", createErr)
+				// Delete the namespace
+				if err := clientset.CoreV1().Namespaces().Delete(context.TODO(), namespaceName, metav1.DeleteOptions{}); err != nil {
+					log.Logger.Error("Error deleting OCP namespace after secret failure", "error", err)
+				}
+				rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create service account token secret in namespace %s: %v", namespaceName, createErr))
+				return
 			}
 		}
 
