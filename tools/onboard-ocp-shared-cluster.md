@@ -2,11 +2,20 @@
 
 ## Overview
 
-The `onboard-ocp-shared-cluster.sh` script automates the process of adding or removing an OCP shared cluster from the sandbox API fleet. It uses the sandbox API's `PUT /api/v1/ocp-shared-cluster-configurations/{name}` (upsert) endpoint for onboarding and `DELETE /api/v1/ocp-shared-cluster-configurations/{name}/offboard` for removal.
+Two scripts automate the lifecycle of OCP shared clusters in the sandbox API fleet:
+
+- **`onboard-ocp-shared-cluster.sh`** — Adds a cluster using the `PUT /api/v1/ocp-shared-cluster-configurations/{name}` (upsert) endpoint. Requires `oc` logged in to the target cluster.
+- **`offboard-ocp-shared-cluster.sh`** — Removes a cluster using the `DELETE /api/v1/ocp-shared-cluster-configurations/{name}/offboard` endpoint. Only needs `curl` and `jq`.
 
 ## Prerequisites
 
+### Onboarding
 - **oc** (or kubectl) CLI, logged in as admin to the target cluster
+- **curl** and **jq** installed
+- A sandbox API admin login token
+- Network access to the sandbox API
+
+### Offboarding
 - **curl** and **jq** installed
 - A sandbox API admin login token
 - Network access to the sandbox API
@@ -201,9 +210,39 @@ If not specified, the following defaults are applied by the API:
 
 ## Offboarding (Removing) a Cluster
 
+There are two ways to offboard a cluster:
+
+### Using the dedicated offboard script (recommended)
+
+```bash
+export SANDBOX_API_ROUTE='https://sandbox-api.example.com'
+export SANDBOX_ADMIN_TOKEN='<admin-login-token>'
+
+./tools/offboard-ocp-shared-cluster.sh --name my-cluster
+```
+
+The script handles all response types automatically: synchronous deletion, async polling with progress display, and formatted error/conflict reporting. It does not require `oc`.
+
+### Using the onboard script with --remove
+
 ```bash
 ./tools/onboard-ocp-shared-cluster.sh --remove --name my-cluster
 ```
+
+### Offboard script options
+
+```bash
+./tools/offboard-ocp-shared-cluster.sh [OPTIONS]
+
+  --name <name>           Cluster name to offboard (required)
+  --force                 Force offboard even if the cluster is unreachable
+                          (deletes from DB without cleaning up namespaces)
+  --poll-interval <secs>  Seconds between async polls (default: 5)
+  --poll-timeout <secs>   Maximum wait for async offboard (default: 300)
+  -h, --help              Show help
+```
+
+### How offboarding works
 
 ```mermaid
 flowchart TD
@@ -233,10 +272,10 @@ The offboard process:
 
 ### Force Offboard
 
-If the cluster is no longer reachable (decommissioned, network issues, etc.), use `--force` (or `?force=true` on the API):
+If the cluster is no longer reachable (decommissioned, network issues, etc.), use `--force`:
 
 ```bash
-./tools/onboard-ocp-shared-cluster.sh --remove --name my-cluster --force
+./tools/offboard-ocp-shared-cluster.sh --name my-cluster --force
 ```
 
 This deletes all placement and resource records from the database without attempting to clean up namespaces on the actual cluster.
@@ -264,26 +303,24 @@ When there are placements, the offboard returns 202 with a job to poll:
 }
 ```
 
-Poll `GET /api/v1/ocp-shared-cluster-configurations/my-cluster/offboard` until the job status is `success` or `error`. The job body contains the full report:
-```json
-{
-    "request_id": "abc123",
-    "status": "success",
-    "body": {
-        "cluster_name": "my-cluster",
-        "report": {
-            "cluster_disabled": true,
-            "placements_deleted": [
-                {"placement_id": 42, "service_uuid": "...", "status": "deleted"}
-            ],
-            "cluster_deleted": true,
-            "message": "Cluster offboarded successfully. 1 placement(s) deleted. Cluster configuration removed."
-        }
-    }
-}
+The offboard script automatically polls `GET /api/v1/ocp-shared-cluster-configurations/my-cluster/offboard` until the job status is `success` or `error`, displaying progress along the way. The final report shows:
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║                     OFFBOARD REPORT                        ║
+╚══════════════════════════════════════════════════════════════╝
+
+  Cluster disabled: true
+  Cluster deleted:  true
+
+  Placements deleted (1):
+
+    - placement 42  uuid=abc-123-...  status=deleted
+
+  Cluster offboarded successfully. 1 placement(s) deleted. Cluster configuration removed.
 ```
 
-If there are multi-cluster placements, the offboard returns 409. You must manually delete those placements first, then re-run offboard.
+If there are multi-cluster placements, the offboard returns 409 with details about which placements need manual cleanup. Delete those placements first, then re-run offboard.
 
 ## API Endpoints
 

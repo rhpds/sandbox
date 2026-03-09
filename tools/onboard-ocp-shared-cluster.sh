@@ -312,7 +312,6 @@ show_cluster_info() {
 __meta__:
   sandboxes:
     - kind: OcpSandbox
-      count: 1
       cloud_selector:
         name: ${cluster_name}
 EOF
@@ -324,7 +323,6 @@ EOF
 __meta__:
   sandboxes:
     - kind: OcpSandbox
-      count: 1
       cloud_selector:
         purpose: ${purpose}
 EOF
