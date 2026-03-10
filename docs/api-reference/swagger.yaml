@@ -1569,6 +1569,7 @@ paths:
                       enum:
                         - admin
                         - app
+                        - shared-cluster-manager
                       example: app
             example:
               claims:
