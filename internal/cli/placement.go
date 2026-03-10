@@ -145,6 +145,12 @@ func runPlacementDryRun(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(out, "  Matching clusters: %d\n", int(count))
 		}
 
+		if names, ok := res["schedulable_cluster_names"].([]any); ok && len(names) > 0 {
+			for _, n := range names {
+				fmt.Fprintf(out, "    - %s\n", jsonStr(n))
+			}
+		}
+
 		if errMsg := jsonStr(res["error"]); errMsg != "" {
 			fmt.Fprintf(out, "  Error: %s\n", errMsg)
 		}

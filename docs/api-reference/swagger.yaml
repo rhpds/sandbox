@@ -4495,6 +4495,16 @@ components:
           description: >-
             Optional error text given by downstream services or sandbox API
             itself, if any
+        schedulable_cluster_names:
+          type: array
+          items:
+            type: string
+          description: >-
+            Names of the clusters that match the selector and have capacity.
+            Only present for OcpSandbox resources.
+          example:
+            - cluster-a
+            - cluster-b
       example:
         message: Not enough AWS accounts available
         available: false

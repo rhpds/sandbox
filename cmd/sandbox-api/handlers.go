@@ -627,6 +627,11 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 					result.Available = true
 					result.Message = "Matching OCP shared clusters found"
 					result.SchedulableClusterCount = len(availableClusters)
+					clusterNames := make([]string, len(availableClusters))
+					for i, c := range availableClusters {
+						clusterNames[i] = c.Name
+					}
+					result.SchedulableClusterNames = clusterNames
 					candidateClusters = availableClusters
 
 					// Apply priorities using CloudPreference
