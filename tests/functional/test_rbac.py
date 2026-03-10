@@ -182,7 +182,7 @@ def build_unreachable_cluster_config(name: str) -> Dict[str, Any]:
         "api_url": UNREACHABLE_API_URL,
         "ingress_domain": "apps.fake-rbac-test.example.com",
         "token": UNREACHABLE_TOKEN,
-        "annotations": {"purpose": "rbac-test", "name": name},
+        "annotations": {"purpose": "dev", "name": name},
         "valid": False,
     }
 
