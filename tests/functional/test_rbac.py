@@ -23,7 +23,6 @@ Usage:
 
 import os
 import sys
-import uuid
 import logging
 import urllib3
 from typing import Dict, Any, Optional, List
