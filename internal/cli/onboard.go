@@ -195,11 +195,11 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			fmt.Fprintf(out, "  WARNING: health check failed: %v\n", err)
 		} else {
-			var health map[string]any
-			if err := ReadJSON(healthResp, &health); err != nil {
-				fmt.Fprintf(out, "  WARNING: health check failed: %v\n", err)
-			} else {
+			healthResp.Body.Close()
+			if healthResp.StatusCode >= 200 && healthResp.StatusCode < 300 {
 				fmt.Fprintln(out, "  Health check passed.")
+			} else {
+				fmt.Fprintf(out, "  WARNING: health check returned HTTP %d\n", healthResp.StatusCode)
 			}
 		}
 		fmt.Fprintln(out)

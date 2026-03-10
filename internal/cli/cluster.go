@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -141,33 +142,126 @@ var clusterOffboardCmd = &cobra.Command{
 	Use:   "offboard <name>",
 	Short: "Offboard a shared cluster",
 	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		name := args[0]
+	RunE:  runOffboard,
+}
 
-		client, err := requireClient()
+func runOffboard(cmd *cobra.Command, args []string) error {
+	name := args[0]
+	out := cmd.OutOrStdout()
+
+	client, err := requireClient()
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(out, "==> Offboarding cluster '%s'...\n", name)
+
+	path := "/api/v1/ocp-shared-cluster-configurations/" + name + "/offboard"
+	if clusterOffboardForce {
+		path += "?force=true"
+	}
+
+	resp, err := client.Delete(path)
+	if err != nil {
+		return err
+	}
+
+	var result map[string]any
+	if err := ReadJSON(resp, &result); err != nil {
+		return err
+	}
+
+	msg := jsonStr(result["message"])
+
+	// Synchronous completion (200)
+	if resp.StatusCode == 200 {
+		fmt.Fprintf(out, "  %s\n", msg)
+		printOffboardReport(out, result)
+		return nil
+	}
+
+	// Async (202) — poll for status
+	if resp.StatusCode == 202 {
+		fmt.Fprintf(out, "  %s\n", msg)
+		fmt.Fprintln(out)
+		return pollOffboardStatus(client, name, out)
+	}
+
+	// Unexpected status — print raw result
+	enc := json.NewEncoder(out)
+	enc.SetIndent("", "  ")
+	return enc.Encode(result)
+}
+
+func pollOffboardStatus(client *Client, name string, out io.Writer) error {
+	statusPath := "/api/v1/ocp-shared-cluster-configurations/" + name + "/offboard"
+	pollInterval := 3 * time.Second
+	maxAttempts := 120 // ~6 minutes
+
+	fmt.Fprintln(out, "==> Waiting for offboard to complete...")
+
+	for i := 0; i < maxAttempts; i++ {
+		time.Sleep(pollInterval)
+
+		resp, err := client.Get(statusPath)
 		if err != nil {
-			return err
+			fmt.Fprintf(out, "  WARNING: poll failed: %v\n", err)
+			continue
 		}
 
-		path := "/api/v1/ocp-shared-cluster-configurations/" + name + "/offboard"
-		if clusterOffboardForce {
-			path += "?force=true"
+		var job map[string]any
+		if err := ReadJSON(resp, &job); err != nil {
+			fmt.Fprintf(out, "  WARNING: poll failed: %v\n", err)
+			continue
 		}
 
-		resp, err := client.Delete(path)
-		if err != nil {
-			return err
-		}
+		status := jsonStr(job["status"])
 
-		var result map[string]any
-		if err := ReadJSON(resp, &result); err != nil {
-			return err
+		switch status {
+		case "success":
+			fmt.Fprintln(out, "  Offboard completed successfully.")
+			body, _ := job["body"].(map[string]any)
+			if body != nil {
+				printOffboardReport(out, body)
+			}
+			return nil
+		case "error":
+			fmt.Fprintln(out, "  Offboard failed.")
+			body, _ := job["body"].(map[string]any)
+			if body != nil {
+				if errMsg := jsonStr(body["error"]); errMsg != "" {
+					fmt.Fprintf(out, "  Error: %s\n", errMsg)
+				}
+			}
+			return fmt.Errorf("offboard job failed")
+		default:
+			fmt.Fprintf(out, "  Status: %s...\n", status)
 		}
+	}
 
-		enc := json.NewEncoder(cmd.OutOrStdout())
-		enc.SetIndent("", "  ")
-		return enc.Encode(result)
-	},
+	return fmt.Errorf("offboard timed out after %d attempts; check with: sandbox-cli cluster offboard-status %s", maxAttempts, name)
+}
+
+func printOffboardReport(out io.Writer, report map[string]any) {
+	deleted, _ := report["placements_deleted"].([]any)
+	manual, _ := report["placements_requiring_manual_cleanup"].([]any)
+
+	if len(deleted) > 0 {
+		fmt.Fprintf(out, "  Placements deleted: %d\n", len(deleted))
+		for _, p := range deleted {
+			if pi, ok := p.(map[string]any); ok {
+				fmt.Fprintf(out, "    - %s (%s)\n", jsonStr(pi["service_uuid"]), jsonStr(pi["status"]))
+			}
+		}
+	}
+	if len(manual) > 0 {
+		fmt.Fprintf(out, "  Placements requiring manual cleanup: %d\n", len(manual))
+		for _, p := range manual {
+			if pi, ok := p.(map[string]any); ok {
+				fmt.Fprintf(out, "    - %s (clusters: %v)\n", jsonStr(pi["service_uuid"]), pi["cluster_names"])
+			}
+		}
+	}
 }
 
 // --- cluster offboard-status ---

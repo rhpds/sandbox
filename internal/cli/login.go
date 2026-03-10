@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -21,8 +22,16 @@ Examples:
 	RunE: runLogin,
 }
 
+var logoutCmd = &cobra.Command{
+	Use:   "logout",
+	Short: "Remove saved credentials",
+	Long:  `Delete the saved config file (~/.local/sandbox-cli/config.json).`,
+	RunE:  runLogout,
+}
+
 func init() {
 	rootCmd.AddCommand(loginCmd)
+	rootCmd.AddCommand(logoutCmd)
 }
 
 func runLogin(cmd *cobra.Command, args []string) error {
@@ -56,5 +65,23 @@ func runLogin(cmd *cobra.Command, args []string) error {
 	if loginResp.AccessTokenExp != nil {
 		fmt.Fprintf(cmd.OutOrStdout(), "Token expires: %s\n", loginResp.AccessTokenExp.Format("2006-01-02 15:04:05 MST"))
 	}
+	return nil
+}
+
+func runLogout(cmd *cobra.Command, args []string) error {
+	path, err := ConfigPath()
+	if err != nil {
+		return err
+	}
+
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintln(cmd.OutOrStdout(), "Already logged out (no config file found).")
+			return nil
+		}
+		return fmt.Errorf("removing config: %w", err)
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Logged out. Removed %s\n", path)
 	return nil
 }

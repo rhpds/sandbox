@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"strings"
 	"text/tabwriter"
+	"time"
 
+	"github.com/rhpds/sandbox/internal/models"
 	"github.com/spf13/cobra"
 )
 
@@ -69,8 +71,9 @@ var jwtListCmd = &cobra.Command{
 // --- jwt issue ---
 
 var (
-	jwtIssueName string
-	jwtIssueRole string
+	jwtIssueName       string
+	jwtIssueRole       string
+	jwtIssueExpiration string
 )
 
 var jwtIssueCmd = &cobra.Command{
@@ -78,10 +81,14 @@ var jwtIssueCmd = &cobra.Command{
 	Short: "Issue a new login token",
 	Long: `Issue a new JWT login token via the admin endpoint.
 
+The --expiration flag accepts a human-readable duration: 1y, 30d, 12h, 30m, 60s.
+If not set, the token defaults to 10 years.
+
 Examples:
   sandbox-cli jwt issue --name anarchy --role app
   sandbox-cli jwt issue --name cluster-ops --role shared-cluster-manager
-  sandbox-cli jwt issue --name gucore --role admin`,
+  sandbox-cli jwt issue --name gucore --role admin
+  sandbox-cli jwt issue --name temp-user --role app --expiration 30d`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if jwtIssueName == "" {
 			return fmt.Errorf("--name is required")
@@ -90,16 +97,26 @@ Examples:
 			return fmt.Errorf("--role is required")
 		}
 
+		claims := map[string]any{
+			"name": jwtIssueName,
+			"role": jwtIssueRole,
+		}
+
+		if jwtIssueExpiration != "" {
+			dur, err := models.ParseHumanDuration(jwtIssueExpiration)
+			if err != nil {
+				return fmt.Errorf("invalid --expiration: %w", err)
+			}
+			claims["exp"] = time.Now().Add(dur).Unix()
+		}
+
 		client, err := requireClient()
 		if err != nil {
 			return err
 		}
 
 		payload, _ := json.Marshal(map[string]any{
-			"claims": map[string]any{
-				"name": jwtIssueName,
-				"role": jwtIssueRole,
-			},
+			"claims": claims,
 		})
 
 		resp, err := client.Post("/api/v1/admin/jwt", bytes.NewReader(payload))
@@ -234,6 +251,7 @@ func init() {
 
 	jwtIssueCmd.Flags().StringVar(&jwtIssueName, "name", "", "Name for the token (required)")
 	jwtIssueCmd.Flags().StringVar(&jwtIssueRole, "role", "", "Role: app, admin, shared-cluster-manager (required)")
+	jwtIssueCmd.Flags().StringVar(&jwtIssueExpiration, "expiration", "", "Token expiration duration (e.g. 1y, 30d, 12h, 30m, 60s)")
 	jwtCmd.AddCommand(jwtIssueCmd)
 
 	jwtCmd.AddCommand(jwtInvalidateCmd)
