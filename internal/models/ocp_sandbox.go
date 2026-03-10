@@ -2766,6 +2766,7 @@ func NewOcpSandboxProvider(dbpool *pgxpool.Pool, vaultSecret string) OcpSandboxP
 	return OcpSandboxProvider{
 		DbPool:      dbpool,
 		VaultSecret: vaultSecret,
+		RotateNow:   make(chan struct{}, 1),
 	}
 }
 
@@ -2802,6 +2803,17 @@ func (a *OcpSandboxProvider) RotateDeployerAdminSATokens() {
 		log.Logger.Error("RotateDeployerAdminSATokens: error fetching cluster configurations", "error", err)
 		return
 	}
+
+	// Count clusters with token rotation enabled for observability
+	var enabled int
+	for _, c := range clusters {
+		if c.DeployerAdminSATokenTTL != "" {
+			enabled++
+		}
+	}
+	log.Logger.Info("RotateDeployerAdminSATokens: starting",
+		"total_clusters", len(clusters),
+		"rotation_enabled", enabled)
 
 	const maxRetries = 3
 
@@ -2877,8 +2889,6 @@ func (a *OcpSandboxProvider) RotateDeployerAdminSATokens() {
 // It runs an initial rotation immediately, then repeats at the minimum refresh interval
 // found across all enabled clusters.
 func (a *OcpSandboxProvider) StartDeployerAdminSATokenRotation(ctx context.Context) {
-	a.RotateNow = make(chan struct{}, 1)
-
 	// Run initial rotation immediately
 	a.RotateDeployerAdminSATokens()
 
