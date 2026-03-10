@@ -1560,10 +1560,16 @@ func (a *OcpSharedClusterConfiguration) CreateRestConfig() (*rest.Config, error)
 			TLSClientConfig: rest.TLSClientConfig{
 				Insecure: true,
 			},
+			Timeout: 30 * time.Second,
 		}, nil
 	}
 
-	return clientcmd.RESTConfigFromKubeConfig([]byte(a.Kubeconfig))
+	config, err := clientcmd.RESTConfigFromKubeConfig([]byte(a.Kubeconfig))
+	if err != nil {
+		return nil, err
+	}
+	config.Timeout = 30 * time.Second
+	return config, nil
 }
 
 // CreateDeployerAdminSAToken creates a short-lived token for the deployer-admin service account
