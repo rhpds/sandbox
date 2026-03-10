@@ -71,6 +71,7 @@ sandbox-cli cluster list
 sandbox-cli cluster get <name>
 sandbox-cli cluster create <name> < cluster-config.json
 sandbox-cli cluster create <name> --force < cluster-config.json
+sandbox-cli cluster onboard [name] [--purpose dev] [--annotations '{}'] [--config file.json]
 sandbox-cli cluster enable <name>
 sandbox-cli cluster disable <name>
 sandbox-cli cluster health <name>
@@ -132,13 +133,13 @@ The `tools/` directory contains shell scripts that predate `sandbox-cli`. They a
 | `tools/token-activity.sh` | `sandbox-cli jwt activity <id>`
 | `tools/list-shared-clusters.sh` | `sandbox-cli cluster list`
 | `tools/get-shared-cluster.sh` | `sandbox-cli cluster get <name>`
-| `tools/onboard-ocp-shared-cluster.sh` | `sandbox-cli cluster create <name>`
+| `tools/onboard-ocp-shared-cluster.sh` | `sandbox-cli cluster onboard [name]`
 | `tools/offboard-ocp-shared-cluster.sh` | `sandbox-cli cluster offboard <name>`
 | `tools/sandbox_api_enable_shared_cluster.sh` | `sandbox-cli cluster enable <name>`
 | `tools/sandbox_api_disable_shared_cluster.sh` | `sandbox-cli cluster disable <name>`
 |===
 
-NOTE: The onboard shell script (`onboard-ocp-shared-cluster.sh`) still provides unique value for initial cluster setup because it automates `oc` commands to create the service account and token on the target cluster. Use it for first-time onboarding, then use `sandbox-cli` for subsequent management.
+NOTE: `sandbox-cli cluster onboard` is the preferred method for initial cluster onboarding. It uses client-go to create the service account and token directly, then registers the cluster with the API. The shell script is kept for environments where the Go binary is not available.
 
 == RBAC Roles
 

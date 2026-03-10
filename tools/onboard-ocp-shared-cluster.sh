@@ -3,15 +3,15 @@
 #
 # Onboard or offboard an OCP shared cluster to/from the sandbox API.
 #
+# This script creates the service account and token on the target cluster
+# using oc, then registers the cluster via sandbox-cli.
+#
 # Prerequisites:
 #   - oc (or kubectl) logged in as admin to the target cluster
-#   - curl, jq available
-#   - Environment variables set (see usage below)
+#   - sandbox-cli installed and configured
+#   - jq available
 #
 # Usage:
-#   # Onboard a cluster:
-#   export SANDBOX_API_ROUTE='https://sandbox-api.example.com'
-#   export SANDBOX_ADMIN_TOKEN='<login-token>'
 #   ./onboard-ocp-shared-cluster.sh [OPTIONS]
 #
 #   # Offboard (remove) a cluster:
@@ -64,43 +64,15 @@ warn() {
 
 check_dependencies() {
     local missing=()
-    for cmd in oc curl jq; do
+    for cmd in oc jq sandbox-cli; do
         if ! command -v "$cmd" &>/dev/null; then
             missing+=("$cmd")
         fi
     done
 
     if [ ${#missing[@]} -gt 0 ]; then
-        die "Missing required commands: ${missing[*]}"
+        die "Missing required commands: ${missing[*]}. Install sandbox-cli with: make sandbox-cli"
     fi
-}
-
-check_env_vars() {
-    if [ -z "${SANDBOX_API_ROUTE:-}" ]; then
-        die "SANDBOX_API_ROUTE is not set. Example: export SANDBOX_API_ROUTE='https://sandbox-api.example.com'"
-    fi
-
-    if [ -z "${SANDBOX_ADMIN_TOKEN:-}" ]; then
-        die "SANDBOX_ADMIN_TOKEN is not set. This should be a sandbox API login token with admin privileges."
-    fi
-}
-
-get_access_token() {
-    local response
-    response=$(curl -s -w "\n%{http_code}" -X GET \
-        "${SANDBOX_API_ROUTE}/api/v1/login" \
-        -H "Authorization: Bearer ${SANDBOX_ADMIN_TOKEN}")
-
-    local http_code
-    http_code=$(echo "$response" | tail -1)
-    local body
-    body=$(echo "$response" | sed '$d')
-
-    if [ "$http_code" != "200" ]; then
-        die "Failed to get access token (HTTP $http_code): $body"
-    fi
-
-    echo "$body" | jq -r '.access_token'
 }
 
 validate_oc_connection() {
@@ -131,10 +103,6 @@ extract_cluster_info() {
 validate_annotations() {
     local annotations_json="$1"
 
-    # Validate 'cloud' annotation against the schema defined in swagger.yaml
-    # (ClusterAnnotations). The API enforces the full pattern via OpenAPI
-    # validation. Here we only check for bare provider values (cnv, aws,
-    # ibmcloud) which require --force.
     local cloud_val
     cloud_val=$(echo "$annotations_json" | jq -r '.cloud // empty')
     if [ -n "$cloud_val" ]; then
@@ -237,70 +205,14 @@ build_payload() {
     fi
 }
 
-call_upsert() {
-    local url="${SANDBOX_API_ROUTE}/api/v1/ocp-shared-cluster-configurations/${CLUSTER_NAME}"
-    if [ "${FORCE:-false}" = "true" ]; then
-        url="${url}?force=true"
-    fi
-
-    local response http_code body
-    response=$(curl -s -w "\n%{http_code}" -X PUT \
-        "${url}" \
-        -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d "$PAYLOAD")
-
-    http_code=$(echo "$response" | tail -1)
-    body=$(echo "$response" | sed '$d')
-
-    case "$http_code" in
-        200)
-            info "Cluster configuration updated successfully."
-            ;;
-        201)
-            info "Cluster configuration created successfully."
-            ;;
-        400)
-            die "Bad request: $body"
-            ;;
-        *)
-            die "Unexpected response (HTTP $http_code): $body"
-            ;;
-    esac
-}
-
-validate_cluster() {
-    info "Validating cluster health..."
-    local response http_code body
-    response=$(curl -s -w "\n%{http_code}" -X GET \
-        "${SANDBOX_API_ROUTE}/api/v1/ocp-shared-cluster-configurations/${CLUSTER_NAME}/health" \
-        -H "Authorization: Bearer ${ACCESS_TOKEN}")
-
-    http_code=$(echo "$response" | tail -1)
-    body=$(echo "$response" | sed '$d')
-
-    if [ "$http_code" = "200" ]; then
-        info "Cluster health check passed."
-    else
-        warn "Cluster health check failed (HTTP $http_code): $body"
-        warn "The cluster was onboarded but may not be reachable from the sandbox API."
-    fi
-}
-
 show_cluster_info() {
     info "Fetching cluster configuration..."
-    local response http_code body
-    response=$(curl -s -w "\n%{http_code}" -X GET \
-        "${SANDBOX_API_ROUTE}/api/v1/ocp-shared-cluster-configurations/${CLUSTER_NAME}" \
-        -H "Authorization: Bearer ${ACCESS_TOKEN}")
 
-    http_code=$(echo "$response" | tail -1)
-    body=$(echo "$response" | sed '$d')
-
-    if [ "$http_code" != "200" ]; then
-        warn "Could not fetch cluster info (HTTP $http_code)"
+    local body
+    body=$(sandbox-cli cluster get "$CLUSTER_NAME" 2>/dev/null) || {
+        warn "Could not fetch cluster info"
         return
-    fi
+    }
 
     echo ""
     echo "=== Cluster Information ==="
@@ -334,10 +246,6 @@ EOF
 
 do_onboard() {
     check_dependencies
-    check_env_vars
-
-    info "Authenticating with sandbox API..."
-    ACCESS_TOKEN=$(get_access_token)
 
     validate_oc_connection
     extract_cluster_info
@@ -345,20 +253,6 @@ do_onboard() {
     info "Cluster name: $CLUSTER_NAME"
     info "API URL: $API_URL"
     info "Ingress domain: $INGRESS_DOMAIN"
-    echo ""
-
-    # Check if the cluster already exists (for informational purposes)
-    local existing_response existing_code
-    existing_response=$(curl -s -w "\n%{http_code}" -X GET \
-        "${SANDBOX_API_ROUTE}/api/v1/ocp-shared-cluster-configurations/${CLUSTER_NAME}" \
-        -H "Authorization: Bearer ${ACCESS_TOKEN}")
-    existing_code=$(echo "$existing_response" | tail -1)
-
-    if [ "$existing_code" = "200" ]; then
-        info "Cluster '$CLUSTER_NAME' already exists. It will be updated."
-    else
-        info "Cluster '$CLUSTER_NAME' does not exist. It will be created."
-    fi
     echo ""
 
     # Create the service account and token on the cluster
@@ -374,12 +268,23 @@ do_onboard() {
         return
     fi
 
-    # Call the upsert endpoint
-    call_upsert
+    # Register the cluster via sandbox-cli
+    local cli_args=("cluster" "create" "$CLUSTER_NAME")
+    if [ "${FORCE:-false}" = "true" ]; then
+        cli_args+=("--force")
+    fi
+    echo "$PAYLOAD" | sandbox-cli "${cli_args[@]}" || die "Failed to register cluster"
+    info "Cluster configuration created/updated successfully."
 
     # Validate if requested
     if [ "${SKIP_VALIDATION:-false}" != "true" ]; then
-        validate_cluster
+        info "Validating cluster health..."
+        if sandbox-cli cluster health "$CLUSTER_NAME"; then
+            info "Cluster health check passed."
+        else
+            warn "Cluster health check failed."
+            warn "The cluster was onboarded but may not be reachable from the sandbox API."
+        fi
     fi
 
     # Show cluster info and agnosticv variables
@@ -391,54 +296,18 @@ do_onboard() {
 }
 
 do_remove() {
-    check_dependencies
-    check_env_vars
-
     if [ -z "${CLUSTER_NAME:-}" ]; then
         die "Cluster name is required for removal. Use --name <cluster-name>."
     fi
 
-    info "Authenticating with sandbox API..."
-    ACCESS_TOKEN=$(get_access_token)
+    command -v sandbox-cli &>/dev/null || die "sandbox-cli is required. Install with: make sandbox-cli"
 
     info "Offboarding cluster '$CLUSTER_NAME'..."
-
-    local response http_code body
-    response=$(curl -s -w "\n%{http_code}" -X DELETE \
-        "${SANDBOX_API_ROUTE}/api/v1/ocp-shared-cluster-configurations/${CLUSTER_NAME}/offboard" \
-        -H "Authorization: Bearer ${ACCESS_TOKEN}")
-
-    http_code=$(echo "$response" | tail -1)
-    body=$(echo "$response" | sed '$d')
-
-    case "$http_code" in
-        200)
-            echo ""
-            echo "=== Offboard Report ==="
-            echo "$body" | jq .
-
-            local cluster_deleted manual_count
-            cluster_deleted=$(echo "$body" | jq -r '.cluster_deleted')
-            manual_count=$(echo "$body" | jq '.placements_requiring_manual_cleanup | length')
-
-            if [ "$cluster_deleted" = "true" ]; then
-                info "Cluster '$CLUSTER_NAME' has been fully offboarded and removed."
-            else
-                warn "Cluster '$CLUSTER_NAME' has been disabled but NOT removed."
-                if [ "$manual_count" -gt 0 ]; then
-                    warn "$manual_count placement(s) span multiple clusters and need manual cleanup."
-                    warn "After cleaning up those placements, delete the cluster with:"
-                    echo "  curl -X DELETE '${SANDBOX_API_ROUTE}/api/v1/ocp-shared-cluster-configurations/${CLUSTER_NAME}' -H 'Authorization: Bearer <token>'"
-                fi
-            fi
-            ;;
-        404)
-            die "Cluster '$CLUSTER_NAME' not found."
-            ;;
-        *)
-            die "Unexpected response (HTTP $http_code): $body"
-            ;;
-    esac
+    local cli_args=("cluster" "offboard" "$CLUSTER_NAME")
+    if [ "${FORCE:-false}" = "true" ]; then
+        cli_args+=("--force")
+    fi
+    sandbox-cli "${cli_args[@]}" || die "Failed to offboard cluster"
 }
 
 # ============================================================================
