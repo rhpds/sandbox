@@ -130,7 +130,6 @@ The `tools/` directory contains shell scripts that predate `sandbox-cli`. They a
 | Script | sandbox-cli equivalent
 
 | `tools/issue-jwt.sh` | `sandbox-cli jwt list` / `jwt issue`
-| `tools/token-activity.sh` | `sandbox-cli jwt activity <id>`
 | `tools/list-shared-clusters.sh` | `sandbox-cli cluster list`
 | `tools/get-shared-cluster.sh` | `sandbox-cli cluster get <name>`
 | `tools/onboard-ocp-shared-cluster.sh` | `sandbox-cli cluster onboard [name]`
