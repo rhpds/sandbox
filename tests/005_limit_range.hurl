@@ -44,7 +44,7 @@ Authorization: Bearer {{access_token_admin}}
     "skip_quota": true,
     "annotations": {
         "virt": "no",
-        "cloud": "ibm",
+        "cloud": "ibmcloud-shared",
         "purpose": "dev"
     }
 }

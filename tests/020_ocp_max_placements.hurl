@@ -44,7 +44,7 @@ Authorization: Bearer {{access_token_admin}}
     "kubeconfig": "apiVersion: v1 ...",
     "skip_quota": true,
     "annotations": {
-        "purpose": "max-placements-test"
+        "name": "ocp-max-placements-test"
     }
 }
 HTTP 201
@@ -72,7 +72,7 @@ Authorization: Bearer {{access_token}}
     {
       "kind": "OcpSandbox",
       "cloud_selector": {
-        "purpose": "max-placements-test"
+        "name": "ocp-max-placements-test"
       }
     }
   ]
@@ -116,7 +116,7 @@ Authorization: Bearer {{access_token}}
     {
       "kind": "OcpSandbox",
       "cloud_selector": {
-        "purpose": "max-placements-test"
+        "name": "ocp-max-placements-test"
       }
     }
   ]
@@ -160,7 +160,7 @@ Authorization: Bearer {{access_token}}
     {
       "kind": "OcpSandbox",
       "cloud_selector": {
-        "purpose": "max-placements-test"
+        "name": "ocp-max-placements-test"
       }
     }
   ]
@@ -204,7 +204,7 @@ Authorization: Bearer {{access_token}}
     {
       "kind": "OcpSandbox",
       "cloud_selector": {
-        "purpose": "max-placements-test"
+        "name": "ocp-max-placements-test"
       }
     }
   ]

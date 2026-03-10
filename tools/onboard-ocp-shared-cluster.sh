@@ -131,16 +131,20 @@ extract_cluster_info() {
 validate_annotations() {
     local annotations_json="$1"
 
-    # Check for forbidden annotation values
+    # Validate 'cloud' annotation against the schema defined in swagger.yaml
+    # (ClusterAnnotations). The API enforces the full pattern via OpenAPI
+    # validation. Here we only check for bare provider values (cnv, aws,
+    # ibmcloud) which require --force.
     local cloud_val
     cloud_val=$(echo "$annotations_json" | jq -r '.cloud // empty')
     if [ -n "$cloud_val" ]; then
-        # Case-insensitive check for exact "cnv"
         local lower_cloud
         lower_cloud=$(echo "$cloud_val" | tr '[:upper:]' '[:lower:]')
-        if [ "$lower_cloud" = "cnv" ]; then
-            die "Annotation 'cloud: cnv' is forbidden. Use a more specific value like 'cnv-shared' or 'cnv-dedicated-shared'."
-        fi
+        case "$lower_cloud" in
+            cnv|aws|ibmcloud)
+                die "Annotation 'cloud: ${cloud_val}' is restricted. Use '${lower_cloud}-shared' or '${lower_cloud}-dedicated-shared' instead (or --force to override)."
+                ;;
+        esac
     fi
 }
 

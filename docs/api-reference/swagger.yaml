@@ -1736,7 +1736,7 @@ paths:
                     token: <TOKEN>
               annotations:
                 virt: available
-                cloud: ibm
+                cloud: ibmcloud-shared
                 purpose: dev
       responses:
         '201':
@@ -1830,7 +1830,7 @@ paths:
         The name in the URL path must match the name in the request body.
         On update, the deployer_admin_sa_token is preserved if not provided
         in the request body (it is managed by the background rotation goroutine).
-        Certain annotation values are forbidden (e.g. cloud: cnv) unless ?force=true is set.
+        Bare cloud provider values (e.g. cloud: cnv) are restricted unless ?force=true is set.
       operationId: upsertOcpSharedClusterConfiguration
       tags:
         - admin
@@ -1846,9 +1846,9 @@ paths:
           in: query
           required: false
           description: |-
-            Set to 'true' to bypass annotation validation.
-            Use this when you intentionally need to set restricted annotation
-            values (e.g. cloud: cnv for a real CNV cluster).
+            Set to 'true' to bypass the business-rule restriction on bare
+            cloud provider values (e.g. cloud: cnv). The OpenAPI schema
+            validation still applies.
           schema:
             type: string
             enum: ['true']
@@ -2279,7 +2279,7 @@ paths:
                 fordeployer: '...'
               annotations:
                 virt: available
-                cloud: ibm
+                cloud: ibmcloud-shared
                 purpose: dev
               default_sandbox_quota:
                 pods: "12"
@@ -2709,7 +2709,7 @@ paths:
                 fordeployer: '...'
               annotations:
                 virt: available
-                cloud: ibm
+                cloud: ibmcloud-shared
                 purpose: dev
       responses:
         '200':
@@ -3201,6 +3201,39 @@ components:
         guid: abcde
         env_type: ocp4-cluster
         hcp: "yes"
+
+    ClusterAnnotations:
+      description: |-
+        Key / Value map for OCP shared cluster configuration annotations.
+        The 'cloud' annotation, if present, must match the pattern
+        {provider} or {provider}-shared or {provider}-dedicated-shared
+        where provider is one of: cnv, aws, ibmcloud.
+        Bare provider values (e.g. cloud: cnv) require ?force=true.
+      type: object
+      properties:
+        cloud:
+          type: string
+          pattern: "^(cnv|aws|ibmcloud)(-(shared|dedicated-shared))?$"
+          description: |-
+            Cloud provider type. Must be one of:
+            cnv, cnv-shared, cnv-dedicated-shared,
+            aws, aws-shared, aws-dedicated-shared,
+            ibmcloud, ibmcloud-shared, ibmcloud-dedicated-shared.
+            Bare values (cnv, aws, ibmcloud) require ?force=true to bypass
+            the additional safety check.
+          example: cnv-shared
+        purpose:
+          type: string
+          enum: [dev, prod, events]
+          description: The intended purpose of the cluster.
+          example: dev
+      additionalProperties:
+        type: string
+        minLength: 1
+      example:
+        purpose: dev
+        cloud: cnv-shared
+        name: my-cluster
 
     Placement:
       type: object
@@ -3953,7 +3986,7 @@ components:
         token:
           type: string
         annotations:
-          $ref: "#/components/schemas/Annotations"
+          $ref: "#/components/schemas/ClusterAnnotations"
         additional_vars:
           type: object
           description: Additional variables for the cluster
@@ -4126,7 +4159,7 @@ components:
               token: <TOKEN>
         annotations:
           virt: available
-          cloud: ibm
+          cloud: ibmcloud-shared
           purpose: dev
     OcpSharedClusterConfigurations:
       description: The list of OcpSharedClusterConfigurations

@@ -358,22 +358,25 @@ func MakeOcpSharedClusterConfiguration() *OcpSharedClusterConfiguration {
 	return p
 }
 
-// forbiddenAnnotations defines annotation key-value pairs that are not allowed
-// on OcpSharedClusterConfigurations. These are reserved values that could
-// conflict with production infrastructure if set incorrectly.
-var forbiddenAnnotations = map[string][]string{
-	"cloud": {"cnv"},
-}
+// bareCloudProviders are cloud annotation values that are structurally valid
+// (allowed by the OpenAPI schema) but restricted by default. They require
+// ?force=true to be accepted. The full schema is defined in swagger.yaml
+// under ClusterAnnotations.cloud.
+var bareCloudProviders = []string{"cnv", "aws", "ibmcloud"}
 
-// ValidateClusterAnnotations checks that the given annotations do not contain
-// any forbidden key-value pairs.
+// ValidateClusterAnnotations applies business-rule restrictions on top of
+// the OpenAPI schema validation. Currently it rejects bare cloud provider
+// values (cnv, aws, ibmcloud) — the suffixed forms (-shared,
+// -dedicated-shared) are allowed without force.
 func ValidateClusterAnnotations(annotations map[string]string) error {
-	for key, forbiddenValues := range forbiddenAnnotations {
-		if val, ok := annotations[key]; ok {
-			for _, fv := range forbiddenValues {
-				if strings.EqualFold(val, fv) {
-					return fmt.Errorf("annotation '%s: %s' is not allowed; use a more specific value (e.g. 'cnv-shared', 'cnv-dedicated-shared')", key, val)
-				}
+	if val, ok := annotations["cloud"]; ok {
+		lowerVal := strings.ToLower(val)
+		for _, bare := range bareCloudProviders {
+			if lowerVal == bare {
+				return fmt.Errorf(
+					"annotation 'cloud: %s' is restricted; use '%s-shared' or '%s-dedicated-shared' instead (or ?force=true to override)",
+					val, bare, bare,
+				)
 			}
 		}
 	}
@@ -1557,10 +1560,16 @@ func (a *OcpSharedClusterConfiguration) CreateRestConfig() (*rest.Config, error)
 			TLSClientConfig: rest.TLSClientConfig{
 				Insecure: true,
 			},
+			Timeout: 30 * time.Second,
 		}, nil
 	}
 
-	return clientcmd.RESTConfigFromKubeConfig([]byte(a.Kubeconfig))
+	config, err := clientcmd.RESTConfigFromKubeConfig([]byte(a.Kubeconfig))
+	if err != nil {
+		return nil, err
+	}
+	config.Timeout = 30 * time.Second
+	return config, nil
 }
 
 // CreateDeployerAdminSAToken creates a short-lived token for the deployer-admin service account
@@ -1690,6 +1699,9 @@ func (a *OcpSharedClusterConfiguration) TestConnection() error {
 		return errors.New("Error creating OCP config: " + err.Error())
 	}
 
+	// Set a timeout so we don't hang indefinitely when the cluster is unreachable
+	config.Timeout = 10 * time.Second
+
 	// Create an OpenShift client
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
@@ -1698,7 +1710,9 @@ func (a *OcpSharedClusterConfiguration) TestConnection() error {
 	}
 
 	// Check if we can access to "default" namespace
-	_, err = clientset.CoreV1().Namespaces().Get(context.TODO(), "default", metav1.GetOptions{})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err = clientset.CoreV1().Namespaces().Get(ctx, "default", metav1.GetOptions{})
 	if err != nil {
 		log.Logger.Error("Error accessing default namespace", "error", err)
 		return errors.New("Error accessing default namespace: " + err.Error())
@@ -2752,6 +2766,7 @@ func NewOcpSandboxProvider(dbpool *pgxpool.Pool, vaultSecret string) OcpSandboxP
 	return OcpSandboxProvider{
 		DbPool:      dbpool,
 		VaultSecret: vaultSecret,
+		RotateNow:   make(chan struct{}, 1),
 	}
 }
 
@@ -2788,6 +2803,17 @@ func (a *OcpSandboxProvider) RotateDeployerAdminSATokens() {
 		log.Logger.Error("RotateDeployerAdminSATokens: error fetching cluster configurations", "error", err)
 		return
 	}
+
+	// Count clusters with token rotation enabled for observability
+	var enabled int
+	for _, c := range clusters {
+		if c.DeployerAdminSATokenTTL != "" {
+			enabled++
+		}
+	}
+	log.Logger.Info("RotateDeployerAdminSATokens: starting",
+		"total_clusters", len(clusters),
+		"rotation_enabled", enabled)
 
 	const maxRetries = 3
 
@@ -2863,8 +2889,6 @@ func (a *OcpSandboxProvider) RotateDeployerAdminSATokens() {
 // It runs an initial rotation immediately, then repeats at the minimum refresh interval
 // found across all enabled clusters.
 func (a *OcpSandboxProvider) StartDeployerAdminSATokenRotation(ctx context.Context) {
-	a.RotateNow = make(chan struct{}, 1)
-
 	// Run initial rotation immediately
 	a.RotateDeployerAdminSATokens()
 

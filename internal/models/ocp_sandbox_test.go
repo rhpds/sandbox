@@ -793,36 +793,25 @@ func TestValidateClusterAnnotations(t *testing.T) {
 		annotations map[string]string
 		wantErr     bool
 	}{
-		{
-			name:        "valid annotations",
-			annotations: map[string]string{"purpose": "dev", "cloud": "cnv-shared", "name": "test-cluster"},
-			wantErr:     false,
-		},
-		{
-			name:        "forbidden cloud=cnv",
-			annotations: map[string]string{"purpose": "dev", "cloud": "cnv"},
-			wantErr:     true,
-		},
-		{
-			name:        "forbidden cloud=CNV case insensitive",
-			annotations: map[string]string{"cloud": "CNV"},
-			wantErr:     true,
-		},
-		{
-			name:        "cloud=cnv-dedicated-shared is allowed",
-			annotations: map[string]string{"cloud": "cnv-dedicated-shared"},
-			wantErr:     false,
-		},
-		{
-			name:        "no cloud annotation is fine",
-			annotations: map[string]string{"purpose": "dev"},
-			wantErr:     false,
-		},
-		{
-			name:        "empty annotations",
-			annotations: map[string]string{},
-			wantErr:     false,
-		},
+		// Suffixed values pass (no force needed)
+		{name: "cnv-shared", annotations: map[string]string{"cloud": "cnv-shared"}, wantErr: false},
+		{name: "cnv-dedicated-shared", annotations: map[string]string{"cloud": "cnv-dedicated-shared"}, wantErr: false},
+		{name: "aws-shared", annotations: map[string]string{"cloud": "aws-shared"}, wantErr: false},
+		{name: "aws-dedicated-shared", annotations: map[string]string{"cloud": "aws-dedicated-shared"}, wantErr: false},
+		{name: "ibmcloud-shared", annotations: map[string]string{"cloud": "ibmcloud-shared"}, wantErr: false},
+		{name: "ibmcloud-dedicated-shared", annotations: map[string]string{"cloud": "ibmcloud-dedicated-shared"}, wantErr: false},
+		{name: "case insensitive CNV-Shared", annotations: map[string]string{"cloud": "CNV-Shared"}, wantErr: false},
+		// Bare provider values rejected (need ?force=true)
+		{name: "bare cnv rejected", annotations: map[string]string{"cloud": "cnv"}, wantErr: true},
+		{name: "bare aws rejected", annotations: map[string]string{"cloud": "aws"}, wantErr: true},
+		{name: "bare ibmcloud rejected", annotations: map[string]string{"cloud": "ibmcloud"}, wantErr: true},
+		{name: "bare CNV case insensitive", annotations: map[string]string{"cloud": "CNV"}, wantErr: true},
+		// Unknown cloud values pass Go validation (rejected by OpenAPI schema instead)
+		{name: "unknown cloud passes Go check", annotations: map[string]string{"cloud": "gcp-shared"}, wantErr: false},
+		{name: "arbitrary value passes Go check", annotations: map[string]string{"cloud": "foobar"}, wantErr: false},
+		// No cloud annotation
+		{name: "no cloud annotation", annotations: map[string]string{"purpose": "dev"}, wantErr: false},
+		{name: "empty annotations", annotations: map[string]string{}, wantErr: false},
 	}
 
 	for _, tt := range tests {

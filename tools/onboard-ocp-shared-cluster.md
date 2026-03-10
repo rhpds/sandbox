@@ -83,20 +83,27 @@ The script will:
   --annotations '{"virt":"yes","keycloak":"yes","cloud":"cnv-shared"}'
 ```
 
-### Forbidden Annotations
+### Annotation Validation
 
-The following annotation values are **restricted** by default to prevent accidental production pollution:
+The `cloud` annotation is validated at two levels:
 
-| Key | Restricted Value | Use Instead |
-|-----|-----------------|-------------|
-| `cloud` | `cnv` | `cnv-shared`, `cnv-dedicated-shared` |
+**1. OpenAPI schema** (enforced by the API middleware):
 
-To override this restriction when you legitimately need to set these values (e.g. onboarding a real CNV cluster), use `--force`:
+| Annotation | Allowed Values |
+|------------|----------------|
+| `cloud` | `cnv`, `cnv-shared`, `cnv-dedicated-shared`, `aws`, `aws-shared`, `aws-dedicated-shared`, `ibmcloud`, `ibmcloud-shared`, `ibmcloud-dedicated-shared` |
+| `purpose` | `dev`, `prod`, `events` |
+
+**2. Business rule** (enforced by the handler, bypassable with `--force`):
+
+Bare provider values (`cnv`, `aws`, `ibmcloud`) are restricted to prevent accidental production pollution. Use the suffixed form instead:
 
 ```bash
-./tools/onboard-ocp-shared-cluster.sh \
-  --force \
-  --annotations '{"cloud":"cnv"}'
+# This works:
+./tools/onboard-ocp-shared-cluster.sh --annotations '{"cloud":"cnv-shared"}'
+
+# This requires --force:
+./tools/onboard-ocp-shared-cluster.sh --force --annotations '{"cloud":"cnv"}'
 ```
 
 The API also accepts `?force=true` as a query parameter on the PUT and POST endpoints.
