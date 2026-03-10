@@ -272,10 +272,10 @@ def test_manager_cannot_offboard_admin_cluster(
     admin.set_test_description("test_rbac/manager_cannot_offboard_admin_cluster")
     manager.set_test_description("test_rbac/manager_cannot_offboard_admin_cluster")
 
-    # Admin creates a cluster
+    # Ensure admin cluster exists (may already exist from earlier test)
     config = build_unreachable_cluster_config(MOCK_CLUSTER_ADMIN)
     resp = admin.upsert_cluster_config(MOCK_CLUSTER_ADMIN, config)
-    assert resp.status_code == 201, f"Admin create expected 201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (200, 201), f"Admin upsert expected 2xx, got {resp.status_code}: {resp.text}"
 
     # Manager tries to offboard it → 403
     resp = manager.offboard_cluster(MOCK_CLUSTER_ADMIN, force=True)
