@@ -67,7 +67,7 @@ Authorization: Bearer {{access_token_admin}}
     "skip_quota": true,
     "annotations": {
         "virt": "no",
-        "cloud": "ibm",
+        "cloud": "ibmcloud-shared",
         "purpose": "dev"
     }
 }
@@ -84,7 +84,7 @@ Authorization: Bearer {{access_token_admin}}
     "kubeconfig": "apiVersion: v1 ...",
     "annotations": {
         "virt": "no",
-        "cloud": "ibm",
+        "cloud": "ibmcloud-shared",
         "purpose": "dev"
     }
 }
@@ -171,7 +171,7 @@ Authorization: Bearer {{access_token_admin}}
     "kubeconfig": "apiVersion: v1 ...",
     "annotations": {
         "virt": "no",
-        "cloud": "ibm",
+        "cloud": "ibmcloud-shared",
         "purpose": "dev"
     },
     "strict_default_sandbox_quota": true,

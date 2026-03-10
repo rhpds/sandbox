@@ -55,7 +55,7 @@ Either you're using the DEV database,  or you'll have to setup the OCP shared cl
   "annotations":
     {
       "virt":"no",
-      "cloud":"cnv",
+      "cloud":"cnv-shared",
       "name": "cluster-foo",
       "purpose":"dev"
     },
