@@ -244,6 +244,16 @@ def test_manager_can_upsert_cluster(manager: SandboxClient):
     logger.info("PASSED: manager can upsert cluster via PUT")
 
 
+def test_manager_can_get_own_cluster(manager: SandboxClient):
+    """shared-cluster-manager can GET a cluster it created."""
+    manager.set_test_description("test_rbac/manager_can_get_own_cluster")
+
+    resp = manager.get_cluster_config(MOCK_CLUSTER_MANAGER)
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+
+    logger.info("PASSED: manager can GET own cluster config")
+
+
 def test_manager_can_offboard_own_cluster(manager: SandboxClient):
     """shared-cluster-manager can offboard a cluster it created."""
     manager.set_test_description("test_rbac/manager_can_offboard_own_cluster")
@@ -284,24 +294,56 @@ def test_admin_can_offboard_any_cluster(admin: SandboxClient):
     logger.info("PASSED: admin can offboard any cluster")
 
 
-def test_manager_denied_get_cluster_configs(manager: SandboxClient):
-    """shared-cluster-manager is denied GET /ocp-shared-cluster-configurations."""
-    manager.set_test_description("test_rbac/manager_denied_get_cluster_configs")
+def test_manager_can_list_clusters(
+    admin: SandboxClient, manager: SandboxClient
+):
+    """shared-cluster-manager can list clusters: full view for own, shared view for others."""
+    admin.set_test_description("test_rbac/manager_can_list_clusters")
+    manager.set_test_description("test_rbac/manager_can_list_clusters")
+
+    # Ensure admin cluster exists
+    config = build_unreachable_cluster_config(MOCK_CLUSTER_ADMIN)
+    resp = admin.upsert_cluster_config(MOCK_CLUSTER_ADMIN, config)
+    assert resp.status_code in (200, 201), f"Admin create expected 2xx, got {resp.status_code}: {resp.text}"
 
     resp = manager.get_cluster_configs()
-    assert resp.status_code == 401, f"Expected 401, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+    clusters = resp.json()
+    assert isinstance(clusters, list), "Expected a list"
 
-    logger.info("PASSED: manager denied GET cluster configs (401)")
+    # Find the admin's cluster — should have shared view (no token)
+    admin_clusters = [c for c in clusters if c["name"] == MOCK_CLUSTER_ADMIN]
+    assert len(admin_clusters) == 1, f"Expected admin cluster in list, got {[c['name'] for c in clusters]}"
+    assert admin_clusters[0].get("token", "") == "", "Shared view should not include token"
+    assert admin_clusters[0].get("kubeconfig", "") == "", "Shared view should not include kubeconfig"
+    assert admin_clusters[0].get("additional_vars") is None, "Shared view should not include additional_vars"
+
+    logger.info("PASSED: manager can list clusters (shared view for non-owned)")
 
 
-def test_manager_denied_get_cluster_config(manager: SandboxClient):
-    """shared-cluster-manager is denied GET /ocp-shared-cluster-configurations/{name}."""
-    manager.set_test_description("test_rbac/manager_denied_get_cluster_config")
+def test_manager_gets_shared_view_for_admin_cluster(
+    admin: SandboxClient, manager: SandboxClient
+):
+    """shared-cluster-manager gets shared view (no credentials) for clusters created by others."""
+    admin.set_test_description("test_rbac/manager_gets_shared_view_for_admin_cluster")
+    manager.set_test_description("test_rbac/manager_gets_shared_view_for_admin_cluster")
 
-    resp = manager.get_cluster_config(SOURCE_CLUSTER_NAME)
-    assert resp.status_code == 401, f"Expected 401, got {resp.status_code}: {resp.text}"
+    # Ensure admin cluster exists
+    config = build_unreachable_cluster_config(MOCK_CLUSTER_ADMIN)
+    resp = admin.upsert_cluster_config(MOCK_CLUSTER_ADMIN, config)
+    assert resp.status_code in (200, 201), f"Admin create expected 2xx, got {resp.status_code}: {resp.text}"
 
-    logger.info("PASSED: manager denied GET single cluster config (401)")
+    # Manager reads it — gets shared view, not 403
+    resp = manager.get_cluster_config(MOCK_CLUSTER_ADMIN)
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    assert data["name"] == MOCK_CLUSTER_ADMIN
+    assert data.get("token", "") == "", "Shared view should not include token"
+    assert data.get("kubeconfig", "") == "", "Shared view should not include kubeconfig"
+    assert data.get("additional_vars") is None, "Shared view should not include additional_vars"
+    assert "annotations" in data, "Shared view should include annotations"
+
+    logger.info("PASSED: manager gets shared view for admin's cluster (no credentials)")
 
 
 def test_manager_denied_delete_cluster(manager: SandboxClient):
@@ -471,17 +513,20 @@ def main():
         # --- Manager can onboard ---
         ("manager_can_create_cluster", lambda: test_manager_can_create_cluster(manager)),
         ("manager_can_upsert_cluster", lambda: test_manager_can_upsert_cluster(manager)),
+        # --- Manager can read own cluster ---
+        ("manager_can_get_own_cluster", lambda: test_manager_can_get_own_cluster(manager)),
         # --- Manager can offboard own cluster ---
         ("manager_can_offboard_own_cluster", lambda: test_manager_can_offboard_own_cluster(manager)),
+        # --- Shared view for non-owned clusters ---
+        ("manager_can_list_clusters",
+         lambda: test_manager_can_list_clusters(admin, manager)),
+        ("manager_gets_shared_view_for_admin_cluster",
+         lambda: test_manager_gets_shared_view_for_admin_cluster(admin, manager)),
         # --- Ownership enforcement ---
         ("manager_cannot_offboard_admin_cluster",
          lambda: test_manager_cannot_offboard_admin_cluster(admin, manager)),
         ("admin_can_offboard_any_cluster", lambda: test_admin_can_offboard_any_cluster(admin)),
         # --- Manager denied admin-only endpoints ---
-        ("manager_denied_get_cluster_configs",
-         lambda: test_manager_denied_get_cluster_configs(manager)),
-        ("manager_denied_get_cluster_config",
-         lambda: test_manager_denied_get_cluster_config(manager)),
         ("manager_denied_delete_cluster", lambda: test_manager_denied_delete_cluster(manager)),
         ("manager_denied_enable_disable", lambda: test_manager_denied_enable_disable(manager)),
         ("manager_denied_health_check", lambda: test_manager_denied_health_check(manager)),

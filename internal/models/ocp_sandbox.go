@@ -171,6 +171,30 @@ func (p *OcpSharedClusterConfiguration) WithoutCredentials() OcpSharedClusterCon
 	return withoutCreds
 }
 
+// SharedView returns a restricted view of the cluster configuration suitable
+// for non-owners. It strips all credentials, internal data, and operational
+// details, keeping only fields useful for cross-owner visibility.
+func (p *OcpSharedClusterConfiguration) SharedView() OcpSharedClusterConfiguration {
+	return OcpSharedClusterConfiguration{
+		Name:                      p.Name,
+		ApiUrl:                    p.ApiUrl,
+		IngressDomain:             p.IngressDomain,
+		CreatedAt:                 p.CreatedAt,
+		UpdatedAt:                 p.UpdatedAt,
+		Annotations:               p.Annotations,
+		Valid:                     p.Valid,
+		MaxMemoryUsagePercentage:  p.MaxMemoryUsagePercentage,
+		MaxCpuUsagePercentage:     p.MaxCpuUsagePercentage,
+		DefaultSandboxQuota:       p.DefaultSandboxQuota,
+		StrictDefaultSandboxQuota: p.StrictDefaultSandboxQuota,
+		QuotaRequired:             p.QuotaRequired,
+		SkipQuota:                 p.SkipQuota,
+		LimitRange:                p.LimitRange,
+		MaxPlacements:             p.MaxPlacements,
+		CreatedBy:                 p.CreatedBy,
+	}
+}
+
 type OcpSharedClusterConfigurations []OcpSharedClusterConfiguration
 
 type OcpSandbox struct {

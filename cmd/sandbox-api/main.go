@@ -326,8 +326,6 @@ func main() {
 		// ---------------------------------
 		// Ocp (admin-only management)
 		// ---------------------------------
-		r.Get("/api/v1/ocp-shared-cluster-configurations", baseHandler.GetOcpSharedClusterConfigurationsHandler)
-		r.Get("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.GetOcpSharedClusterConfigurationHandler)
 		r.Get("/api/v1/ocp-shared-cluster-configurations/{name}/health", baseHandler.HealthOcpSharedClusterConfigurationHandler)
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/disable", baseHandler.DisableOcpSharedClusterConfigurationHandler)
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/enable", baseHandler.EnableOcpSharedClusterConfigurationHandler)
@@ -377,8 +375,10 @@ func main() {
 		r.Use(baseHandler.OpenAPIValidation)
 		r.Use(baseHandler.AuditLog)
 		// ---------------------------------
-		// Onboard / Offboard
+		// Onboard / Offboard / Read (with ownership-based view)
 		// ---------------------------------
+		r.Get("/api/v1/ocp-shared-cluster-configurations", baseHandler.ListOcpSharedClusterConfigurationsHandler)
+		r.Get("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.GetOwnOcpSharedClusterConfigurationHandler)
 		r.Post("/api/v1/ocp-shared-cluster-configurations", baseHandler.CreateOcpSharedClusterConfigurationHandler)
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.UpsertOcpSharedClusterConfigurationHandler)
 		r.Delete("/api/v1/ocp-shared-cluster-configurations/{name}/offboard", baseHandler.OffboardOcpSharedClusterConfigurationHandler)
