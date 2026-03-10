@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/jwtauth/v5"
 	"github.com/go-chi/render"
 	"github.com/jackc/pgx/v4"
 	"github.com/rhpds/sandbox/internal/api/v1"
@@ -29,6 +30,12 @@ func (h *BaseHandler) CreateOcpSharedClusterConfigurationHandler(w http.Response
 
 	ocpSharedClusterConfiguration.DbPool = h.OcpSandboxProvider.DbPool
 	ocpSharedClusterConfiguration.VaultSecret = h.OcpSandboxProvider.VaultSecret
+
+	// Record who created this cluster
+	_, claims, _ := jwtauth.FromContext(r.Context())
+	if name, ok := claims["name"].(string); ok {
+		ocpSharedClusterConfiguration.CreatedBy = name
+	}
 
 	if err := ocpSharedClusterConfiguration.Save(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -462,6 +469,12 @@ func (h *BaseHandler) UpsertOcpSharedClusterConfigurationHandler(w http.Response
 	if err == pgx.ErrNoRows {
 		// Create path
 
+		// Record who created this cluster
+		_, claims, _ := jwtauth.FromContext(r.Context())
+		if claimName, ok := claims["name"].(string); ok {
+			newConfig.CreatedBy = claimName
+		}
+
 		// Handle MaxPlacements: -1 means "no limit" (nil)
 		if newConfig.MaxPlacements != nil && *newConfig.MaxPlacements < 0 {
 			newConfig.MaxPlacements = nil
@@ -563,6 +576,21 @@ func (h *BaseHandler) OffboardOcpSharedClusterConfigurationHandler(w http.Respon
 			ErrorMultiline: []string{err.Error()},
 		})
 		return
+	}
+
+	// Ownership check: shared-cluster-manager can only offboard clusters they created
+	_, claims, _ := jwtauth.FromContext(r.Context())
+	role, _ := claims["role"].(string)
+	if role == "shared-cluster-manager" {
+		callerName, _ := claims["name"].(string)
+		if cluster.CreatedBy != callerName {
+			w.WriteHeader(http.StatusForbidden)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusForbidden,
+				Message:        "You can only offboard clusters you created",
+			})
+			return
+		}
 	}
 
 	report := v1.OffboardReport{

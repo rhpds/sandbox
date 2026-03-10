@@ -216,6 +216,19 @@ func main() {
 	// Start background admin SA token rotation for OCP clusters
 	OcpSandboxProvider.StartDeployerAdminSATokenRotation(ctx)
 
+	// Start background audit log purge
+	auditRetentionStr := os.Getenv("AUDIT_LOG_RETENTION")
+	if auditRetentionStr == "" {
+		auditRetentionStr = "1y"
+	}
+	auditRetention, err := models.ParseHumanDuration(auditRetentionStr)
+	if err != nil {
+		log.Logger.Error("Invalid AUDIT_LOG_RETENTION", "value", auditRetentionStr, "error", err)
+		os.Exit(1)
+	}
+	log.Logger.Info("Audit log retention", "retention", auditRetention)
+	models.StartAuditLogPurge(ctx, dbPool, auditRetention)
+
 	logLevel := slog.LevelInfo
 	if os.Getenv("DEBUG") == "true" {
 		logLevel = slog.LevelDebug
@@ -300,6 +313,7 @@ func main() {
 		r.Use(jwtauth.Verifier(tokenAuth))
 		r.Use(AuthenticatorAdmin)
 		r.Use(baseHandler.OpenAPIValidation)
+		r.Use(baseHandler.AuditLog)
 		// ---------------------------------
 		// Routes
 		// ---------------------------------
@@ -307,21 +321,18 @@ func main() {
 		r.Post("/api/v1/admin/jwt", adminHandler.IssueLoginJWTHandler)
 		r.Get("/api/v1/admin/jwt", baseHandler.GetJWTHandler)
 		r.Put("/api/v1/admin/jwt/{id}/invalidate", baseHandler.InvalidateTokenHandler)
+		r.Get("/api/v1/admin/jwt/{id}/activity", baseHandler.GetTokenActivityHandler)
 
 		// ---------------------------------
-		// Ocp
+		// Ocp (admin-only management)
 		// ---------------------------------
-		r.Post("/api/v1/ocp-shared-cluster-configurations", baseHandler.CreateOcpSharedClusterConfigurationHandler)
 		r.Get("/api/v1/ocp-shared-cluster-configurations", baseHandler.GetOcpSharedClusterConfigurationsHandler)
 		r.Get("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.GetOcpSharedClusterConfigurationHandler)
 		r.Get("/api/v1/ocp-shared-cluster-configurations/{name}/health", baseHandler.HealthOcpSharedClusterConfigurationHandler)
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/disable", baseHandler.DisableOcpSharedClusterConfigurationHandler)
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/enable", baseHandler.EnableOcpSharedClusterConfigurationHandler)
-		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.UpsertOcpSharedClusterConfigurationHandler)
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/update", baseHandler.UpdateOcpSharedClusterConfigurationHandler)
 		r.Delete("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.DeleteOcpSharedClusterConfigurationHandler)
-		r.Delete("/api/v1/ocp-shared-cluster-configurations/{name}/offboard", baseHandler.OffboardOcpSharedClusterConfigurationHandler)
-		r.Get("/api/v1/ocp-shared-cluster-configurations/{name}/offboard", baseHandler.GetOffboardOcpSharedClusterConfigurationHandler)
 		r.Post("/api/v1/ocp-shared-clusters/status", baseHandler.PostOcpSharedClustersStatusHandler)
 		r.Get("/api/v1/ocp-shared-clusters/status", baseHandler.GetOcpSharedClustersStatusHandler)
 
@@ -352,6 +363,26 @@ func main() {
 		r.Put("/api/v1/reservations/{name}", baseHandler.UpdateReservationHandler)
 		r.Delete("/api/v1/reservations/{name}", baseHandler.DeleteReservationHandler)
 		r.Put("/api/v1/reservations/{name}/rename", baseHandler.RenameReservationHandler)
+	})
+
+	// ---------------------------------------------------------------------
+	// Shared Cluster Manager Routes (admin + shared-cluster-manager)
+	// ---------------------------------------------------------------------
+	router.Group(func(r chi.Router) {
+		// ---------------------------------
+		// Middlewares
+		// ---------------------------------
+		r.Use(jwtauth.Verifier(tokenAuth))
+		r.Use(AuthenticatorAdminOrManager)
+		r.Use(baseHandler.OpenAPIValidation)
+		r.Use(baseHandler.AuditLog)
+		// ---------------------------------
+		// Onboard / Offboard
+		// ---------------------------------
+		r.Post("/api/v1/ocp-shared-cluster-configurations", baseHandler.CreateOcpSharedClusterConfigurationHandler)
+		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.UpsertOcpSharedClusterConfigurationHandler)
+		r.Delete("/api/v1/ocp-shared-cluster-configurations/{name}/offboard", baseHandler.OffboardOcpSharedClusterConfigurationHandler)
+		r.Get("/api/v1/ocp-shared-cluster-configurations/{name}/offboard", baseHandler.GetOffboardOcpSharedClusterConfigurationHandler)
 	})
 
 	// ---------------------------------------------------------------------

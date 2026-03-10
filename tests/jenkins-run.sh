@@ -361,8 +361,9 @@ RUN_LIFECYCLE_TESTS="${RUN_LIFECYCLE_TESTS:-${run_lifecycle_tests:-true}}"
 RUN_LIMIT_RANGE_TESTS="${RUN_LIMIT_RANGE_TESTS:-${run_limit_range_tests:-true}}"
 RUN_ADMIN_SA_TESTS="${RUN_ADMIN_SA_TESTS:-${run_admin_sa_tests:-true}}"
 RUN_ONBOARD_TESTS="${RUN_ONBOARD_TESTS:-${run_onboard_tests:-true}}"
+RUN_RBAC_TESTS="${RUN_RBAC_TESTS:-${run_rbac_tests:-true}}"
 
-echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS RUN_ONBOARD_TESTS=$RUN_ONBOARD_TESTS"
+echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS RUN_ONBOARD_TESTS=$RUN_ONBOARD_TESTS RUN_RBAC_TESTS=$RUN_RBAC_TESTS"
 
 if [ "$RUN_HURL_TESTS" != "false" ] && [ "$RUN_HURL_TESTS" != "no" ]; then
     tests=$1
@@ -503,4 +504,24 @@ if [ "${RUN_ONBOARD_TESTS}" != "false" ] && [ "${RUN_ONBOARD_TESTS}" != "no" ]; 
         python3 tests/functional/test_ocp_onboard.py
 else
     echo "Skipping OCP onboard/offboard tests (RUN_ONBOARD_TESTS=${RUN_ONBOARD_TESTS})"
+fi
+
+# Run Python RBAC tests if requested
+if [ "${RUN_RBAC_TESTS}" != "false" ] && [ "${RUN_RBAC_TESTS}" != "no" ]; then
+    echo ""
+    echo "=========================================="
+    echo "Running RBAC tests"
+    echo "=========================================="
+    cd $jobdir
+
+    # Install Python dependencies if needed
+    pip3 install -q requests urllib3 2>/dev/null || true
+
+    # Run the Python RBAC test
+    SANDBOX_API_URL="http://localhost:$PORT" \
+        SANDBOX_LOGIN_TOKEN="$apptoken" \
+        SANDBOX_ADMIN_LOGIN_TOKEN="$admintoken" \
+        python3 tests/functional/test_rbac.py
+else
+    echo "Skipping RBAC tests (RUN_RBAC_TESTS=${RUN_RBAC_TESTS})"
 fi

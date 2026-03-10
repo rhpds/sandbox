@@ -20,6 +20,7 @@ pipeline {
         booleanParam(name: 'run_limit_range_tests', defaultValue: true, description: 'Run OCP LimitRange functional tests')
         booleanParam(name: 'run_admin_sa_tests', defaultValue: true, description: 'Run admin SA token functional tests')
         booleanParam(name: 'run_onboard_tests', defaultValue: true, description: 'Run OCP shared cluster onboard/offboard functional tests')
+        booleanParam(name: 'run_rbac_tests', defaultValue: true, description: 'Run RBAC functional tests')
     }
 
     stages {

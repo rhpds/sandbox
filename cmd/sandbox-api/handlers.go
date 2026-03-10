@@ -1342,6 +1342,64 @@ func (h *BaseHandler) InvalidateTokenHandler(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// GetTokenActivityHandler returns token details and recent audit log activity.
+func (h *BaseHandler) GetTokenActivityHandler(w http.ResponseWriter, r *http.Request) {
+	tokenStr := chi.URLParam(r, "id")
+
+	tokenId, err := strconv.Atoi(tokenStr)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid token ID, must be integer",
+		})
+		return
+	}
+
+	tokenModel, err := models.FetchTokenById(h.dbpool, tokenId)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Token not found",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting token",
+		})
+		log.Logger.Error("GetTokenActivityHandler", "error", err)
+		return
+	}
+
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	activity, err := models.FetchAuditLogByActor(h.dbpool, tokenModel.Name, limit)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error fetching audit log",
+		})
+		log.Logger.Error("GetTokenActivityHandler: audit log query failed", "error", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &v1.TokenActivityResponse{
+		Token:    tokenModel,
+		Activity: activity,
+	})
+}
+
 // GetStatusRequestHandler returns the status of a request
 func (h *BaseHandler) GetStatusRequestHandler(w http.ResponseWriter, r *http.Request) {
 	RequestID := chi.URLParam(r, "id")

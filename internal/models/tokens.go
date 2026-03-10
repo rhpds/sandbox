@@ -19,6 +19,9 @@ type Token struct {
 	Exp        int64     `json:"exp"`
 	Expiration time.Time `json:"expiration"`
 	Valid      bool      `json:"valid"`
+
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	UseCount   int        `json:"use_count"`
 }
 
 func CreateToken(claims map[string]any) (Token, error) {
@@ -81,6 +84,15 @@ func (t Token) Invalidate(dbpool *pgxpool.Pool) error {
 	return nil
 }
 
+// RecordUsage atomically increments use_count and updates last_used_at.
+func RecordTokenUsage(dbpool *pgxpool.Pool, tokenID int) error {
+	_, err := dbpool.Exec(context.Background(), `
+		UPDATE tokens SET use_count = use_count + 1, last_used_at = now() AT TIME ZONE 'utc'
+		WHERE id = $1`,
+		tokenID)
+	return err
+}
+
 type Tokens []Token
 
 func (t *Tokens) Render(w http.ResponseWriter, r *http.Request) error {
@@ -89,7 +101,7 @@ func (t *Tokens) Render(w http.ResponseWriter, r *http.Request) error {
 
 func FetchAllTokens(dbpool *pgxpool.Pool) (Tokens, error) {
 	rows, err := dbpool.Query(context.Background(), `
-		SELECT id, kind, name, role, iat, exp, expiration, created_at, updated_at, valid
+		SELECT id, kind, name, role, iat, exp, expiration, created_at, updated_at, valid, last_used_at, use_count
 		FROM tokens
 	`)
 	if err != nil {
@@ -101,7 +113,7 @@ func FetchAllTokens(dbpool *pgxpool.Pool) (Tokens, error) {
 
 	for rows.Next() {
 		var t Token
-		err = rows.Scan(&t.ID, &t.Kind, &t.Name, &t.Role, &t.Iat, &t.Exp, &t.Expiration, &t.CreatedAt, &t.UpdatedAt, &t.Valid)
+		err = rows.Scan(&t.ID, &t.Kind, &t.Name, &t.Role, &t.Iat, &t.Exp, &t.Expiration, &t.CreatedAt, &t.UpdatedAt, &t.Valid, &t.LastUsedAt, &t.UseCount)
 		if err != nil {
 			return []Token{}, err
 		}
@@ -115,10 +127,10 @@ func FetchAllTokens(dbpool *pgxpool.Pool) (Tokens, error) {
 func FetchTokenById(dbpool *pgxpool.Pool, id int) (Token, error) {
 	var t Token
 	err := dbpool.QueryRow(context.Background(), `
-		SELECT id, kind, name, role, iat, exp, expiration, created_at, updated_at, valid
+		SELECT id, kind, name, role, iat, exp, expiration, created_at, updated_at, valid, last_used_at, use_count
 		FROM tokens
 		WHERE id = $1
-	`, id).Scan(&t.ID, &t.Kind, &t.Name, &t.Role, &t.Iat, &t.Exp, &t.Expiration, &t.CreatedAt, &t.UpdatedAt, &t.Valid)
+	`, id).Scan(&t.ID, &t.Kind, &t.Name, &t.Role, &t.Iat, &t.Exp, &t.Expiration, &t.CreatedAt, &t.UpdatedAt, &t.Valid, &t.LastUsedAt, &t.UseCount)
 	if err != nil {
 		return Token{}, err
 	}

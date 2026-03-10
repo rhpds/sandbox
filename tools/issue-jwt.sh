@@ -32,12 +32,12 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") --role <app|admin> --name <name>
+Usage: $(basename "$0") --role <app|admin|shared-cluster-manager> --name <name>
 
 Generate a new JWT login token via the sandbox API.
 
 Options:
-  --role <role>   Token role: 'app' or 'admin' (required)
+  --role <role>   Token role: 'app', 'admin', or 'shared-cluster-manager' (required)
   --name <name>   Name of the application or person (required)
   -y, --yes       Skip confirmation prompt
   -h, --help      Show this help message
@@ -46,9 +46,15 @@ Environment variables:
   SANDBOX_API_ROUTE    URL of the sandbox API (required)
   SANDBOX_ADMIN_TOKEN  Admin login token for the sandbox API (required)
 
+Roles:
+  app                       Regular application access
+  admin                     Full administrative access
+  shared-cluster-manager    Can onboard/offboard shared clusters (own clusters only)
+
 Examples:
   $(basename "$0") --role app --name anarchy
   $(basename "$0") --role admin --name gucore
+  $(basename "$0") --role shared-cluster-manager --name cluster-ops
 EOF
     exit 0
 }
@@ -91,7 +97,7 @@ done
 
 [ -n "$ROLE" ] || die "--role is required (app or admin)"
 [ -n "$NAME" ] || die "--name is required"
-[[ "$ROLE" == "app" || "$ROLE" == "admin" ]] || die "--role must be 'app' or 'admin', got '$ROLE'"
+[[ "$ROLE" == "app" || "$ROLE" == "admin" || "$ROLE" == "shared-cluster-manager" ]] || die "--role must be 'app', 'admin', or 'shared-cluster-manager', got '$ROLE'"
 [ -n "${SANDBOX_API_ROUTE:-}" ] || die "SANDBOX_API_ROUTE is not set"
 [ -n "${SANDBOX_ADMIN_TOKEN:-}" ] || die "SANDBOX_ADMIN_TOKEN is not set"
 
@@ -123,14 +129,16 @@ fi
 
 # Print tokens as a table
 echo "$BODY" | jq -r '
-    ["ID", "NAME", "ROLE", "VALID", "EXPIRATION"],
-    ["--", "----", "----", "-----", "----------"],
+    ["ID", "NAME", "ROLE", "VALID", "EXPIRATION", "USE_COUNT", "LAST_USED"],
+    ["--", "----", "----", "-----", "----------", "---------", "---------"],
     (.[] | [
         (.id | tostring),
         .name,
         .role,
         (if .valid then "yes" else "NO" end),
-        (.expiration | split("T")[0] // "n/a")
+        (.expiration | split("T")[0] // "n/a"),
+        (.use_count | tostring),
+        (.last_used_at // "never" | if . != "never" then split("T")[0] else . end)
     ]) | @tsv' | column -t >&2
 
 echo "" >&2

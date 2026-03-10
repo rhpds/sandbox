@@ -270,6 +270,15 @@ func (t *TokenResponse) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+type TokenActivityResponse struct {
+	Token    models.Token        `json:"token"`
+	Activity []models.AuditEntry `json:"activity"`
+}
+
+func (t *TokenActivityResponse) Render(w http.ResponseWriter, r *http.Request) error {
+	return nil
+}
+
 func (p *ReservationResponse) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
