@@ -358,22 +358,25 @@ func MakeOcpSharedClusterConfiguration() *OcpSharedClusterConfiguration {
 	return p
 }
 
-// forbiddenAnnotations defines annotation key-value pairs that are not allowed
-// on OcpSharedClusterConfigurations. These are reserved values that could
-// conflict with production infrastructure if set incorrectly.
-var forbiddenAnnotations = map[string][]string{
-	"cloud": {"cnv"},
-}
+// bareCloudProviders are cloud annotation values that are structurally valid
+// (allowed by the OpenAPI schema) but restricted by default. They require
+// ?force=true to be accepted. The full schema is defined in swagger.yaml
+// under ClusterAnnotations.cloud.
+var bareCloudProviders = []string{"cnv", "aws", "ibmcloud"}
 
-// ValidateClusterAnnotations checks that the given annotations do not contain
-// any forbidden key-value pairs.
+// ValidateClusterAnnotations applies business-rule restrictions on top of
+// the OpenAPI schema validation. Currently it rejects bare cloud provider
+// values (cnv, aws, ibmcloud) — the suffixed forms (-shared,
+// -dedicated-shared) are allowed without force.
 func ValidateClusterAnnotations(annotations map[string]string) error {
-	for key, forbiddenValues := range forbiddenAnnotations {
-		if val, ok := annotations[key]; ok {
-			for _, fv := range forbiddenValues {
-				if strings.EqualFold(val, fv) {
-					return fmt.Errorf("annotation '%s: %s' is not allowed; use a more specific value (e.g. 'cnv-shared', 'cnv-dedicated-shared')", key, val)
-				}
+	if val, ok := annotations["cloud"]; ok {
+		lowerVal := strings.ToLower(val)
+		for _, bare := range bareCloudProviders {
+			if lowerVal == bare {
+				return fmt.Errorf(
+					"annotation 'cloud: %s' is restricted; use '%s-shared' or '%s-dedicated-shared' instead (or ?force=true to override)",
+					val, bare, bare,
+				)
 			}
 		}
 	}
@@ -1690,6 +1693,9 @@ func (a *OcpSharedClusterConfiguration) TestConnection() error {
 		return errors.New("Error creating OCP config: " + err.Error())
 	}
 
+	// Set a timeout so we don't hang indefinitely when the cluster is unreachable
+	config.Timeout = 10 * time.Second
+
 	// Create an OpenShift client
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
@@ -1698,7 +1704,9 @@ func (a *OcpSharedClusterConfiguration) TestConnection() error {
 	}
 
 	// Check if we can access to "default" namespace
-	_, err = clientset.CoreV1().Namespaces().Get(context.TODO(), "default", metav1.GetOptions{})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err = clientset.CoreV1().Namespaces().Get(ctx, "default", metav1.GetOptions{})
 	if err != nil {
 		log.Logger.Error("Error accessing default namespace", "error", err)
 		return errors.New("Error accessing default namespace: " + err.Error())
