@@ -270,13 +270,12 @@ func AuthenticatorAdminOrManager(next http.Handler) http.Handler {
 	})
 }
 
-// AuthenticatorAccess is a default authentication middleware to enforce access from the
-// Verifier middleware request context values. The Authenticator sends a 401 Unauthorized
-// response for any unverified tokens and passes the good ones through. It's just fine
+// AuthenticatorAccess enforces that the caller has an access token with role "app" or "admin".
+// This is used for placement and account operations that should not be accessible
+// to shared-cluster-manager tokens.
 func AuthenticatorAccess(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		token, claims, err := jwtauth.FromContext(ctx)
+		token, claims, err := jwtauth.FromContext(r.Context())
 
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -301,6 +300,65 @@ func AuthenticatorAccess(next http.Handler) http.Handler {
 			render.Render(w, r, &v1.Error{
 				HTTPStatusCode: http.StatusUnauthorized,
 				Message:        "Wrong token kind, access token required",
+			})
+			return
+		}
+
+		role, _ := claims["role"].(string)
+		if role != "app" && role != "admin" {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        http.StatusText(http.StatusUnauthorized),
+			})
+			return
+		}
+
+		// Token is authenticated, pass it through
+		next.ServeHTTP(w, r)
+	})
+}
+
+// AuthenticatorAnyRole enforces that the caller has a valid access token
+// with any recognized role (app, admin, shared-cluster-manager).
+// Used for endpoints accessible to all authenticated users.
+func AuthenticatorAnyRole(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token, claims, err := jwtauth.FromContext(r.Context())
+
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        err.Error(),
+			})
+			return
+		}
+
+		if token == nil || jwt.Validate(token) != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        http.StatusText(http.StatusUnauthorized),
+			})
+			return
+		}
+
+		if claims["kind"] != "access" {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        "Wrong token kind, access token required",
+			})
+			return
+		}
+
+		role, _ := claims["role"].(string)
+		if role != "app" && role != "admin" && role != "shared-cluster-manager" {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        http.StatusText(http.StatusUnauthorized),
 			})
 			return
 		}

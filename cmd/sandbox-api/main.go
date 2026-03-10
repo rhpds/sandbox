@@ -268,20 +268,26 @@ func main() {
 	router.Use(AllowContentType("application/json"))
 
 	// ---------------------------------------------------------------------
-	// Protected Routes
+	// Any-role Routes (app, admin, shared-cluster-manager)
 	// ---------------------------------------------------------------------
 	router.Group(func(r chi.Router) {
-		// ---------------------------------
-		// Middlewares
-		// ---------------------------------
+		r.Use(jwtauth.Verifier(tokenAuth))
+		r.Use(AuthenticatorAnyRole)
+		r.Use(baseHandler.OpenAPIValidation)
+
+		r.Get("/api/v1/health", baseHandler.HealthHandler)
+		r.Post("/api/v1/placements/dry-run", baseHandler.PostDryRunPlacementHandler)
+		r.Get("/api/v1/requests/{id}/status", baseHandler.GetStatusRequestHandler)
+	})
+
+	// ---------------------------------------------------------------------
+	// App Routes (app + admin only)
+	// ---------------------------------------------------------------------
+	router.Group(func(r chi.Router) {
 		r.Use(jwtauth.Verifier(tokenAuth))
 		r.Use(AuthenticatorAccess)
 		r.Use(baseHandler.OpenAPIValidation)
 
-		// ---------------------------------
-		// Routes
-		// ---------------------------------
-		r.Get("/api/v1/health", baseHandler.HealthHandler)
 		r.Get("/api/v1/accounts/{kind}", accountHandler.GetAccountsHandler)
 		r.Get("/api/v1/accounts/{kind}/{account}", accountHandler.GetAccountHandler)
 		r.Put("/api/v1/accounts/{kind}/{account}/cleanup", accountHandler.CleanupAccountHandler)
@@ -291,14 +297,12 @@ func main() {
 		r.Get("/api/v1/accounts/{kind}/{account}/status", baseHandler.GetStatusAccountHandler)
 		r.Delete("/api/v1/accounts/{kind}/{account}", baseHandler.DeleteAccountHandler)
 		r.Post("/api/v1/placements", baseHandler.PostPlacementHandler)
-		r.Post("/api/v1/placements/dry-run", baseHandler.PostDryRunPlacementHandler)
 		r.Get("/api/v1/placements/{uuid}", baseHandler.GetPlacementHandler)
 		r.Delete("/api/v1/placements/{uuid}", baseHandler.DeletePlacementHandler)
 		r.Put("/api/v1/placements/{uuid}/stop", baseHandler.LifeCyclePlacementHandler("stop"))
 		r.Put("/api/v1/placements/{uuid}/start", baseHandler.LifeCyclePlacementHandler("start"))
 		r.Put("/api/v1/placements/{uuid}/status", baseHandler.LifeCyclePlacementHandler("status"))
 		r.Get("/api/v1/placements/{uuid}/status", baseHandler.GetStatusPlacementHandler)
-		r.Get("/api/v1/requests/{id}/status", baseHandler.GetStatusRequestHandler)
 		r.Get("/api/v1/reservations/{name}", baseHandler.GetReservationHandler)
 		r.Get("/api/v1/reservations/{name}/resources", baseHandler.GetReservationResourcesHandler)
 	})

@@ -44,9 +44,13 @@ make test           # Unit tests + OpenAPI linting
 | Role | Access
 
 | `admin` | Full access to all endpoints
-| `app` | Placement operations (create, get, delete, lifecycle)
+| `app` | Placement and account operations (create, get, delete, lifecycle)
 | `shared-cluster-manager` | Manage OCP clusters (own clusters with full details, others with shared view)
 |===
+
+All roles can access: `GET /version`, `GET /health`, `POST /placements/dry-run`, `GET /requests/{id}/status`.
+
+The `app` role can additionally: create/get/delete placements, manage accounts, read reservations.
 
 The `shared-cluster-manager` role can:
 
@@ -57,7 +61,7 @@ The `shared-cluster-manager` role can:
 
 The *shared view* includes: name, api_url, ingress_domain, annotations, valid, quotas, limits, max_placements, created_by, timestamps. It excludes: credentials (token, kubeconfig), additional_vars, deployer SA token config, internal data.
 
-The `shared-cluster-manager` cannot access admin-only endpoints (enable/disable, health, delete, JWT management, DNS, IBM, reservations, placements).
+The `shared-cluster-manager` cannot access: placement CRUD, account operations, admin-only endpoints (enable/disable, health, delete, JWT management, DNS, IBM, reservations).
 
 == API Endpoints
 

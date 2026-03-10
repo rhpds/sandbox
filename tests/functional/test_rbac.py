@@ -175,6 +175,24 @@ class SandboxClient:
             f"{self.base_url}/api/v1/reservations", json=payload
         )
 
+    # --- Any-role endpoints ---
+
+    def get_version(self) -> requests.Response:
+        return self.session.get(f"{self.base_url}/api/v1/version")
+
+    def get_api_health(self) -> requests.Response:
+        return self.session.get(f"{self.base_url}/api/v1/health")
+
+    # --- App-only endpoints (should be denied for manager) ---
+
+    def create_placement(self, payload: Dict[str, Any]) -> requests.Response:
+        return self.session.post(
+            f"{self.base_url}/api/v1/placements", json=payload
+        )
+
+    def get_placement(self, uuid: str) -> requests.Response:
+        return self.session.get(f"{self.base_url}/api/v1/placements/{uuid}")
+
 
 def build_unreachable_cluster_config(name: str) -> Dict[str, Any]:
     return {
@@ -379,6 +397,29 @@ def test_manager_denied_health_check(manager: SandboxClient):
     logger.info("PASSED: manager denied health check (401)")
 
 
+def test_manager_can_access_any_role_endpoints(manager: SandboxClient):
+    """shared-cluster-manager can access health and dry-run endpoints."""
+    manager.set_test_description("test_rbac/manager_can_access_any_role_endpoints")
+
+    resp = manager.get_api_health()
+    assert resp.status_code == 200, f"GET health: expected 200, got {resp.status_code}"
+
+    logger.info("PASSED: manager can access any-role endpoints (health)")
+
+
+def test_manager_denied_placement_operations(manager: SandboxClient):
+    """shared-cluster-manager is denied placement CRUD (app-only)."""
+    manager.set_test_description("test_rbac/manager_denied_placement_operations")
+
+    resp = manager.get_placement("nonexistent-uuid")
+    assert resp.status_code == 401, f"GET placement: expected 401, got {resp.status_code}"
+
+    resp = manager.create_placement({"service_uuid": "fake", "resources": []})
+    assert resp.status_code == 401, f"POST placement: expected 401, got {resp.status_code}"
+
+    logger.info("PASSED: manager denied placement operations (401)")
+
+
 def test_manager_denied_get_placements(manager: SandboxClient):
     """shared-cluster-manager is denied GET /placements (admin list)."""
     manager.set_test_description("test_rbac/manager_denied_get_placements")
@@ -423,6 +464,53 @@ def test_manager_denied_ibm(manager: SandboxClient):
     assert resp.status_code == 401, f"Expected 401, got {resp.status_code}"
 
     logger.info("PASSED: manager denied IBM endpoints (401)")
+
+
+def test_app_can_access_any_role_endpoints(app: SandboxClient):
+    """app token can access health and dry-run endpoints."""
+    app.set_test_description("test_rbac/app_can_access_any_role_endpoints")
+
+    resp = app.get_api_health()
+    assert resp.status_code == 200, f"GET health: expected 200, got {resp.status_code}"
+
+    logger.info("PASSED: app can access any-role endpoints (health)")
+
+
+def test_app_can_access_placement_endpoints(app: SandboxClient):
+    """app token can access placement endpoints (GET returns 404 for nonexistent, not 401)."""
+    app.set_test_description("test_rbac/app_can_access_placement_endpoints")
+
+    # GET a nonexistent placement — should be 404 (not 401)
+    resp = app.get_placement("nonexistent-uuid")
+    assert resp.status_code == 404, f"GET placement: expected 404, got {resp.status_code}: {resp.text}"
+
+    logger.info("PASSED: app can access placement endpoints")
+
+
+def test_app_denied_admin_endpoints(app: SandboxClient):
+    """app token is denied admin-only endpoints."""
+    app.set_test_description("test_rbac/app_denied_admin_endpoints")
+
+    resp = app.get_placements()
+    assert resp.status_code == 401, f"GET placements list: expected 401, got {resp.status_code}"
+
+    resp = app.get_tokens()
+    assert resp.status_code == 401, f"GET tokens: expected 401, got {resp.status_code}"
+
+    logger.info("PASSED: app denied admin-only endpoints (401)")
+
+
+def test_app_denied_cluster_management(app: SandboxClient):
+    """app token is denied cluster management endpoints."""
+    app.set_test_description("test_rbac/app_denied_cluster_management")
+
+    resp = app.get_cluster_configs()
+    assert resp.status_code == 401, f"GET cluster configs: expected 401, got {resp.status_code}"
+
+    resp = app.create_cluster_config({"name": "should-fail", "api_url": "https://fake", "token": "fake"})
+    assert resp.status_code == 401, f"POST cluster config: expected 401, got {resp.status_code}"
+
+    logger.info("PASSED: app denied cluster management endpoints (401)")
 
 
 def test_token_usage_tracking(admin: SandboxClient, manager_token_id: int):
@@ -490,8 +578,11 @@ def main():
     manager = None
     manager_login_token = None
     manager_token_id = None
+    app = None
+    app_login_token = None
+    app_token_id = None
 
-    # Phase 1: Issue manager token (must succeed before other tests)
+    # Phase 1: Issue manager and app tokens (must succeed before other tests)
     try:
         manager_login_token = test_admin_issue_manager_token(admin)
         passed += 1
@@ -507,6 +598,24 @@ def main():
         errors.append(("admin_issue_manager_token", str(e)))
         logger.error(f"FAILED: admin_issue_manager_token: {e}")
         logger.error("Cannot proceed without manager token")
+        sys.exit(1)
+
+    try:
+        logger.info("Issuing app login token...")
+        admin.set_test_description("test_rbac/issue_app_token")
+        resp = admin.issue_login_token({"name": "rbac-test-app", "role": "app"})
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        app_login_token = resp.json()["token"]
+        app_access_token = get_access_token(SANDBOX_API_URL, app_login_token)
+        app = SandboxClient(SANDBOX_API_URL, app_access_token)
+        app_token_id = extract_token_id_from_jwt(app_login_token)
+        passed += 1
+        logger.info("PASSED: admin can issue app login token")
+    except Exception as e:
+        failed += 1
+        errors.append(("issue_app_token", str(e)))
+        logger.error(f"FAILED: issue_app_token: {e}")
+        logger.error("Cannot proceed without app token")
         sys.exit(1)
 
     tests = [
@@ -526,6 +635,12 @@ def main():
         ("manager_cannot_offboard_admin_cluster",
          lambda: test_manager_cannot_offboard_admin_cluster(admin, manager)),
         ("admin_can_offboard_any_cluster", lambda: test_admin_can_offboard_any_cluster(admin)),
+        # --- Manager can access any-role endpoints ---
+        ("manager_can_access_any_role_endpoints",
+         lambda: test_manager_can_access_any_role_endpoints(manager)),
+        # --- Manager denied app-only endpoints ---
+        ("manager_denied_placement_operations",
+         lambda: test_manager_denied_placement_operations(manager)),
         # --- Manager denied admin-only endpoints ---
         ("manager_denied_delete_cluster", lambda: test_manager_denied_delete_cluster(manager)),
         ("manager_denied_enable_disable", lambda: test_manager_denied_enable_disable(manager)),
@@ -534,6 +649,15 @@ def main():
         ("manager_denied_jwt_management", lambda: test_manager_denied_jwt_management(manager)),
         ("manager_denied_dns", lambda: test_manager_denied_dns(manager)),
         ("manager_denied_ibm", lambda: test_manager_denied_ibm(manager)),
+        # --- App role tests ---
+        ("app_can_access_any_role_endpoints",
+         lambda: test_app_can_access_any_role_endpoints(app)),
+        ("app_can_access_placement_endpoints",
+         lambda: test_app_can_access_placement_endpoints(app)),
+        ("app_denied_admin_endpoints",
+         lambda: test_app_denied_admin_endpoints(app)),
+        ("app_denied_cluster_management",
+         lambda: test_app_denied_cluster_management(app)),
         # --- Token usage tracking ---
         ("token_usage_tracking", lambda: test_token_usage_tracking(admin, manager_token_id)),
     ]
@@ -541,6 +665,8 @@ def main():
     all_clients = [admin]
     if manager:
         all_clients.append(manager)
+    if app:
+        all_clients.append(app)
 
     try:
         for test_name, test_fn in tests:
@@ -560,14 +686,15 @@ def main():
     finally:
         cleanup_clusters(admin, [MOCK_CLUSTER_MANAGER, MOCK_CLUSTER_ADMIN])
 
-        # Invalidate the manager login token we created
-        if manager_token_id:
-            try:
-                admin.set_test_description("test_rbac/cleanup_invalidate_token")
-                admin.invalidate_token(manager_token_id)
-                logger.info(f"Invalidated manager login token (id={manager_token_id})")
-            except Exception as e:
-                logger.warning(f"Failed to invalidate manager token: {e}")
+        # Invalidate the login tokens we created
+        for label, tid in [("manager", manager_token_id), ("app", app_token_id)]:
+            if tid:
+                try:
+                    admin.set_test_description(f"test_rbac/cleanup_invalidate_{label}_token")
+                    admin.invalidate_token(tid)
+                    logger.info(f"Invalidated {label} login token (id={tid})")
+                except Exception as e:
+                    logger.warning(f"Failed to invalidate {label} token: {e}")
 
     # Summary
     logger.info("")
