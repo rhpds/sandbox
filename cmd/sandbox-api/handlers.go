@@ -693,6 +693,30 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 
 }
 
+func (h *BaseHandler) VersionHandler(w http.ResponseWriter, r *http.Request) {
+	// Query DB migration version from schema_migrations (golang-migrate table)
+	var dbMigrationVersion int
+	dbMigrationDirty := false
+	err := h.dbpool.QueryRow(r.Context(),
+		"SELECT version, dirty FROM schema_migrations LIMIT 1").Scan(&dbMigrationVersion, &dbMigrationDirty)
+	if err != nil {
+		dbMigrationVersion = -1
+	}
+
+	resp := map[string]any{
+		"version":              Version,
+		"build_commit":         buildCommit,
+		"build_time":           buildTime,
+		"db_migration_version": dbMigrationVersion,
+		"db_migration_dirty":   dbMigrationDirty,
+	}
+
+	w.WriteHeader(http.StatusOK)
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	enc.Encode(resp)
+}
+
 func (h *BaseHandler) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", " ")

@@ -362,8 +362,9 @@ RUN_LIMIT_RANGE_TESTS="${RUN_LIMIT_RANGE_TESTS:-${run_limit_range_tests:-true}}"
 RUN_ADMIN_SA_TESTS="${RUN_ADMIN_SA_TESTS:-${run_admin_sa_tests:-true}}"
 RUN_ONBOARD_TESTS="${RUN_ONBOARD_TESTS:-${run_onboard_tests:-true}}"
 RUN_RBAC_TESTS="${RUN_RBAC_TESTS:-${run_rbac_tests:-true}}"
+RUN_CLI_TESTS="${RUN_CLI_TESTS:-${run_cli_tests:-true}}"
 
-echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS RUN_ONBOARD_TESTS=$RUN_ONBOARD_TESTS RUN_RBAC_TESTS=$RUN_RBAC_TESTS"
+echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS RUN_ONBOARD_TESTS=$RUN_ONBOARD_TESTS RUN_RBAC_TESTS=$RUN_RBAC_TESTS RUN_CLI_TESTS=$RUN_CLI_TESTS"
 
 if [ "$RUN_HURL_TESTS" != "false" ] && [ "$RUN_HURL_TESTS" != "no" ]; then
     tests=$1
@@ -524,4 +525,24 @@ if [ "${RUN_RBAC_TESTS}" != "false" ] && [ "${RUN_RBAC_TESTS}" != "no" ]; then
         python3 tests/functional/test_rbac.py
 else
     echo "Skipping RBAC tests (RUN_RBAC_TESTS=${RUN_RBAC_TESTS})"
+fi
+
+# Run sandbox-cli functional tests if requested
+if [ "${RUN_CLI_TESTS}" != "false" ] && [ "${RUN_CLI_TESTS}" != "no" ]; then
+    echo ""
+    echo "=========================================="
+    echo "Running sandbox-cli functional tests"
+    echo "=========================================="
+    cd $jobdir
+
+    # Install Python dependencies if needed
+    pip3 install -q requests urllib3 2>/dev/null || true
+
+    # Run the Python CLI test (builds the binary internally)
+    SANDBOX_API_URL="http://localhost:$PORT" \
+        SANDBOX_LOGIN_TOKEN="$apptoken" \
+        SANDBOX_ADMIN_LOGIN_TOKEN="$admintoken" \
+        python3 tests/functional/test_sandbox_cli.py
+else
+    echo "Skipping sandbox-cli tests (RUN_CLI_TESTS=${RUN_CLI_TESTS})"
 fi

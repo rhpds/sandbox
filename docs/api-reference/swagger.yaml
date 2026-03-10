@@ -1626,6 +1626,9 @@ paths:
                   iat: 1682024612
                   exp: 1997384612
                   expiration: 2033-04-17T23:03:32+02:00
+                  valid: true
+                  use_count: 42
+                  last_used_at: 2026-03-10T14:00:00Z
                 - id: 21
                   created_at: 2023-04-20T23:16:00.615025+02:00
                   updated_at: 2023-04-20T23:16:00.615025+02:00
@@ -1635,6 +1638,8 @@ paths:
                   iat: 1682025360
                   exp: 1997385360
                   expiration: 2033-04-17T23:16:00+02:00
+                  valid: true
+                  use_count: 0
 
         '401':
           description: unauthorized
@@ -1703,6 +1708,134 @@ paths:
               example:
                 message: Error invalidating token
                 http_code: 500
+  /admin/jwt/{id}/activity:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Admin Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ADMIN_ACCESS_TOKEN>
+      - name: id
+        in: path
+        required: true
+        description: The id of the token
+        schema:
+          type: integer
+        example: 20
+      - name: limit
+        in: query
+        required: false
+        description: Maximum number of activity entries to return
+        schema:
+          type: integer
+          default: 50
+        example: 50
+    get:
+      summary: Get recent activity for a token
+      description: |-
+        Returns token details and recent audit log entries for the token's actor.
+        Only accessible by admins.
+      operationId: getTokenActivity
+      tags:
+        - admin
+      responses:
+        '200':
+          description: Token info and activity entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: object
+                    description: Token details
+                    properties:
+                      id:
+                        type: integer
+                        example: 20
+                      name:
+                        type: string
+                        example: gucore
+                      role:
+                        type: string
+                        example: admin
+                      valid:
+                        type: boolean
+                        example: true
+                      use_count:
+                        type: integer
+                        example: 42
+                      last_used_at:
+                        type: string
+                        format: date-time
+                        example: "2026-03-10T14:00:00Z"
+                  activity:
+                    type: array
+                    example:
+                      - created_at: "2026-03-10T14:00:00Z"
+                        method: PUT
+                        path: /api/v1/ocp-shared-cluster-configurations/cluster1
+                        status_code: 200
+                        request_id: abc123
+                    items:
+                      type: object
+                      properties:
+                        created_at:
+                          type: string
+                          format: date-time
+                          example: "2026-03-10T14:00:00Z"
+                        method:
+                          type: string
+                          example: PUT
+                        path:
+                          type: string
+                          example: /api/v1/ocp-shared-cluster-configurations/cluster1
+                        status_code:
+                          type: integer
+                          example: 200
+                        request_id:
+                          type: string
+                          example: abc123
+              example:
+                token:
+                  id: 20
+                  name: gucore
+                  role: admin
+                  valid: true
+                  use_count: 42
+                  last_used_at: "2026-03-10T14:00:00Z"
+                activity:
+                  - created_at: "2026-03-10T14:00:00Z"
+                    method: PUT
+                    path: /api/v1/ocp-shared-cluster-configurations/cluster1
+                    status_code: 200
+                    request_id: abc123
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        '404':
+          description: Token not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: token not found
+                http_code: 404
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /ocp-shared-cluster-configurations:
     post:
       summary: Create a new OcpSharedClusterConfiguration
@@ -2421,6 +2554,65 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /version:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ACCESS_TOKEN>
+    get:
+      summary: Server version and build info
+      description: |-
+        Returns server version, build commit, build time, and database migration version.
+      tags:
+        - insight
+      operationId: version
+      responses:
+        '200':
+          description: Server version info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                    description: Server version
+                    example: "1.0.0"
+                  build_commit:
+                    type: string
+                    description: Git commit hash
+                    example: "abc123def456"
+                  build_time:
+                    type: string
+                    description: Build timestamp
+                    example: "2026-03-10 14:00:00 UTC"
+                  db_migration_version:
+                    type: integer
+                    description: Current database migration version
+                    example: 22
+                  db_migration_dirty:
+                    type: boolean
+                    description: Whether the migration state is dirty
+                    example: false
+              example:
+                version: "1.0.0"
+                build_commit: "abc123def456"
+                build_time: "2026-03-10 14:00:00 UTC"
+                db_migration_version: 22
+                db_migration_dirty: false
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
   /health:
     get:
       summary: Health endpoint
@@ -4147,6 +4339,13 @@ components:
               type: integer
               description: Number of times the deployer-admin SA token has been rotated.
               example: 42
+        created_by:
+          type: string
+          description: |-
+            Name of the JWT token holder who created this cluster configuration.
+            Used for RBAC ownership checks (shared-cluster-manager role can only
+            offboard clusters they created).
+          example: "cluster-ops"
 
       example:
         name: ocp-cluster-1
@@ -4174,6 +4373,7 @@ components:
           virt: available
           cloud: ibmcloud-shared
           purpose: dev
+        created_by: cluster-ops
     OcpSharedClusterConfigurations:
       description: The list of OcpSharedClusterConfigurations
       type: array

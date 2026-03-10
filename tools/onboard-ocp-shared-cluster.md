@@ -1,5 +1,22 @@
 # OCP Shared Cluster Onboarding / Offboarding
 
+> **Prefer `sandbox-cli`** for cluster management tasks. It handles authentication
+> automatically, persists config, and provides better error messages. The shell
+> scripts below are kept for backward compatibility and for cases where
+> `sandbox-cli` is not available (e.g. CI pipelines without the Go toolchain).
+>
+> Quick reference:
+> ```bash
+> sandbox-cli login --server https://sandbox-api.example.com --token $TOKEN
+> sandbox-cli status                              # verify environment
+> sandbox-cli cluster create my-cluster < config.json   # onboard
+> sandbox-cli cluster offboard my-cluster [--force]     # offboard
+> sandbox-cli cluster list                               # list all
+> sandbox-cli cluster get my-cluster                     # inspect
+> sandbox-cli cluster health my-cluster                  # health check
+> sandbox-cli cluster enable/disable my-cluster          # toggle scheduling
+> ```
+
 ## Overview
 
 Two scripts automate the lifecycle of OCP shared clusters in the sandbox API fleet:

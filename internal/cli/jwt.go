@@ -1,0 +1,263 @@
+package cli
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"text/tabwriter"
+
+	"github.com/spf13/cobra"
+)
+
+var jwtCmd = &cobra.Command{
+	Use:   "jwt",
+	Short: "Manage JWT login tokens",
+}
+
+// --- jwt list ---
+
+var jwtListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all login tokens",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := requireClient()
+		if err != nil {
+			return err
+		}
+
+		resp, err := client.Get("/api/v1/admin/jwt")
+		if err != nil {
+			return err
+		}
+
+		var tokens []map[string]any
+		if err := ReadJSON(resp, &tokens); err != nil {
+			return err
+		}
+
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+		fmt.Fprintln(w, "ID\tNAME\tROLE\tVALID\tEXPIRATION\tUSE_COUNT\tLAST_USED")
+		for _, t := range tokens {
+			id := jsonNum(t["id"])
+			name := jsonStr(t["name"])
+			role := jsonStr(t["role"])
+			valid := "NO"
+			if v, ok := t["valid"].(bool); ok && v {
+				valid = "yes"
+			}
+			exp := jsonStr(t["expiration"])
+			if i := strings.Index(exp, "T"); i > 0 {
+				exp = exp[:i]
+			}
+			useCount := jsonNum(t["use_count"])
+			lastUsed := jsonStr(t["last_used_at"])
+			if lastUsed == "" {
+				lastUsed = "never"
+			} else if i := strings.Index(lastUsed, "."); i > 0 {
+				lastUsed = lastUsed[:i]
+			}
+
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				id, name, role, valid, exp, useCount, lastUsed)
+		}
+		w.Flush()
+		return nil
+	},
+}
+
+// --- jwt issue ---
+
+var (
+	jwtIssueName string
+	jwtIssueRole string
+)
+
+var jwtIssueCmd = &cobra.Command{
+	Use:   "issue",
+	Short: "Issue a new login token",
+	Long: `Issue a new JWT login token via the admin endpoint.
+
+Examples:
+  sandbox-cli jwt issue --name anarchy --role app
+  sandbox-cli jwt issue --name cluster-ops --role shared-cluster-manager
+  sandbox-cli jwt issue --name gucore --role admin`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if jwtIssueName == "" {
+			return fmt.Errorf("--name is required")
+		}
+		if jwtIssueRole == "" {
+			return fmt.Errorf("--role is required")
+		}
+
+		client, err := requireClient()
+		if err != nil {
+			return err
+		}
+
+		payload, _ := json.Marshal(map[string]any{
+			"claims": map[string]any{
+				"name": jwtIssueName,
+				"role": jwtIssueRole,
+			},
+		})
+
+		resp, err := client.Post("/api/v1/admin/jwt", bytes.NewReader(payload))
+		if err != nil {
+			return err
+		}
+
+		var result map[string]any
+		if err := ReadJSON(resp, &result); err != nil {
+			return err
+		}
+
+		token := jsonStr(result["token"])
+		fmt.Fprintln(cmd.OutOrStdout(), token)
+		return nil
+	},
+}
+
+// --- jwt invalidate ---
+
+var jwtInvalidateCmd = &cobra.Command{
+	Use:   "invalidate <id>",
+	Short: "Invalidate a login token",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := requireClient()
+		if err != nil {
+			return err
+		}
+
+		resp, err := client.Put("/api/v1/admin/jwt/"+args[0]+"/invalidate", nil)
+		if err != nil {
+			return err
+		}
+
+		var result map[string]any
+		if err := ReadJSON(resp, &result); err != nil {
+			return err
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), jsonStr(result["message"]))
+		return nil
+	},
+}
+
+// --- jwt activity ---
+
+var jwtActivityLimit int
+
+var jwtActivityCmd = &cobra.Command{
+	Use:   "activity <id>",
+	Short: "Show recent activity for a token",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := requireClient()
+		if err != nil {
+			return err
+		}
+
+		path := fmt.Sprintf("/api/v1/admin/jwt/%s/activity?limit=%d", args[0], jwtActivityLimit)
+		resp, err := client.Get(path)
+		if err != nil {
+			return err
+		}
+
+		var result struct {
+			Token    map[string]any   `json:"token"`
+			Activity []map[string]any `json:"activity"`
+		}
+		if err := ReadJSON(resp, &result); err != nil {
+			return err
+		}
+
+		out := cmd.OutOrStdout()
+
+		// Token info
+		t := result.Token
+		lastUsed := jsonStr(t["last_used_at"])
+		if lastUsed == "" {
+			lastUsed = "never"
+		} else if i := strings.Index(lastUsed, "."); i > 0 {
+			lastUsed = lastUsed[:i]
+		}
+		valid := "NO"
+		if v, ok := t["valid"].(bool); ok && v {
+			valid = "yes"
+		}
+
+		fmt.Fprintln(out, "=== Token ===")
+		fmt.Fprintf(out, "  ID:          %s\n", jsonNum(t["id"]))
+		fmt.Fprintf(out, "  Name:        %s\n", jsonStr(t["name"]))
+		fmt.Fprintf(out, "  Role:        %s\n", jsonStr(t["role"]))
+		fmt.Fprintf(out, "  Valid:        %s\n", valid)
+		fmt.Fprintf(out, "  Use count:   %s\n", jsonNum(t["use_count"]))
+		fmt.Fprintf(out, "  Last used:   %s\n", lastUsed)
+		fmt.Fprintln(out)
+
+		// Activity
+		fmt.Fprintf(out, "=== Recent Activity (%d entries) ===\n\n", len(result.Activity))
+
+		if len(result.Activity) == 0 {
+			fmt.Fprintln(out, "  No activity recorded.")
+		} else {
+			w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+			fmt.Fprintln(w, "TIMESTAMP\tMETHOD\tPATH\tSTATUS\tREQUEST_ID")
+			for _, a := range result.Activity {
+				ts := jsonStr(a["created_at"])
+				if i := strings.Index(ts, "."); i > 0 {
+					ts = ts[:i]
+				}
+				reqID := jsonStr(a["request_id"])
+				if reqID == "" {
+					reqID = "-"
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+					ts,
+					jsonStr(a["method"]),
+					jsonStr(a["path"]),
+					jsonNum(a["status_code"]),
+					reqID,
+				)
+			}
+			w.Flush()
+		}
+		return nil
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(jwtCmd)
+	jwtCmd.AddCommand(jwtListCmd)
+
+	jwtIssueCmd.Flags().StringVar(&jwtIssueName, "name", "", "Name for the token (required)")
+	jwtIssueCmd.Flags().StringVar(&jwtIssueRole, "role", "", "Role: app, admin, shared-cluster-manager (required)")
+	jwtCmd.AddCommand(jwtIssueCmd)
+
+	jwtCmd.AddCommand(jwtInvalidateCmd)
+
+	jwtActivityCmd.Flags().IntVar(&jwtActivityLimit, "limit", 50, "Number of entries to show")
+	jwtCmd.AddCommand(jwtActivityCmd)
+}
+
+// --- helpers ---
+
+func jsonStr(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func jsonNum(v any) string {
+	switch n := v.(type) {
+	case float64:
+		return fmt.Sprintf("%.0f", n)
+	case int:
+		return fmt.Sprintf("%d", n)
+	default:
+		return "0"
+	}
+}
