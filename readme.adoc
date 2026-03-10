@@ -79,6 +79,14 @@ sandbox-cli cluster offboard <name> [--force]
 sandbox-cli cluster offboard-status <name>
 sandbox-cli cluster delete <name>
 
+# Placement testing
+sandbox-cli placement dry-run --selector purpose=dev
+sandbox-cli placement dry-run --selector purpose=dev,cloud=aws-shared
+sandbox-cli placement dry-run --selector purpose=dev --preference region=us-east-1
+
+# Session management
+sandbox-cli logout
+
 # Version info
 sandbox-cli version [--json]
 ----

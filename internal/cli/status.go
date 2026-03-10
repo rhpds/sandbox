@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -58,6 +59,23 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(out, "  Auth:         expired (will refresh on next command)")
 	} else {
 		fmt.Fprintln(out, "  Auth:         not authenticated")
+	}
+
+	// Show identity from token claims
+	token := cfg.AccessToken
+	if token == "" {
+		token = cfg.LoginToken
+	}
+	if claims, err := decodeJWTClaims(token); err == nil {
+		name, _ := claims["name"].(string)
+		role, _ := claims["role"].(string)
+		if name != "" {
+			if role != "" {
+				fmt.Fprintf(out, "  Logged in as: %s (%s)\n", name, role)
+			} else {
+				fmt.Fprintf(out, "  Logged in as: %s\n", name)
+			}
+		}
 	}
 	fmt.Fprintln(out)
 
@@ -122,6 +140,32 @@ func shortCommit(commit string) string {
 		return commit[:8]
 	}
 	return commit
+}
+
+// decodeJWTClaims extracts the claims from a JWT token without verifying the signature.
+// This is used only for display purposes (showing "logged in as").
+func decodeJWTClaims(token string) (map[string]any, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("invalid JWT format")
+	}
+	payload := parts[1]
+	// Add padding if needed
+	switch len(payload) % 4 {
+	case 2:
+		payload += "=="
+	case 3:
+		payload += "="
+	}
+	data, err := base64.URLEncoding.DecodeString(payload)
+	if err != nil {
+		return nil, err
+	}
+	var claims map[string]any
+	if err := json.Unmarshal(data, &claims); err != nil {
+		return nil, err
+	}
+	return claims, nil
 }
 
 // versionJSON returns the version info as a JSON-serializable map (for tests).
