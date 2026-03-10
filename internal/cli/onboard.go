@@ -197,7 +197,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		} else {
 			healthResp.Body.Close()
 			if healthResp.StatusCode >= 200 && healthResp.StatusCode < 300 {
-				fmt.Fprintln(out, "  Health check passed.")
+				fmt.Fprintln(out, "  OK: sandbox API can connect to the cluster.")
 			} else {
 				fmt.Fprintf(out, "  WARNING: health check returned HTTP %d\n", healthResp.StatusCode)
 			}

@@ -335,8 +335,13 @@ func clusterToggle(action string) func(*cobra.Command, []string) error {
 
 var clusterHealthCmd = &cobra.Command{
 	Use:   "health <name>",
-	Short: "Check cluster health",
-	Args:  cobra.ExactArgs(1),
+	Short: "Check cluster connectivity",
+	Long: `Verify that the sandbox API can reach the cluster.
+
+The API connects to the cluster using the stored service account token
+and checks that it can access the "default" namespace. This confirms
+that the cluster is reachable and the token is valid.`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := requireClient()
 		if err != nil {
@@ -347,37 +352,26 @@ var clusterHealthCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-
-		var result map[string]any
-		if err := ReadJSON(resp, &result); err != nil {
-			return err
-		}
+		defer resp.Body.Close()
 
 		out := cmd.OutOrStdout()
-		valid := "NO"
-		if v, ok := result["valid"].(bool); ok && v {
-			valid = "yes"
-		}
-		fmt.Fprintf(out, "Name:       %s\n", jsonStr(result["name"]))
-		fmt.Fprintf(out, "Valid:      %s\n", valid)
 
-		// Display annotations if present
-		if ann, ok := result["annotations"].(map[string]any); ok && len(ann) > 0 {
-			fmt.Fprintf(out, "Annotations:\n")
-			for k, v := range ann {
-				fmt.Fprintf(out, "  %s: %s\n", k, jsonStr(v))
-			}
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			fmt.Fprintf(out, "OK: sandbox API can connect to cluster %s.\n", args[0])
+			return nil
 		}
 
-		// Display usage if present
-		if mem, ok := result["memory_usage_percentage"].(float64); ok {
-			fmt.Fprintf(out, "Memory:     %.1f%%\n", mem)
-		}
-		if cpu, ok := result["cpu_usage_percentage"].(float64); ok {
-			fmt.Fprintf(out, "CPU:        %.1f%%\n", cpu)
+		// Error response — decode and display
+		var result map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return fmt.Errorf("health check failed (HTTP %d)", resp.StatusCode)
 		}
 
-		return nil
+		msg := jsonStr(result["message"])
+		if errLines, ok := result["error_multiline"].([]any); ok && len(errLines) > 0 {
+			return fmt.Errorf("health check failed: %s: %s", msg, jsonStr(errLines[0]))
+		}
+		return fmt.Errorf("health check failed: %s", msg)
 	},
 }
 

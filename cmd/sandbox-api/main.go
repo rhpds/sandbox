@@ -275,6 +275,7 @@ func main() {
 		r.Use(AuthenticatorAnyRole)
 		r.Use(baseHandler.OpenAPIValidation)
 
+		r.Get("/api/v1/version", baseHandler.VersionHandler)
 		r.Get("/api/v1/health", baseHandler.HealthHandler)
 		r.Post("/api/v1/placements/dry-run", baseHandler.PostDryRunPlacementHandler)
 		r.Get("/api/v1/requests/{id}/status", baseHandler.GetStatusRequestHandler)
