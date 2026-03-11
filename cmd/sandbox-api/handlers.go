@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/go-chi/render"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 
@@ -803,6 +804,14 @@ func (h *BaseHandler) GetPlacementsHandler(w http.ResponseWriter, r *http.Reques
 // Get placement by service uuid
 func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request) {
 	serviceUuid := chi.URLParam(r, "uuid")
+	if _, err := uuid.Parse(serviceUuid); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid UUID format",
+		})
+		return
+	}
 
 	placement, err := models.GetPlacementByServiceUuid(h.dbpool, serviceUuid)
 	if err != nil {
@@ -848,6 +857,14 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 // Delete placement by service uuid
 func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Request) {
 	serviceUuid := chi.URLParam(r, "uuid")
+	if _, err := uuid.Parse(serviceUuid); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid UUID format",
+		})
+		return
+	}
 
 	placement, err := models.GetPlacementByServiceUuid(h.dbpool, serviceUuid)
 	if err != nil {
@@ -908,6 +925,14 @@ func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Requ
 func (h *BaseHandler) LifeCyclePlacementHandler(action string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		serviceUuid := chi.URLParam(r, "uuid")
+		if _, err := uuid.Parse(serviceUuid); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusBadRequest,
+				Message:        "Invalid UUID format",
+			})
+			return
+		}
 		reqId := GetReqID(r.Context())
 
 		placement, err := models.GetPlacementByServiceUuid(h.dbpool, serviceUuid)
@@ -1018,6 +1043,14 @@ func (h *BaseHandler) LifeCyclePlacementHandler(action string) http.HandlerFunc 
 
 func (h *BaseHandler) GetStatusPlacementHandler(w http.ResponseWriter, r *http.Request) {
 	serviceUuid := chi.URLParam(r, "uuid")
+	if _, err := uuid.Parse(serviceUuid); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid UUID format",
+		})
+		return
+	}
 
 	placement, err := models.GetPlacementByServiceUuid(h.dbpool, serviceUuid)
 

@@ -480,8 +480,12 @@ def test_app_can_access_placement_endpoints(app: SandboxClient):
     """app token can access placement endpoints (GET returns 404 for nonexistent, not 401)."""
     app.set_test_description("test_rbac/app_can_access_placement_endpoints")
 
-    # GET a nonexistent placement — should be 404 (not 401)
-    resp = app.get_placement("nonexistent-uuid")
+    # Invalid UUID format → 400
+    resp = app.get_placement("not-a-uuid")
+    assert resp.status_code == 400, f"GET invalid UUID: expected 400, got {resp.status_code}: {resp.text}"
+
+    # Valid UUID that doesn't exist → 404 (not 401)
+    resp = app.get_placement("00000000-0000-0000-0000-000000000000")
     assert resp.status_code == 404, f"GET placement: expected 404, got {resp.status_code}: {resp.text}"
 
     logger.info("PASSED: app can access placement endpoints")
