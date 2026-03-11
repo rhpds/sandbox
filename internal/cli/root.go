@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -68,6 +69,51 @@ func resolveConfig() (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// tokenRole returns the role from the current token, or "" if unavailable.
+func tokenRole() string {
+	cfg, err := resolveConfig()
+	if err != nil {
+		return ""
+	}
+	token := cfg.AccessToken
+	if token == "" {
+		token = cfg.LoginToken
+	}
+	claims, err := decodeJWTClaims(token)
+	if err != nil {
+		return ""
+	}
+	role, _ := claims["role"].(string)
+	return role
+}
+
+// requireRole checks that the current token has one of the allowed roles.
+// Returns a clear error if the role doesn't match, instead of letting the
+// API return a raw 401.
+func requireRole(allowed ...string) error {
+	role := tokenRole()
+	if role == "" {
+		return nil // can't determine role, let the API decide
+	}
+	for _, a := range allowed {
+		if role == a {
+			return nil
+		}
+	}
+	return fmt.Errorf("this command requires role %s (your token has role %q)", formatRoles(allowed), role)
+}
+
+func formatRoles(roles []string) string {
+	if len(roles) == 1 {
+		return fmt.Sprintf("%q", roles[0])
+	}
+	quoted := make([]string, len(roles))
+	for i, r := range roles {
+		quoted[i] = fmt.Sprintf("%q", r)
+	}
+	return strings.Join(quoted[:len(quoted)-1], ", ") + " or " + quoted[len(quoted)-1]
 }
 
 // requireClient resolves config, ensures we have a valid access token

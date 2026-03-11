@@ -24,6 +24,9 @@ var clusterListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all shared cluster configurations",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireRole("admin", "shared-cluster-manager"); err != nil {
+			return err
+		}
 		client, err := requireClient()
 		if err != nil {
 			return err
@@ -65,6 +68,9 @@ var clusterGetCmd = &cobra.Command{
 	Short: "Get a shared cluster configuration",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireRole("admin", "shared-cluster-manager"); err != nil {
+			return err
+		}
 		client, err := requireClient()
 		if err != nil {
 			return err
@@ -102,6 +108,9 @@ Examples:
   sandbox-cli cluster create my-cluster --force < cluster.json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireRole("admin", "shared-cluster-manager"); err != nil {
+			return err
+		}
 		name := args[0]
 
 		body, err := io.ReadAll(cmd.InOrStdin())
@@ -146,6 +155,9 @@ var clusterOffboardCmd = &cobra.Command{
 }
 
 func runOffboard(cmd *cobra.Command, args []string) error {
+	if err := requireRole("admin", "shared-cluster-manager"); err != nil {
+		return err
+	}
 	name := args[0]
 	out := cmd.OutOrStdout()
 
@@ -271,6 +283,9 @@ var clusterOffboardStatusCmd = &cobra.Command{
 	Short: "Get offboard job status for a cluster",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireRole("admin", "shared-cluster-manager"); err != nil {
+			return err
+		}
 		client, err := requireClient()
 		if err != nil {
 			return err
@@ -296,20 +311,23 @@ var clusterOffboardStatusCmd = &cobra.Command{
 
 var clusterEnableCmd = &cobra.Command{
 	Use:   "enable <name>",
-	Short: "Enable a shared cluster",
+	Short: "Enable a shared cluster (admin only)",
 	Args:  cobra.ExactArgs(1),
 	RunE:  clusterToggle("enable"),
 }
 
 var clusterDisableCmd = &cobra.Command{
 	Use:   "disable <name>",
-	Short: "Disable a shared cluster",
+	Short: "Disable a shared cluster (admin only)",
 	Args:  cobra.ExactArgs(1),
 	RunE:  clusterToggle("disable"),
 }
 
 func clusterToggle(action string) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
+		if err := requireRole("admin"); err != nil {
+			return err
+		}
 		client, err := requireClient()
 		if err != nil {
 			return err
@@ -335,7 +353,7 @@ func clusterToggle(action string) func(*cobra.Command, []string) error {
 
 var clusterHealthCmd = &cobra.Command{
 	Use:   "health <name>",
-	Short: "Check cluster connectivity",
+	Short: "Check cluster connectivity (admin only)",
 	Long: `Verify that the sandbox API can reach the cluster.
 
 The API connects to the cluster using the stored service account token
@@ -343,6 +361,9 @@ and checks that it can access the "default" namespace. This confirms
 that the cluster is reachable and the token is valid.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireRole("admin"); err != nil {
+			return err
+		}
 		client, err := requireClient()
 		if err != nil {
 			return err
@@ -379,9 +400,12 @@ that the cluster is reachable and the token is valid.`,
 
 var clusterDeleteCmd = &cobra.Command{
 	Use:   "delete <name>",
-	Short: "Delete a shared cluster configuration",
+	Short: "Delete a shared cluster configuration (admin only)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireRole("admin"); err != nil {
+			return err
+		}
 		client, err := requireClient()
 		if err != nil {
 			return err

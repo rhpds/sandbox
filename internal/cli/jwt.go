@@ -23,6 +23,9 @@ var jwtListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all login tokens",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireRole("admin"); err != nil {
+			return err
+		}
 		client, err := requireClient()
 		if err != nil {
 			return err
@@ -90,6 +93,9 @@ Examples:
   sandbox-cli jwt issue --name gucore --role admin
   sandbox-cli jwt issue --name temp-user --role app --expiration 30d`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireRole("admin"); err != nil {
+			return err
+		}
 		if jwtIssueName == "" {
 			return fmt.Errorf("--name is required")
 		}
@@ -142,6 +148,9 @@ var jwtInvalidateCmd = &cobra.Command{
 	Short: "Invalidate a login token",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireRole("admin"); err != nil {
+			return err
+		}
 		client, err := requireClient()
 		if err != nil {
 			return err
@@ -171,6 +180,9 @@ var jwtActivityCmd = &cobra.Command{
 	Short: "Show recent activity for a token",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireRole("admin"); err != nil {
+			return err
+		}
 		client, err := requireClient()
 		if err != nil {
 			return err

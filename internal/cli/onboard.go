@@ -82,6 +82,9 @@ func init() {
 }
 
 func runOnboard(cmd *cobra.Command, args []string) error {
+	if err := requireRole("admin", "shared-cluster-manager"); err != nil {
+		return err
+	}
 	out := cmd.OutOrStdout()
 	ctx := context.TODO()
 
