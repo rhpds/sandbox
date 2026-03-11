@@ -517,6 +517,83 @@ def test_app_denied_cluster_management(app: SandboxClient):
     logger.info("PASSED: app denied cluster management endpoints (401)")
 
 
+def test_manager_cannot_upsert_admin_cluster(
+    admin: SandboxClient, manager: SandboxClient
+):
+    """Manager is denied PUT update on admin's cluster (default AllowedUpdateRoles=['admin'])."""
+    admin.set_test_description("test_rbac/manager_cannot_upsert_admin_cluster")
+    manager.set_test_description("test_rbac/manager_cannot_upsert_admin_cluster")
+
+    # Ensure admin cluster exists
+    config = build_unreachable_cluster_config(MOCK_CLUSTER_ADMIN)
+    resp = admin.upsert_cluster_config(MOCK_CLUSTER_ADMIN, config)
+    assert resp.status_code in (200, 201), f"Admin upsert expected 2xx, got {resp.status_code}: {resp.text}"
+
+    # Manager tries to update admin's cluster via PUT → 403
+    config["annotations"]["extra"] = "should-fail"
+    resp = manager.upsert_cluster_config(MOCK_CLUSTER_ADMIN, config)
+    assert resp.status_code == 403, f"Expected 403, got {resp.status_code}: {resp.text}"
+
+    logger.info("PASSED: manager cannot upsert admin's cluster (403)")
+
+
+def test_allowed_update_roles_toggle(
+    admin: SandboxClient, manager: SandboxClient
+):
+    """AllowedUpdateRoles controls who can update/offboard a cluster.
+
+    1. Default (no AllowedUpdateRoles) → manager denied
+    2. Set AllowedUpdateRoles to ["admin", "shared-cluster-manager"] → manager allowed
+    3. Revert to ["admin"] → manager denied again
+    """
+    admin.set_test_description("test_rbac/allowed_update_roles_toggle")
+    manager.set_test_description("test_rbac/allowed_update_roles_toggle")
+
+    # Ensure admin cluster exists with default (no AllowedUpdateRoles)
+    config = build_unreachable_cluster_config(MOCK_CLUSTER_ADMIN)
+    resp = admin.upsert_cluster_config(MOCK_CLUSTER_ADMIN, config)
+    assert resp.status_code in (200, 201), f"Admin upsert expected 2xx, got {resp.status_code}: {resp.text}"
+
+    # Step 1: Manager cannot offboard (default AllowedUpdateRoles = ["admin"])
+    resp = manager.offboard_cluster(MOCK_CLUSTER_ADMIN, force=True)
+    assert resp.status_code == 403, f"Step 1: expected 403, got {resp.status_code}: {resp.text}"
+
+    # Step 2: Admin grants shared-cluster-manager role via AllowedUpdateRoles
+    config["data"] = {"allowed_update_roles": ["admin", "shared-cluster-manager"]}
+    resp = admin.upsert_cluster_config(MOCK_CLUSTER_ADMIN, config)
+    assert resp.status_code == 200, f"Admin grant expected 200, got {resp.status_code}: {resp.text}"
+
+    # Verify the field is visible in the cluster config
+    resp = manager.get_cluster_config(MOCK_CLUSTER_ADMIN)
+    assert resp.status_code == 200
+    data = resp.json()
+    roles = data.get("data", {}).get("allowed_update_roles", [])
+    assert "shared-cluster-manager" in roles, f"Expected shared-cluster-manager in allowed_update_roles, got {roles}"
+
+    # Step 3: Manager can now update the cluster via PUT
+    config_update = build_unreachable_cluster_config(MOCK_CLUSTER_ADMIN)
+    config_update["annotations"]["updated_by"] = "manager"
+    config_update["data"] = {"allowed_update_roles": ["admin", "shared-cluster-manager"]}
+    resp = manager.upsert_cluster_config(MOCK_CLUSTER_ADMIN, config_update)
+    assert resp.status_code == 200, f"Step 3: expected 200, got {resp.status_code}: {resp.text}"
+
+    # Step 4: Admin reverts AllowedUpdateRoles to admin-only
+    config["data"] = {"allowed_update_roles": ["admin"]}
+    resp = admin.upsert_cluster_config(MOCK_CLUSTER_ADMIN, config)
+    assert resp.status_code == 200, f"Admin revoke expected 200, got {resp.status_code}: {resp.text}"
+
+    # Step 5: Manager is denied again
+    config_update["annotations"]["updated_by"] = "should-fail"
+    resp = manager.upsert_cluster_config(MOCK_CLUSTER_ADMIN, config_update)
+    assert resp.status_code == 403, f"Step 5: expected 403, got {resp.status_code}: {resp.text}"
+
+    # Also verify offboard is denied again
+    resp = manager.offboard_cluster(MOCK_CLUSTER_ADMIN, force=True)
+    assert resp.status_code == 403, f"Step 5 offboard: expected 403, got {resp.status_code}: {resp.text}"
+
+    logger.info("PASSED: AllowedUpdateRoles toggle works correctly")
+
+
 def test_token_usage_tracking(admin: SandboxClient, manager_token_id: int):
     """Login token usage tracking: last_used_at and use_count are updated."""
     admin.set_test_description("test_rbac/token_usage_tracking")
@@ -638,7 +715,12 @@ def main():
         # --- Ownership enforcement ---
         ("manager_cannot_offboard_admin_cluster",
          lambda: test_manager_cannot_offboard_admin_cluster(admin, manager)),
+        ("manager_cannot_upsert_admin_cluster",
+         lambda: test_manager_cannot_upsert_admin_cluster(admin, manager)),
         ("admin_can_offboard_any_cluster", lambda: test_admin_can_offboard_any_cluster(admin)),
+        # --- AllowedUpdateRoles ---
+        ("allowed_update_roles_toggle",
+         lambda: test_allowed_update_roles_toggle(admin, manager)),
         # --- Manager can access any-role endpoints ---
         ("manager_can_access_any_role_endpoints",
          lambda: test_manager_can_access_any_role_endpoints(manager)),

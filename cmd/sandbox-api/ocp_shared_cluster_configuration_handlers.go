@@ -577,6 +577,19 @@ func (h *BaseHandler) UpsertOcpSharedClusterConfigurationHandler(w http.Response
 			Message: "OCP shared cluster configuration created",
 		})
 	} else {
+		// Authorization check: caller must be allowed to modify this cluster.
+		_, claims, _ := jwtauth.FromContext(r.Context())
+		role, _ := claims["role"].(string)
+		callerName, _ := claims["name"].(string)
+		if !existing.CanModify(role, callerName) {
+			w.WriteHeader(http.StatusForbidden)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusForbidden,
+				Message:        "You are not allowed to update this cluster",
+			})
+			return
+		}
+
 		// Update: preserve the DB ID so Save() calls Update()
 		newConfig.ID = existing.ID
 
@@ -587,7 +600,12 @@ func (h *BaseHandler) UpsertOcpSharedClusterConfigurationHandler(w http.Response
 		}
 
 		// Preserve internal data (rotation count, timestamps, etc.)
+		// Save AllowedUpdateRoles from the request before overwriting with existing Data.
+		requestedAllowedUpdateRoles := newConfig.Data.AllowedUpdateRoles
 		newConfig.Data = existing.Data
+		if requestedAllowedUpdateRoles != nil {
+			newConfig.Data.AllowedUpdateRoles = requestedAllowedUpdateRoles
+		}
 
 		// Handle MaxPlacements: -1 means "clear the limit" (same as the update endpoint)
 		if newConfig.MaxPlacements != nil && *newConfig.MaxPlacements < 0 {
@@ -655,19 +673,19 @@ func (h *BaseHandler) OffboardOcpSharedClusterConfigurationHandler(w http.Respon
 		return
 	}
 
-	// Ownership check: shared-cluster-manager can only offboard clusters they created
+	// Authorization check: caller must be allowed to modify this cluster.
+	// Owner is always allowed; otherwise the caller's role must appear in
+	// Data.AllowedUpdateRoles (default: ["admin"]).
 	_, claims, _ := jwtauth.FromContext(r.Context())
 	role, _ := claims["role"].(string)
-	if role == "shared-cluster-manager" {
-		callerName, _ := claims["name"].(string)
-		if cluster.CreatedBy != callerName {
-			w.WriteHeader(http.StatusForbidden)
-			render.Render(w, r, &v1.Error{
-				HTTPStatusCode: http.StatusForbidden,
-				Message:        "You can only offboard clusters you created",
-			})
-			return
-		}
+	callerName, _ := claims["name"].(string)
+	if !cluster.CanModify(role, callerName) {
+		w.WriteHeader(http.StatusForbidden)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusForbidden,
+			Message:        "You are not allowed to offboard this cluster",
+		})
+		return
 	}
 
 	report := v1.OffboardReport{
