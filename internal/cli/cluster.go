@@ -43,17 +43,18 @@ var clusterListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tVALID\tAPI_URL\tCREATED_BY")
+		fmt.Fprintln(w, "NAME\tVALID\tAPI_URL\tCREATED_BY\tPLACEMENTS")
 		for _, c := range clusters {
 			valid := "NO"
 			if v, ok := c["valid"].(bool); ok && v {
 				valid = "yes"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 				jsonStr(c["name"]),
 				valid,
 				jsonStr(c["api_url"]),
 				jsonStr(c["created_by"]),
+				formatPlacements(c, c["max_placements"]),
 			)
 		}
 		w.Flush()
@@ -457,6 +458,22 @@ func suppressAnnotations(clusters []map[string]any) {
 		delete(c, "kubeconfig")
 		delete(c, "token")
 	}
+}
+
+// formatPlacements formats "current / max" with 4-digit padding.
+// current_count lives under data.current_count in the JSON response.
+// If max is nil/absent, shows "current /    ?".
+func formatPlacements(cluster map[string]any, max any) string {
+	cur := 0
+	if data, ok := cluster["data"].(map[string]any); ok {
+		if c, ok := data["current_placement_count"].(float64); ok {
+			cur = int(c)
+		}
+	}
+	if m, ok := max.(float64); ok {
+		return fmt.Sprintf("%4d / %4d", cur, int(m))
+	}
+	return fmt.Sprintf("%4d /    ?", cur)
 }
 
 // formatAnnotations formats a map as "k=v, k=v".

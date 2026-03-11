@@ -154,6 +154,7 @@ type ClusterData struct {
 	DeployerAdminSATokenUpdatedAt     time.Time `json:"deployer_admin_sa_token_updated_at,omitempty"`
 	DeployerAdminSATokenRotationCount int       `json:"deployer_admin_sa_token_rotation_count,omitempty"`
 	AllowedUpdateRoles                []string  `json:"allowed_update_roles,omitempty"`
+	CurrentPlacementCount             *int      `json:"current_placement_count,omitempty"`
 }
 
 // CanModify checks whether the given role and caller name are allowed to modify
@@ -214,7 +215,8 @@ func (p *OcpSharedClusterConfiguration) SharedView() OcpSharedClusterConfigurati
 		MaxPlacements:             p.MaxPlacements,
 		CreatedBy:                 p.CreatedBy,
 		Data: ClusterData{
-			AllowedUpdateRoles: p.Data.AllowedUpdateRoles,
+			AllowedUpdateRoles:    p.Data.AllowedUpdateRoles,
+			CurrentPlacementCount: p.Data.CurrentPlacementCount,
 		},
 	}
 }
@@ -756,11 +758,11 @@ type OffboardDetails struct {
 
 // OffboardReport is the result of an offboard operation, stored in the job body.
 type OffboardReport struct {
-	ClusterDisabled                   bool                    `json:"cluster_disabled"`
-	PlacementsDeleted                 []OffboardPlacementInfo `json:"placements_deleted"`
-	PlacementsRequiringManualCleanup  []OffboardPlacementInfo `json:"placements_requiring_manual_cleanup"`
-	ClusterDeleted                    bool                    `json:"cluster_deleted"`
-	Message                           string                  `json:"message"`
+	ClusterDisabled                  bool                    `json:"cluster_disabled"`
+	PlacementsDeleted                []OffboardPlacementInfo `json:"placements_deleted"`
+	PlacementsRequiringManualCleanup []OffboardPlacementInfo `json:"placements_requiring_manual_cleanup"`
+	ClusterDeleted                   bool                    `json:"cluster_deleted"`
+	Message                          string                  `json:"message"`
 }
 
 // OffboardPlacementInfo describes a placement found during cluster offboarding.

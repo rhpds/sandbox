@@ -206,6 +206,16 @@ func (h *BaseHandler) ListOcpSharedClusterConfigurationsHandler(w http.ResponseW
 		return
 	}
 
+	// Populate current placement counts
+	for i := range ocpSharedClusterConfigurations {
+		count, err := ocpSharedClusterConfigurations[i].GetAccountCount()
+		if err != nil {
+			log.Logger.Error("Error getting account count", "cluster", ocpSharedClusterConfigurations[i].Name, "error", err)
+			continue
+		}
+		ocpSharedClusterConfigurations[i].Data.CurrentPlacementCount = &count
+	}
+
 	_, claims, _ := jwtauth.FromContext(r.Context())
 	role, _ := claims["role"].(string)
 	if role == "shared-cluster-manager" {

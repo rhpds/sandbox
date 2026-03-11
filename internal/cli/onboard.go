@@ -35,6 +35,7 @@ var (
 	onboardSkipValidation bool
 	onboardKubeconfig     string
 	onboardKubecontext    string
+	onboardMaxPlacements  int
 )
 
 var clusterOnboardCmd = &cobra.Command{
@@ -77,6 +78,7 @@ func init() {
 	clusterOnboardCmd.Flags().BoolVar(&onboardSkipValidation, "skip-validation", false, "Skip health check after onboarding")
 	clusterOnboardCmd.Flags().StringVar(&onboardKubeconfig, "kubeconfig", "", "Path to kubeconfig file")
 	clusterOnboardCmd.Flags().StringVar(&onboardKubecontext, "context", "", "Kubeconfig context to use")
+	clusterOnboardCmd.Flags().IntVar(&onboardMaxPlacements, "max-placements", 0, "Maximum number of placements (0 = no limit)")
 
 	clusterCmd.AddCommand(clusterOnboardCmd)
 }
@@ -420,6 +422,9 @@ func buildOnboardPayload(name, apiURL, ingressDomain, token string) (map[string]
 	payload["token"] = token
 	if onboardConfigFile == "" {
 		payload["annotations"] = annotations
+	}
+	if onboardMaxPlacements > 0 {
+		payload["max_placements"] = onboardMaxPlacements
 	}
 
 	return payload, nil

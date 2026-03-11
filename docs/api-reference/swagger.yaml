@@ -4339,6 +4339,12 @@ components:
               type: integer
               description: Number of times the deployer-admin SA token has been rotated.
               example: 42
+            current_placement_count:
+              type: integer
+              description: >-
+                Current number of OcpSandbox resources placed on this cluster.
+                Read-only, populated by the API on list/get responses.
+              example: 12
         created_by:
           type: string
           description: |-
