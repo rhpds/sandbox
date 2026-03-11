@@ -2,11 +2,17 @@ package models
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/rhpds/sandbox/internal/log"
 )
+
+// isUndefinedTable checks if a PostgreSQL error is "relation does not exist" (42P01).
+func isUndefinedTable(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "42P01")
+}
 
 type AuditEntry struct {
 	ID         int64     `json:"id"`
@@ -71,10 +77,16 @@ func PurgeAuditLog(dbpool *pgxpool.Pool, retention time.Duration) (int64, error)
 // old audit log entries. It runs once per day.
 func StartAuditLogPurge(ctx context.Context, dbpool *pgxpool.Pool, retention time.Duration) {
 	go func() {
-		// Run initial purge on startup
+		// Run initial purge on startup.
+		// The audit_log table may not exist if migrations haven't run yet;
+		// treat that as a non-fatal warning rather than an error.
 		deleted, err := PurgeAuditLog(dbpool, retention)
 		if err != nil {
-			log.Logger.Error("AuditLogPurge: initial purge failed", "error", err)
+			if isUndefinedTable(err) {
+				log.Logger.Warn("AuditLogPurge: audit_log table does not exist yet, skipping purge (run migrations)")
+			} else {
+				log.Logger.Error("AuditLogPurge: initial purge failed", "error", err)
+			}
 		} else if deleted > 0 {
 			log.Logger.Info("AuditLogPurge: initial purge", "deleted", deleted, "retention", retention)
 		}
