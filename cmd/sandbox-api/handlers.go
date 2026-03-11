@@ -623,14 +623,14 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 					result.Message = "All matching OCP shared clusters are at their max_placements limit"
 					overallAvailable = false
 				} else {
-					log.Logger.Info("Dry-run check for OCP successful", "clusters", availableClusters)
-					result.Available = true
-					result.Message = "Matching OCP shared clusters found"
-					result.SchedulableClusterCount = len(availableClusters)
 					clusterNames := make([]string, len(availableClusters))
 					for i, c := range availableClusters {
 						clusterNames[i] = c.Name
 					}
+					log.Logger.Info("Dry-run check for OCP successful", "clusters", clusterNames)
+					result.Available = true
+					result.Message = "Matching OCP shared clusters found"
+					result.SchedulableClusterCount = len(availableClusters)
 					result.SchedulableClusterNames = clusterNames
 					candidateClusters = availableClusters
 
