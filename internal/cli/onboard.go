@@ -212,7 +212,16 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	fmt.Fprintln(out, "==> Cluster registered successfully.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "AgnosticV cloud_selector:")
-	fmt.Fprintf(out, "  name: %s\n", clusterName)
+	// Use 'lab' or 'demo' key if present in annotations, otherwise fall back to 'name'
+	annotations, _ := payload["annotations"].(map[string]any)
+	nameKey := "name"
+	for _, key := range []string{"lab", "demo"} {
+		if _, ok := annotations[key]; ok {
+			nameKey = key
+			break
+		}
+	}
+	fmt.Fprintf(out, "  %s: %s\n", nameKey, jsonStr(annotations[nameKey]))
 	fmt.Fprintf(out, "  purpose: %s\n", onboardPurpose)
 
 	return nil
