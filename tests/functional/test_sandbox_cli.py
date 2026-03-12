@@ -20,6 +20,7 @@ Usage:
     python test_sandbox_cli.py
 """
 
+import functools
 import json
 import logging
 import os
@@ -540,8 +541,8 @@ def main():
 
     # Phase 0: Version command (no login needed)
     tests_phase0 = [
-        ("version", lambda: test_version()),
-        ("version_json", lambda: test_version_json()),
+        ("version", test_version),
+        ("version_json", test_version_json),
     ]
 
     for test_name, test_fn in tests_phase0:
@@ -555,10 +556,10 @@ def main():
 
     tests_phase1 = [
         # --- Admin login and basic commands ---
-        ("admin_login", lambda: test_login(admin_home)),
-        ("admin_login_persists_config", lambda: test_login_persists_config(admin_home)),
-        ("admin_status", lambda: test_status(admin_home)),
-        ("admin_jwt_list", lambda: test_jwt_list(admin_home)),
+        ("admin_login", functools.partial(test_login, admin_home)),
+        ("admin_login_persists_config", functools.partial(test_login_persists_config, admin_home)),
+        ("admin_status", functools.partial(test_status, admin_home)),
+        ("admin_jwt_list", functools.partial(test_jwt_list, admin_home)),
     ]
 
     for test_name, test_fn in tests_phase1:
@@ -671,8 +672,8 @@ def main():
             admin_access_token = get_access_token(
                 SANDBOX_API_URL, SANDBOX_ADMIN_LOGIN_TOKEN
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to re-fetch admin token for cleanup: {e}")
 
         for name in [MOCK_CLUSTER_CLI_ADMIN, MOCK_CLUSTER_CLI_MANAGER]:
             api_delete_cluster(name, admin_access_token)
