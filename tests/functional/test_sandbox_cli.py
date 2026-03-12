@@ -324,8 +324,8 @@ def test_cluster_health(home_dir, cluster_name):
         "cluster", "health", cluster_name, home_dir=home_dir,
     )
     assert rc == 0, f"cluster health failed (rc={rc}): {stderr}"
-    assert "Name:" in stdout, f"Expected 'Name:' in health output: {stdout}"
-    assert "Valid:" in stdout, f"Expected 'Valid:' in health output: {stdout}"
+    assert "OK:" in stdout and cluster_name in stdout, \
+        f"Expected 'OK:' and cluster name in health output: {stdout}"
     logger.info(f"PASSED: cluster health ({cluster_name})")
 
 
