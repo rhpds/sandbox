@@ -16,6 +16,7 @@ import (
 
 	"github.com/rhpds/sandbox/internal/api/v1"
 	"github.com/rhpds/sandbox/internal/log"
+	"github.com/rhpds/sandbox/internal/models"
 )
 
 // AllowContentType enforces a whitelist of request Content-Types otherwise responds
@@ -210,18 +211,71 @@ func (h *BaseHandler) AuthenticatorLogin(next http.Handler) http.Handler {
 			return
 		}
 
+		// Record login token usage (best-effort, don't block the request)
+		if err := models.RecordTokenUsage(h.dbpool, id); err != nil {
+			log.Logger.Error("Failed to record token usage", "error", err, "token_id", id)
+		}
+
 		// Token is authenticated, pass it through
 		next.ServeHTTP(w, r)
 	})
 }
 
-// AuthenticatorAccess is a default authentication middleware to enforce access from the
-// Verifier middleware request context values. The Authenticator sends a 401 Unauthorized
-// response for any unverified tokens and passes the good ones through. It's just fine
+// AuthenticatorAdminOrManager is an authentication middleware that allows
+// both "admin" and "shared-cluster-manager" roles through.
+func AuthenticatorAdminOrManager(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token, claims, err := jwtauth.FromContext(r.Context())
+
+		if err != nil {
+			log.Logger.Info("Error authenticating request", "error", err, "token", token, "claims", claims)
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        err.Error(),
+			})
+			return
+		}
+
+		if token == nil || jwt.Validate(token) != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        http.StatusText(http.StatusUnauthorized),
+			})
+			return
+		}
+
+		if claims["kind"] != "access" {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        "Wrong token kind, access token required",
+			})
+			return
+		}
+
+		role, _ := claims["role"].(string)
+		if role != "admin" && role != "shared-cluster-manager" {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        http.StatusText(http.StatusUnauthorized),
+			})
+			return
+		}
+
+		// Token is authenticated, pass it through
+		next.ServeHTTP(w, r)
+	})
+}
+
+// AuthenticatorAccess enforces that the caller has an access token with role "app" or "admin".
+// This is used for placement and account operations that should not be accessible
+// to shared-cluster-manager tokens.
 func AuthenticatorAccess(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		token, claims, err := jwtauth.FromContext(ctx)
+		token, claims, err := jwtauth.FromContext(r.Context())
 
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -246,6 +300,65 @@ func AuthenticatorAccess(next http.Handler) http.Handler {
 			render.Render(w, r, &v1.Error{
 				HTTPStatusCode: http.StatusUnauthorized,
 				Message:        "Wrong token kind, access token required",
+			})
+			return
+		}
+
+		role, _ := claims["role"].(string)
+		if role != "app" && role != "admin" {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        http.StatusText(http.StatusUnauthorized),
+			})
+			return
+		}
+
+		// Token is authenticated, pass it through
+		next.ServeHTTP(w, r)
+	})
+}
+
+// AuthenticatorAnyRole enforces that the caller has a valid access token
+// with any recognized role (app, admin, shared-cluster-manager).
+// Used for endpoints accessible to all authenticated users.
+func AuthenticatorAnyRole(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token, claims, err := jwtauth.FromContext(r.Context())
+
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        err.Error(),
+			})
+			return
+		}
+
+		if token == nil || jwt.Validate(token) != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        http.StatusText(http.StatusUnauthorized),
+			})
+			return
+		}
+
+		if claims["kind"] != "access" {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        "Wrong token kind, access token required",
+			})
+			return
+		}
+
+		role, _ := claims["role"].(string)
+		if role != "app" && role != "admin" && role != "shared-cluster-manager" {
+			w.WriteHeader(http.StatusUnauthorized)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusUnauthorized,
+				Message:        http.StatusText(http.StatusUnauthorized),
 			})
 			return
 		}
@@ -302,4 +415,42 @@ func ShortRequestID(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 	return http.HandlerFunc(fn)
+}
+
+// statusRecorder wraps http.ResponseWriter to capture the status code.
+type statusRecorder struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (sr *statusRecorder) WriteHeader(code int) {
+	sr.statusCode = code
+	sr.ResponseWriter.WriteHeader(code)
+}
+
+// AuditLog is a middleware that records admin/manager actions to the audit_log table.
+func (h *BaseHandler) AuditLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := &statusRecorder{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(rec, r)
+
+		// Extract actor info from JWT claims (already verified by authenticator)
+		_, claims, _ := jwtauth.FromContext(r.Context())
+		actor, _ := claims["name"].(string)
+		role, _ := claims["role"].(string)
+		requestID := GetReqID(r.Context())
+
+		entry := models.AuditEntry{
+			Actor:      actor,
+			Role:       role,
+			Method:     r.Method,
+			Path:       r.URL.Path,
+			StatusCode: rec.statusCode,
+			RequestID:  requestID,
+		}
+
+		if err := models.InsertAuditEntry(h.dbpool, entry); err != nil {
+			log.Logger.Error("Failed to write audit log", "error", err, "actor", actor, "path", r.URL.Path)
+		}
+	})
 }

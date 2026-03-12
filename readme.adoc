@@ -1,37 +1,158 @@
-= Sandbox =
+= Sandbox
 :toc:
 
-This repository is a consolidated codebase for everything related to sandboxes for the Red Hat Demo Platform. It contains:
+Go REST API that manages multi-cloud sandbox provisioning for the Red Hat Demo Platform (RHDP). It allocates cloud resources (AWS accounts, OpenShift namespaces, DNS zones, IBM resource groups) to requesters grouped into *placements*.
 
-* sandbox-api: The Backend API for all things sandbox.
-* sandbox-issue-jwt: CLI to generate a new signed JWT login token
-* sandbox-list:  Interact with the AWS Sandbox DB in a read-only way.
-* sandbox-metrics: Prometheus Endpoint exposing metrics.
-* sandbox-replicate: AWS Lambda function to replicate changes from DynamoDB to a Postgres database.
-* sandbox-rotate-vault: Program to reencrypt the IAM keys using a new secret key (ansible-vault, AES256)
+This repository contains:
 
-== Build ==
+* *sandbox-api*: The backend API for all things sandbox
+* *sandbox-issue-jwt*: CLI to generate a new signed JWT login token
+* *sandbox-list*: Interact with the AWS Sandbox DB in a read-only way
+* *sandbox-metrics*: Prometheus endpoint exposing metrics
+* *sandbox-rotate-vault*: Program to re-encrypt IAM keys using a new secret key (ansible-vault, AES256)
 
-.Build all binaries
+== Quick Start
 
-You will need to have 'go' setup on your machine. Please use version 1.22 onwards
+=== Build
+
+You will need Go 1.22 or later.
+
 ----
-make
-----
-
-.Build separately
-----
-make sandbox-api
-make sandbox-list
-make sandbox-metrics
-make sandbox-replicate
-make sandbox-issue-jwt
-make sandbox-rotate-vault
+make build          # All binaries
+make sandbox-api    # API server only
 ----
 
-== sandbox-api ==
+=== Local Development
 
-=== Installation ===
+----
+make run-local-pg   # Start local PostgreSQL
+make migrate        # Run DB migrations
+make tokens         # Generate dev JWT tokens
+make run-api        # Start API server
+----
+
+=== Run Tests
+
+----
+make test           # Unit tests + OpenAPI linting
+----
+
+== RBAC Roles
+
+[cols="1,3"]
+|===
+| Role | Access
+
+| `admin` | Full access to all endpoints
+| `app` | Placement and account operations (create, get, delete, lifecycle)
+| `shared-cluster-manager` | Manage OCP clusters (own clusters with full details, others with shared view)
+|===
+
+All roles can access: `GET /version`, `GET /health`, `POST /placements/dry-run`, `GET /requests/{id}/status`.
+
+The `app` role can additionally: create/get/delete placements, manage accounts, read reservations.
+
+The `shared-cluster-manager` role can:
+
+* *Create/update* clusters via POST/PUT
+* *List* all clusters (full details for own clusters, shared view for others)
+* *Get* any cluster (full details for own, shared view for others)
+* *Offboard* clusters it created
+
+The *shared view* includes: name, api_url, ingress_domain, annotations, valid, quotas, limits, max_placements, created_by, timestamps. It excludes: credentials (token, kubeconfig), additional_vars, deployer SA token config, internal data.
+
+The `shared-cluster-manager` cannot access: placement CRUD, account operations, admin-only endpoints (enable/disable, health, delete, JWT management, DNS, IBM, reservations).
+
+== API Endpoints
+
+=== Public
+
+* `GET /ping` — Heartbeat
+
+=== Authentication
+
+* `GET /api/v1/login` — Exchange login token for access token
+* `POST /api/v1/admin/jwt` — Issue login JWT (admin)
+* `GET /api/v1/admin/jwt` — List tokens (admin)
+* `GET /api/v1/admin/jwt/{id}/activity` — Token audit log (admin)
+* `PUT /api/v1/admin/jwt/{id}/invalidate` — Revoke token (admin)
+
+=== Placements
+
+* `POST /api/v1/placements` — Create placement (202 async)
+* `POST /api/v1/placements/dry-run` — Check availability
+* `GET /api/v1/placements` — List all (admin)
+* `GET /api/v1/placements/{uuid}` — Get status + resources
+* `DELETE /api/v1/placements/{uuid}` — Delete (cascading cleanup)
+
+=== OCP Shared Clusters
+
+* `GET /api/v1/ocp-shared-cluster-configurations` — List all (admin: full, manager: own full + others shared view)
+* `GET /api/v1/ocp-shared-cluster-configurations/{name}` — Get config (admin: full, manager: own full + others shared view)
+* `POST /api/v1/ocp-shared-cluster-configurations` — Create (admin, manager)
+* `PUT /api/v1/ocp-shared-cluster-configurations/{name}` — Upsert (admin, manager)
+* `DELETE /api/v1/ocp-shared-cluster-configurations/{name}` — Delete (admin)
+* `DELETE /api/v1/ocp-shared-cluster-configurations/{name}/offboard` — Offboard (admin, manager for own)
+* `GET /api/v1/ocp-shared-cluster-configurations/{name}/offboard` — Offboard status (admin, manager)
+* `PUT /api/v1/ocp-shared-cluster-configurations/{name}/enable` — Enable (admin)
+* `PUT /api/v1/ocp-shared-cluster-configurations/{name}/disable` — Disable (admin)
+* `GET /api/v1/ocp-shared-cluster-configurations/{name}/health` — Health check (admin)
+
+=== DNS & IBM Resource Groups (admin)
+
+* CRUD on `/api/v1/dns-account-configurations`
+* CRUD on `/api/v1/ibm-resource-group-configurations`
+
+=== Other
+
+* `GET /api/v1/version` — Server version, build commit, DB migration
+* `GET /api/v1/health` — Health check
+* `POST /api/v1/graphql` — GraphQL (admin)
+
+== Project Structure
+
+----
+cmd/
+  sandbox-api/          HTTP server (handlers, middleware, GraphQL)
+  sandbox-issue-jwt/    JWT token generator
+  sandbox-list/         Read-only account listing
+  sandbox-metrics/      Prometheus exporter
+  sandbox-replicate/    DynamoDB -> PostgreSQL replication (Lambda)
+  sandbox-rotate-vault/ Credential re-encryption
+
+internal/
+  api/v1/               Request/response types
+  models/               Domain models, DB queries, cloud integrations
+  config/               App config
+  dynamodb/             AWS DynamoDB provider
+  log/                  Structured logging (slog)
+
+db/migrations/          SQL migrations (golang-migrate)
+tests/                  Hurl integration tests + Python functional tests
+tools/                  Shell scripts for admin tasks
+docs/api-reference/     OpenAPI 3.0 spec (swagger.yaml)
+deploy/                 Helm charts
+----
+
+== Environment Variables
+
+[cols="1,2"]
+|===
+| Variable | Description
+
+| `DATABASE_URL` | PostgreSQL connection string
+| `JWT_AUTH_SECRET` | HMAC-SHA256 signing key
+| `VAULT_SECRET` | Credential encryption key
+| `ASSUMEROLE_AWS_ACCESS_KEY_ID` | IAM user for STS AssumeRole
+| `ASSUMEROLE_AWS_SECRET_ACCESS_KEY` | IAM secret
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | DynamoDB access
+| `PORT` | HTTP listen port (default: 8080)
+| `WORKERS` | Async job workers (default: 5)
+| `AUDIT_LOG_RETENTION` | Audit log retention period (default: `1y`)
+| `DEBUG` | Enable debug logging
+|===
+
+== sandbox-api Installation
 
 Create a secret file and run helm.
 
@@ -48,7 +169,7 @@ sandbox_api_secrets:
   # ansible-vault (AES256) key to encrypt the secret in the DB
   vault:
     vault_secret: ...
-  # AWS usser that can assume role into the accounts
+  # AWS user that can assume role into the accounts
   aws:
     assume_aws_access_key_id: ...
     assume_aws_secret_access_key: ...
@@ -64,9 +185,10 @@ helm install  -f secrets.yaml sandbox-api deploy/helm-api/
 helm upgrade  -f secrets.yaml sandbox-api deploy/helm-api/
 ----
 
-To initialize or update the postgresql schema, use the following:
+=== DB Migration
 
-.Run the DB migration
+To initialize or update the PostgreSQL schema:
+
 ----
 oc run admin-$$  \
 --image=quay.io/rhpds/sandbox-admin:latest -i -t \
@@ -74,26 +196,20 @@ oc run admin-$$  \
 
 DATABASE_URL=postgres://postgres:PASSWORD@RDS_ADDRESS.us-west-2.rds.amazonaws.com:5432/sandbox_api_dev?sslmode=require
 
-# git clone https://github.com/rhpds/sandbox.git
-# cd sandbox
-# migrate github://rhpds/sandbox/db/migrations#VERSION -database $DATABASE_URL up
-
-# For example
 migrate \
   -source github://rhpds/sandbox/db/migrations#main \
   -database $DATABASE_URL up
 ----
 <1> Use the rhpds/sandbox-admin image which contains all the necessary binaries and tools.
 
+=== Bootstrap an Admin Login Token
 
-.Bootstrap an admin login token
 ----
 oc run admin-$$ --image=quay.io/rhpds/sandbox-admin:latest -i -t --restart=Never --rm -- /bin/bash
 
 export DATABASE_URL=postgres://postgres:PASSWORD@RDS_ADDRESS.us-west-2.rds.amazonaws.com:5432/sandbox_api_dev?sslmode=require
 
 ./sandbox-issue-jwt
-[root@admin sandbox]# ./sandbox-issue-jwt
 JWT Auth secret: Enter Claims in the JSON format:
 for example: {"kind": "login", "name": "gucore", "role": "admin"}
 {"kind": "login", "name": "gucore", "role": "admin"}
@@ -103,22 +219,18 @@ token:
 
 .Create an access token
 ----
-oc run admin-$$ --image=quay.io/rhpds/sandbox-admin:latest -i -t --restart=Never --rm -- /bin/bash
-
 logintoken=[TOKEN]
 
 curl -H "Authorization: Bearer ${logintoken}" sandbox-api:8080/api/v1/login
-
-[ACCESS TOKEN]
 
 token=[ACCESS TOKEN]
 # check access
 curl -H "Authorization: Bearer ${token}" sandbox-api:8080/api/v1/health
 ----
 
-=== Setup local development environment ===
+=== Local Development Environment
 
-All filed used for the local development environment are prefixed by `.dev` and are ignored by Git, see link:.gitignore[`.gitignore`]
+All files used for local development are prefixed by `.dev` and are ignored by Git, see link:.gitignore[`.gitignore`].
 
 [source,shell]
 ----
@@ -139,18 +251,19 @@ make migrate  # Run the DB migrations to setup the db schema
 make tokens # issue some JWT token for access
 make run-api # <1>
 air # <2>
-
 ----
 <1> When iterating, you will be stopping and relaunching this step
 <2> You can use link:https://github.com/cosmtrek/air[cosmtrek/air] instead. That will watch local files and rebuild + launch the API automatically if any changes are made.
 
+== OCP Shared Cluster Onboarding
 
-== sandbox-replicate ==
+See link:tools/onboard-ocp-shared-cluster.md[OCP Shared Cluster Onboarding / Offboarding] for full documentation on adding and removing clusters from the fleet.
 
-The role of the lambda function is to replicate any changes made to the dynamoDB table into a postgresql database.
+== sandbox-replicate
 
+The role of the lambda function is to replicate any changes made to the DynamoDB table into a PostgreSQL database.
 
-=== Push lambda ===
+=== Push lambda
 
 ----
 export AWS_PROFILE=infra-dev
@@ -161,20 +274,19 @@ That will:
 
 . Create a role, a policy and a lambda function
 . Attach the policy to the role and the role to the lambda function
-. Push the updated 'build/sandbox-replicate' binary to the lambda function
+. Push the updated `build/sandbox-replicate` binary to the lambda function
 
+== sandbox-metrics
 
-== sandbox-metrics ==
+=== Deploy Metrics Prometheus
 
-=== Deploy Metrics Prometheus ===
-
-. clone this repository
+. Clone this repository
 +
 ----
 git clone --depth 1 https://github.com/rhpds/sandbox sandbox
 ----
-. If it doesn't exist yet, create an IAM user in AWS to read-only access to dynamoDB
-. Create the secret file containing the key for the IAM user that has read-only access to DynamoDB
+. If it doesn't exist yet, create an IAM user in AWS with read-only access to DynamoDB
+. Create the secret file containing the key for the IAM user
 +
 [source,yaml]
 .`aws_sandbox_readonly.yaml`
@@ -189,92 +301,11 @@ aws_sandbox_metrics_secrets:
 ----
 helm install  sandbox-metrics sandbox/deploy/helm-metrics/ -f aws_sandbox_readonly.yaml
 ----
-+
-Output should look like:
-+
-----
-NAME: sandbox-metrics
-LAST DEPLOYED: Thu Jun 17 09:30:04 2021
-NAMESPACE: user-gucore-redhat-com
-STATUS: deployed
-REVISION: 1
-TEST SUITE: None
-----
 
-== Create AWS sandboxes ==
+== Create AWS Sandboxes
 
 Use link:playbooks[ansible playbooks].
 
-== Conan - Sandbox Cleanup Daemon ==
+== Conan - Sandbox Cleanup Daemon
 
 See link:conan[conan].
-
-
-== Add a new OCP shared cluster for OcpSandbox
-
-In order for the sandbox API to be able to talk to the OCP shared cluster, you need to create a new OcpSharedClusterConfiguration.
-
-That configuration holds the information needed to authenticate to the cluster and the additional variables that will be passed to the deployer when a sandbox is scheduled on that cluster.
-
-There is 2 ways to authenticate to the cluster:
-. Using a service Bearer Token
-. Using a kubeconfig file
-
-Here we'll be describing the first method.
-
-On the cluster, create an admin service account
-
-----
-oc create serviceaccount sandbox-api-admin -n kube-system
-oc create clusterrolebinding sandbox-api-admin -n kube-system --clusterrole=cluster-admin --serviceaccount=kube-system:sandbox-api-admin
-oc create token sandbox-api-admin -n kube-system --duration=4294967296s
-----
-
-
-Then create a JSON file describing the OcpSharedClusterConfiguration. For example:
-
-
-[source,text]
-.`clustername.json`
-----
-{
-    "name": "clustername", <1>
-    "api_url": "https://api...:6443", <2>
-    "ingress_domain": "apps...",
-    "additional_vars": {
-        ... <3>
-    },
-    "annotations":
-    {
-        "virt":"no",
-        "cloud":"aws",
-        "purpose":"dev"
-    }, <4>
-    "token":"..."  <5>
-}
-----
-<1> The name of the cluster as it will be saved in the database
-<2> The API URL of the cluster
-<3> Additional variables that will be passed to the deployer if that cluster is elected when scheduling a sandbox
-<4> Annotations are used to filter the clusters when ordering. For example, if you want to deploy a sandbox on a cluster that is not in production, you can use the purpose annotation to filter out the production clusters. That is done in agnosticV using the `__meta__.sandboxes[].cloud_selector` key
-<5> The token is the token created in the previous step. It is used to authenticate the Sandbox API to the cluster.
-
-Then use hurl and `./tools/ocp_shared_cluster_configuration_create.hurl`
-
-----
-hurl --variable login_token_admin=$admintoken \
---file-root . \
---variable host=SANDBOX_API_ADRESS \  <1>
---variable ocp_cluster_def=clustername.json \
-./tools/ocp_shared_cluster_configuration_create.hurl
-
-
-# or with curl directly
-accesstoken=$(curl -s --header "Authorization: Bearer $admintoken"     --header 'Content-Type: application/json'     'https://SANDBOX_API_ADDRESS/api/v1/login'|jq -r .access_token)
-
-curl --header "Authorization: Bearer $accesstoken" \
-  --header 'Content-Type: application/json' \
-  --data-binary '@./clustername.json' \
-  'https://SANDBOX_API_ADDRESS/api/v1/ocp-shared-cluster-configurations'
-----
-<1> Replace SANDBOX_API_ADDRESS with the address of the Sandbox API

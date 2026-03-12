@@ -56,6 +56,8 @@ func main() {
 	if term.IsTerminal(int(syscall.Stdin)) {
 		fmt.Println("Enter Claims in the JSON format:")
 		fmt.Println(`for example: {"kind": "login", "name": "gucore", "role": "admin"}`)
+		fmt.Println(`roles: "admin", "shared-cluster-manager"`)
+		fmt.Println(`shared-cluster-manager can only onboard/offboard shared clusters`)
 		fmt.Println(`Finish with [Ctrl+D]`)
 	}
 	claims, err := io.ReadAll(os.Stdin)

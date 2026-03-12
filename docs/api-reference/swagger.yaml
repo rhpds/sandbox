@@ -16,6 +16,8 @@ tags:
     description: Anything related to Accounts.
   - name: admin
     description: HTTP routes protected and accessible only by admins.
+  - name: shared-cluster-manager
+    description: Routes accessible by shared-cluster-manager role (own clusters only).
   - name: insight
     description: Metrics and health of the API
 paths:
@@ -1569,6 +1571,7 @@ paths:
                       enum:
                         - admin
                         - app
+                        - shared-cluster-manager
                       example: app
             example:
               claims:
@@ -1773,9 +1776,14 @@ paths:
                 $ref: "#/components/schemas/Error"
     get:
       summary: Get all OcpSharedClusterConfigurations
+      description: |-
+        Admin gets full details for all clusters. Shared-cluster-manager
+        gets full details for own clusters and a shared view (no credentials
+        or internal details) for clusters created by others.
       operationId: getOcpSharedClusterConfigurations
       tags:
         - admin
+        - shared-cluster-manager
       responses:
         '200':
           description: The list of OcpSharedClusterConfigurations
@@ -1792,9 +1800,14 @@ paths:
   /ocp-shared-cluster-configurations/{name}:
     get:
       summary: Get information about an OcpSharedClusterConfiguration
+      description: |-
+        Admin gets full details. Shared-cluster-manager gets full details
+        for own clusters and a shared view (no credentials or internal
+        details) for clusters created by others.
       operationId: getOcpSharedClusterConfiguration
       tags:
         - admin
+        - shared-cluster-manager
       parameters:
         - name: name
           in: path
@@ -1805,7 +1818,7 @@ paths:
           example: ocp-cluster-1
       responses:
         '200':
-          description: The OcpSharedClusterConfiguration
+          description: The OcpSharedClusterConfiguration (full or shared view depending on ownership)
           content:
             application/json:
               schema:

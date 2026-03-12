@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/jwtauth/v5"
 	"github.com/go-chi/render"
 	"github.com/jackc/pgx/v4"
 	"github.com/rhpds/sandbox/internal/api/v1"
@@ -29,6 +30,12 @@ func (h *BaseHandler) CreateOcpSharedClusterConfigurationHandler(w http.Response
 
 	ocpSharedClusterConfiguration.DbPool = h.OcpSandboxProvider.DbPool
 	ocpSharedClusterConfiguration.VaultSecret = h.OcpSandboxProvider.VaultSecret
+
+	// Record who created this cluster
+	_, claims, _ := jwtauth.FromContext(r.Context())
+	if name, ok := claims["name"].(string); ok {
+		ocpSharedClusterConfiguration.CreatedBy = name
+	}
 
 	if err := ocpSharedClusterConfiguration.Save(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -183,6 +190,83 @@ func (h *BaseHandler) GetOcpSharedClusterConfigurationsHandler(w http.ResponseWr
 
 	w.WriteHeader(http.StatusOK)
 	render.Render(w, r, &ocpSharedClusterConfigurations)
+}
+
+// ListOcpSharedClusterConfigurationsHandler returns all OCP shared cluster configurations.
+// Admin gets full details. Manager gets full details for own clusters, shared view for others.
+func (h *BaseHandler) ListOcpSharedClusterConfigurationsHandler(w http.ResponseWriter, r *http.Request) {
+	ocpSharedClusterConfigurations, err := h.OcpSandboxProvider.GetOcpSharedClusterConfigurations()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to get OCP shared cluster configurations",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	_, claims, _ := jwtauth.FromContext(r.Context())
+	role, _ := claims["role"].(string)
+	if role == "shared-cluster-manager" {
+		callerName, _ := claims["name"].(string)
+		var result models.OcpSharedClusterConfigurations
+		for i := range ocpSharedClusterConfigurations {
+			if ocpSharedClusterConfigurations[i].CreatedBy == callerName {
+				result = append(result, ocpSharedClusterConfigurations[i])
+			} else {
+				result = append(result, ocpSharedClusterConfigurations[i].SharedView())
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		render.Render(w, r, &result)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &ocpSharedClusterConfigurations)
+}
+
+// GetOwnOcpSharedClusterConfigurationHandler returns a single OCP shared cluster configuration.
+// Admin gets full details. Manager gets full details for own clusters, shared view for others.
+func (h *BaseHandler) GetOwnOcpSharedClusterConfigurationHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	ocpSharedClusterConfiguration, err := h.OcpSandboxProvider.GetOcpSharedClusterConfigurationByName(name)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "OCP shared cluster configuration not found",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to get OCP shared cluster configuration",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	_, claims, _ := jwtauth.FromContext(r.Context())
+	role, _ := claims["role"].(string)
+	if role == "shared-cluster-manager" {
+		callerName, _ := claims["name"].(string)
+		if ocpSharedClusterConfiguration.CreatedBy != callerName {
+			// Non-owner: return shared view (no credentials or internal details)
+			shared := ocpSharedClusterConfiguration.SharedView()
+			w.WriteHeader(http.StatusOK)
+			render.Render(w, r, &shared)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &ocpSharedClusterConfiguration)
 }
 
 // GetOcpSharedClusterConfigurationHandler returns a single OCP shared cluster configuration
@@ -462,6 +546,12 @@ func (h *BaseHandler) UpsertOcpSharedClusterConfigurationHandler(w http.Response
 	if err == pgx.ErrNoRows {
 		// Create path
 
+		// Record who created this cluster
+		_, claims, _ := jwtauth.FromContext(r.Context())
+		if claimName, ok := claims["name"].(string); ok {
+			newConfig.CreatedBy = claimName
+		}
+
 		// Handle MaxPlacements: -1 means "no limit" (nil)
 		if newConfig.MaxPlacements != nil && *newConfig.MaxPlacements < 0 {
 			newConfig.MaxPlacements = nil
@@ -487,6 +577,19 @@ func (h *BaseHandler) UpsertOcpSharedClusterConfigurationHandler(w http.Response
 			Message: "OCP shared cluster configuration created",
 		})
 	} else {
+		// Authorization check: caller must be allowed to modify this cluster.
+		_, claims, _ := jwtauth.FromContext(r.Context())
+		role, _ := claims["role"].(string)
+		callerName, _ := claims["name"].(string)
+		if !existing.CanModify(role, callerName) {
+			w.WriteHeader(http.StatusForbidden)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusForbidden,
+				Message:        "You are not allowed to update this cluster",
+			})
+			return
+		}
+
 		// Update: preserve the DB ID so Save() calls Update()
 		newConfig.ID = existing.ID
 
@@ -497,7 +600,12 @@ func (h *BaseHandler) UpsertOcpSharedClusterConfigurationHandler(w http.Response
 		}
 
 		// Preserve internal data (rotation count, timestamps, etc.)
+		// Save AllowedUpdateRoles from the request before overwriting with existing Data.
+		requestedAllowedUpdateRoles := newConfig.Data.AllowedUpdateRoles
 		newConfig.Data = existing.Data
+		if requestedAllowedUpdateRoles != nil {
+			newConfig.Data.AllowedUpdateRoles = requestedAllowedUpdateRoles
+		}
 
 		// Handle MaxPlacements: -1 means "clear the limit" (same as the update endpoint)
 		if newConfig.MaxPlacements != nil && *newConfig.MaxPlacements < 0 {
@@ -561,6 +669,21 @@ func (h *BaseHandler) OffboardOcpSharedClusterConfigurationHandler(w http.Respon
 			HTTPStatusCode: http.StatusInternalServerError,
 			Message:        "Failed to get OCP shared cluster configuration",
 			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	// Authorization check: caller must be allowed to modify this cluster.
+	// Owner is always allowed; otherwise the caller's role must appear in
+	// Data.AllowedUpdateRoles (default: ["admin"]).
+	_, claims, _ := jwtauth.FromContext(r.Context())
+	role, _ := claims["role"].(string)
+	callerName, _ := claims["name"].(string)
+	if !cluster.CanModify(role, callerName) {
+		w.WriteHeader(http.StatusForbidden)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusForbidden,
+			Message:        "You are not allowed to offboard this cluster",
 		})
 		return
 	}

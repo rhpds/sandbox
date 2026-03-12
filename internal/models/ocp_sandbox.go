@@ -142,6 +142,10 @@ type OcpSharedClusterConfiguration struct {
 	// Data holds internal plumbing data stored as JSONB.
 	// Adding new fields here does not require a DB migration.
 	Data ClusterData `json:"data,omitempty"`
+
+	// CreatedBy records the JWT "name" claim of the user who created this cluster.
+	// Used for RBAC ownership checks (shared-cluster-manager can only offboard own clusters).
+	CreatedBy string `json:"created_by,omitempty"`
 }
 
 // ClusterData holds internal plumbing data for an OcpSharedClusterConfiguration.
@@ -149,6 +153,27 @@ type OcpSharedClusterConfiguration struct {
 type ClusterData struct {
 	DeployerAdminSATokenUpdatedAt     time.Time `json:"deployer_admin_sa_token_updated_at,omitempty"`
 	DeployerAdminSATokenRotationCount int       `json:"deployer_admin_sa_token_rotation_count,omitempty"`
+	AllowedUpdateRoles                []string  `json:"allowed_update_roles,omitempty"`
+}
+
+// CanModify checks whether the given role and caller name are allowed to modify
+// (update or offboard) this cluster configuration.
+// The owner (matching CreatedBy) is always allowed.
+// Otherwise the role must appear in Data.AllowedUpdateRoles (default: ["admin"]).
+func (p *OcpSharedClusterConfiguration) CanModify(role, callerName string) bool {
+	if p.CreatedBy == callerName {
+		return true
+	}
+	allowed := p.Data.AllowedUpdateRoles
+	if len(allowed) == 0 {
+		allowed = []string{"admin"}
+	}
+	for _, a := range allowed {
+		if a == role {
+			return true
+		}
+	}
+	return false
 }
 
 // WithoutCredentials Method to return the OcpSharedClusterConfiguration without any credentials
@@ -165,6 +190,33 @@ func (p *OcpSharedClusterConfiguration) WithoutCredentials() OcpSharedClusterCon
 	withoutCreds.DeployerAdminSAToken = ""
 
 	return withoutCreds
+}
+
+// SharedView returns a restricted view of the cluster configuration suitable
+// for non-owners. It strips all credentials, internal data, and operational
+// details, keeping only fields useful for cross-owner visibility.
+func (p *OcpSharedClusterConfiguration) SharedView() OcpSharedClusterConfiguration {
+	return OcpSharedClusterConfiguration{
+		Name:                      p.Name,
+		ApiUrl:                    p.ApiUrl,
+		IngressDomain:             p.IngressDomain,
+		CreatedAt:                 p.CreatedAt,
+		UpdatedAt:                 p.UpdatedAt,
+		Annotations:               p.Annotations,
+		Valid:                     p.Valid,
+		MaxMemoryUsagePercentage:  p.MaxMemoryUsagePercentage,
+		MaxCpuUsagePercentage:     p.MaxCpuUsagePercentage,
+		DefaultSandboxQuota:       p.DefaultSandboxQuota,
+		StrictDefaultSandboxQuota: p.StrictDefaultSandboxQuota,
+		QuotaRequired:             p.QuotaRequired,
+		SkipQuota:                 p.SkipQuota,
+		LimitRange:                p.LimitRange,
+		MaxPlacements:             p.MaxPlacements,
+		CreatedBy:                 p.CreatedBy,
+		Data: ClusterData{
+			AllowedUpdateRoles: p.Data.AllowedUpdateRoles,
+		},
+	}
 }
 
 type OcpSharedClusterConfigurations []OcpSharedClusterConfiguration
@@ -275,8 +327,10 @@ func ParseHumanDuration(s string) (time.Duration, error) {
 		return time.Duration(value) * time.Hour, nil
 	case 'd':
 		return time.Duration(value) * 24 * time.Hour, nil
+	case 'y':
+		return time.Duration(value) * 365 * 24 * time.Hour, nil
 	default:
-		return 0, fmt.Errorf("invalid duration unit %q in %q, supported: s, m, h, d", string(unit), s)
+		return 0, fmt.Errorf("invalid duration unit %q in %q, supported: s, m, h, d, y", string(unit), s)
 	}
 }
 
@@ -464,8 +518,9 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 			deployer_admin_sa_token_refresh_interval,
 			deployer_admin_sa_token_target_var,
 			deployer_admin_sa_token,
-			data)
-			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, pgp_sym_encrypt($22::text, $5), $23)
+			data,
+			created_by)
+			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, pgp_sym_encrypt($22::text, $5), $23, $24)
 			RETURNING id`,
 		p.Name,
 		p.ApiUrl,
@@ -490,6 +545,7 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 		p.DeployerAdminSATokenTargetVar,
 		nilIfEmpty(p.DeployerAdminSAToken),
 		p.Data,
+		p.CreatedBy,
 	).Scan(&p.ID); err != nil {
 		return err
 	}
@@ -909,7 +965,8 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 			deployer_admin_sa_token_refresh_interval,
 			deployer_admin_sa_token_target_var,
 			COALESCE(pgp_sym_decrypt(deployer_admin_sa_token, $1), ''),
-			data
+			data,
+			created_by
 		 FROM ocp_shared_cluster_configurations WHERE name = $2`,
 		p.VaultSecret, name,
 	)
@@ -941,6 +998,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 		&cluster.DeployerAdminSATokenTargetVar,
 		&cluster.DeployerAdminSAToken,
 		&cluster.Data,
+		&cluster.CreatedBy,
 	); err != nil {
 		return OcpSharedClusterConfiguration{}, err
 	}
@@ -981,7 +1039,8 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			deployer_admin_sa_token_refresh_interval,
 			deployer_admin_sa_token_target_var,
 			COALESCE(pgp_sym_decrypt(deployer_admin_sa_token, $1), ''),
-			data
+			data,
+			created_by
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
 	)
@@ -1019,6 +1078,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			&cluster.DeployerAdminSATokenTargetVar,
 			&cluster.DeployerAdminSAToken,
 			&cluster.Data,
+			&cluster.CreatedBy,
 		); err != nil {
 			return []OcpSharedClusterConfiguration{}, err
 		}

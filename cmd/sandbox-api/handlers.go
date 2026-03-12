@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/go-chi/render"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 
@@ -803,6 +804,14 @@ func (h *BaseHandler) GetPlacementsHandler(w http.ResponseWriter, r *http.Reques
 // Get placement by service uuid
 func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request) {
 	serviceUuid := chi.URLParam(r, "uuid")
+	if _, err := uuid.Parse(serviceUuid); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid UUID format",
+		})
+		return
+	}
 
 	placement, err := models.GetPlacementByServiceUuid(h.dbpool, serviceUuid)
 	if err != nil {
@@ -848,6 +857,14 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 // Delete placement by service uuid
 func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Request) {
 	serviceUuid := chi.URLParam(r, "uuid")
+	if _, err := uuid.Parse(serviceUuid); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid UUID format",
+		})
+		return
+	}
 
 	placement, err := models.GetPlacementByServiceUuid(h.dbpool, serviceUuid)
 	if err != nil {
@@ -908,6 +925,14 @@ func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Requ
 func (h *BaseHandler) LifeCyclePlacementHandler(action string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		serviceUuid := chi.URLParam(r, "uuid")
+		if _, err := uuid.Parse(serviceUuid); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusBadRequest,
+				Message:        "Invalid UUID format",
+			})
+			return
+		}
 		reqId := GetReqID(r.Context())
 
 		placement, err := models.GetPlacementByServiceUuid(h.dbpool, serviceUuid)
@@ -1018,6 +1043,14 @@ func (h *BaseHandler) LifeCyclePlacementHandler(action string) http.HandlerFunc 
 
 func (h *BaseHandler) GetStatusPlacementHandler(w http.ResponseWriter, r *http.Request) {
 	serviceUuid := chi.URLParam(r, "uuid")
+	if _, err := uuid.Parse(serviceUuid); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid UUID format",
+		})
+		return
+	}
 
 	placement, err := models.GetPlacementByServiceUuid(h.dbpool, serviceUuid)
 
@@ -1339,6 +1372,64 @@ func (h *BaseHandler) InvalidateTokenHandler(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusOK)
 	render.Render(w, r, &v1.SimpleMessage{
 		Message: "Token successfully invalidated",
+	})
+}
+
+// GetTokenActivityHandler returns token details and recent audit log activity.
+func (h *BaseHandler) GetTokenActivityHandler(w http.ResponseWriter, r *http.Request) {
+	tokenStr := chi.URLParam(r, "id")
+
+	tokenId, err := strconv.Atoi(tokenStr)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid token ID, must be integer",
+		})
+		return
+	}
+
+	tokenModel, err := models.FetchTokenById(h.dbpool, tokenId)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Token not found",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting token",
+		})
+		log.Logger.Error("GetTokenActivityHandler", "error", err)
+		return
+	}
+
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	activity, err := models.FetchAuditLogByActor(h.dbpool, tokenModel.Name, limit)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error fetching audit log",
+		})
+		log.Logger.Error("GetTokenActivityHandler: audit log query failed", "error", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &v1.TokenActivityResponse{
+		Token:    tokenModel,
+		Activity: activity,
 	})
 }
 
