@@ -10,8 +10,13 @@ This script tests the CLI binary end-to-end against a running sandbox API:
 4. RBAC via CLI: manager can create/offboard own cluster, denied admin-only commands
 5. Cluster create from stdin with `--force`
 
+The tests use the existing ocpvdev01 cluster credentials to create mock
+cluster configurations (cli-test-admin-cluster, cli-test-manager-cluster)
+that are reachable for health checks.
+
 Prerequisites:
   - SANDBOX_API_URL and SANDBOX_ADMIN_LOGIN_TOKEN must be set
+  - The ocpvdev01 cluster must already be configured in the sandbox API
   - The sandbox-cli binary must be built (the test builds it automatically)
 
 Usage:
@@ -40,15 +45,13 @@ logger = logging.getLogger(__name__)
 
 SANDBOX_API_URL = os.environ.get("SANDBOX_API_URL", "http://localhost:8080")
 SANDBOX_ADMIN_LOGIN_TOKEN = os.environ.get("SANDBOX_ADMIN_LOGIN_TOKEN", "")
+SOURCE_CLUSTER_NAME = os.environ.get("OCP_CLUSTER_NAME", "ocpvdev01")
 SOURCE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 CLI_BINARY = os.path.join(SOURCE_DIR, "build", "sandbox-cli")
 
 MOCK_CLUSTER_CLI_ADMIN = "cli-test-admin-cluster"
 MOCK_CLUSTER_CLI_MANAGER = "cli-test-manager-cluster"
-
-UNREACHABLE_API_URL = "https://api.fake-cli-test.example.com:6443"
-UNREACHABLE_TOKEN = "fake-token-for-cli-test"
 
 
 def build_cli():
@@ -126,13 +129,25 @@ def api_invalidate_token(token_id, access_token):
     )
 
 
-def build_cluster_config(name):
-    """Build a cluster config JSON for an unreachable cluster."""
+def api_get_cluster_config(name, access_token):
+    """Get a cluster config from the API. Returns the JSON dict or None."""
+    resp = requests.get(
+        f"{SANDBOX_API_URL}/api/v1/ocp-shared-cluster-configurations/{name}",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    return resp.json()
+
+
+def build_cluster_config(name, source_config):
+    """Build a mock cluster config using real credentials from a source cluster."""
     return json.dumps({
         "name": name,
-        "api_url": UNREACHABLE_API_URL,
-        "ingress_domain": "apps.fake-cli-test.example.com",
-        "token": UNREACHABLE_TOKEN,
+        "api_url": source_config["api_url"],
+        "ingress_domain": source_config["ingress_domain"],
+        "token": source_config.get("token", ""),
         "annotations": {"purpose": "dev", "name": name},
         "valid": False,
     })
@@ -264,9 +279,9 @@ def test_cluster_list(home_dir):
     logger.info("PASSED: cluster list")
 
 
-def test_cluster_create(home_dir, cluster_name):
+def test_cluster_create(home_dir, cluster_name, source_config):
     """Test sandbox-cli cluster create <name> (reads JSON from stdin)."""
-    config_json = build_cluster_config(cluster_name)
+    config_json = build_cluster_config(cluster_name, source_config)
     stdout, stderr, rc = run_cli(
         "cluster", "create", cluster_name,
         stdin_data=config_json,
@@ -358,9 +373,9 @@ def test_manager_cli_login(manager_home, manager_login_token):
     logger.info("PASSED: manager CLI login")
 
 
-def test_manager_cli_create_cluster(manager_home):
+def test_manager_cli_create_cluster(manager_home, source_config):
     """Manager can create a cluster via CLI."""
-    config_json = build_cluster_config(MOCK_CLUSTER_CLI_MANAGER)
+    config_json = build_cluster_config(MOCK_CLUSTER_CLI_MANAGER, source_config)
     stdout, stderr, rc = run_cli(
         "cluster", "create", MOCK_CLUSTER_CLI_MANAGER,
         stdin_data=config_json,
@@ -482,10 +497,10 @@ def test_manager_cli_denied_jwt_issue(manager_home):
     logger.info("PASSED: manager CLI denied jwt issue")
 
 
-def test_manager_cli_cannot_offboard_admin_cluster(admin_home, manager_home):
+def test_manager_cli_cannot_offboard_admin_cluster(admin_home, manager_home, source_config):
     """Manager gets error when trying to offboard a cluster created by admin."""
     # Admin creates a cluster
-    config_json = build_cluster_config(MOCK_CLUSTER_CLI_ADMIN)
+    config_json = build_cluster_config(MOCK_CLUSTER_CLI_ADMIN, source_config)
     stdout, stderr, rc = run_cli(
         "cluster", "create", MOCK_CLUSTER_CLI_ADMIN,
         stdin_data=config_json,
@@ -524,8 +539,15 @@ def main():
     admin_home = tempfile.mkdtemp(prefix="cli-test-admin-")
     manager_home = tempfile.mkdtemp(prefix="cli-test-manager-")
 
-    # Get admin access token for API cleanup
+    # Get admin access token for API cleanup and source cluster fetch
     admin_access_token = get_access_token(SANDBOX_API_URL, SANDBOX_ADMIN_LOGIN_TOKEN)
+
+    # Fetch source cluster config for real credentials
+    logger.info(f"Fetching source cluster config: {SOURCE_CLUSTER_NAME}")
+    source_config = api_get_cluster_config(SOURCE_CLUSTER_NAME, admin_access_token)
+    if source_config is None:
+        logger.error(f"Source cluster '{SOURCE_CLUSTER_NAME}' not found in sandbox API")
+        sys.exit(1)
 
     # Cleanup from previous runs
     for name in [MOCK_CLUSTER_CLI_ADMIN, MOCK_CLUSTER_CLI_MANAGER]:
@@ -587,7 +609,7 @@ def main():
     # Phase 2: Admin cluster management
     tests_phase2 = [
         ("admin_cluster_create",
-         lambda: test_cluster_create(admin_home, MOCK_CLUSTER_CLI_ADMIN)),
+         lambda: test_cluster_create(admin_home, MOCK_CLUSTER_CLI_ADMIN, source_config)),
         ("admin_cluster_get",
          lambda: test_cluster_get(admin_home, MOCK_CLUSTER_CLI_ADMIN)),
         ("admin_cluster_list", lambda: test_cluster_list(admin_home)),
@@ -617,7 +639,7 @@ def main():
         ("manager_cli_login",
          lambda: test_manager_cli_login(manager_home, manager_login_token)),
         ("manager_cli_create_cluster",
-         lambda: test_manager_cli_create_cluster(manager_home)),
+         lambda: test_manager_cli_create_cluster(manager_home, source_config)),
         ("manager_cli_cluster_get_own",
          lambda: test_manager_cli_cluster_get_own(manager_home)),
         ("manager_cli_offboard_own_cluster",
@@ -639,7 +661,7 @@ def main():
          lambda: test_manager_cli_denied_jwt_issue(manager_home)),
         # --- Ownership enforcement ---
         ("manager_cli_cannot_offboard_admin_cluster",
-         lambda: test_manager_cli_cannot_offboard_admin_cluster(admin_home, manager_home)),
+         lambda: test_manager_cli_cannot_offboard_admin_cluster(admin_home, manager_home, source_config)),
     ]
 
     try:
