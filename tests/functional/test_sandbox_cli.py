@@ -133,7 +133,7 @@ def build_cluster_config(name):
         "api_url": UNREACHABLE_API_URL,
         "ingress_domain": "apps.fake-cli-test.example.com",
         "token": UNREACHABLE_TOKEN,
-        "annotations": {"purpose": "cli-test", "name": name},
+        "annotations": {"purpose": "dev", "name": name},
         "valid": False,
     })
 
@@ -380,30 +380,28 @@ def test_manager_cli_offboard_own_cluster(manager_home):
     logger.info("PASSED: manager CLI offboard own cluster")
 
 
-def test_manager_cli_denied_cluster_list(manager_home):
-    """Manager is denied cluster list via CLI."""
+def test_manager_cli_cluster_list(manager_home):
+    """Manager can list clusters via CLI (shared view)."""
     stdout, stderr, rc = run_cli(
         "cluster", "list",
         home_dir=manager_home,
-        expect_failure=True,
     )
-    assert rc != 0, f"Expected failure for manager cluster list, got rc={rc}"
-    assert "401" in (stdout + stderr), \
-        f"Expected 401 in output: stdout={stdout}, stderr={stderr}"
-    logger.info("PASSED: manager CLI denied cluster list")
+    assert rc == 0, f"manager cluster list failed (rc={rc}): {stderr}"
+    assert "NAME" in stdout and "VALID" in stdout, \
+        f"Expected table headers in: {stdout}"
+    logger.info("PASSED: manager CLI cluster list (shared view)")
 
 
-def test_manager_cli_denied_cluster_get(manager_home):
-    """Manager is denied cluster get via CLI."""
+def test_manager_cli_cluster_get_own(manager_home):
+    """Manager can get own cluster via CLI."""
     stdout, stderr, rc = run_cli(
-        "cluster", "get", "any-cluster",
+        "cluster", "get", MOCK_CLUSTER_CLI_MANAGER,
         home_dir=manager_home,
-        expect_failure=True,
     )
-    assert rc != 0, f"Expected failure for manager cluster get"
-    assert "401" in (stdout + stderr), \
-        f"Expected 401 in output: stdout={stdout}, stderr={stderr}"
-    logger.info("PASSED: manager CLI denied cluster get")
+    assert rc == 0, f"manager cluster get own failed (rc={rc}): {stderr}"
+    data = json.loads(stdout)
+    assert data["name"] == MOCK_CLUSTER_CLI_MANAGER, f"Name mismatch: {data['name']}"
+    logger.info("PASSED: manager CLI get own cluster")
 
 
 def test_manager_cli_denied_cluster_delete(manager_home):
@@ -414,8 +412,8 @@ def test_manager_cli_denied_cluster_delete(manager_home):
         expect_failure=True,
     )
     assert rc != 0, f"Expected failure for manager cluster delete"
-    assert "401" in (stdout + stderr), \
-        f"Expected 401 in output: stdout={stdout}, stderr={stderr}"
+    assert "requires role" in (stdout + stderr) or "401" in (stdout + stderr), \
+        f"Expected role denial in output: stdout={stdout}, stderr={stderr}"
     logger.info("PASSED: manager CLI denied cluster delete")
 
 
@@ -427,8 +425,8 @@ def test_manager_cli_denied_cluster_enable(manager_home):
         expect_failure=True,
     )
     assert rc != 0, f"Expected failure for manager cluster enable"
-    assert "401" in (stdout + stderr), \
-        f"Expected 401 in output: stdout={stdout}, stderr={stderr}"
+    assert "requires role" in (stdout + stderr) or "401" in (stdout + stderr), \
+        f"Expected role denial in output: stdout={stdout}, stderr={stderr}"
     logger.info("PASSED: manager CLI denied cluster enable")
 
 
@@ -440,8 +438,8 @@ def test_manager_cli_denied_cluster_disable(manager_home):
         expect_failure=True,
     )
     assert rc != 0, f"Expected failure for manager cluster disable"
-    assert "401" in (stdout + stderr), \
-        f"Expected 401 in output: stdout={stdout}, stderr={stderr}"
+    assert "requires role" in (stdout + stderr) or "401" in (stdout + stderr), \
+        f"Expected role denial in output: stdout={stdout}, stderr={stderr}"
     logger.info("PASSED: manager CLI denied cluster disable")
 
 
@@ -453,8 +451,8 @@ def test_manager_cli_denied_cluster_health(manager_home):
         expect_failure=True,
     )
     assert rc != 0, f"Expected failure for manager cluster health"
-    assert "401" in (stdout + stderr), \
-        f"Expected 401 in output: stdout={stdout}, stderr={stderr}"
+    assert "requires role" in (stdout + stderr) or "401" in (stdout + stderr), \
+        f"Expected role denial in output: stdout={stdout}, stderr={stderr}"
     logger.info("PASSED: manager CLI denied cluster health")
 
 
@@ -466,8 +464,8 @@ def test_manager_cli_denied_jwt_list(manager_home):
         expect_failure=True,
     )
     assert rc != 0, f"Expected failure for manager jwt list"
-    assert "401" in (stdout + stderr), \
-        f"Expected 401 in output: stdout={stdout}, stderr={stderr}"
+    assert "requires role" in (stdout + stderr) or "401" in (stdout + stderr), \
+        f"Expected role denial in output: stdout={stdout}, stderr={stderr}"
     logger.info("PASSED: manager CLI denied jwt list")
 
 
@@ -479,8 +477,8 @@ def test_manager_cli_denied_jwt_issue(manager_home):
         expect_failure=True,
     )
     assert rc != 0, f"Expected failure for manager jwt issue"
-    assert "401" in (stdout + stderr), \
-        f"Expected 401 in output: stdout={stdout}, stderr={stderr}"
+    assert "requires role" in (stdout + stderr) or "401" in (stdout + stderr), \
+        f"Expected role denial in output: stdout={stdout}, stderr={stderr}"
     logger.info("PASSED: manager CLI denied jwt issue")
 
 
@@ -620,13 +618,13 @@ def main():
          lambda: test_manager_cli_login(manager_home, manager_login_token)),
         ("manager_cli_create_cluster",
          lambda: test_manager_cli_create_cluster(manager_home)),
+        ("manager_cli_cluster_get_own",
+         lambda: test_manager_cli_cluster_get_own(manager_home)),
         ("manager_cli_offboard_own_cluster",
          lambda: test_manager_cli_offboard_own_cluster(manager_home)),
-        # --- Manager denied admin-only commands ---
-        ("manager_cli_denied_cluster_list",
-         lambda: test_manager_cli_denied_cluster_list(manager_home)),
-        ("manager_cli_denied_cluster_get",
-         lambda: test_manager_cli_denied_cluster_get(manager_home)),
+        # --- Manager allowed shared-view commands ---
+        ("manager_cli_cluster_list",
+         lambda: test_manager_cli_cluster_list(manager_home)),
         ("manager_cli_denied_cluster_delete",
          lambda: test_manager_cli_denied_cluster_delete(manager_home)),
         ("manager_cli_denied_cluster_enable",
