@@ -6,7 +6,8 @@ Go REST API that manages multi-cloud sandbox provisioning for the Red Hat Demo P
 This repository contains:
 
 * *sandbox-api*: The backend API for all things sandbox
-* *sandbox-issue-jwt*: CLI to generate a new signed JWT login token
+* *sandbox-cli*: CLI client for admin and operator tasks (preferred over shell scripts)
+* *sandbox-issue-jwt*: CLI to generate a new signed JWT login token — DEPRECATED, use `sandbox-cli jwt` instead
 * *sandbox-list*: Interact with the AWS Sandbox DB in a read-only way
 * *sandbox-metrics*: Prometheus endpoint exposing metrics
 * *sandbox-rotate-vault*: Program to re-encrypt IAM keys using a new secret key (ansible-vault, AES256)
@@ -18,8 +19,9 @@ This repository contains:
 You will need Go 1.22 or later.
 
 ----
-make build          # All binaries
+make build          # All binaries (sandbox-api, sandbox-cli, etc.)
 make sandbox-api    # API server only
+make sandbox-cli    # CLI client only
 ----
 
 === Local Development
@@ -36,6 +38,111 @@ make run-api        # Start API server
 ----
 make test           # Unit tests + OpenAPI linting
 ----
+
+== sandbox-cli
+
+`sandbox-cli` is the *preferred tool* for admin and operator tasks. It replaces the legacy shell scripts in `tools/` with a single binary that handles authentication, config persistence, and error formatting.
+
+=== Install
+
+----
+make sandbox-cli
+# Binary at ./build/sandbox-cli
+----
+
+=== Usage
+
+----
+# First-time setup
+sandbox-cli login --server https://sandbox-api.example.com --token <your-login-token>
+
+# Verify connection (shows client/server version, environment, DB migration)
+sandbox-cli status
+
+# JWT token management
+sandbox-cli jwt list
+sandbox-cli jwt issue --name ops-user --role shared-cluster-manager
+sandbox-cli jwt issue --name admin-user --role admin
+sandbox-cli jwt activity <id>
+sandbox-cli jwt invalidate <id>
+
+# Cluster management
+sandbox-cli cluster list
+sandbox-cli cluster get <name>
+sandbox-cli cluster create <name> < cluster-config.json
+sandbox-cli cluster create <name> --force < cluster-config.json
+sandbox-cli cluster onboard [name] [--purpose dev] [--annotations '{}'] [--config file.json]
+sandbox-cli cluster enable <name>
+sandbox-cli cluster disable <name>
+sandbox-cli cluster health <name>
+sandbox-cli cluster offboard <name> [--force]
+sandbox-cli cluster offboard-status <name>
+sandbox-cli cluster delete <name>
+
+# Placement testing
+sandbox-cli placement dry-run --selector purpose=dev
+sandbox-cli placement dry-run --selector purpose=dev,cloud=aws-shared
+sandbox-cli placement dry-run --selector purpose=dev --preference region=us-east-1
+
+# Session management
+sandbox-cli logout
+
+# Version info
+sandbox-cli version [--json]
+----
+
+=== Configuration
+
+Config is saved to `~/.local/sandbox-cli/config.json` (permissions `0600`). The CLI auto-refreshes access tokens when they expire.
+
+Configuration priority: CLI flags > environment variables > saved config.
+
+[cols="1,1,1"]
+|===
+| Source | Server URL | Login Token
+
+| Flag | `--server` | `--token`
+| Env var | `SANDBOX_API_ROUTE` | `SANDBOX_LOGIN_TOKEN`
+| Config | saved from `login` | saved from `login`
+|===
+
+=== Environment Detection
+
+`sandbox-cli status` detects the environment from the server URL:
+
+----
+=== Client ===
+  Version:      1.0.0
+  Commit:       abc123de
+  Built:        2026-03-10 14:30:00 UTC
+  Config:       /home/user/.local/sandbox-cli/config.json
+
+=== Connection ===
+  Server:       https://sandbox-api-dev.example.com
+  Environment:  development
+  Auth:         valid (expires 2026-03-10 15:30:00 UTC)
+
+=== Server ===
+  Version:      1.0.0
+  Commit:       abc123de
+  Built:        2026-03-10 14:00:00 UTC
+  DB Migration: 22
+----
+
+=== Legacy Shell Scripts
+
+The `tools/` directory contains some legacy shell scripts. Use `sandbox-cli` equivalents when available:
+
+[cols="1,1"]
+|===
+| Script | sandbox-cli equivalent
+
+| `tools/issue-jwt.sh` | `sandbox-cli jwt list` / `jwt issue`
+| `tools/list-shared-clusters.sh` | `sandbox-cli cluster list`
+| `tools/get-shared-cluster.sh` | `sandbox-cli cluster get <name>`
+| `tools/sandbox_api_enable_shared_cluster.sh` | `sandbox-cli cluster enable <name>`
+| `tools/sandbox_api_disable_shared_cluster.sh` | `sandbox-cli cluster disable <name>`
+|===
 
 == RBAC Roles
 
@@ -114,6 +221,7 @@ The `shared-cluster-manager` cannot access: placement CRUD, account operations, 
 ----
 cmd/
   sandbox-api/          HTTP server (handlers, middleware, GraphQL)
+  sandbox-cli/          CLI client (Cobra-based)
   sandbox-issue-jwt/    JWT token generator
   sandbox-list/         Read-only account listing
   sandbox-metrics/      Prometheus exporter
@@ -122,6 +230,7 @@ cmd/
 
 internal/
   api/v1/               Request/response types
+  cli/                  sandbox-cli implementation
   models/               Domain models, DB queries, cloud integrations
   config/               App config
   dynamodb/             AWS DynamoDB provider
@@ -129,7 +238,7 @@ internal/
 
 db/migrations/          SQL migrations (golang-migrate)
 tests/                  Hurl integration tests + Python functional tests
-tools/                  Shell scripts for admin tasks
+tools/                  Legacy shell scripts (prefer sandbox-cli)
 docs/api-reference/     OpenAPI 3.0 spec (swagger.yaml)
 deploy/                 Helm charts
 ----
@@ -257,7 +366,15 @@ air # <2>
 
 == OCP Shared Cluster Onboarding
 
-See link:tools/onboard-ocp-shared-cluster.md[OCP Shared Cluster Onboarding / Offboarding] for full documentation on adding and removing clusters from the fleet.
+Use `sandbox-cli` for cluster onboarding and offboarding. See link:docs/cli.md[sandbox-cli documentation] for full details.
+
+----
+# Onboard: connects to the target OCP cluster, creates SA + token, registers with API
+sandbox-cli cluster onboard [name] [--purpose dev] [--annotations '{}']
+
+# Offboard: disables cluster, cleans up placements, removes from API
+sandbox-cli cluster offboard <name> [--force]
+----
 
 == sandbox-replicate
 

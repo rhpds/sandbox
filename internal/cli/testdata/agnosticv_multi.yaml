@@ -1,0 +1,14 @@
+__meta__:
+  sandboxes:
+    - kind: OcpSandbox
+      count: 1
+      cloud_selector:
+        purpose: dev
+        cloud: cnv-shared
+    - kind: OcpSandbox
+      count: 2
+      cloud_selector:
+        purpose: events
+        virt: "yes"
+      cloud_preference:
+        region: us-east-1

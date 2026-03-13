@@ -1,0 +1,4 @@
+__meta__:
+  sandboxes:
+    - cloud_selector:
+        purpose: dev

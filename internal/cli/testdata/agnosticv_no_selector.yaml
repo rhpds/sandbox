@@ -1,0 +1,4 @@
+__meta__:
+  sandboxes:
+    - kind: OcpSandbox
+      count: 1

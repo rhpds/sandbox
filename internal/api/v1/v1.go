@@ -350,11 +350,12 @@ func (j *UpdateIBMResourceGroupSandboxConfigurationRequest) Bind(r *http.Request
 
 // ResourceDryRunResult holds the dry-run result for a single resource.
 type ResourceDryRunResult struct {
-	Kind                    string `json:"kind"`
-	Available               bool   `json:"available"`
-	Message                 string `json:"message"`
-	SchedulableClusterCount int    `json:"schedulable_cluster_count"`
-	Error                   string `json:"error,omitempty"` // Optional: to report specific errors
+	Kind                    string   `json:"kind"`
+	Available               bool     `json:"available"`
+	Message                 string   `json:"message"`
+	SchedulableClusterCount int      `json:"schedulable_cluster_count"`
+	SchedulableClusterNames []string `json:"schedulable_cluster_names,omitempty"`
+	Error                   string   `json:"error,omitempty"` // Optional: to report specific errors
 }
 
 // PlacementDryRunResponse is the consolidated response for a dry-run request.

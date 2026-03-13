@@ -14,7 +14,7 @@ VACUUM_VERSION ?= v0.23.8
 export VACUUM_VERSION
 export CGO_ENABLED=0
 
-build: sandbox-list sandbox-metrics sandbox-api sandbox-issue-jwt sandbox-rotate-vault
+build: sandbox-list sandbox-metrics sandbox-api sandbox-issue-jwt sandbox-rotate-vault sandbox-cli
 
 test: cmd/sandbox-api/assets/swagger.yaml
 	@echo "Running tests..."
@@ -77,6 +77,25 @@ sandbox-api: cmd/sandbox-api/assets/swagger.yaml
 sandbox-metrics:
 	go build -ldflags="-X 'main.Version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" -o build/sandbox-metrics ./cmd/sandbox-metrics
 
+sandbox-cli:
+	go build -ldflags="-X 'main.version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" -o build/sandbox-cli ./cmd/sandbox-cli
+
+CLI_PLATFORMS ?= linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
+CLI_LDFLAGS = -X 'main.version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'
+
+sandbox-cli-cross:
+	@mkdir -p build
+	@for platform in $(CLI_PLATFORMS); do \
+		os=$${platform%/*}; \
+		arch=$${platform#*/}; \
+		output=build/sandbox-cli-$${os}-$${arch}; \
+		if [ "$$os" = "windows" ]; then output=$${output}.exe; fi; \
+		echo "Building $$output ..."; \
+		GOOS=$$os GOARCH=$$arch go build -ldflags="$(CLI_LDFLAGS)" -o $$output ./cmd/sandbox-cli || exit 1; \
+	done
+	@echo "Done. Binaries:"
+	@ls -lh build/sandbox-cli-*
+
 sandbox-issue-jwt:
 	go build -o build/sandbox-issue-jwt ./cmd/sandbox-issue-jwt
 
@@ -93,7 +112,7 @@ push-lambda: deploy/lambda/sandbox-replicate.zip
 fmt:
 	@go fmt ./...
 
-.PHONY: sandbox-api sandbox-issue-jwt issue-jwt tokens sandbox-list sandbox-metrics sandbox-rotate-vault run-api run-air sandbox-replicate migrate fixtures test run-local-pg push-lambda clean fmt
+.PHONY: sandbox-api sandbox-cli sandbox-cli-cross sandbox-issue-jwt issue-jwt tokens sandbox-list sandbox-metrics sandbox-rotate-vault run-api run-air sandbox-replicate migrate fixtures test run-local-pg push-lambda clean fmt
 
 clean: rm-local-pg
 	rm -f build/sandbox-*

@@ -623,10 +623,15 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 					result.Message = "All matching OCP shared clusters are at their max_placements limit"
 					overallAvailable = false
 				} else {
-					log.Logger.Info("Dry-run check for OCP successful", "clusters", availableClusters)
+					clusterNames := make([]string, len(availableClusters))
+					for i, c := range availableClusters {
+						clusterNames[i] = c.Name
+					}
+					log.Logger.Info("Dry-run check for OCP successful", "clusters", clusterNames)
 					result.Available = true
 					result.Message = "Matching OCP shared clusters found"
 					result.SchedulableClusterCount = len(availableClusters)
+					result.SchedulableClusterNames = clusterNames
 					candidateClusters = availableClusters
 
 					// Apply priorities using CloudPreference
@@ -691,6 +696,30 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 
 	render.Render(w, r, finalResponse)
 
+}
+
+func (h *BaseHandler) VersionHandler(w http.ResponseWriter, r *http.Request) {
+	// Query DB migration version from schema_migrations (golang-migrate table)
+	var dbMigrationVersion int
+	dbMigrationDirty := false
+	err := h.dbpool.QueryRow(r.Context(),
+		"SELECT version, dirty FROM schema_migrations LIMIT 1").Scan(&dbMigrationVersion, &dbMigrationDirty)
+	if err != nil {
+		dbMigrationVersion = -1
+	}
+
+	resp := map[string]any{
+		"version":              Version,
+		"build_commit":         buildCommit,
+		"build_time":           buildTime,
+		"db_migration_version": dbMigrationVersion,
+		"db_migration_dirty":   dbMigrationDirty,
+	}
+
+	w.WriteHeader(http.StatusOK)
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	enc.Encode(resp)
 }
 
 func (h *BaseHandler) HealthHandler(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,7 @@
+__meta__:
+  sandboxes:
+    - kind: OcpSandbox
+      count: 1
+      cloud_selector:
+        purpose: dev
+        cloud: cnv-shared
