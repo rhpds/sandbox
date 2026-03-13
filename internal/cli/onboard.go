@@ -79,6 +79,7 @@ func init() {
 	clusterOnboardCmd.Flags().StringVar(&onboardKubeconfig, "kubeconfig", "", "Path to kubeconfig file")
 	clusterOnboardCmd.Flags().StringVar(&onboardKubecontext, "context", "", "Kubeconfig context to use")
 	clusterOnboardCmd.Flags().IntVar(&onboardMaxPlacements, "max-placements", 0, "Maximum number of placements (0 = no limit)")
+	clusterOnboardCmd.MarkFlagsOneRequired("annotations", "config")
 
 	clusterCmd.AddCommand(clusterOnboardCmd)
 }
