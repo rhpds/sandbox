@@ -80,6 +80,21 @@ sandbox-metrics:
 sandbox-cli:
 	go build -ldflags="-X 'main.version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" -o build/sandbox-cli ./cmd/sandbox-cli
 
+CLI_PLATFORMS ?= linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+CLI_LDFLAGS = -X 'main.version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'
+
+sandbox-cli-cross:
+	@mkdir -p build
+	@for platform in $(CLI_PLATFORMS); do \
+		os=$${platform%/*}; \
+		arch=$${platform#*/}; \
+		output=build/sandbox-cli-$${os}-$${arch}; \
+		echo "Building $$output ..."; \
+		GOOS=$$os GOARCH=$$arch go build -ldflags="$(CLI_LDFLAGS)" -o $$output ./cmd/sandbox-cli || exit 1; \
+	done
+	@echo "Done. Binaries:"
+	@ls -lh build/sandbox-cli-*
+
 sandbox-issue-jwt:
 	go build -o build/sandbox-issue-jwt ./cmd/sandbox-issue-jwt
 
@@ -96,7 +111,7 @@ push-lambda: deploy/lambda/sandbox-replicate.zip
 fmt:
 	@go fmt ./...
 
-.PHONY: sandbox-api sandbox-cli sandbox-issue-jwt issue-jwt tokens sandbox-list sandbox-metrics sandbox-rotate-vault run-api run-air sandbox-replicate migrate fixtures test run-local-pg push-lambda clean fmt
+.PHONY: sandbox-api sandbox-cli sandbox-cli-cross sandbox-issue-jwt issue-jwt tokens sandbox-list sandbox-metrics sandbox-rotate-vault run-api run-air sandbox-replicate migrate fixtures test run-local-pg push-lambda clean fmt
 
 clean: rm-local-pg
 	rm -f build/sandbox-*
