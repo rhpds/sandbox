@@ -80,7 +80,7 @@ sandbox-metrics:
 sandbox-cli:
 	go build -ldflags="-X 'main.version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'" -o build/sandbox-cli ./cmd/sandbox-cli
 
-CLI_PLATFORMS ?= linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+CLI_PLATFORMS ?= linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
 CLI_LDFLAGS = -X 'main.version=$(VERSION)' -X 'main.buildTime=$(DATE)' -X 'main.buildCommit=$(COMMIT)'
 
 sandbox-cli-cross:
@@ -89,6 +89,7 @@ sandbox-cli-cross:
 		os=$${platform%/*}; \
 		arch=$${platform#*/}; \
 		output=build/sandbox-cli-$${os}-$${arch}; \
+		if [ "$$os" = "windows" ]; then output=$${output}.exe; fi; \
 		echo "Building $$output ..."; \
 		GOOS=$$os GOARCH=$$arch go build -ldflags="$(CLI_LDFLAGS)" -o $$output ./cmd/sandbox-cli || exit 1; \
 	done

@@ -14,6 +14,7 @@ Download the binary for your platform from the release artifacts:
 | Linux arm64 | `sandbox-cli-linux-arm64` |
 | macOS Intel | `sandbox-cli-darwin-amd64` |
 | macOS Apple Silicon (M1/M2/M3) | `sandbox-cli-darwin-arm64` |
+| Windows amd64 | `sandbox-cli-windows-amd64.exe` |
 
 ```bash
 # Example: macOS Apple Silicon
