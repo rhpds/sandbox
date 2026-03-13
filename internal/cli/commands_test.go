@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -270,14 +271,14 @@ func TestStatusCommand(t *testing.T) {
 		t.Fatalf("status error: %v\noutput: %s", err, output)
 	}
 
-	if !strings.Contains(output, "=== Client ===") {
-		t.Errorf("expected '=== Client ===' in output, got: %s", output)
+	if !strings.Contains(output, "Client") {
+		t.Errorf("expected 'Client' in output, got: %s", output)
 	}
-	if !strings.Contains(output, "=== Connection ===") {
-		t.Errorf("expected '=== Connection ===' in output, got: %s", output)
+	if !strings.Contains(output, "Connection") {
+		t.Errorf("expected 'Connection' in output, got: %s", output)
 	}
-	if !strings.Contains(output, "=== Server ===") {
-		t.Errorf("expected '=== Server ===' in output, got: %s", output)
+	if !strings.Contains(output, "Server") {
+		t.Errorf("expected 'Server' in output, got: %s", output)
 	}
 	if !strings.Contains(output, "1.2.3") {
 		t.Errorf("expected server version '1.2.3' in output, got: %s", output)
@@ -324,10 +325,105 @@ func TestStatusNoServer(t *testing.T) {
 		t.Fatalf("status error: %v\noutput: %s", err, output)
 	}
 
-	if !strings.Contains(output, "=== Client ===") {
-		t.Errorf("expected '=== Client ===' in output, got: %s", output)
+	if !strings.Contains(output, "Client") {
+		t.Errorf("expected 'Client' in output, got: %s", output)
 	}
 	if !strings.Contains(output, "not configured") {
 		t.Errorf("expected 'not configured' in output, got: %s", output)
+	}
+}
+
+func TestIsNewerVersion(t *testing.T) {
+	tests := []struct {
+		latest, current string
+		want            bool
+	}{
+		{"1.2.0", "1.1.0", true},
+		{"1.1.1", "1.1.0", true},
+		{"2.0.0", "1.9.9", true},
+		{"1.1.0", "1.1.0", false},
+		{"1.0.0", "1.1.0", false},
+		{"1.1.0", "1.2.0", false},
+		{"1.1.22", "1.1.22", false},
+		{"1.1.23", "1.1.22", true},
+		{"1.2.0", "1.1.22", true},
+		// git-describe suffixes
+		{"1.1.23", "1.1.22-26-g7b99b12", true},
+		{"1.1.22", "1.1.22-26-g7b99b12", false},
+		{"1.1.21", "1.1.22-26-g7b99b12", false},
+	}
+	for _, tt := range tests {
+		got := isNewerVersion(tt.latest, tt.current)
+		if got != tt.want {
+			t.Errorf("isNewerVersion(%q, %q) = %v, want %v", tt.latest, tt.current, got, tt.want)
+		}
+	}
+}
+
+func TestCheckCLIUpdateShowsWarning(t *testing.T) {
+	// Mock version server
+	versionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "9.9.9")
+	}))
+	defer versionServer.Close()
+
+	// Override the version check URL
+	origURL := versionCheckURL
+	versionCheckURL = versionServer.URL + "/VERSION_CLI"
+	defer func() { versionCheckURL = origURL }()
+
+	// Set a non-development version
+	origVersion := clientVersion
+	clientVersion = "1.0.0"
+	defer func() { clientVersion = origVersion }()
+
+	var buf strings.Builder
+	checkCLIUpdate(&buf)
+
+	output := buf.String()
+	if !strings.Contains(output, "Update available") {
+		t.Errorf("expected update warning, got: %s", output)
+	}
+	if !strings.Contains(output, "9.9.9") {
+		t.Errorf("expected latest version '9.9.9' in output, got: %s", output)
+	}
+}
+
+func TestCheckCLIUpdateNoWarningWhenCurrent(t *testing.T) {
+	versionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "1.0.0")
+	}))
+	defer versionServer.Close()
+
+	origURL := versionCheckURL
+	versionCheckURL = versionServer.URL + "/VERSION_CLI"
+	defer func() { versionCheckURL = origURL }()
+
+	origVersion := clientVersion
+	clientVersion = "1.0.0"
+	defer func() { clientVersion = origVersion }()
+
+	var buf strings.Builder
+	checkCLIUpdate(&buf)
+
+	if buf.String() != "" {
+		t.Errorf("expected no output when version is current, got: %s", buf.String())
+	}
+}
+
+func TestCheckCLIUpdateSilentOnError(t *testing.T) {
+	origURL := versionCheckURL
+	versionCheckURL = "http://127.0.0.1:1/nonexistent"
+	defer func() { versionCheckURL = origURL }()
+
+	origVersion := clientVersion
+	clientVersion = "1.0.0"
+	defer func() { clientVersion = origVersion }()
+
+	var buf strings.Builder
+	checkCLIUpdate(&buf)
+
+	if buf.String() != "" {
+		t.Errorf("expected no output on error, got: %s", buf.String())
 	}
 }

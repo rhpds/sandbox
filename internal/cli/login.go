@@ -61,11 +61,10 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("saving config: %w", err)
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Login successful. Access token saved to ~/.local/sandbox-cli/config.json\n")
-	if loginResp.AccessTokenExp != nil {
-		fmt.Fprintf(cmd.OutOrStdout(), "Token expires: %s\n", loginResp.AccessTokenExp.Format("2006-01-02 15:04:05 MST"))
-	}
-	return nil
+	fmt.Fprintf(cmd.OutOrStdout(), "Login successful.\n\n")
+
+	// Show status right away
+	return runStatus(cmd, nil)
 }
 
 func runLogout(cmd *cobra.Command, args []string) error {

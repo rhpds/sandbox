@@ -22,7 +22,7 @@ type Client struct {
 const rhProxyHost = "squid.redhat.com"
 const rhProxyPort = "3128"
 
-var rhProxyNotified bool
+var rhProxyActive bool
 
 // newHTTPClient creates an http.Client with proxy support.
 //
@@ -46,10 +46,7 @@ func newHTTPClient() *http.Client {
 			}
 			return proxy(req)
 		}
-		if !rhProxyNotified {
-			rhProxyNotified = true
-			fmt.Fprintln(os.Stderr, "Using Red Hat VPN proxy (squid.redhat.com:3128)")
-		}
+		rhProxyActive = true
 	}
 
 	return &http.Client{
@@ -108,7 +105,13 @@ func (c *Client) do(method, path string, body io.Reader) (*http.Response, error)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
-	return c.HTTPClient.Do(req)
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		if hint := connectionErrorHint(err); hint != "" {
+			return nil, fmt.Errorf("%w%s", err, hint)
+		}
+	}
+	return resp, err
 }
 
 // LoginResponse is the response from GET /api/v1/login.

@@ -165,6 +165,24 @@ __meta__:
 
 The `--selector` and `-f` flags are mutually exclusive.
 
+## Version check
+
+When you run `sandbox-cli status`, the CLI checks for a newer version by
+fetching the `VERSION_CLI` file from the GitHub repository. If a newer version
+is available, a message is displayed:
+
+```
+A newer version of sandbox-cli is available: 1.2.0 (you have 1.1.0)
+Download: https://github.com/rhpds/sandbox/releases
+```
+
+The check is skipped silently if:
+- The network is unreachable or the file is missing
+- You are running a development build
+
+To update the latest advertised version, edit `cmd/sandbox-cli/VERSION_CLI` in
+the repository.
+
 ## Configuration
 
 Config is stored in `~/.local/sandbox-cli/config.json`. Values can be
