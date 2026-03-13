@@ -30,12 +30,12 @@ Two scripts automate the lifecycle of OCP shared clusters in the sandbox API fle
 - **oc** (or kubectl) CLI, logged in as admin to the target cluster
 - **curl** and **jq** installed
 - A sandbox API admin login token
-- Network access to the sandbox API
+- Network access to the sandbox API (see [Network access and proxy](../docs/cli.md#network-access-and-proxy))
 
 ### Offboarding
 - **curl** and **jq** installed
 - A sandbox API admin login token
-- Network access to the sandbox API
+- Network access to the sandbox API (see [Network access and proxy](../docs/cli.md#network-access-and-proxy))
 
 ## Environment Variables
 

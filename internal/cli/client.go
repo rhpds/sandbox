@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -16,14 +19,62 @@ type Client struct {
 	token      string
 }
 
+const rhProxyHost = "squid.redhat.com"
+const rhProxyPort = "3128"
+
+// newHTTPClient creates an http.Client with proxy support.
+//
+// Proxy resolution order:
+//  1. Standard HTTP_PROXY / HTTPS_PROXY / NO_PROXY env vars (if set)
+//  2. Auto-detect Red Hat VPN (squid.redhat.com:3128) when DNS resolves
+//  3. Direct connection (no proxy)
+//
+// To force direct access, set NO_PROXY=* or HTTPS_PROXY= (empty).
+func newHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+
+	if hasProxyEnv() {
+		// Standard env vars are set — let Go handle them as usual.
+		transport.Proxy = http.ProxyFromEnvironment
+	} else if proxyURL := detectRHProxy(); proxyURL != nil {
+		transport.Proxy = http.ProxyURL(proxyURL)
+		fmt.Fprintln(os.Stderr, "Using Red Hat VPN proxy (squid.redhat.com:3128)")
+	}
+
+	return &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: transport,
+	}
+}
+
+// hasProxyEnv returns true if any standard proxy env var is set (even if empty,
+// which means "direct connection").
+func hasProxyEnv() bool {
+	for _, key := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy"} {
+		if _, ok := os.LookupEnv(key); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// detectRHProxy checks if squid.redhat.com resolves (indicating the RH VPN is
+// active) and returns the proxy URL. Returns nil if not on VPN.
+func detectRHProxy() *url.URL {
+	_, err := net.LookupHost(rhProxyHost)
+	if err != nil {
+		return nil
+	}
+	u, _ := url.Parse("http://" + rhProxyHost + ":" + rhProxyPort)
+	return u
+}
+
 // NewClient creates a client with the given base URL and access token.
 func NewClient(baseURL, accessToken string) *Client {
 	return &Client{
-		BaseURL: strings.TrimRight(baseURL, "/"),
-		HTTPClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		token: accessToken,
+		BaseURL:    strings.TrimRight(baseURL, "/"),
+		HTTPClient: newHTTPClient(),
+		token:      accessToken,
 	}
 }
 
@@ -54,7 +105,7 @@ func Login(baseURL, loginToken string) (*LoginResponse, error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+loginToken)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := newHTTPClient()
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
