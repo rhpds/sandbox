@@ -51,7 +51,7 @@ func runLogin(cmd *cobra.Command, args []string) error {
 
 	loginResp, err := Login(cfg.Server, cfg.LoginToken)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w%s", err, connectionErrorHint(err))
 	}
 
 	cfg.AccessToken = loginResp.AccessToken
