@@ -89,6 +89,9 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	serverInfo, err := fetchServerVersion(client)
 	if err != nil {
 		fmt.Fprintf(out, "  (unreachable: %v)\n", err)
+		if hint := connectionErrorHint(err); hint != "" {
+			fmt.Fprintln(out, hint)
+		}
 		return nil
 	}
 

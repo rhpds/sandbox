@@ -139,7 +139,7 @@ func requireClient() (*Client, error) {
 
 	loginResp, err := Login(cfg.Server, cfg.LoginToken)
 	if err != nil {
-		return nil, fmt.Errorf("authentication failed: %w", err)
+		return nil, fmt.Errorf("authentication failed: %w%s", err, connectionErrorHint(err))
 	}
 
 	cfg.AccessToken = loginResp.AccessToken

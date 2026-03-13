@@ -183,3 +183,28 @@ func ReadError(resp *http.Response) error {
 	body, _ := io.ReadAll(resp.Body)
 	return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 }
+
+// isVPNOff returns true if squid.redhat.com does not resolve, indicating
+// the Red Hat VPN is not connected.
+func isVPNOff() bool {
+	return detectRHProxy() == nil
+}
+
+// connectionErrorHint returns a VPN hint if the error looks like a connection
+// failure and the VPN is not active. Returns "" if no hint is applicable.
+func connectionErrorHint(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	isConnErr := strings.Contains(msg, "EOF") ||
+		strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "no such host") ||
+		strings.Contains(msg, "i/o timeout") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "TLS handshake timeout")
+	if isConnErr && isVPNOff() {
+		return "\nHint: The sandbox API is IP-restricted. Connect to the Red Hat VPN and try again."
+	}
+	return ""
+}
