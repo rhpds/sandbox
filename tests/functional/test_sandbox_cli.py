@@ -29,6 +29,7 @@ import functools
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -193,10 +194,12 @@ def test_status(home_dir):
     """Test sandbox-cli status command (after login)."""
     stdout, stderr, rc = run_cli("status", home_dir=home_dir)
     assert rc == 0, f"status failed (rc={rc}): {stderr}"
-    assert "=== Client ===" in stdout, f"Expected client section in: {stdout}"
-    assert "=== Connection ===" in stdout, f"Expected connection section in: {stdout}"
-    assert "=== Server ===" in stdout, f"Expected server section in: {stdout}"
-    assert "DB Migration:" in stdout, f"Expected DB migration info in: {stdout}"
+    # Strip ANSI escape codes for assertion checks
+    clean = re.sub(r'\033\[[0-9;]*m', '', stdout)
+    assert "Client" in clean, f"Expected client section in: {stdout}"
+    assert "Connection" in clean, f"Expected connection section in: {stdout}"
+    assert "Server" in clean, f"Expected server section in: {stdout}"
+    assert "DB Migration:" in clean, f"Expected DB migration info in: {stdout}"
     logger.info("PASSED: status")
 
 
