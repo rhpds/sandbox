@@ -131,7 +131,7 @@ Configuration priority: CLI flags > environment variables > saved config.
 
 === Legacy Shell Scripts
 
-The `tools/` directory contains shell scripts that predate `sandbox-cli`. They are still functional but `sandbox-cli` is the recommended replacement:
+The `tools/` directory contains some legacy shell scripts. Use `sandbox-cli` equivalents when available:
 
 [cols="1,1"]
 |===
@@ -140,13 +140,9 @@ The `tools/` directory contains shell scripts that predate `sandbox-cli`. They a
 | `tools/issue-jwt.sh` | `sandbox-cli jwt list` / `jwt issue`
 | `tools/list-shared-clusters.sh` | `sandbox-cli cluster list`
 | `tools/get-shared-cluster.sh` | `sandbox-cli cluster get <name>`
-| `tools/onboard-ocp-shared-cluster.sh` | `sandbox-cli cluster onboard [name]`
-| `tools/offboard-ocp-shared-cluster.sh` | `sandbox-cli cluster offboard <name>`
 | `tools/sandbox_api_enable_shared_cluster.sh` | `sandbox-cli cluster enable <name>`
 | `tools/sandbox_api_disable_shared_cluster.sh` | `sandbox-cli cluster disable <name>`
 |===
-
-NOTE: `sandbox-cli cluster onboard` is the preferred method for initial cluster onboarding. It uses client-go to create the service account and token directly, then registers the cluster with the API. The shell script is kept for environments where the Go binary is not available.
 
 == RBAC Roles
 
@@ -370,7 +366,15 @@ air # <2>
 
 == OCP Shared Cluster Onboarding
 
-See link:tools/onboard-ocp-shared-cluster.md[OCP Shared Cluster Onboarding / Offboarding] for full documentation on adding and removing clusters from the fleet.
+Use `sandbox-cli` for cluster onboarding and offboarding. See link:docs/cli.md[sandbox-cli documentation] for full details.
+
+----
+# Onboard: connects to the target OCP cluster, creates SA + token, registers with API
+sandbox-cli cluster onboard [name] [--purpose dev] [--annotations '{}']
+
+# Offboard: disables cluster, cleans up placements, removes from API
+sandbox-cli cluster offboard <name> [--force]
+----
 
 == sandbox-replicate
 
