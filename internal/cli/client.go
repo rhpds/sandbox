@@ -22,6 +22,8 @@ type Client struct {
 const rhProxyHost = "squid.redhat.com"
 const rhProxyPort = "3128"
 
+var rhProxyNotified bool
+
 // newHTTPClient creates an http.Client with proxy support.
 //
 // Proxy resolution order:
@@ -37,8 +39,17 @@ func newHTTPClient() *http.Client {
 		// Standard env vars are set — let Go handle them as usual.
 		transport.Proxy = http.ProxyFromEnvironment
 	} else if proxyURL := detectRHProxy(); proxyURL != nil {
-		transport.Proxy = http.ProxyURL(proxyURL)
-		fmt.Fprintln(os.Stderr, "Using Red Hat VPN proxy (squid.redhat.com:3128)")
+		proxy := http.ProxyURL(proxyURL)
+		transport.Proxy = func(req *http.Request) (*url.URL, error) {
+			if isLoopback(req.URL.Hostname()) {
+				return nil, nil
+			}
+			return proxy(req)
+		}
+		if !rhProxyNotified {
+			rhProxyNotified = true
+			fmt.Fprintln(os.Stderr, "Using Red Hat VPN proxy (squid.redhat.com:3128)")
+		}
 	}
 
 	return &http.Client{
@@ -56,6 +67,16 @@ func hasProxyEnv() bool {
 		}
 	}
 	return false
+}
+
+// isLoopback returns true if the host is a loopback address (127.0.0.0/8,
+// ::1, or "localhost"). These should never be proxied.
+func isLoopback(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // detectRHProxy checks if squid.redhat.com resolves (indicating the RH VPN is

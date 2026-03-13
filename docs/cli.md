@@ -112,6 +112,58 @@ auto-detection.
 | `cluster delete <name>` | Delete a cluster configuration |
 | `placement get <uuid>` | Get placement details |
 | `placement delete <uuid>` | Delete a placement |
+| `placement dry-run` | Test cloud selectors against available clusters |
+
+### placement dry-run
+
+Simulate a placement to check which clusters match your cloud selectors.
+
+**Using `--selector`** (manual key=value pairs):
+
+```bash
+# Single selector
+sandbox-cli placement dry-run --selector purpose=dev
+
+# Multiple selectors
+sandbox-cli placement dry-run --selector purpose=dev,cloud=aws-shared
+
+# With preference
+sandbox-cli placement dry-run --selector purpose=dev --preference region=us-east-1
+```
+
+**Using `-f` / `--agnosticv-config`** (read from an AgnosticV catalog item):
+
+```bash
+# From a file -- reads __meta__.sandboxes[].cloud_selector entries
+sandbox-cli placement dry-run -f catalog-item/common.yaml
+
+# From stdin
+cat common.yaml | sandbox-cli placement dry-run -f -
+```
+
+The `-f` flag parses the YAML file for `__meta__.sandboxes[]` entries and
+tests each `cloud_selector` (and `cloud_preference` if present) in a single
+dry-run request. This lets you validate that an AgnosticV catalog item will
+match available clusters without creating a real placement.
+
+Example AgnosticV config:
+
+```yaml
+__meta__:
+  sandboxes:
+    - kind: OcpSandbox
+      count: 1
+      cloud_selector:
+        purpose: dev
+        cloud: cnv-shared
+    - kind: OcpSandbox
+      count: 1
+      cloud_selector:
+        purpose: events
+        virt: "yes"
+```
+
+The `--selector` and `-f` flags are mutually exclusive.
 
 ## Configuration
 

@@ -1,0 +1,14 @@
+# A config with extra fields that should be ignored, and a mix of
+# entries with and without cloud_selector.
+env_type: ocp4-cluster
+guid: abcde
+
+__meta__:
+  sandboxes:
+    - kind: OcpSandbox
+      count: 1
+      cloud_selector:
+        purpose: prod
+        cloud: aws-shared
+    - kind: OcpSandbox
+      count: 1
