@@ -360,11 +360,12 @@ RUN_HURL_TESTS="${RUN_HURL_TESTS:-${run_hurl_tests:-true}}"
 RUN_LIFECYCLE_TESTS="${RUN_LIFECYCLE_TESTS:-${run_lifecycle_tests:-true}}"
 RUN_LIMIT_RANGE_TESTS="${RUN_LIMIT_RANGE_TESTS:-${run_limit_range_tests:-true}}"
 RUN_ADMIN_SA_TESTS="${RUN_ADMIN_SA_TESTS:-${run_admin_sa_tests:-true}}"
+RUN_NO_NAMESPACE_TESTS="${RUN_NO_NAMESPACE_TESTS:-${run_no_namespace_tests:-true}}"
 RUN_ONBOARD_TESTS="${RUN_ONBOARD_TESTS:-${run_onboard_tests:-true}}"
 RUN_RBAC_TESTS="${RUN_RBAC_TESTS:-${run_rbac_tests:-true}}"
 RUN_CLI_TESTS="${RUN_CLI_TESTS:-${run_cli_tests:-true}}"
 
-echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS RUN_ONBOARD_TESTS=$RUN_ONBOARD_TESTS RUN_RBAC_TESTS=$RUN_RBAC_TESTS RUN_CLI_TESTS=$RUN_CLI_TESTS"
+echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS RUN_NO_NAMESPACE_TESTS=$RUN_NO_NAMESPACE_TESTS RUN_ONBOARD_TESTS=$RUN_ONBOARD_TESTS RUN_RBAC_TESTS=$RUN_RBAC_TESTS RUN_CLI_TESTS=$RUN_CLI_TESTS"
 
 if [ "$RUN_HURL_TESTS" != "false" ] && [ "$RUN_HURL_TESTS" != "no" ]; then
     tests=$1
@@ -484,6 +485,59 @@ if [ "${RUN_ADMIN_SA_TESTS}" != "false" ] && [ "${RUN_ADMIN_SA_TESTS}" != "no" ]
         ADMIN_SA_TARGET_VAR="cluster_admin_agnosticd_sa_token" \
         OCP_CLUSTER_NAME="ocpvdev01" \
         python3 tests/functional/test_ocp_admin_sa.py
+fi
+
+# Run Python OCP no_namespace tests if requested
+if [ "${RUN_NO_NAMESPACE_TESTS}" != "false" ] && [ "${RUN_NO_NAMESPACE_TESTS}" != "no" ]; then
+    echo ""
+    echo "=========================================="
+    echo "Running OCP no_namespace tests"
+    echo "=========================================="
+    cd $jobdir
+
+    # Ensure admin SA token is configured on ocpvdev01
+    echo "Ensuring admin SA token is configured on ocpvdev01..."
+    admin_access_token=$(curl -s -H "Authorization: Bearer $admintoken" \
+        "http://localhost:$PORT/api/v1/login" | jq -r '.access_token')
+
+    curl -s -X PUT \
+        -H "Authorization: Bearer $admin_access_token" \
+        -H "Content-Type: application/json" \
+        -d '{"deployer_admin_sa_token_ttl": "3h", "deployer_admin_sa_token_refresh_interval": "5s", "deployer_admin_sa_token_target_var": "cluster_admin_agnosticd_sa_token"}' \
+        "http://localhost:$PORT/api/v1/ocp-shared-cluster-configurations/ocpvdev01/update"
+    echo ""
+
+    # Wait for the background token rotation to populate the token
+    echo "Waiting for background token rotation..."
+    retries=0
+    deployer_admin_sa_token=""
+    while [ $retries -lt 30 ]; do
+        cluster_json=$(curl -s -H "Authorization: Bearer $admin_access_token" \
+            "http://localhost:$PORT/api/v1/ocp-shared-cluster-configurations/ocpvdev01")
+        deployer_admin_sa_token=$(echo "$cluster_json" | jq -r '.deployer_admin_sa_token // empty')
+        if [ -n "$deployer_admin_sa_token" ]; then
+            echo "Admin SA token is available"
+            break
+        fi
+        sleep 2
+        retries=$((retries + 1))
+        echo -n "."
+    done
+    echo ""
+
+    if [ -z "$deployer_admin_sa_token" ]; then
+        echo "ERROR: Admin SA token not populated after 60 seconds"
+        exit 1
+    fi
+
+    # Install Python dependencies if needed
+    pip3 install -q requests urllib3 2>/dev/null || true
+
+    # Run the Python no_namespace test
+    SANDBOX_API_URL="http://localhost:$PORT" \
+        SANDBOX_LOGIN_TOKEN="$apptoken" \
+        OCP_CLUSTER_NAME="ocpvdev01" \
+        python3 tests/functional/test_ocp_no_namespace.py
 fi
 
 # Run Python OCP shared cluster onboard/offboard tests if requested

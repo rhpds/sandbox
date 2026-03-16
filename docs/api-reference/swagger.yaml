@@ -3312,6 +3312,16 @@ components:
             The resulting username will be `<prefix><guid>`.
             Defaults to `sandbox-` if not specified.
           example: "sandbox-"
+        no_namespace:
+          type: boolean
+          description: |
+            When set to true, no namespace, service account, RBAC, quota, limit range,
+            keycloak user, or HCP/virt resources will be created on the cluster.
+            Only the cluster information (API URL, ingress domain, console URL) and the
+            deployer-admin service account token are returned.
+            This is incompatible with `keycloak: yes` in `cloud_selector`.
+          default: false
+          example: false
         annotations:
           $ref: "#/components/schemas/Annotations"
         quota:
@@ -3841,6 +3851,10 @@ components:
             deployer:
               openshift_cnv_nfs_path: /IBMfoobar/data01
               openshift_cnv_nfs_server: fsf-region.domain.com
+        no_namespace:
+          type: boolean
+          description: Whether this resource was created with no_namespace mode (no namespace, SA, RBAC, quota created).
+          example: false
 
     OcpSandboxWithCreds:
       description: An OpenShift sandbox with credentials
