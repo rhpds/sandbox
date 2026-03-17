@@ -151,17 +151,6 @@ Onboards an OCP shared cluster to the sandbox API fleet. The command:
 > admin token rotation goroutine (configured via `deployer_admin_sa_token_ttl`
 > and `deployer_admin_sa_token_refresh_interval` in the config file).
 
-```bash
-# Login to the target OCP cluster first
-oc login --token=<admin-token> --server=https://api.<cluster>:6443 --insecure-skip-tls-verify
-
-# Dry run to verify the payload
-sandbox-cli cluster onboard --config cluster-config.json --dry-run
-
-# Onboard
-sandbox-cli cluster onboard --config cluster-config.json
-```
-
 #### config.json
 
 The `--config` flag accepts a JSON file for advanced settings. The
@@ -184,6 +173,21 @@ workloads that need cluster-scoped access will fail with a 403.
   "deployer_admin_sa_token_target_var": "cluster_admin_agnosticd_sa_token",
   "skip_quota": true
 }
+```
+
+#### Onboarding steps
+
+```bash
+# 1. Login to the target OCP cluster
+oc login --token=<admin-token> --server=https://api.<cluster>:6443 --insecure-skip-tls-verify
+
+# 2. Create cluster-config.json (see template above)
+
+# 3. Dry run to verify the payload before registering
+sandbox-cli cluster onboard --config cluster-config.json --dry-run
+
+# 4. Onboard
+sandbox-cli cluster onboard --config cluster-config.json
 ```
 
 `deployer_admin_sa_token_*` fields explained:
