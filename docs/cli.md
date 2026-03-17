@@ -44,6 +44,26 @@ sandbox-cli login --server https://sandbox-api.example.com --token $TOKEN
 sandbox-cli status
 ```
 
+## Getting a login token
+
+Login tokens are long-lived JWTs issued by a sandbox API admin. If you do not
+have one, ask an admin to issue one for you:
+
+```bash
+# Admin issues a token for a new user
+sandbox-cli jwt issue --name <username> --role admin
+sandbox-cli jwt issue --name <username> --role shared-cluster-manager
+sandbox-cli jwt issue --name <username> --role app
+```
+
+The output is the login token to share with the user. It defaults to a 10-year
+expiry. Use `--expiration` to set a shorter duration (e.g. `30d`).
+
+Roles:
+- `admin` -- full access
+- `shared-cluster-manager` -- onboard/offboard clusters, list placements
+- `app` -- create/delete placements (used by Babylon/AgnosticD)
+
 ## Network access and proxy
 
 Access to the sandbox API on the infra cluster is restricted by IP. There are
@@ -105,7 +125,8 @@ auto-detection.
 | `jwt activity` | Show JWT token activity |
 | `cluster list` | List all clusters |
 | `cluster get <name>` | Show cluster details |
-| `cluster create <name>` | Onboard a cluster (reads JSON from stdin) |
+| `cluster onboard [name]` | Onboard a cluster using current kubeconfig context |
+| `cluster create <name>` | Create or update a cluster configuration (reads JSON from stdin) |
 | `cluster offboard <name>` | Offboard a cluster |
 | `cluster enable <name>` | Enable scheduling on a cluster |
 | `cluster disable <name>` | Disable scheduling on a cluster |
@@ -114,6 +135,85 @@ auto-detection.
 | `placement get <uuid>` | Get placement details |
 | `placement delete <uuid>` | Delete a placement |
 | `placement dry-run` | Test cloud selectors against available clusters |
+
+### cluster onboard
+
+Onboards an OCP shared cluster to the sandbox API fleet. The command:
+1. Connects to the cluster using your current kubeconfig context (or `--kubeconfig` / `--context`)
+2. Creates the `sandbox-api-manager` service account with cluster-admin
+3. Generates a long-lived token (~10 years) for that service account
+4. Registers the cluster with the sandbox API
+5. Validates the cluster is reachable from the sandbox API
+
+```bash
+# Login to the target OCP cluster first
+oc login --token=<admin-token> --server=https://api.<cluster>:6443 --insecure-skip-tls-verify
+
+# Dry run to verify the payload
+sandbox-cli cluster onboard --config cluster-config.json --dry-run
+
+# Onboard
+sandbox-cli cluster onboard --config cluster-config.json
+```
+
+#### config.json
+
+The `--config` flag accepts a JSON file for advanced settings. The
+`deployer_admin_sa_token_*` fields are **required** for
+`cluster_admin_agnosticd_sa_token` to be available in AgnosticD workloads.
+Without them the sandbox API will not generate the deployer admin token and
+workloads that need cluster-scoped access will fail with a 403.
+
+```json
+{
+  "annotations": {
+    "cloud": "cnv-dedicated-shared",
+    "purpose": "dev",
+    "virt": "yes",
+    "keycloak": "yes",
+    "lab": "<lab-annotation>"
+  },
+  "deployer_admin_sa_token_ttl": "1h",
+  "deployer_admin_sa_token_refresh_interval": "30m",
+  "deployer_admin_sa_token_target_var": "cluster_admin_agnosticd_sa_token",
+  "skip_quota": true
+}
+```
+
+`deployer_admin_sa_token_*` fields explained:
+
+| Field | Description |
+|-------|-------------|
+| `deployer_admin_sa_token_ttl` | Lifetime of the generated deployer admin token (e.g. `1h`, `48h`) |
+| `deployer_admin_sa_token_refresh_interval` | How often the background goroutine rotates the token |
+| `deployer_admin_sa_token_target_var` | Ansible variable name injected into AgnosticD workloads |
+
+#### Verifying the deployer admin token was generated
+
+The sandbox API generates the deployer admin token in the background after
+onboarding. Verify it has been created before attempting a placement:
+
+```bash
+sleep 10
+sandbox-cli cluster get <cluster-name> | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print('token_set:', bool(d.get('deployer_admin_sa_token')))
+print('token_updated_at:', d.get('data', {}).get('deployer_admin_sa_token_updated_at'))
+"
+```
+
+`token_set` should be `True`. If it remains `False`, check that the
+`deployer_admin_sa_token_ttl` field was included in the config and that you
+used a released binary (not a local dev build).
+
+#### Verifying placement
+
+After onboarding, confirm your AgnosticV catalog item will match the cluster:
+
+```bash
+sandbox-cli placement dry-run -f catalog-item/common.yaml
+```
 
 ### placement dry-run
 
