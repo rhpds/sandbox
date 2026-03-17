@@ -4359,6 +4359,27 @@ components:
                 Current number of OcpSandbox resources placed on this cluster.
                 Read-only, populated by the API on list/get responses.
               example: 12
+            connection_status:
+              type: string
+              description: >-
+                Last connection status. "ok" means the last connection succeeded,
+                "error" means it failed. Updated by scheduling, health checks,
+                fleet status, and token rotation.
+              example: ok
+            connection_status_at:
+              type: string
+              format: date-time
+              description: When the connection status was last updated.
+              example: "2025-01-15T10:30:00Z"
+            connection_error_count:
+              type: integer
+              description: Number of consecutive connection errors. Reset to 0 on success.
+              example: 0
+            connection_last_success_at:
+              type: string
+              format: date-time
+              description: When the cluster was last successfully connected to. Useful for troubleshooting persistent failures.
+              example: "2025-01-15T10:30:00Z"
         created_by:
           type: string
           description: |-

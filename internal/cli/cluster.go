@@ -43,18 +43,19 @@ var clusterListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tVALID\tAPI_URL\tCREATED_BY\tPLACEMENTS")
+		fmt.Fprintln(w, "NAME\tVALID\tAPI_URL\tCREATED_BY\tPLACEMENTS\tLAST STATUS")
 		for _, c := range clusters {
 			valid := "NO"
 			if v, ok := c["valid"].(bool); ok && v {
 				valid = "yes"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
 				jsonStr(c["name"]),
 				valid,
 				jsonStr(c["api_url"]),
 				jsonStr(c["created_by"]),
 				formatPlacements(c, c["max_placements"]),
+				formatConnectionStatus(c),
 			)
 		}
 		w.Flush()
@@ -474,6 +475,59 @@ func formatPlacements(cluster map[string]any, max any) string {
 		return fmt.Sprintf("%4d / %4d", cur, int(m))
 	}
 	return fmt.Sprintf("%4d /    ?", cur)
+}
+
+// formatConnectionStatus returns the cluster connection status and age from the data JSONB.
+func formatConnectionStatus(cluster map[string]any) string {
+	data, ok := cluster["data"].(map[string]any)
+	if !ok {
+		return "-"
+	}
+	status, _ := data["connection_status"].(string)
+	if status == "" {
+		return "-"
+	}
+	atStr, _ := data["connection_status_at"].(string)
+	if atStr == "" {
+		return status
+	}
+	t, err := time.Parse(time.RFC3339Nano, atStr)
+	if err != nil {
+		return status
+	}
+	age := time.Since(t)
+	result := fmt.Sprintf("%s %s ago", status, formatAge(age))
+
+	// When in error, show last success time and error count for troubleshooting
+	if status == "error" {
+		if errCount, ok := data["connection_error_count"].(float64); ok && errCount > 0 {
+			result += fmt.Sprintf(" (%dx)", int(errCount))
+		}
+		if lastOkStr, ok := data["connection_last_success_at"].(string); ok && lastOkStr != "" {
+			if lastOk, err := time.Parse(time.RFC3339Nano, lastOkStr); err == nil {
+				if lastOk.IsZero() || lastOk.Year() < 2000 {
+					result += ", last ok never"
+				} else {
+					result += fmt.Sprintf(", last ok %s ago", formatAge(time.Since(lastOk)))
+				}
+			}
+		}
+	}
+	return result
+}
+
+// formatAge returns a human-readable age string like "3s", "12m", "2h", "5d".
+func formatAge(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
 }
 
 // formatAnnotations formats a map as "k=v, k=v".
