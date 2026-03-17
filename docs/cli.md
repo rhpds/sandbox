@@ -141,9 +141,15 @@ auto-detection.
 Onboards an OCP shared cluster to the sandbox API fleet. The command:
 1. Connects to the cluster using your current kubeconfig context (or `--kubeconfig` / `--context`)
 2. Creates the `sandbox-api-manager` service account with cluster-admin
-3. Generates a long-lived token (~10 years) for that service account
+3. Generates a long-lived token for that service account via the `TokenRequest` API
 4. Registers the cluster with the sandbox API
 5. Validates the cluster is reachable from the sandbox API
+
+> **Note:** The token lifetime is bounded by the cluster's
+> `--service-account-max-expiration-seconds` setting. OpenShift defaults this
+> to 1 year. The token is renewed automatically by the sandbox API's deployer
+> admin token rotation goroutine (configured via `deployer_admin_sa_token_ttl`
+> and `deployer_admin_sa_token_refresh_interval` in the config file).
 
 ```bash
 # Login to the target OCP cluster first
