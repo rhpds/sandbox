@@ -155,6 +155,13 @@ type ClusterData struct {
 	DeployerAdminSATokenRotationCount int       `json:"deployer_admin_sa_token_rotation_count,omitempty"`
 	AllowedUpdateRoles                []string  `json:"allowed_update_roles,omitempty"`
 	CurrentPlacementCount             *int      `json:"current_placement_count,omitempty"`
+
+	// Connection tracking: updated whenever the API connects to this cluster.
+	// "ok" means the last connection succeeded, "error" means it failed.
+	ConnectionStatus        string    `json:"connection_status,omitempty"`
+	ConnectionStatusAt      time.Time `json:"connection_status_at,omitempty"`
+	ConnectionErrorCount    int       `json:"connection_error_count,omitempty"`
+	ConnectionLastSuccessAt time.Time `json:"connection_last_success_at,omitempty"`
 }
 
 // CanModify checks whether the given role and caller name are allowed to modify
@@ -1778,8 +1785,10 @@ func (a *OcpSharedClusterConfiguration) TestConnection() error {
 	_, err = clientset.CoreV1().Namespaces().Get(ctx, "default", metav1.GetOptions{})
 	if err != nil {
 		log.Logger.Error("Error accessing default namespace", "error", err)
+		a.RecordConnectionStatus(false)
 		return errors.New("Error accessing default namespace: " + err.Error())
 	}
+	a.RecordConnectionStatus(true)
 	return nil
 }
 
@@ -2016,6 +2025,7 @@ func (a *OcpSandboxProvider) Request(
 			if err != nil {
 				log.Logger.Error("Error listing OCP nodes", "error", err)
 				rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to list nodes on cluster %s: %v", cluster.Name, err))
+				cluster.RecordConnectionStatus(false)
 				continue providerLoop
 			}
 
@@ -2078,6 +2088,7 @@ func (a *OcpSandboxProvider) Request(
 			if clusterMemoryUsage < cluster.MaxMemoryUsagePercentage && clusterCpuUsage < cluster.MaxCpuUsagePercentage && (selectedClusterMemoryUsage == -1 || clusterMemoryUsage < selectedClusterMemoryUsage) {
 
 				selectedCluster = cluster
+				cluster.RecordConnectionStatus(true)
 				log.Logger.Info("selectedCluster", "cluster", selectedCluster.Name)
 				break providerLoop
 			}
@@ -2931,6 +2942,36 @@ func (p *OcpSharedClusterConfiguration) SaveDeployerAdminSAToken(token string) e
 	return nil
 }
 
+// RecordConnectionStatus updates the cluster's connection tracking in the data JSONB column.
+// ok=true resets the error counter; ok=false increments it. The timestamp is always updated.
+func (p *OcpSharedClusterConfiguration) RecordConnectionStatus(ok bool) {
+	if p.DbPool == nil {
+		return
+	}
+	newData := p.Data
+	now := time.Now().UTC()
+	newData.ConnectionStatusAt = now
+	if ok {
+		newData.ConnectionStatus = "ok"
+		newData.ConnectionErrorCount = 0
+		newData.ConnectionLastSuccessAt = now
+	} else {
+		newData.ConnectionStatus = "error"
+		newData.ConnectionErrorCount++
+	}
+
+	_, err := p.DbPool.Exec(
+		context.Background(),
+		`UPDATE ocp_shared_cluster_configurations SET data = $1 WHERE id = $2`,
+		newData, p.ID,
+	)
+	if err != nil {
+		log.Logger.Error("RecordConnectionStatus: failed to update data", "error", err, "cluster", p.Name)
+		return
+	}
+	p.Data = newData
+}
+
 // RotateDeployerAdminSATokens iterates over all cluster configurations that have
 // deployer_admin_sa_token_ttl set, creates a fresh token, and saves it to the DB.
 func (a *OcpSandboxProvider) RotateDeployerAdminSATokens() {
@@ -3016,6 +3057,9 @@ func (a *OcpSandboxProvider) RotateDeployerAdminSATokens() {
 				"cluster", cluster.Name,
 				"attempts", maxRetries,
 				"error", lastErr)
+			cluster.RecordConnectionStatus(false)
+		} else {
+			cluster.RecordConnectionStatus(true)
 		}
 	}
 }
@@ -3025,10 +3069,10 @@ func (a *OcpSandboxProvider) RotateDeployerAdminSATokens() {
 // It runs an initial rotation immediately, then repeats at the minimum refresh interval
 // found across all enabled clusters.
 func (a *OcpSandboxProvider) StartDeployerAdminSATokenRotation(ctx context.Context) {
-	// Run initial rotation immediately
-	a.RotateDeployerAdminSATokens()
-
 	go func() {
+		// Run initial rotation immediately (in the goroutine so it doesn't block startup)
+		a.RotateDeployerAdminSATokens()
+
 		for {
 			// Determine the shortest refresh interval across all clusters
 			interval := a.getDeployerAdminSATokenRefreshInterval()
@@ -4377,8 +4421,10 @@ func (a *OcpSandboxProvider) OcpSharedClusterStatus(ctx context.Context, job *Jo
 			statusBody.Message = err.Error()
 		}
 		job.Status = "error"
+		conf.RecordConnectionStatus(false)
 	} else {
 		job.Status = "success"
+		conf.RecordConnectionStatus(true)
 	}
 
 	if err := SetJobBody(job, statusBody); err != nil {

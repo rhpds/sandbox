@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -960,6 +961,119 @@ func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusAccepted)
 	render.Render(w, r, &v1.SimpleMessage{
 		Message: "Placement marked for deletion",
+	})
+}
+
+// Force-delete placement: synchronously deletes all resources and the placement
+// row from the database. No cluster cleanup is attempted. Admin-only.
+//
+// *** DESTRUCTIVE OPERATION — LAST RESORT ONLY ***
+//
+// This is an escape hatch for deadlocked placements (e.g. multi-cluster placements
+// where all clusters are gone/unreachable and normal deletion is stuck forever).
+//
+// It deletes everything from the database synchronously:
+//   - All resources in the 'resources' table for this placement.
+//   - The placement row itself.
+//   - AWS accounts are marked for cleanup (DynamoDB, outside PostgreSQL).
+//
+// It does NOT:
+//   - Contact any cluster to remove namespaces, service accounts, RBAC bindings,
+//     quotas, Ceph resources, Keycloak users, or any other provisioned objects.
+//   - Clean up DNS records, IBM resource groups, or any other cloud resources.
+//
+// Any resources provisioned on clusters will be orphaned until the clusters are
+// decommissioned or manually cleaned up. Only use this when the clusters are
+// confirmed gone or permanently unreachable.
+func (h *BaseHandler) ForceDeletePlacementHandler(w http.ResponseWriter, r *http.Request) {
+	serviceUuid := chi.URLParam(r, "uuid")
+	if _, err := uuid.Parse(serviceUuid); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid UUID format",
+		})
+		return
+	}
+
+	placement, err := models.GetPlacementByServiceUuid(h.dbpool, serviceUuid)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Placement not found",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting placement",
+		})
+		return
+	}
+
+	log.Logger.Warn("FORCE-DELETE: Deleting placement and all resources from DB. "+
+		"No cluster cleanup will be performed. Orphaned resources may remain on clusters.",
+		"service_uuid", serviceUuid,
+		"status", placement.Status,
+	)
+
+	// Delete all resources for this placement directly from the DB.
+	res, err := h.dbpool.Exec(
+		context.Background(),
+		"DELETE FROM resources WHERE service_uuid = $1",
+		serviceUuid,
+	)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error deleting resources",
+		})
+		return
+	}
+	resourcesDeleted := res.RowsAffected()
+
+	// Delete the placement row.
+	_, err = h.dbpool.Exec(
+		context.Background(),
+		"DELETE FROM placements WHERE service_uuid = $1",
+		serviceUuid,
+	)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			Err:            err,
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error deleting placement",
+		})
+		return
+	}
+
+	// Mark AWS accounts for cleanup (persistent, pool-based resources stored
+	// outside PostgreSQL in DynamoDB).
+	if err := h.awsAccountProvider.MarkForCleanupByServiceUuid(serviceUuid); err != nil {
+		log.Logger.Warn("FORCE-DELETE: Failed to mark AWS accounts for cleanup (may not exist)",
+			"service_uuid", serviceUuid,
+			"error", err,
+		)
+	}
+
+	log.Logger.Warn("FORCE-DELETE: Placement and resources deleted",
+		"service_uuid", serviceUuid,
+		"resources_deleted", resourcesDeleted,
+	)
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &v1.SimpleMessage{
+		Message: fmt.Sprintf(
+			"Placement %s force-deleted. %d resource(s) removed from database. "+
+				"No cluster cleanup was performed — orphaned resources may remain on clusters.",
+			serviceUuid, resourcesDeleted),
 	})
 }
 

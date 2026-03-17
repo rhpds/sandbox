@@ -143,8 +143,11 @@ func checkCLIUpdate(out io.Writer) {
 
 
 // ANSI formatting helpers.
-func bold(s string) string  { return "\033[1m" + s + "\033[0m" }
-func warn(s string) string  { return "\033[1;33m" + s + "\033[0m" }
+func bold(s string) string       { return "\033[1m" + s + "\033[0m" }
+func warn(s string) string       { return "\033[1;33m" + s + "\033[0m" }
+func colorGreen(s string) string { return "\033[32m" + s + "\033[0m" }
+func colorRed(s string) string   { return "\033[31m" + s + "\033[0m" }
+func colorGray(s string) string  { return "\033[90m" + s + "\033[0m" }
 
 // fetchLatestCLIVersion fetches the VERSION_CLI file from the GitHub repo.
 func fetchLatestCLIVersion() (string, error) {

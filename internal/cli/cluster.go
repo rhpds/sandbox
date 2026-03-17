@@ -43,18 +43,19 @@ var clusterListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tVALID\tAPI_URL\tCREATED_BY\tPLACEMENTS")
+		fmt.Fprintln(w, "NAME\tVALID\tAPI_URL\tCREATED_BY\tPLACEMENTS\tLAST STATUS")
 		for _, c := range clusters {
 			valid := "NO"
 			if v, ok := c["valid"].(bool); ok && v {
 				valid = "yes"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
 				jsonStr(c["name"]),
 				valid,
 				jsonStr(c["api_url"]),
 				jsonStr(c["created_by"]),
 				formatPlacements(c, c["max_placements"]),
+				formatConnectionStatus(c),
 			)
 		}
 		w.Flush()
@@ -352,16 +353,23 @@ func clusterToggle(action string) func(*cobra.Command, []string) error {
 
 // --- cluster health ---
 
+var clusterHealthAll bool
+
 var clusterHealthCmd = &cobra.Command{
-	Use:   "health <name>",
+	Use:   "health [name]",
 	Short: "Check cluster connectivity (admin only)",
 	Long: `Verify that the sandbox API can reach the cluster.
 
 The API connects to the cluster using the stored service account token
 and checks that it can access the "default" namespace. This confirms
-that the cluster is reachable and the token is valid.`,
-	Args: cobra.ExactArgs(1),
+that the cluster is reachable and the token is valid.
+
+Use --all to check all clusters at once.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !clusterHealthAll && len(args) == 0 {
+			return fmt.Errorf("requires a cluster name or --all flag")
+		}
 		if err := requireRole("admin"); err != nil {
 			return err
 		}
@@ -370,31 +378,83 @@ that the cluster is reachable and the token is valid.`,
 			return err
 		}
 
-		resp, err := client.Get("/api/v1/ocp-shared-cluster-configurations/" + args[0] + "/health")
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-
 		out := cmd.OutOrStdout()
 
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			fmt.Fprintf(out, "OK: sandbox API can connect to cluster %s.\n", args[0])
-			return nil
+		if clusterHealthAll {
+			return runHealthAll(client, out)
 		}
 
-		// Error response — decode and display
-		var result map[string]any
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("health check failed (HTTP %d)", resp.StatusCode)
-		}
-
-		msg := jsonStr(result["message"])
-		if errLines, ok := result["error_multiline"].([]any); ok && len(errLines) > 0 {
-			return fmt.Errorf("health check failed: %s: %s", msg, jsonStr(errLines[0]))
-		}
-		return fmt.Errorf("health check failed: %s", msg)
+		return runHealthSingle(client, out, args[0])
 	},
+}
+
+func runHealthSingle(client *Client, out io.Writer, name string) error {
+	resp, err := client.Get("/api/v1/ocp-shared-cluster-configurations/" + name + "/health")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		fmt.Fprintf(out, "OK: %s\n", name)
+		return nil
+	}
+
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("health check failed for %s (HTTP %d)", name, resp.StatusCode)
+	}
+
+	msg := jsonStr(result["message"])
+	if errLines, ok := result["error_multiline"].([]any); ok && len(errLines) > 0 {
+		return fmt.Errorf("health check failed for %s: %s: %s", name, msg, jsonStr(errLines[0]))
+	}
+	return fmt.Errorf("health check failed for %s: %s", name, msg)
+}
+
+func runHealthAll(client *Client, out io.Writer) error {
+	resp, err := client.Get("/api/v1/ocp-shared-cluster-configurations")
+	if err != nil {
+		return err
+	}
+
+	var clusters []map[string]any
+	if err := ReadJSON(resp, &clusters); err != nil {
+		return err
+	}
+
+	if len(clusters) == 0 {
+		fmt.Fprintln(out, "No clusters configured.")
+		return nil
+	}
+
+	fmt.Fprintf(out, "Checking %d cluster(s)...\n", len(clusters))
+
+	var failed []string
+	for _, c := range clusters {
+		name := jsonStr(c["name"])
+		resp, err := client.Get("/api/v1/ocp-shared-cluster-configurations/" + name + "/health")
+		if err != nil {
+			fmt.Fprintf(out, "ERROR: %s - %v\n", name, err)
+			failed = append(failed, name)
+			continue
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			fmt.Fprintf(out, "OK: %s\n", name)
+		} else {
+			fmt.Fprintf(out, "ERROR: %s (HTTP %d)\n", name, resp.StatusCode)
+			failed = append(failed, name)
+		}
+	}
+
+	fmt.Fprintln(out)
+	if len(failed) > 0 {
+		return fmt.Errorf("%d/%d cluster(s) unreachable: %s", len(failed), len(clusters), strings.Join(failed, ", "))
+	}
+	fmt.Fprintf(out, "All %d cluster(s) healthy.\n", len(clusters))
+	return nil
 }
 
 // --- cluster delete ---
@@ -448,6 +508,7 @@ func init() {
 	clusterCmd.AddCommand(clusterOffboardStatusCmd)
 	clusterCmd.AddCommand(clusterEnableCmd)
 	clusterCmd.AddCommand(clusterDisableCmd)
+	clusterHealthCmd.Flags().BoolVarP(&clusterHealthAll, "all", "a", false, "Check all clusters")
 	clusterCmd.AddCommand(clusterHealthCmd)
 	clusterCmd.AddCommand(clusterDeleteCmd)
 }
@@ -474,6 +535,66 @@ func formatPlacements(cluster map[string]any, max any) string {
 		return fmt.Sprintf("%4d / %4d", cur, int(m))
 	}
 	return fmt.Sprintf("%4d /    ?", cur)
+}
+
+// formatConnectionStatus returns the cluster connection status and age from the data JSONB.
+func formatConnectionStatus(cluster map[string]any) string {
+	data, ok := cluster["data"].(map[string]any)
+	if !ok {
+		return "-"
+	}
+	status, _ := data["connection_status"].(string)
+	if status == "" {
+		return "-"
+	}
+	atStr, _ := data["connection_status_at"].(string)
+	if atStr == "" {
+		return status
+	}
+	t, err := time.Parse(time.RFC3339Nano, atStr)
+	if err != nil {
+		return status
+	}
+	age := time.Since(t)
+	ageStr := formatAge(age)
+
+	if status == "ok" {
+		return fmt.Sprintf("%s %s", colorGreen("ok   "), colorGray(ageStr+" ago"))
+	}
+
+	// Error: show error count and last success for troubleshooting
+	var details []string
+	if errCount, ok := data["connection_error_count"].(float64); ok && errCount > 0 {
+		details = append(details, fmt.Sprintf("%dx", int(errCount)))
+	}
+	if lastOkStr, ok := data["connection_last_success_at"].(string); ok && lastOkStr != "" {
+		if lastOk, err := time.Parse(time.RFC3339Nano, lastOkStr); err == nil {
+			if lastOk.IsZero() || lastOk.Year() < 2000 {
+				details = append(details, "never ok")
+			} else {
+				details = append(details, fmt.Sprintf("ok %s", formatAge(time.Since(lastOk))))
+			}
+		}
+	}
+	rest := ageStr + " ago"
+	if len(details) > 0 {
+		rest += fmt.Sprintf(" (%s)", strings.Join(details, ", "))
+	}
+	return fmt.Sprintf("%s %s", colorRed("error"), colorGray(rest))
+}
+
+// formatAge returns a human-readable age string like "3s", "12m", "2h", "5d".
+func formatAge(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
 }
 
 // formatAnnotations formats a map as "k=v, k=v".
