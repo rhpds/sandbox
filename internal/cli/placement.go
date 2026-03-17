@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -62,6 +63,138 @@ Examples:
 	RunE: runPlacementDryRun,
 }
 
+var placementGetCmd = &cobra.Command{
+	Use:   "get <service_uuid>",
+	Short: "Get a placement by service UUID",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireRole("admin", "app"); err != nil {
+			return err
+		}
+		client, err := requireClient()
+		if err != nil {
+			return err
+		}
+
+		resp, err := client.Get("/api/v1/placements/" + args[0])
+		if err != nil {
+			return err
+		}
+
+		var result map[string]any
+		if err := ReadJSON(resp, &result); err != nil {
+			return err
+		}
+
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
+	},
+}
+
+var placementDeleteForce bool
+
+var placementDeleteCmd = &cobra.Command{
+	Use:   "delete <service_uuid>",
+	Short: "Delete a placement by service UUID",
+	Long: `Delete a placement by service UUID.
+
+By default, this triggers a graceful deletion that cleans up all
+resources on the target clusters before removing the placement.
+
+With --force, the placement and all its resources are deleted directly
+from the database. No cluster cleanup is attempted. This is an
+admin-only last-resort for deadlocked placements where clusters are
+unreachable and normal deletion is stuck.
+
+WARNING: --force does NOT clean up namespaces, service accounts, RBAC
+bindings, quotas, Ceph resources, Keycloak users, or any other objects
+on the clusters. Orphaned resources will remain until the clusters are
+decommissioned or manually cleaned up. Only use when the clusters are
+confirmed gone or permanently unreachable.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if placementDeleteForce {
+			if err := requireRole("admin"); err != nil {
+				return err
+			}
+		} else {
+			if err := requireRole("admin", "app"); err != nil {
+				return err
+			}
+		}
+
+		client, err := requireClient()
+		if err != nil {
+			return err
+		}
+
+		out := cmd.OutOrStdout()
+
+		if placementDeleteForce {
+			fmt.Fprintln(out, "╔══════════════════════════════════════════════════════════════╗")
+			fmt.Fprintln(out, "║                    *** WARNING ***                           ║")
+			fmt.Fprintln(out, "║                                                              ║")
+			fmt.Fprintln(out, "║  You are about to FORCE-DELETE a placement.                  ║")
+			fmt.Fprintln(out, "║                                                              ║")
+			fmt.Fprintln(out, "║  This will DELETE the placement and ALL its resources         ║")
+			fmt.Fprintln(out, "║  directly from the database.                                 ║")
+			fmt.Fprintln(out, "║                                                              ║")
+			fmt.Fprintln(out, "║  NO cluster cleanup will be performed:                       ║")
+			fmt.Fprintln(out, "║    - Namespaces will NOT be removed                          ║")
+			fmt.Fprintln(out, "║    - Service accounts will NOT be removed                    ║")
+			fmt.Fprintln(out, "║    - RBAC bindings will NOT be removed                       ║")
+			fmt.Fprintln(out, "║    - Quotas, Ceph resources, Keycloak users, etc.            ║")
+			fmt.Fprintln(out, "║      will NOT be removed                                     ║")
+			fmt.Fprintln(out, "║                                                              ║")
+			fmt.Fprintln(out, "║  Pooled resources (e.g. AWS accounts) will be detached and   ║")
+			fmt.Fprintln(out, "║  marked for cleanup.                                         ║")
+			fmt.Fprintln(out, "║                                                              ║")
+			fmt.Fprintln(out, "║  Only use when clusters are confirmed gone or permanently    ║")
+			fmt.Fprintln(out, "║  unreachable.                                                ║")
+			fmt.Fprintln(out, "╚══════════════════════════════════════════════════════════════╝")
+			fmt.Fprintln(out)
+			fmt.Fprintf(out, "Placement to delete: %s\n\n", args[0])
+			fmt.Fprint(out, "Type 'yes' to confirm: ")
+
+			scanner := bufio.NewScanner(cmd.InOrStdin())
+			scanner.Scan()
+			answer := strings.TrimSpace(scanner.Text())
+			if answer != "yes" {
+				fmt.Fprintln(out, "Aborted.")
+				return nil
+			}
+			fmt.Fprintln(out)
+
+			resp, err := client.Delete("/api/v1/placements/" + args[0] + "/force")
+			if err != nil {
+				return err
+			}
+
+			var result map[string]any
+			if err := ReadJSON(resp, &result); err != nil {
+				return err
+			}
+
+			fmt.Fprintln(out, jsonStr(result["message"]))
+			return nil
+		}
+
+		resp, err := client.Delete("/api/v1/placements/" + args[0])
+		if err != nil {
+			return err
+		}
+
+		var result map[string]any
+		if err := ReadJSON(resp, &result); err != nil {
+			return err
+		}
+
+		fmt.Fprintln(out, jsonStr(result["message"]))
+		return nil
+	},
+}
+
 func init() {
 	placementDryRunCmd.Flags().StringVar(&dryRunCloudSelector, "selector", "", "Cloud selector as key=value pairs (comma-separated)")
 	placementDryRunCmd.Flags().StringVar(&dryRunCloudPreference, "preference", "", "Cloud preference as key=value pairs (comma-separated)")
@@ -69,6 +202,9 @@ func init() {
 	placementDryRunCmd.MarkFlagsMutuallyExclusive("selector", "agnosticv-config")
 
 	placementCmd.AddCommand(placementDryRunCmd)
+	placementCmd.AddCommand(placementGetCmd)
+	placementDeleteCmd.Flags().BoolVar(&placementDeleteForce, "force", false, "Force-delete from DB without cluster cleanup (admin only)")
+	placementCmd.AddCommand(placementDeleteCmd)
 	rootCmd.AddCommand(placementCmd)
 }
 

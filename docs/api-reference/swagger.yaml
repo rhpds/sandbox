@@ -438,6 +438,69 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /placements/{uuid}/force:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Access JTW Token (admin only)
+        required: true
+        schema:
+          type: string
+        example: Bearer <ACCESS_TOKEN>
+      - name: uuid
+        in: path
+        required: true
+        description: The UUID of the service.
+        schema:
+          $ref: "#/components/schemas/UUID"
+    delete:
+      tags:
+        - placement
+      operationId: forceDeletePlacement
+      summary: "DESTRUCTIVE: Force-delete a placement from the database (admin only)"
+      description: |-
+        **⚠️ DESTRUCTIVE OPERATION — USE AS LAST RESORT ONLY**
+
+        Synchronously deletes a placement and all its resources directly from the
+        database. No cluster cleanup is attempted. AWS accounts are marked for
+        cleanup (DynamoDB).
+
+        This is intended for deadlocked placements where normal deletion is stuck
+        (e.g. multi-cluster placements where all clusters are gone/unreachable).
+
+        **What it does:**
+        - Deletes all resources from the `resources` table for this placement.
+        - Deletes the placement row from the `placements` table.
+        - Marks AWS accounts for cleanup via the account provider (DynamoDB).
+
+        **What it does NOT do:**
+        - Contact any cluster to remove namespaces, service accounts, RBAC bindings,
+          quotas, Ceph resources, Keycloak users, or any other provisioned objects.
+        - Clean up DNS records, IBM resource groups, or any other cloud resources.
+
+        Any resources provisioned on clusters will be orphaned until the clusters
+        are decommissioned or manually cleaned up. Only use when the clusters are
+        confirmed gone or permanently unreachable.
+      responses:
+        '200':
+          description: Placement and resources deleted from the database.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        '404':
+          description: Placement not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: forceDeletePlacement unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /placements/{uuid}/stop:
     parameters:
       - in: header
