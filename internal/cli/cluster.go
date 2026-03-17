@@ -353,16 +353,23 @@ func clusterToggle(action string) func(*cobra.Command, []string) error {
 
 // --- cluster health ---
 
+var clusterHealthAll bool
+
 var clusterHealthCmd = &cobra.Command{
-	Use:   "health <name>",
+	Use:   "health [name]",
 	Short: "Check cluster connectivity (admin only)",
 	Long: `Verify that the sandbox API can reach the cluster.
 
 The API connects to the cluster using the stored service account token
 and checks that it can access the "default" namespace. This confirms
-that the cluster is reachable and the token is valid.`,
-	Args: cobra.ExactArgs(1),
+that the cluster is reachable and the token is valid.
+
+Use --all to check all clusters at once.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !clusterHealthAll && len(args) == 0 {
+			return fmt.Errorf("requires a cluster name or --all flag")
+		}
 		if err := requireRole("admin"); err != nil {
 			return err
 		}
@@ -371,31 +378,83 @@ that the cluster is reachable and the token is valid.`,
 			return err
 		}
 
-		resp, err := client.Get("/api/v1/ocp-shared-cluster-configurations/" + args[0] + "/health")
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-
 		out := cmd.OutOrStdout()
 
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			fmt.Fprintf(out, "OK: sandbox API can connect to cluster %s.\n", args[0])
-			return nil
+		if clusterHealthAll {
+			return runHealthAll(client, out)
 		}
 
-		// Error response — decode and display
-		var result map[string]any
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("health check failed (HTTP %d)", resp.StatusCode)
-		}
-
-		msg := jsonStr(result["message"])
-		if errLines, ok := result["error_multiline"].([]any); ok && len(errLines) > 0 {
-			return fmt.Errorf("health check failed: %s: %s", msg, jsonStr(errLines[0]))
-		}
-		return fmt.Errorf("health check failed: %s", msg)
+		return runHealthSingle(client, out, args[0])
 	},
+}
+
+func runHealthSingle(client *Client, out io.Writer, name string) error {
+	resp, err := client.Get("/api/v1/ocp-shared-cluster-configurations/" + name + "/health")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		fmt.Fprintf(out, "OK: %s\n", name)
+		return nil
+	}
+
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("health check failed for %s (HTTP %d)", name, resp.StatusCode)
+	}
+
+	msg := jsonStr(result["message"])
+	if errLines, ok := result["error_multiline"].([]any); ok && len(errLines) > 0 {
+		return fmt.Errorf("health check failed for %s: %s: %s", name, msg, jsonStr(errLines[0]))
+	}
+	return fmt.Errorf("health check failed for %s: %s", name, msg)
+}
+
+func runHealthAll(client *Client, out io.Writer) error {
+	resp, err := client.Get("/api/v1/ocp-shared-cluster-configurations")
+	if err != nil {
+		return err
+	}
+
+	var clusters []map[string]any
+	if err := ReadJSON(resp, &clusters); err != nil {
+		return err
+	}
+
+	if len(clusters) == 0 {
+		fmt.Fprintln(out, "No clusters configured.")
+		return nil
+	}
+
+	fmt.Fprintf(out, "Checking %d cluster(s)...\n", len(clusters))
+
+	var failed []string
+	for _, c := range clusters {
+		name := jsonStr(c["name"])
+		resp, err := client.Get("/api/v1/ocp-shared-cluster-configurations/" + name + "/health")
+		if err != nil {
+			fmt.Fprintf(out, "ERROR: %s - %v\n", name, err)
+			failed = append(failed, name)
+			continue
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			fmt.Fprintf(out, "OK: %s\n", name)
+		} else {
+			fmt.Fprintf(out, "ERROR: %s (HTTP %d)\n", name, resp.StatusCode)
+			failed = append(failed, name)
+		}
+	}
+
+	fmt.Fprintln(out)
+	if len(failed) > 0 {
+		return fmt.Errorf("%d/%d cluster(s) unreachable: %s", len(failed), len(clusters), strings.Join(failed, ", "))
+	}
+	fmt.Fprintf(out, "All %d cluster(s) healthy.\n", len(clusters))
+	return nil
 }
 
 // --- cluster delete ---
@@ -449,6 +508,7 @@ func init() {
 	clusterCmd.AddCommand(clusterOffboardStatusCmd)
 	clusterCmd.AddCommand(clusterEnableCmd)
 	clusterCmd.AddCommand(clusterDisableCmd)
+	clusterHealthCmd.Flags().BoolVarP(&clusterHealthAll, "all", "a", false, "Check all clusters")
 	clusterCmd.AddCommand(clusterHealthCmd)
 	clusterCmd.AddCommand(clusterDeleteCmd)
 }
