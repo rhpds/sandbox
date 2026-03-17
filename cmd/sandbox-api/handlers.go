@@ -337,6 +337,7 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 				request.Alias,
 				clusterRelation,
 				request.KeycloakUserPrefix,
+				request.NoNamespace,
 			)
 			if err != nil {
 				cleanupResources(tocleanup)
@@ -358,6 +359,17 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 						Err:            err,
 						HTTPStatusCode: http.StatusNotFound,
 						Message:        "No OCP shared cluster configuration found",
+						ErrorMultiline: []string{err.Error()},
+					})
+					return
+				}
+
+				if strings.Contains(err.Error(), "no_namespace is incompatible") {
+					w.WriteHeader(http.StatusBadRequest)
+					render.Render(w, r, &v1.Error{
+						Err:            err,
+						HTTPStatusCode: http.StatusBadRequest,
+						Message:        err.Error(),
 						ErrorMultiline: []string{err.Error()},
 					})
 					return

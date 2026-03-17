@@ -124,6 +124,7 @@ type ResourceRequest struct {
 	Kind                string                   `json:"kind"`
 	KeycloakUserPrefix  string                   `json:"keycloak_user_prefix,omitempty"`
 	LimitRange          *v1.LimitRange           `json:"limit_range,omitempty"`
+	NoNamespace         bool                     `json:"no_namespace,omitempty"`
 	Quota               *v1.ResourceList         `json:"quota,omitempty"`
 	RequestedQuota      *v1.ResourceQuota        `json:"-"` // plumbing
 }

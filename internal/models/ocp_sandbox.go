@@ -242,6 +242,7 @@ type OcpSandbox struct {
 	Quota                             v1.ResourceList   `json:"quota,omitempty"`
 	LimitRange                        *v1.LimitRange    `json:"limit_range,omitempty"`
 	Alias                             string            `json:"alias,omitempty"`
+	NoNamespace                       bool              `json:"no_namespace,omitempty"`
 }
 
 type OcpSandboxWithCreds struct {
@@ -1835,6 +1836,7 @@ func (a *OcpSandboxProvider) Request(
 	alias string,
 	clusterRelation []ClusterRelation,
 	keycloakUserPrefix string,
+	noNamespace bool,
 ) (OcpSandboxWithCreds, error) {
 
 	var selectedCluster OcpSharedClusterConfiguration
@@ -1843,6 +1845,13 @@ func (a *OcpSandboxProvider) Request(
 	// Ensure annotation has guid
 	if _, exists := annotations["guid"]; !exists {
 		return OcpSandboxWithCreds{}, errors.New("guid not found in annotations")
+	}
+
+	// Validate no_namespace incompatibilities
+	if noNamespace {
+		if value, exists := cloudSelector["keycloak"]; exists && (value == "yes" || value == "true") {
+			return OcpSandboxWithCreds{}, errors.New("no_namespace is incompatible with keycloak: keycloak requires a namespace")
+		}
 	}
 
 	hasRelations := len(clusterRelation) > 0
@@ -1890,6 +1899,7 @@ func (a *OcpSandboxProvider) Request(
 			ServiceUuid: serviceUuid,
 			Status:      "initializing",
 			Alias:       alias,
+			NoNamespace: noNamespace,
 		},
 		Provider: a,
 	}
@@ -2122,6 +2132,69 @@ func (a *OcpSandboxProvider) Request(
 			rnew.SetStatusWithMessage("error", fmt.Sprintf("Failed to create dynamic OCP client for cluster %s: %v", selectedCluster.Name, err))
 			return
 		}
+
+		// --- no_namespace mode: skip namespace, SA, RBAC, quota, keycloak, virt ---
+		if noNamespace {
+			creds := []any{}
+
+			// Console URL detection
+			if consoleUrl, ok := selectedCluster.AdditionalVars["console_url"]; ok {
+				if consoleUrlStr, ok := consoleUrl.(string); ok {
+					rnew.OcpConsoleUrl = consoleUrlStr
+				}
+			}
+			if rnew.OcpConsoleUrl == "" {
+				routeGVR := schema.GroupVersionResource{
+					Group:    "route.openshift.io",
+					Version:  "v1",
+					Resource: "routes",
+				}
+				for attempt := 0; attempt < 3; attempt++ {
+					res, err := dynclientset.Resource(routeGVR).Namespace("openshift-console").Get(context.TODO(), "console", metav1.GetOptions{})
+					if err != nil {
+						log.Logger.Warn("Could not get console route", "error", err, "cluster", selectedCluster.Name, "attempt", attempt+1)
+						time.Sleep(2 * time.Second)
+						continue
+					}
+					host, found, err := unstructured.NestedString(res.Object, "spec", "host")
+					if err != nil || !found {
+						log.Logger.Warn("Could not find 'spec.host' in console route", "found", found, "error", err, "cluster", selectedCluster.Name, "attempt", attempt+1)
+						time.Sleep(2 * time.Second)
+						continue
+					}
+					rnew.OcpConsoleUrl = "https://" + host
+					break
+				}
+			}
+
+			// Deployer-admin SA token
+			if selectedCluster.DeployerAdminSAToken != "" {
+				creds = append(creds, OcpServiceAccount{
+					Kind:  "ServiceAccount",
+					Name:  "deployer-admin",
+					Token: selectedCluster.DeployerAdminSAToken,
+				})
+			}
+
+			// Pass cluster additional vars
+			rnew.ClusterAdditionalVars = selectedCluster.AdditionalVars
+
+			rnew.Credentials = creds
+			rnew.Status = "success"
+
+			if err := rnew.Save(); err != nil {
+				log.Logger.Error("Error saving OCP account", "error", err)
+				log.Logger.Info("Trying to cleanup OCP account")
+				if err := rnew.Delete(); err != nil {
+					log.Logger.Error("Error cleaning up OCP account", "error", err)
+				}
+			}
+			log.Logger.Info("Ocp sandbox booked (no_namespace)", "account", rnew.Name, "service_uuid", rnew.ServiceUuid,
+				"cluster", rnew.OcpSharedClusterConfigurationName)
+			return
+		}
+
+		// --- Standard mode: create namespace, SA, RBAC, quota, etc. ---
 
 		serviceAccountName := "sandbox"
 		suffix := annotations["namespace_suffix"]
@@ -2807,10 +2880,11 @@ func (a *OcpSandboxProvider) Release(service_uuid string) error {
 
 	for _, account := range accounts {
 		if account.Namespace == "" &&
+			!account.NoNamespace &&
 			account.Status != "error" &&
 			account.Status != "scheduling" &&
 			account.Status != "initializing" {
-			// If the sandbox is not in error and the namespace is empty, throw an error
+			// If the sandbox is not in error, not no_namespace, and the namespace is empty, throw an error
 			errorHappened = errors.New("Namespace not found for account")
 			log.Logger.Error("Namespace not found for account", "account", account)
 			continue
