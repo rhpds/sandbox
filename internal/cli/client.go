@@ -174,7 +174,27 @@ func ReadJSON(resp *http.Response, v any) error {
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+		msg := strings.TrimSpace(string(body))
+
+		// Try to extract a JSON error message
+		var jsonErr map[string]any
+		if json.Unmarshal(body, &jsonErr) == nil {
+			if m, ok := jsonErr["message"].(string); ok && m != "" {
+				return fmt.Errorf("HTTP %d: %s", resp.StatusCode, m)
+			}
+		}
+
+		// Detect HTML responses (e.g. OpenShift "Application is not available")
+		if strings.Contains(msg, "<html") || strings.Contains(msg, "<!DOCTYPE") {
+			return fmt.Errorf("HTTP %d: server returned an HTML error page (service may be down or unreachable)", resp.StatusCode)
+		}
+
+		// Truncate long non-JSON responses
+		if len(msg) > 200 {
+			msg = msg[:200] + "..."
+		}
+
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, msg)
 	}
 	return json.NewDecoder(resp.Body).Decode(v)
 }

@@ -3069,10 +3069,10 @@ func (a *OcpSandboxProvider) RotateDeployerAdminSATokens() {
 // It runs an initial rotation immediately, then repeats at the minimum refresh interval
 // found across all enabled clusters.
 func (a *OcpSandboxProvider) StartDeployerAdminSATokenRotation(ctx context.Context) {
-	// Run initial rotation immediately
-	a.RotateDeployerAdminSATokens()
-
 	go func() {
+		// Run initial rotation immediately (in the goroutine so it doesn't block startup)
+		a.RotateDeployerAdminSATokens()
+
 		for {
 			// Determine the shortest refresh interval across all clusters
 			interval := a.getDeployerAdminSATokenRefreshInterval()
