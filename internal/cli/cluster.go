@@ -556,24 +556,31 @@ func formatConnectionStatus(cluster map[string]any) string {
 		return status
 	}
 	age := time.Since(t)
-	result := fmt.Sprintf("%s %s ago", status, formatAge(age))
+	ageStr := formatAge(age)
 
-	// When in error, show last success time and error count for troubleshooting
-	if status == "error" {
-		if errCount, ok := data["connection_error_count"].(float64); ok && errCount > 0 {
-			result += fmt.Sprintf(" (%dx)", int(errCount))
-		}
-		if lastOkStr, ok := data["connection_last_success_at"].(string); ok && lastOkStr != "" {
-			if lastOk, err := time.Parse(time.RFC3339Nano, lastOkStr); err == nil {
-				if lastOk.IsZero() || lastOk.Year() < 2000 {
-					result += ", last ok never"
-				} else {
-					result += fmt.Sprintf(", last ok %s ago", formatAge(time.Since(lastOk)))
-				}
+	if status == "ok" {
+		return fmt.Sprintf("%s %s", colorGreen("ok   "), colorGray(ageStr+" ago"))
+	}
+
+	// Error: show error count and last success for troubleshooting
+	var details []string
+	if errCount, ok := data["connection_error_count"].(float64); ok && errCount > 0 {
+		details = append(details, fmt.Sprintf("%dx", int(errCount)))
+	}
+	if lastOkStr, ok := data["connection_last_success_at"].(string); ok && lastOkStr != "" {
+		if lastOk, err := time.Parse(time.RFC3339Nano, lastOkStr); err == nil {
+			if lastOk.IsZero() || lastOk.Year() < 2000 {
+				details = append(details, "never ok")
+			} else {
+				details = append(details, fmt.Sprintf("ok %s", formatAge(time.Since(lastOk))))
 			}
 		}
 	}
-	return result
+	rest := ageStr + " ago"
+	if len(details) > 0 {
+		rest += fmt.Sprintf(" (%s)", strings.Join(details, ", "))
+	}
+	return fmt.Sprintf("%s %s", colorRed("error"), colorGray(rest))
 }
 
 // formatAge returns a human-readable age string like "3s", "12m", "2h", "5d".
