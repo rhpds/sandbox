@@ -53,7 +53,9 @@ var jwtListCmd = &cobra.Command{
 				valid = "yes"
 			}
 			exp := jsonStr(t["expiration"])
-			if i := strings.Index(exp, "T"); i > 0 {
+			if parsed, err := time.Parse(time.RFC3339, exp); err == nil && time.Now().After(parsed) {
+				exp = "EXPIRED"
+			} else if i := strings.Index(exp, "T"); i > 0 {
 				exp = exp[:i]
 			}
 			useCount := jsonNum(t["use_count"])
