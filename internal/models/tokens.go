@@ -84,6 +84,18 @@ func (t Token) Invalidate(dbpool *pgxpool.Pool) error {
 	return nil
 }
 
+// Delete permanently removes the token from the database.
+func (t Token) Delete(dbpool *pgxpool.Pool) error {
+	_, err := dbpool.Exec(context.Background(), `
+		DELETE FROM tokens WHERE id = $1`,
+		t.ID)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // RecordUsage atomically increments use_count and updates last_used_at.
 func RecordTokenUsage(dbpool *pgxpool.Pool, tokenID int) error {
 	_, err := dbpool.Exec(context.Background(), `
