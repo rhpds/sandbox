@@ -180,6 +180,18 @@ func ReadJSON(resp *http.Response, v any) error {
 		var jsonErr map[string]any
 		if json.Unmarshal(body, &jsonErr) == nil {
 			if m, ok := jsonErr["message"].(string); ok && m != "" {
+				// Append error_multiline details if present
+				if lines, ok := jsonErr["error_multiline"].([]any); ok && len(lines) > 0 {
+					details := make([]string, 0, len(lines))
+					for _, l := range lines {
+						if s, ok := l.(string); ok {
+							details = append(details, s)
+						}
+					}
+					if len(details) > 0 {
+						return fmt.Errorf("HTTP %d: %s: %s", resp.StatusCode, m, strings.Join(details, "; "))
+					}
+				}
 				return fmt.Errorf("HTTP %d: %s", resp.StatusCode, m)
 			}
 		}

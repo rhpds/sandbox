@@ -120,6 +120,13 @@ Examples:
 			return fmt.Errorf("reading stdin: %w", err)
 		}
 
+		// Strip read-only fields so that round-tripping
+		// (cluster get | cluster create) works without manual editing.
+		body, err = stripReadOnlyFields(body)
+		if err != nil {
+			return fmt.Errorf("parsing input JSON: %w", err)
+		}
+
 		client, err := requireClient()
 		if err != nil {
 			return err
@@ -511,6 +518,20 @@ func init() {
 	clusterHealthCmd.Flags().BoolVarP(&clusterHealthAll, "all", "a", false, "Check all clusters")
 	clusterCmd.AddCommand(clusterHealthCmd)
 	clusterCmd.AddCommand(clusterDeleteCmd)
+}
+
+// stripReadOnlyFields removes server-managed fields (id, created_at, updated_at,
+// created_by) from the JSON payload so that round-tripping
+// "cluster get > file.json && cluster create < file.json" works without manual editing.
+func stripReadOnlyFields(body []byte) ([]byte, error) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, err
+	}
+	for _, key := range []string{"id", "created_at", "updated_at", "created_by"} {
+		delete(raw, key)
+	}
+	return json.Marshal(raw)
 }
 
 // suppressAnnotations removes verbose fields for list display.
