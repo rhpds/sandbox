@@ -34,13 +34,13 @@ func CreateToken(claims map[string]any) (Token, error) {
 	if !ok {
 		return Token{}, fmt.Errorf("invalid name in claims")
 	}
-	iat, ok := claims["iat"].(int64)
-	if !ok {
+	iat, err := toInt64(claims["iat"])
+	if err != nil {
 		return Token{}, fmt.Errorf("invalid iat in claims")
 	}
 
-	exp, ok := claims["exp"].(int64)
-	if !ok {
+	exp, err := toInt64(claims["exp"])
+	if err != nil {
 		return Token{}, fmt.Errorf("invalid exp in claims")
 	}
 
@@ -76,6 +76,18 @@ func (t Token) Save(dbpool *pgxpool.Pool) (id int, err error) {
 func (t Token) Invalidate(dbpool *pgxpool.Pool) error {
 	_, err := dbpool.Exec(context.Background(), `
 		UPDATE tokens SET valid = false WHERE id = $1`,
+		t.ID)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Delete permanently removes the token from the database.
+func (t Token) Delete(dbpool *pgxpool.Pool) error {
+	_, err := dbpool.Exec(context.Background(), `
+		DELETE FROM tokens WHERE id = $1`,
 		t.ID)
 	if err != nil {
 		return err
@@ -136,4 +148,17 @@ func FetchTokenById(dbpool *pgxpool.Pool, id int) (Token, error) {
 	}
 
 	return t, nil
+}
+
+// toInt64 converts a numeric value to int64.
+// JSON unmarshaling decodes numbers as float64, while code may pass int64 directly.
+func toInt64(v any) (int64, error) {
+	switch n := v.(type) {
+	case int64:
+		return n, nil
+	case float64:
+		return int64(n), nil
+	default:
+		return 0, fmt.Errorf("expected numeric type, got %T", v)
+	}
 }

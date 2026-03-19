@@ -1530,6 +1530,58 @@ func (h *BaseHandler) InvalidateTokenHandler(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+func (h *BaseHandler) DeleteTokenHandler(w http.ResponseWriter, r *http.Request) {
+	tokenStr := chi.URLParam(r, "id")
+
+	tokenId, err := strconv.Atoi(tokenStr)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        "Invalid token ID, must be integer",
+		})
+		log.Logger.Error("Invalid token ID")
+		return
+	}
+
+	tokenModel, err := models.FetchTokenById(h.dbpool, tokenId)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "Token not found",
+			})
+			log.Logger.Error("Token not found")
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error getting token",
+		})
+		log.Logger.Error("Error getting token", "error", err)
+		return
+	}
+
+	err = tokenModel.Delete(h.dbpool)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Error deleting token",
+		})
+		log.Logger.Error("Error deleting token", "error", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &v1.SimpleMessage{
+		Message: "Token successfully deleted",
+	})
+}
+
 // GetTokenActivityHandler returns token details and recent audit log activity.
 func (h *BaseHandler) GetTokenActivityHandler(w http.ResponseWriter, r *http.Request) {
 	tokenStr := chi.URLParam(r, "id")

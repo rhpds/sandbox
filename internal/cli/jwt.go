@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -52,7 +53,9 @@ var jwtListCmd = &cobra.Command{
 				valid = "yes"
 			}
 			exp := jsonStr(t["expiration"])
-			if i := strings.Index(exp, "T"); i > 0 {
+			if parsed, err := time.Parse(time.RFC3339, exp); err == nil && time.Now().After(parsed) {
+				exp = "EXPIRED"
+			} else if i := strings.Index(exp, "T"); i > 0 {
 				exp = exp[:i]
 			}
 			useCount := jsonNum(t["use_count"])
@@ -171,6 +174,81 @@ var jwtInvalidateCmd = &cobra.Command{
 	},
 }
 
+// --- jwt delete ---
+
+var jwtDeleteCmd = &cobra.Command{
+	Use:   "delete <id>",
+	Short: "Delete a login token permanently",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireRole("admin"); err != nil {
+			return err
+		}
+		client, err := requireClient()
+		if err != nil {
+			return err
+		}
+
+		// Fetch token info via the activity endpoint (limit=0 to skip activity)
+		resp, err := client.Get(fmt.Sprintf("/api/v1/admin/jwt/%s/activity?limit=0", args[0]))
+		if err != nil {
+			return err
+		}
+
+		var info struct {
+			Token map[string]any `json:"token"`
+		}
+		if err := ReadJSON(resp, &info); err != nil {
+			return err
+		}
+
+		t := info.Token
+		valid := "NO"
+		if v, ok := t["valid"].(bool); ok && v {
+			valid = "yes"
+		}
+		exp := jsonStr(t["expiration"])
+		if i := strings.Index(exp, "T"); i > 0 {
+			exp = exp[:i]
+		}
+
+		out := cmd.OutOrStdout()
+		fmt.Fprintln(out, "Token to delete:")
+		fmt.Fprintf(out, "  ID:          %s\n", jsonNum(t["id"]))
+		fmt.Fprintf(out, "  Name:        %s\n", jsonStr(t["name"]))
+		fmt.Fprintf(out, "  Role:        %s\n", jsonStr(t["role"]))
+		fmt.Fprintf(out, "  Valid:       %s\n", valid)
+		fmt.Fprintf(out, "  Expiration:  %s\n", exp)
+		fmt.Fprintf(out, "  Use count:   %s\n", jsonNum(t["use_count"]))
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, "WARNING: This will permanently remove the token from the database.")
+		fmt.Fprintln(out, "         Use 'jwt invalidate' instead if you may need to re-enable it later.")
+		fmt.Fprintln(out)
+		fmt.Fprint(out, "Type 'yes' to confirm: ")
+
+		scanner := bufio.NewScanner(cmd.InOrStdin())
+		scanner.Scan()
+		answer := strings.TrimSpace(scanner.Text())
+		if answer != "yes" {
+			fmt.Fprintln(out, "Aborted.")
+			return nil
+		}
+
+		resp, err = client.Delete("/api/v1/admin/jwt/" + args[0])
+		if err != nil {
+			return err
+		}
+
+		var result map[string]any
+		if err := ReadJSON(resp, &result); err != nil {
+			return err
+		}
+
+		fmt.Fprintln(out, jsonStr(result["message"]))
+		return nil
+	},
+}
+
 // --- jwt activity ---
 
 var jwtActivityLimit int
@@ -267,6 +345,7 @@ func init() {
 	jwtCmd.AddCommand(jwtIssueCmd)
 
 	jwtCmd.AddCommand(jwtInvalidateCmd)
+	jwtCmd.AddCommand(jwtDeleteCmd)
 
 	jwtActivityCmd.Flags().IntVar(&jwtActivityLimit, "limit", 50, "Number of entries to show")
 	jwtCmd.AddCommand(jwtActivityCmd)

@@ -1771,6 +1771,66 @@ paths:
               example:
                 message: Error invalidating token
                 http_code: 500
+  /admin/jwt/{id}:
+    parameters:
+      - in: header
+        name: Authorization
+        description: Admin Access JTW Token
+        required: true
+        schema:
+          type: string
+        example: Bearer <ADMIN_ACCESS_TOKEN>
+      - name: id
+        in: path
+        required: true
+        description: The id of the token to delete
+        schema:
+          type: integer
+    delete:
+      summary: Delete a login token permanently
+      operationId: deleteToken
+      tags:
+        - admin
+      responses:
+        '200':
+          description: Deletion Successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Token successfully deleted
+              example:
+                message: Token successfully deleted
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        '404':
+          description: Token not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Token not found
+                http_code: 404
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Error deleting token
+                http_code: 500
   /admin/jwt/{id}/activity:
     parameters:
       - in: header
