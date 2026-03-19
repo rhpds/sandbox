@@ -23,6 +23,7 @@ pipeline {
         booleanParam(name: 'run_onboard_tests', defaultValue: true, description: 'Run OCP shared cluster onboard/offboard functional tests')
         booleanParam(name: 'run_rbac_tests', defaultValue: true, description: 'Run RBAC functional tests')
         booleanParam(name: 'run_cli_tests', defaultValue: true, description: 'Run sandbox-cli functional tests')
+        booleanParam(name: 'run_rate_limit_tests', defaultValue: true, description: 'Run provision rate limit functional tests')
     }
 
     stages {

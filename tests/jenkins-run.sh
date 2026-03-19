@@ -110,7 +110,11 @@ run_api() {
     set -o pipefail
     export PORT
 
-    echo "Running sandbox API on port $PORT"
+    # Spawn 20 concurrent queue processors to stress-test the advisory lock
+    # mechanism that prevents race conditions in multi-pod production.
+    export QUEUE_PROCESSORS=20
+
+    echo "Running sandbox API on port $PORT (QUEUE_PROCESSORS=$QUEUE_PROCESSORS)"
     setsid make run-api &>$apilog &
     apipid=$!
 
@@ -364,8 +368,9 @@ RUN_NO_NAMESPACE_TESTS="${RUN_NO_NAMESPACE_TESTS:-${run_no_namespace_tests:-true
 RUN_ONBOARD_TESTS="${RUN_ONBOARD_TESTS:-${run_onboard_tests:-true}}"
 RUN_RBAC_TESTS="${RUN_RBAC_TESTS:-${run_rbac_tests:-true}}"
 RUN_CLI_TESTS="${RUN_CLI_TESTS:-${run_cli_tests:-true}}"
+RUN_RATE_LIMIT_TESTS="${RUN_RATE_LIMIT_TESTS:-${run_rate_limit_tests:-true}}"
 
-echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS RUN_NO_NAMESPACE_TESTS=$RUN_NO_NAMESPACE_TESTS RUN_ONBOARD_TESTS=$RUN_ONBOARD_TESTS RUN_RBAC_TESTS=$RUN_RBAC_TESTS RUN_CLI_TESTS=$RUN_CLI_TESTS"
+echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS RUN_NO_NAMESPACE_TESTS=$RUN_NO_NAMESPACE_TESTS RUN_ONBOARD_TESTS=$RUN_ONBOARD_TESTS RUN_RBAC_TESTS=$RUN_RBAC_TESTS RUN_CLI_TESTS=$RUN_CLI_TESTS RUN_RATE_LIMIT_TESTS=$RUN_RATE_LIMIT_TESTS"
 
 if [ "$RUN_HURL_TESTS" != "false" ] && [ "$RUN_HURL_TESTS" != "no" ]; then
     tests=$1
@@ -599,4 +604,25 @@ if [ "${RUN_CLI_TESTS}" != "false" ] && [ "${RUN_CLI_TESTS}" != "no" ]; then
         python3 tests/functional/test_sandbox_cli.py
 else
     echo "Skipping sandbox-cli tests (RUN_CLI_TESTS=${RUN_CLI_TESTS})"
+fi
+
+# Run provision rate limit tests if requested
+if [ "${RUN_RATE_LIMIT_TESTS}" != "false" ] && [ "${RUN_RATE_LIMIT_TESTS}" != "no" ]; then
+    echo ""
+    echo "=========================================="
+    echo "Running provision rate limit tests (QUEUE_PROCESSORS=$QUEUE_PROCESSORS)"
+    echo "=========================================="
+    cd $jobdir
+
+    # Install Python dependencies if needed
+    pip3 install -q requests urllib3 2>/dev/null || true
+
+    # Run the Python rate limit test
+    SANDBOX_API_URL="http://localhost:$PORT" \
+        SANDBOX_LOGIN_TOKEN="$apptoken" \
+        SANDBOX_ADMIN_LOGIN_TOKEN="$admintoken" \
+        OCP_CLUSTER_NAME="ocpvdev01" \
+        python3 tests/functional/test_provision_rate_limit.py
+else
+    echo "Skipping provision rate limit tests (RUN_RATE_LIMIT_TESTS=${RUN_RATE_LIMIT_TESTS})"
 fi

@@ -475,6 +475,18 @@ func (h *BaseHandler) UpdateOcpSharedClusterConfigurationHandler(w http.Response
 		ocpSharedClusterConfiguration.DeployerAdminSATokenTargetVar = *input.DeployerAdminSATokenTargetVar
 	}
 
+	if input.Settings != nil {
+		if err := input.Settings.ValidateRateLimit(); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusBadRequest,
+				Message:        err.Error(),
+			})
+			return
+		}
+		ocpSharedClusterConfiguration.Settings = *input.Settings
+	}
+
 	if err := ocpSharedClusterConfiguration.Save(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
@@ -519,6 +531,16 @@ func (h *BaseHandler) UpsertOcpSharedClusterConfigurationHandler(w http.Response
 		render.Render(w, r, &v1.Error{
 			HTTPStatusCode: http.StatusBadRequest,
 			Message:        "name in URL path must match name in request body",
+		})
+		return
+	}
+
+	// Validate rate limit settings
+	if err := newConfig.Settings.ValidateRateLimit(); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        err.Error(),
 		})
 		return
 	}

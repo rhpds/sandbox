@@ -490,6 +490,15 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	// Check if any resource was queued due to rate limiting
+	hasQueuedResource := false
+	for _, res := range resources {
+		if ocp, ok := res.(models.OcpSandboxWithCreds); ok && ocp.Status == "queued" {
+			hasQueuedResource = true
+			break
+		}
+	}
+
 	placement := models.PlacementWithCreds{
 		Placement: models.Placement{
 			ServiceUuid: placementRequest.ServiceUuid,
@@ -508,6 +517,22 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 			Err:            err,
 			HTTPStatusCode: http.StatusInternalServerError,
 			Message:        "Error saving placement",
+		})
+		return
+	}
+
+	if hasQueuedResource {
+		if err := placement.SetStatus("queued"); err != nil {
+			log.Logger.Error("Error setting queued status on placement", "error", err)
+		}
+		log.Logger.Info("Placement has queued resources",
+			"serviceUuid", placementRequest.ServiceUuid)
+
+		w.WriteHeader(http.StatusAccepted)
+		render.Render(w, r, &v1.PlacementResponse{
+			Placement:      placement,
+			Message:        "Placement queued — some resources are rate-limited",
+			HTTPStatusCode: http.StatusAccepted,
 		})
 		return
 	}
@@ -609,6 +634,9 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 			} else {
 				// Filter out clusters that have reached their max_placements limit
 				availableClusters := models.OcpSharedClusterConfigurations{}
+				var clusterDetails []v1.ClusterDryRunInfo
+				allRateLimited := true
+
 				for _, cluster := range candidateClusters {
 					if cluster.MaxPlacements != nil {
 						currentCount, err := cluster.GetAccountCount()
@@ -627,6 +655,25 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 							continue
 						}
 					}
+
+					// Check rate limit for cluster details
+					detail := v1.ClusterDryRunInfo{Name: cluster.Name}
+					rateLimited, availableSlots, err := cluster.IsRateLimited()
+					if err != nil {
+						log.Logger.Error("Dry-run error checking rate limit",
+							"cluster", cluster.Name,
+							"error", err)
+					}
+					if availableSlots >= 0 {
+						slots := availableSlots
+						detail.AvailableSlots = &slots
+					}
+					clusterDetails = append(clusterDetails, detail)
+
+					if !rateLimited {
+						allRateLimited = false
+					}
+
 					availableClusters = append(availableClusters, cluster)
 				}
 
@@ -642,9 +689,20 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 					}
 					log.Logger.Info("Dry-run check for OCP successful", "clusters", clusterNames)
 					result.Available = true
-					result.Message = "Matching OCP shared clusters found"
 					result.SchedulableClusterCount = len(availableClusters)
 					result.SchedulableClusterNames = clusterNames
+					result.ClusterDetails = clusterDetails
+
+					if allRateLimited && len(availableClusters) > 0 {
+						result.Message = "Matching OCP shared clusters found (placement would be queued)"
+						queued := true
+						result.Queued = &queued
+						queuePos, _ := models.GetQueuePosition(h.dbpool)
+						result.QueuePosition = &queuePos
+					} else {
+						result.Message = "Matching OCP shared clusters found"
+					}
+
 					candidateClusters = availableClusters
 
 					// Apply priorities using CloudPreference
@@ -656,13 +714,10 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 						)
 					}
 					// Simulate the placement to inform the next resource in the loop.
-					// We'll hypothetically "place" it on the first available cluster.
 					if request.Alias != "" {
-						// Create a temporary, hypothetical account object with the chosen cluster.
-						// The actual fields needed depend on your scheduling logic, but OcpCluster is the most likely one.
 						hypotheticalAccount := models.OcpSandboxWithCreds{
 							OcpSandbox: models.OcpSandbox{
-								OcpSharedClusterConfigurationName: candidateClusters[0].Name, // Using the first candidate
+								OcpSharedClusterConfigurationName: candidateClusters[0].Name,
 								Alias:                             request.Alias,
 							},
 						}

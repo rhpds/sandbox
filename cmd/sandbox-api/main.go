@@ -216,6 +216,9 @@ func main() {
 	// Start background admin SA token rotation for OCP clusters
 	OcpSandboxProvider.StartDeployerAdminSATokenRotation(ctx)
 
+	// Start background queue processor for rate-limited placements
+	OcpSandboxProvider.StartQueueProcessor(ctx)
+
 	// Start background audit log purge
 	auditRetentionStr := os.Getenv("AUDIT_LOG_RETENTION")
 	if auditRetentionStr == "" {

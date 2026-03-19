@@ -97,7 +97,7 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
-	if p.Status != "error" && p.Status != "deleting" {
+	if p.Status != "error" && p.Status != "deleting" && p.Status != "queued" {
 		if err := p.SetStatus(status); err != nil {
 			return err
 		}
@@ -149,7 +149,7 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
-	if p.Status != "error" && p.Status != "deleting" {
+	if p.Status != "error" && p.Status != "deleting" && p.Status != "queued" {
 		if err := p.SetStatus(status); err != nil {
 			return err
 		}
@@ -227,7 +227,7 @@ func (p *PlacementWithCreds) LoadResourcesWithCreds(awsProvider AwsAccountProvid
 
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
-	if p.Status != "error" && p.Status != "deleting" {
+	if p.Status != "error" && p.Status != "deleting" && p.Status != "queued" {
 		if err := p.SetStatus(status); err != nil {
 			return err
 		}
@@ -339,7 +339,7 @@ func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider,
 
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
-	if p.Status != "error" && p.Status != "deleting" {
+	if p.Status != "error" && p.Status != "deleting" && p.Status != "queued" {
 		if err := p.SetStatus(status); err != nil {
 			return err
 		}

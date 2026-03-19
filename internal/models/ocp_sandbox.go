@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"regexp"
 	"slices"
 	"strings"
@@ -143,9 +144,41 @@ type OcpSharedClusterConfiguration struct {
 	// Adding new fields here does not require a DB migration.
 	Data ClusterData `json:"data,omitempty"`
 
+	// Settings holds user-configurable settings stored as JSONB.
+	// Taken from request — user controls these values.
+	Settings ClusterSettings `json:"settings,omitempty"`
+
 	// CreatedBy records the JWT "name" claim of the user who created this cluster.
 	// Used for RBAC ownership checks (shared-cluster-manager can only offboard own clusters).
 	CreatedBy string `json:"created_by,omitempty"`
+}
+
+// ClusterSettings holds user-configurable settings for an OcpSharedClusterConfiguration.
+// Stored as JSONB in the 'settings' column. Taken from request — user controls these values.
+type ClusterSettings struct {
+	ProvisionRateLimit  *int   `json:"provision_rate_limit,omitempty"`
+	ProvisionRateWindow string `json:"provision_rate_window,omitempty"`
+}
+
+// ValidateRateLimit checks that provision_rate_limit and provision_rate_window are set together
+// and that the values are valid.
+func (s *ClusterSettings) ValidateRateLimit() error {
+	hasLimit := s.ProvisionRateLimit != nil
+	hasWindow := s.ProvisionRateWindow != ""
+
+	if hasLimit != hasWindow {
+		return errors.New("provision_rate_limit and provision_rate_window must be set together")
+	}
+	if !hasLimit {
+		return nil
+	}
+	if *s.ProvisionRateLimit <= 0 {
+		return errors.New("provision_rate_limit must be > 0")
+	}
+	if _, err := ParseHumanDuration(s.ProvisionRateWindow); err != nil {
+		return fmt.Errorf("invalid provision_rate_window: %w", err)
+	}
+	return nil
 }
 
 // ClusterData holds internal plumbing data for an OcpSharedClusterConfiguration.
@@ -220,6 +253,7 @@ func (p *OcpSharedClusterConfiguration) SharedView() OcpSharedClusterConfigurati
 		SkipQuota:                 p.SkipQuota,
 		LimitRange:                p.LimitRange,
 		MaxPlacements:             p.MaxPlacements,
+		Settings:                  p.Settings,
 		CreatedBy:                 p.CreatedBy,
 		Data: ClusterData{
 			AllowedUpdateRoles:    p.Data.AllowedUpdateRoles,
@@ -230,26 +264,40 @@ func (p *OcpSharedClusterConfiguration) SharedView() OcpSharedClusterConfigurati
 
 type OcpSharedClusterConfigurations []OcpSharedClusterConfiguration
 
+// QueuedRequestParams stores provisioning parameters for resources in
+// "queued" status. These are request-time fields not normally persisted
+// on the resource that the queue processor needs to trigger provisioning.
+type QueuedRequestParams struct {
+	CloudSelector      map[string]string `json:"cloud_selector"`
+	CloudPreference    map[string]string `json:"cloud_preference,omitempty"`
+	ClusterRelation    []ClusterRelation `json:"cluster_relation,omitempty"`
+	RequestedQuota     *v1.ResourceList  `json:"requested_quota,omitempty"`
+	RequestedLimitRange *v1.LimitRange   `json:"requested_limit_range,omitempty"`
+	KeycloakUserPrefix string            `json:"keycloak_user_prefix,omitempty"`
+	Multiple           bool              `json:"multiple"`
+}
+
 type OcpSandbox struct {
 	Account
-	Name                              string            `json:"name"`
-	Kind                              string            `json:"kind"` // "OcpSandbox"
-	ServiceUuid                       string            `json:"service_uuid"`
-	OcpSharedClusterConfigurationName string            `json:"ocp_cluster"`
-	OcpIngressDomain                  string            `json:"ingress_domain"`
-	OcpApiUrl                         string            `json:"api_url"`
-	OcpConsoleUrl                     string            `json:"console_url,omitempty"`
-	Annotations                       map[string]string `json:"annotations"`
-	Status                            string            `json:"status"`
-	ErrorMessage                      string            `json:"error_message,omitempty"`
-	CleanupCount                      int               `json:"cleanup_count"`
-	Namespace                         string            `json:"namespace"`
-	ClusterAdditionalVars             map[string]any    `json:"cluster_additional_vars,omitempty"`
-	ToCleanup                         bool              `json:"to_cleanup"`
-	Quota                             v1.ResourceList   `json:"quota,omitempty"`
-	LimitRange                        *v1.LimitRange    `json:"limit_range,omitempty"`
-	Alias                             string            `json:"alias,omitempty"`
-	NoNamespace                       bool              `json:"no_namespace,omitempty"`
+	Name                              string              `json:"name"`
+	Kind                              string              `json:"kind"` // "OcpSandbox"
+	ServiceUuid                       string              `json:"service_uuid"`
+	OcpSharedClusterConfigurationName string              `json:"ocp_cluster"`
+	OcpIngressDomain                  string              `json:"ingress_domain"`
+	OcpApiUrl                         string              `json:"api_url"`
+	OcpConsoleUrl                     string              `json:"console_url,omitempty"`
+	Annotations                       map[string]string   `json:"annotations"`
+	Status                            string              `json:"status"`
+	ErrorMessage                      string              `json:"error_message,omitempty"`
+	CleanupCount                      int                 `json:"cleanup_count"`
+	Namespace                         string              `json:"namespace"`
+	ClusterAdditionalVars             map[string]any      `json:"cluster_additional_vars,omitempty"`
+	ToCleanup                         bool                `json:"to_cleanup"`
+	Quota                             v1.ResourceList     `json:"quota,omitempty"`
+	LimitRange                        *v1.LimitRange      `json:"limit_range,omitempty"`
+	Alias                             string              `json:"alias,omitempty"`
+	NoNamespace                       bool                `json:"no_namespace,omitempty"`
+	QueuedParams                      *QueuedRequestParams `json:"queued_params,omitempty"`
 }
 
 type OcpSandboxWithCreds struct {
@@ -529,8 +577,9 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 			deployer_admin_sa_token_target_var,
 			deployer_admin_sa_token,
 			data,
+			settings,
 			created_by)
-			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, pgp_sym_encrypt($22::text, $5), $23, $24)
+			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, pgp_sym_encrypt($22::text, $5), $23, $24, $25)
 			RETURNING id`,
 		p.Name,
 		p.ApiUrl,
@@ -555,6 +604,7 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 		p.DeployerAdminSATokenTargetVar,
 		nilIfEmpty(p.DeployerAdminSAToken),
 		p.Data,
+		p.Settings,
 		p.CreatedBy,
 	).Scan(&p.ID); err != nil {
 		return err
@@ -592,7 +642,8 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 			 deployer_admin_sa_token_refresh_interval = $21,
 			 deployer_admin_sa_token_target_var = $22,
 			 deployer_admin_sa_token = pgp_sym_encrypt($23::text, $5),
-			 data = $24
+			 data = $24,
+			 settings = $25
 		 WHERE id = $10`,
 		p.Name,
 		p.ApiUrl,
@@ -618,6 +669,7 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 		p.DeployerAdminSATokenTargetVar,
 		nilIfEmpty(p.DeployerAdminSAToken),
 		p.Data,
+		p.Settings,
 	); err != nil {
 		return err
 	}
@@ -660,6 +712,44 @@ func (p *OcpSharedClusterConfiguration) GetAccountCount() (int, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+// GetRecentProvisionCount returns the number of resources created on this cluster
+// within the given time window. Used for provision rate limiting.
+func (p *OcpSharedClusterConfiguration) GetRecentProvisionCount(window time.Duration) (int, error) {
+	var count int
+	if err := p.DbPool.QueryRow(
+		context.Background(),
+		`SELECT count(*) FROM resources
+		 WHERE resource_type = 'OcpSandbox'
+		 AND resource_data->>'ocp_cluster' = $1
+		 AND created_at > now() - $2::interval`,
+		p.Name, fmt.Sprintf("%d seconds", int(window.Seconds())),
+	).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// IsRateLimited checks whether the cluster has exhausted its provision rate limit.
+// Returns (limited, availableSlots, error). If no rate limit is configured, returns (false, -1, nil).
+func (p *OcpSharedClusterConfiguration) IsRateLimited() (bool, int, error) {
+	if p.Settings.ProvisionRateLimit == nil {
+		return false, -1, nil
+	}
+	window, err := ParseHumanDuration(p.Settings.ProvisionRateWindow)
+	if err != nil {
+		return false, 0, err
+	}
+	recentCount, err := p.GetRecentProvisionCount(window)
+	if err != nil {
+		return false, 0, err
+	}
+	available := *p.Settings.ProvisionRateLimit - recentCount
+	if available < 0 {
+		available = 0
+	}
+	return recentCount >= *p.Settings.ProvisionRateLimit, available, nil
 }
 
 // ClusterPlacementInfo describes a placement that has resources on a given cluster.
@@ -976,6 +1066,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 			deployer_admin_sa_token_target_var,
 			COALESCE(pgp_sym_decrypt(deployer_admin_sa_token, $1), ''),
 			data,
+			settings,
 			created_by
 		 FROM ocp_shared_cluster_configurations WHERE name = $2`,
 		p.VaultSecret, name,
@@ -1008,6 +1099,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 		&cluster.DeployerAdminSATokenTargetVar,
 		&cluster.DeployerAdminSAToken,
 		&cluster.Data,
+		&cluster.Settings,
 		&cluster.CreatedBy,
 	); err != nil {
 		return OcpSharedClusterConfiguration{}, err
@@ -1050,6 +1142,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			deployer_admin_sa_token_target_var,
 			COALESCE(pgp_sym_decrypt(deployer_admin_sa_token, $1), ''),
 			data,
+			settings,
 			created_by
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
@@ -1088,6 +1181,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			&cluster.DeployerAdminSATokenTargetVar,
 			&cluster.DeployerAdminSAToken,
 			&cluster.Data,
+			&cluster.Settings,
 			&cluster.CreatedBy,
 		); err != nil {
 			return []OcpSharedClusterConfiguration{}, err
@@ -1215,6 +1309,22 @@ func (a *OcpSandboxWithCreds) SetStatus(status string) error {
 	return err
 }
 
+// reserveClusterSlot sets the ocp_cluster field on the resource in the database.
+// This lightweight update ensures concurrent rate limit checks (GetRecentProvisionCount)
+// can see in-flight cluster assignments before the full scheduling completes.
+// Use an empty string to clear the reservation when a cluster attempt fails.
+func (a *OcpSandboxWithCreds) reserveClusterSlot(clusterName string) error {
+	a.OcpSharedClusterConfigurationName = clusterName
+	_, err := a.Provider.DbPool.Exec(
+		context.Background(),
+		`UPDATE resources
+		 SET resource_data = jsonb_set(resource_data, '{ocp_cluster}', to_jsonb($1::text))
+		 WHERE id = $2`,
+		clusterName, a.ID,
+	)
+	return err
+}
+
 // SetStatusWithMessage sets both the status and error_message fields atomically.
 // This is useful for error states where we want to persist the reason for the failure.
 func (a *OcpSandboxWithCreds) SetStatusWithMessage(status string, message string) error {
@@ -1233,6 +1343,56 @@ func (a *OcpSandboxWithCreds) SetStatusWithMessage(status string, message string
 	}
 
 	return err
+}
+
+// createQueuedResource creates an OcpSandbox resource with status "queued".
+// The resource is saved to the DB with provisioning parameters stored in
+// QueuedParams so the queue processor can trigger provisioning later.
+// No async provisioning goroutine is started.
+func (a *OcpSandboxProvider) createQueuedResource(
+	serviceUuid string,
+	annotations map[string]string,
+	alias string,
+	noNamespace bool,
+	multiple bool,
+	ctx context.Context,
+	params *QueuedRequestParams,
+) (OcpSandboxWithCreds, error) {
+	guid, err := guessNextGuid(annotations["guid"], serviceUuid, a.DbPool, multiple, ctx)
+	if err != nil {
+		log.Logger.Error("Error guessing guid for queued resource", "error", err)
+		return OcpSandboxWithCreds{}, err
+	}
+
+	rnew := OcpSandboxWithCreds{
+		OcpSandbox: OcpSandbox{
+			Name:         guid + "-" + serviceUuid,
+			Kind:         "OcpSandbox",
+			Annotations:  annotations,
+			ServiceUuid:  serviceUuid,
+			Status:       "queued",
+			Alias:        alias,
+			NoNamespace:  noNamespace,
+			QueuedParams: params,
+		},
+		Provider: a,
+	}
+
+	rnew.Resource.CreatedAt = time.Now()
+	rnew.Resource.UpdatedAt = time.Now()
+
+	if err := rnew.Save(); err != nil {
+		log.Logger.Error("Error saving queued resource", "error", err)
+		return OcpSandboxWithCreds{}, err
+	}
+
+	log.Logger.Info("Created queued resource",
+		"name", rnew.Name,
+		"id", rnew.ID,
+		"alias", alias,
+		"serviceUuid", serviceUuid)
+
+	return rnew, nil
 }
 
 func (a *OcpSandboxWithCreds) GetStatus() (string, error) {
@@ -1425,6 +1585,7 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 }
 
 var ErrNoSchedule error = errors.New("No OCP shared cluster configuration found")
+var ErrRateLimited error = errors.New("all candidate clusters are at their provision rate limit")
 
 func (a *OcpSandboxProvider) GetSchedulableClusters(
 	cloudSelector map[string]string,
@@ -1870,6 +2031,7 @@ func (a *OcpSandboxProvider) Request(
 	// For resources WITH cluster relations, scheduling is deferred to the
 	// async task because it depends on sibling resources completing first.
 	var candidateClusters OcpSharedClusterConfigurations
+	var allRateLimited bool
 	if !hasRelations {
 		var err error
 		candidateClusters, err = a.GetSchedulableClusters(cloudSelector, clusterRelation, nil, alias)
@@ -1882,6 +2044,49 @@ func (a *OcpSandboxProvider) Request(
 			return OcpSandboxWithCreds{}, ErrNoSchedule
 		}
 
+		// Pre-check: are ALL candidates rate-limited? If so, create a queued
+		// resource instead of proceeding with provisioning.
+		anyCheckedForRateLimit := false
+		allRateLimited = true
+		for _, cluster := range candidateClusters {
+			// Skip clusters at max_placements — they're at capacity, not rate-limited
+			if cluster.MaxPlacements != nil {
+				currentCount, err := cluster.GetAccountCount()
+				if err != nil {
+					continue
+				}
+				if currentCount >= *cluster.MaxPlacements {
+					continue
+				}
+			}
+			anyCheckedForRateLimit = true
+			rateLimited, _, err := cluster.IsRateLimited()
+			if err != nil {
+				continue
+			}
+			if !rateLimited {
+				allRateLimited = false
+				break
+			}
+		}
+		allRateLimited = allRateLimited && anyCheckedForRateLimit
+
+		if allRateLimited {
+			log.Logger.Info("All candidate clusters are rate-limited, resource will be queued",
+				"cloudSelector", cloudSelector,
+				"candidateClusters", len(candidateClusters))
+			return a.createQueuedResource(serviceUuid, annotations, alias, noNamespace, multiple, ctx,
+				&QueuedRequestParams{
+					CloudSelector:       cloudSelector,
+					CloudPreference:     cloudPreference,
+					ClusterRelation:     clusterRelation,
+					RequestedQuota:      requestedQuota,
+					RequestedLimitRange: requestedLimitRange,
+					KeycloakUserPrefix:  keycloakUserPrefix,
+					Multiple:            multiple,
+				})
+		}
+
 		// Apply priorities using CloudPreference
 		if len(cloudPreference) > 0 {
 			candidateClusters = ApplyPriorityWeight(
@@ -1889,6 +2094,33 @@ func (a *OcpSandboxProvider) Request(
 				cloudPreference,
 				1,
 			)
+		}
+	}
+
+	// For resources WITH cluster relations, check if any referenced sibling
+	// is queued. If so, this resource must also be queued because it can't
+	// resolve its cluster dependency yet.
+	if hasRelations {
+		siblings, err := a.FetchAllByServiceUuid(serviceUuid)
+		if err == nil {
+			for _, rel := range clusterRelation {
+				for _, sibling := range siblings {
+					if sibling.Alias == rel.Reference && sibling.Status == "queued" {
+						log.Logger.Info("Referenced sibling is queued, resource will also be queued",
+							"alias", alias, "siblingAlias", rel.Reference)
+						return a.createQueuedResource(serviceUuid, annotations, alias, noNamespace, multiple, ctx,
+							&QueuedRequestParams{
+								CloudSelector:       cloudSelector,
+								CloudPreference:     cloudPreference,
+								ClusterRelation:     clusterRelation,
+								RequestedQuota:      requestedQuota,
+								RequestedLimitRange: requestedLimitRange,
+								KeycloakUserPrefix:  keycloakUserPrefix,
+								Multiple:            multiple,
+							})
+					}
+				}
+			}
 		}
 	}
 
@@ -1975,6 +2207,14 @@ func (a *OcpSandboxProvider) Request(
 
 	providerLoop:
 		for _, cluster := range candidateClusters {
+			// Clear any cluster reservation from a previous failed iteration
+			// so GetRecentProvisionCount doesn't over-count.
+			if rnew.OcpSharedClusterConfigurationName != "" {
+				if err := rnew.reserveClusterSlot(""); err != nil {
+					log.Logger.Error("Error clearing cluster reservation", "error", err)
+				}
+			}
+
 			rnew.SetStatus("scheduling")
 
 			log.Logger.Info("Cluster",
@@ -1998,6 +2238,33 @@ func (a *OcpSandboxProvider) Request(
 					)
 					continue providerLoop
 				}
+			}
+
+			// Check provision rate limit
+			rateLimited, _, err := cluster.IsRateLimited()
+			if err != nil {
+				log.Logger.Error("Error checking rate limit for cluster",
+					"cluster", cluster.Name,
+					"error", err)
+				continue providerLoop
+			}
+			if rateLimited {
+				log.Logger.Info("Cluster at provision rate limit",
+					"cluster", cluster.Name,
+					"rateLimit", *cluster.Settings.ProvisionRateLimit,
+					"rateWindow", cluster.Settings.ProvisionRateWindow,
+				)
+				continue providerLoop
+			}
+
+			// Reserve a slot on this cluster immediately so concurrent
+			// GetRecentProvisionCount calls see this in-flight assignment.
+			// If the cluster fails later, the reservation is cleared at the
+			// top of the next iteration.
+			if err := rnew.reserveClusterSlot(cluster.Name); err != nil {
+				log.Logger.Error("Error reserving cluster slot", "error", err,
+					"cluster", cluster.Name)
+				continue providerLoop
 			}
 
 			config, err := cluster.CreateRestConfig()
@@ -2095,6 +2362,12 @@ func (a *OcpSandboxProvider) Request(
 		}
 
 		if selectedCluster.Name == "" {
+			// Clear any cluster reservation from the last failed iteration
+			if rnew.OcpSharedClusterConfigurationName != "" {
+				if err := rnew.reserveClusterSlot(""); err != nil {
+					log.Logger.Error("Error clearing cluster reservation", "error", err)
+				}
+			}
 			if len(candidateClusters) == 0 {
 				log.Logger.Error("No candidate clusters found",
 					"name", rnew.Name,
@@ -2894,7 +3167,8 @@ func (a *OcpSandboxProvider) Release(service_uuid string) error {
 			!account.NoNamespace &&
 			account.Status != "error" &&
 			account.Status != "scheduling" &&
-			account.Status != "initializing" {
+			account.Status != "initializing" &&
+			account.Status != "queued" {
 			// If the sandbox is not in error, not no_namespace, and the namespace is empty, throw an error
 			errorHappened = errors.New("Namespace not found for account")
 			log.Logger.Error("Namespace not found for account", "account", account)
@@ -3104,6 +3378,393 @@ func (a *OcpSandboxProvider) TriggerRotation() {
 	case a.RotateNow <- struct{}{}:
 	default:
 		// Already signalled, don't block
+	}
+}
+
+// FetchQueuedPlacements returns placements with status "queued" in FIFO order.
+func FetchQueuedPlacements(dbpool *pgxpool.Pool) (Placements, error) {
+	rows, err := dbpool.Query(
+		context.Background(),
+		`SELECT
+			id,
+			service_uuid,
+			request,
+			annotations,
+			status,
+			to_cleanup,
+			created_at,
+			updated_at
+		FROM placements
+		WHERE status = 'queued'
+		ORDER BY created_at ASC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var placements Placements
+	for rows.Next() {
+		var p Placement
+		if err := rows.Scan(
+			&p.ID,
+			&p.ServiceUuid,
+			&p.Request,
+			&p.Annotations,
+			&p.Status,
+			&p.ToCleanup,
+			&p.CreatedAt,
+			&p.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		p.DbPool = dbpool
+		placements = append(placements, p)
+	}
+	return placements, nil
+}
+
+// GetQueuePosition returns the total number of placements currently queued.
+// The queue processor evaluates each placement independently against its
+// target clusters, so this is a worst-case estimate — placements targeting
+// different clusters do not actually block each other.
+func GetQueuePosition(dbpool *pgxpool.Pool) (int, error) {
+	var count int
+	if err := dbpool.QueryRow(
+		context.Background(),
+		`SELECT count(*) FROM placements WHERE status = 'queued'`,
+	).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// FetchQueuedResources returns all OcpSandbox resources with status "queued",
+// ordered by creation time (FIFO).
+func (a *OcpSandboxProvider) FetchQueuedResources() ([]OcpSandboxWithCreds, error) {
+	rows, err := a.DbPool.Query(
+		context.Background(),
+		`SELECT
+			resource_data,
+			id,
+			resource_name,
+			resource_type,
+			service_uuid,
+			created_at,
+			updated_at,
+			status,
+			cleanup_count
+		FROM resources
+		WHERE resource_type = 'OcpSandbox'
+		  AND status = 'queued'
+		ORDER BY created_at ASC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var resources []OcpSandboxWithCreds
+	for rows.Next() {
+		var r OcpSandboxWithCreds
+		if err := rows.Scan(
+			&r,
+			&r.ID,
+			&r.Name,
+			&r.Kind,
+			&r.ServiceUuid,
+			&r.CreatedAt,
+			&r.UpdatedAt,
+			&r.Status,
+			&r.CleanupCount,
+		); err != nil {
+			return nil, err
+		}
+		r.Provider = a
+		resources = append(resources, r)
+	}
+	return resources, nil
+}
+
+// StartQueueProcessor starts background goroutines that poll for queued
+// placements and re-attempt scheduling every 30 seconds.
+//
+// By default, a single goroutine is started. Set QUEUE_PROCESSORS to a higher
+// value to spawn multiple concurrent processors (useful for testing the
+// advisory lock mechanism under contention, simulating multi-pod production).
+func (a *OcpSandboxProvider) StartQueueProcessor(ctx context.Context) {
+	n := 1
+	if v := os.Getenv("QUEUE_PROCESSORS"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			n = parsed
+		}
+	}
+
+	log.Logger.Info("QueueProcessor: starting", "processors", n)
+
+	for i := range n {
+		id := i
+		go func() {
+			const pollInterval = 30 * time.Second
+			log.Logger.Info("QueueProcessor: goroutine started", "id", id)
+
+			for {
+				select {
+				case <-ctx.Done():
+					log.Logger.Info("QueueProcessor: context cancelled, stopping", "id", id)
+					return
+				case <-time.After(pollInterval):
+					a.processQueuedResources()
+				}
+			}
+		}()
+	}
+}
+
+// queueProcessorLockID is a fixed advisory lock ID for the queue processor.
+// Only one instance across all pods can hold this lock at a time, preventing
+// race conditions when multiple instances poll concurrently.
+const queueProcessorLockID = 0x53414E44424F5851 // "SANDBOXQ"
+
+func (a *OcpSandboxProvider) processQueuedResources() {
+	ctx := context.Background()
+
+	// Acquire a transaction-scoped advisory lock. If another instance is
+	// already processing the queue, skip this cycle.
+	tx, err := a.DbPool.Begin(ctx)
+	if err != nil {
+		log.Logger.Error("QueueProcessor: error starting transaction", "error", err)
+		return
+	}
+	defer tx.Rollback(ctx)
+
+	var locked bool
+	if err := tx.QueryRow(ctx,
+		"SELECT pg_try_advisory_xact_lock($1)", queueProcessorLockID,
+	).Scan(&locked); err != nil {
+		log.Logger.Error("QueueProcessor: error acquiring advisory lock", "error", err)
+		return
+	}
+	if !locked {
+		return
+	}
+
+	queuedResources, err := a.FetchQueuedResources()
+	if err != nil {
+		log.Logger.Error("QueueProcessor: error fetching queued resources", "error", err)
+		return
+	}
+
+	if len(queuedResources) == 0 {
+		return
+	}
+
+	log.Logger.Info("QueueProcessor: processing queued resources", "count", len(queuedResources))
+
+	// Collect resources ready to be dequeued while holding the lock.
+	var toDequeue []OcpSandboxWithCreds
+
+	for _, res := range queuedResources {
+		if res.QueuedParams == nil {
+			log.Logger.Error("QueueProcessor: resource has no queued_params",
+				"id", res.ID, "name", res.Name)
+			continue
+		}
+
+		params := res.QueuedParams
+
+		// Check cluster relation dependencies: if a referenced sibling is
+		// still queued, skip this resource (try again next cycle).
+		if len(params.ClusterRelation) > 0 {
+			siblings, err := a.FetchAllByServiceUuid(res.ServiceUuid)
+			if err != nil {
+				log.Logger.Error("QueueProcessor: error fetching siblings",
+					"error", err, "serviceUuid", res.ServiceUuid)
+				continue
+			}
+			dependencyBlocked := false
+			for _, rel := range params.ClusterRelation {
+				for _, sibling := range siblings {
+					if sibling.Alias == rel.Reference && sibling.Status == "queued" {
+						log.Logger.Info("QueueProcessor: dependency not met, skipping",
+							"resource", res.Name, "waitingFor", rel.Reference)
+						dependencyBlocked = true
+						break
+					}
+				}
+				if dependencyBlocked {
+					break
+				}
+			}
+			if dependencyBlocked {
+				continue
+			}
+		}
+
+		// Check rate limits on candidate clusters.
+		clusters, err := a.GetSchedulableClusters(params.CloudSelector, params.ClusterRelation, nil, res.Alias)
+		if err != nil {
+			log.Logger.Error("QueueProcessor: error getting schedulable clusters",
+				"error", err, "resource", res.Name)
+			continue
+		}
+
+		canSchedule := false
+		for _, cluster := range clusters {
+			if cluster.MaxPlacements != nil {
+				currentCount, err := cluster.GetAccountCount()
+				if err != nil {
+					continue
+				}
+				if currentCount >= *cluster.MaxPlacements {
+					continue
+				}
+			}
+
+			rateLimited, _, err := cluster.IsRateLimited()
+			if err != nil {
+				continue
+			}
+			if !rateLimited {
+				canSchedule = true
+				break
+			}
+		}
+
+		if !canSchedule {
+			continue
+		}
+
+		// CAS-style update: only transition if still queued.
+		ct, err := a.DbPool.Exec(ctx,
+			"UPDATE resources SET status = 'initializing', resource_data = jsonb_set(resource_data, '{status}', '\"initializing\"') WHERE id = $1 AND status = 'queued'",
+			res.ID,
+		)
+		if err != nil {
+			log.Logger.Error("QueueProcessor: error transitioning resource",
+				"error", err, "resource", res.Name)
+			continue
+		}
+		if ct.RowsAffected() > 0 {
+			log.Logger.Info("QueueProcessor: dequeuing resource",
+				"resource", res.Name, "serviceUuid", res.ServiceUuid)
+			toDequeue = append(toDequeue, res)
+		}
+	}
+
+	// Commit releases the advisory lock BEFORE provisioning.
+	if err := tx.Commit(ctx); err != nil {
+		log.Logger.Error("QueueProcessor: error committing transaction", "error", err)
+		return
+	}
+
+	// Trigger provisioning for each dequeued resource outside the lock.
+	for _, res := range toDequeue {
+		a.provisionDequeuedResource(res)
+	}
+
+	// Check if any queued placements have all their resources provisioned.
+	// This handles the case where a resource was dequeued in a previous
+	// cycle and has since finished async provisioning.
+	queuedPlacements, err := FetchQueuedPlacements(a.DbPool)
+	if err != nil {
+		log.Logger.Error("QueueProcessor: error fetching queued placements for completion check", "error", err)
+		return
+	}
+	for _, p := range queuedPlacements {
+		a.checkPlacementCompletion(p.ServiceUuid)
+	}
+}
+
+// provisionDequeuedResource provisions a previously queued resource by
+// deleting the placeholder record and calling Request() to create and
+// provision a new resource. This re-uses the entire existing provisioning
+// pipeline without code duplication.
+func (a *OcpSandboxProvider) provisionDequeuedResource(res OcpSandboxWithCreds) {
+	params := res.QueuedParams
+	if params == nil {
+		log.Logger.Error("QueueProcessor: cannot provision resource without queued_params",
+			"id", res.ID, "name", res.Name)
+		return
+	}
+
+	serviceUuid := res.ServiceUuid
+	annotations := res.Annotations
+	alias := res.Alias
+	noNamespace := res.NoNamespace
+
+	// Delete the queued placeholder resource so Request() can create
+	// a fresh one with the same service_uuid.
+	if _, err := a.DbPool.Exec(context.Background(),
+		"DELETE FROM resources WHERE id = $1", res.ID,
+	); err != nil {
+		log.Logger.Error("QueueProcessor: error deleting queued resource",
+			"error", err, "id", res.ID)
+		return
+	}
+
+	log.Logger.Info("QueueProcessor: provisioning dequeued resource",
+		"name", res.Name, "serviceUuid", serviceUuid, "alias", alias)
+
+	// Re-call Request() which creates a new resource and starts async provisioning.
+	// If still rate-limited, Request() creates a new queued resource (will be
+	// retried next cycle).
+	newRes, err := a.Request(
+		serviceUuid,
+		params.CloudSelector,
+		params.CloudPreference,
+		annotations,
+		params.RequestedQuota,
+		params.RequestedLimitRange,
+		params.Multiple,
+		context.Background(),
+		alias,
+		params.ClusterRelation,
+		params.KeycloakUserPrefix,
+		noNamespace,
+	)
+	if err != nil {
+		log.Logger.Error("QueueProcessor: error re-requesting resource",
+			"error", err, "serviceUuid", serviceUuid, "alias", alias)
+		return
+	}
+
+	_ = newRes // async provisioning is in progress
+}
+
+// checkPlacementCompletion checks if all resources for a placement's
+// service_uuid are done (no longer queued). If so, updates the placement
+// status from "queued" to let the normal LoadActiveResources flow take over.
+func (a *OcpSandboxProvider) checkPlacementCompletion(serviceUuid string) {
+	var queuedCount int
+	if err := a.DbPool.QueryRow(
+		context.Background(),
+		`SELECT count(*) FROM resources
+		 WHERE service_uuid = $1
+		   AND resource_type = 'OcpSandbox'
+		   AND status = 'queued'`,
+		serviceUuid,
+	).Scan(&queuedCount); err != nil {
+		log.Logger.Error("QueueProcessor: error checking queued resource count",
+			"error", err, "serviceUuid", serviceUuid)
+		return
+	}
+
+	if queuedCount == 0 {
+		// All resources are no longer queued — update placement status
+		// to "initializing" so LoadActiveResources can manage it normally.
+		ct, err := a.DbPool.Exec(
+			context.Background(),
+			"UPDATE placements SET status = 'initializing' WHERE service_uuid = $1 AND status = 'queued'",
+			serviceUuid,
+		)
+		if err != nil {
+			log.Logger.Error("QueueProcessor: error updating placement status",
+				"error", err, "serviceUuid", serviceUuid)
+		} else if ct.RowsAffected() > 0 {
+			log.Logger.Info("QueueProcessor: all resources dequeued, placement status updated",
+				"serviceUuid", serviceUuid)
+		}
 	}
 }
 

@@ -1,0 +1,389 @@
+= Placement Queue for Load Protection
+:toc:
+:toc-placement: preamble
+
+Protect shared clusters from provisioning storms by rate-limiting how many new placements can be scheduled within a configurable time window. When all clusters are at capacity, placements are queued and processed FIFO.
+
+== Problem
+
+When many placements start simultaneously on a shared cluster, the cluster cannot handle the load — not because of total capacity, but because of concurrent provisioning pressure. We need to spread provisioning over time.
+
+== Solution Overview
+
+Two new configuration fields per cluster, stored in a new `settings` JSONB column:
+
+- `provision_rate_limit` — maximum number of new placements allowed within the time window
+- `provision_rate_window` — the time window (e.g. `10m`, `1h`)
+
+If all candidate clusters have exhausted their rate limit, the placement enters a `"queued"` status and is processed later by a background goroutine (FIFO order).
+
+=== Introducing the `settings` column
+
+The existing `data` JSONB column (`ClusterData` struct) holds **system-managed internal state** — SA token rotation timestamps, connection status, placement counts. The upsert handler overwrites `Data` with the existing value on every update to protect these plumbing fields.
+
+A new `settings` JSONB column (`ClusterSettings` struct) cleanly separates **user-configurable settings** from internal plumbing:
+
+[cols="1,2,2"]
+|===
+| Column | Purpose | Update behavior
+
+| `data`
+| System-managed internal state (rotation timestamps, connection status, placement counts)
+| Preserved on update — handler overwrites with existing values
+
+| `settings`
+| User-configurable settings (rate limits, future settings)
+| Taken from request — user controls these values
+|===
+
+*Why* ? Having a JSONB field is more flexible and doesn’t require a DB migration everytime we want to add a field. We’ll eventually migrate top-level settings like max_placements under that new settings
+
+== Configuration
+
+Set via the cluster configuration PUT endpoint or `sandbox-cli cluster onboard`:
+
+[source,json]
+----
+{
+  "name": "my-cluster",
+  "annotations": {"cloud": "aws"},
+  "max_placements": 30,
+  "settings": {
+    "provision_rate_limit": 50,
+    "provision_rate_window": "10m"
+  }
+}
+----
+
+[source,shell]
+----
+sandbox-cli cluster onboard \
+  --name my-cluster \
+  --annotations '{"cloud":"aws"}' \
+  --provision-rate-limit 50 \
+  --provision-rate-window 10m
+----
+
+Both rate-limit fields must be set together. When absent or null, no rate limiting is applied (backward compatible).
+
+== Scheduling Flow
+
+[source]
+----
+Placement request arrives
+│
+├─ For each resource in the placement:
+│   ├─ Find candidate clusters (existing: annotations, max_placements)
+│   │
+│   ├─ For each candidate, check provision rate
+│   │   └─ COUNT resources WHERE ocp_cluster = $1
+│   │       AND created_at > now() - provision_rate_window
+│   │   └─ If recent_count >= provision_rate_limit → skip cluster
+│   │
+│   ├─ Cluster available → create resource with status: "initializing"
+│   │   └─ Start async provisioning goroutine
+│   │
+│   └─ ALL clusters rate-limited
+│       └─ Create resource with status: "queued"
+│           └─ No async provisioning goroutine — resource waits in queue
+│
+├─ Cluster relation handling (same_cluster_as, different_cluster_from):
+│   ├─ Resources WITH cluster relations skip the synchronous rate-limit
+│   │   pre-check (scheduling is deferred to the async task)
+│   ├─ If a referenced sibling resource is "queued", the dependent
+│   │   resource is also created as "queued" (it can't resolve yet)
+│   └─ The queue processor dequeues them in dependency order
+│
+└─ After all resources processed:
+    ├─ Any resource "queued" → set placement status to "queued"
+    └─ All resources "initializing" → normal flow
+----
+
+=== Resource-Level Queuing (Why Not Placement-Level)
+
+The initial design queued entire placements. This breaks with multi-resource placements:
+
+[source]
+----
+Placement with 2 resources (A targets cluster X, B targets cluster Y):
+  1. Resource A: Request() → success, resource created, async provisioning starts
+  2. Resource B: Request() → ErrRateLimited (cluster Y at limit)
+  3. ❌ WRONG: Queue entire placement → Resource A is orphaned
+  4. ❌ WRONG: Dequeue later → tries to re-create A → conflict
+----
+
+Resource-level queuing solves this:
+
+[source]
+----
+  1. Resource A: Request() → cluster X available → "initializing" (provisions normally)
+  2. Resource B: Request() → cluster Y rate-limited → "queued" (waits)
+  3. Placement status = "queued" (because B is queued)
+  4. Queue processor dequeues B when cluster Y has capacity
+  5. B provisions → all resources done → placement status = "success"
+----
+
+Each resource is independently queued or provisioned. The placement status is derived from the aggregate state of its resources.
+
+== Queue Processing
+
+A background goroutine polls for queued *resources*:
+
+- **Interval:** 30 seconds
+- **Order:** `created_at ASC` (FIFO)
+- **Action:** For each queued resource:
+  1. Check if cluster relations are satisfied (referenced siblings must be provisioned)
+  2. Re-check rate limits on candidate clusters
+  3. Rate limit available → trigger provisioning (status → `"initializing"`)
+  4. Still rate-limited or dependency not met → leave as `"queued"`
+- **After provisioning a resource:** Check if all resources for the placement are done. If so, the placement status is updated by the normal `LoadActiveResources` flow.
+- **Startup:** Launched alongside existing background goroutines in `main.go`
+- **Concurrency:** Uses `pg_try_advisory_xact_lock` so only one pod processes the queue at a time.
+
+== Resource and Placement Status: `"queued"`
+
+New status added to both enums:
+
+- `resource_status_enum`: `queued` added before `initializing`
+- `placement_status_enum`: `queued` added before `initializing` (existing migration 024)
+
+=== Resource lifecycle
+
+[source]
+----
+Resource created:
+  ├─ Rate limit OK    → "initializing" → "scheduling" → "success"
+  │                                                    → "error"
+  └─ Rate limited     → "queued" → (dequeued) → "initializing" → ...
+----
+
+- Resource is created in DB with `status = "queued"`
+- Provisioning parameters (cloud_selector, quota, limit_range, cluster_relation, etc.) are stored in `resource_data` JSONB
+- No async provisioning goroutine runs until the resource is dequeued
+
+=== Placement lifecycle
+
+[source]
+----
+Placement:
+  ├─ All resources "initializing" → normal flow → "success"
+  ├─ Any resource "queued"        → "queued" → (resources dequeue) → "success"
+  └─                                                                → "error"
+----
+
+- Placement `status = "queued"` is set by the handler when any OcpSandbox resource is queued
+- Anarchy sees `"queued"` and reports "in queue" to the user
+- HTTP response is the same *202 Accepted* as any new placement
+- `LoadActiveResources` skips status update when placement is `"queued"` (status is managed by the queue processor)
+
+== Dry-Run
+
+The dry-run endpoint shows per-cluster rate-limit state via a new `cluster_details` field.
+
+=== Capacity available (immediate scheduling)
+
+[source,json]
+----
+{
+  "kind": "OcpSandbox",
+  "available": true,
+  "message": "Matching OCP shared clusters found",
+  "schedulable_cluster_count": 3,
+  "schedulable_cluster_names": ["cluster1", "cluster2", "cluster3"],
+  "cluster_details": [
+    {"name": "cluster1", "available_slots": 50},
+    {"name": "cluster2", "available_slots": 8},
+    {"name": "cluster3", "available_slots": 35}
+  ]
+}
+----
+
+=== All clusters at rate limit (would be queued)
+
+[source,json]
+----
+{
+  "kind": "OcpSandbox",
+  "available": true,
+  "message": "Matching OCP shared clusters found (placement would be queued)",
+  "schedulable_cluster_count": 3,
+  "schedulable_cluster_names": ["cluster1", "cluster2", "cluster3"],
+  "cluster_details": [
+    {"name": "cluster1", "available_slots": 0},
+    {"name": "cluster2", "available_slots": 0},
+    {"name": "cluster3", "available_slots": 0}
+  ],
+  "queued": true,
+  "queue_position": 5
+}
+----
+
+- `available` is `true` — the placement _will_ happen, just not immediately
+- `available_slots` = `provision_rate_limit - recent_provisions_in_window`
+  * 0 = cluster is at its rate limit
+  * Equals `provision_rate_limit` during quiet periods
+- Clusters without rate limiting configured omit `available_slots` (unlimited)
+- `queue_position` = number of existing queued placements ahead (for the same cloud selector)
+- `available` is `false` — no matching cluster, or all cluster at max capacity (max_placements)
+
+== API Changes
+
+=== Cluster Configuration
+
+`PUT /api/v1/ocp-shared-cluster-configurations/{name}`
+
+New `settings` JSONB field (replaces per-field approach):
+
+[cols="2,1,3"]
+|===
+| Field | Type | Description
+
+| `settings.provision_rate_limit`
+| integer (nullable)
+| Max new placements within the rate window. Must be > 0.
+
+| `settings.provision_rate_window`
+| string (nullable)
+| Duration string (e.g. `10m`, `1h`, `30s`). Must be set with `provision_rate_limit`.
+|===
+
+=== Placement Creation
+
+`POST /api/v1/placements`
+
+No change to HTTP status codes — new placements already return *202 Accepted*. The only difference is the placement `status` field:
+
+[cols="1,3"]
+|===
+| Placement status | Meaning
+
+| `"initializing"`
+| Placement scheduled immediately (existing behavior)
+
+| `"queued"`
+| All candidate clusters at rate limit — will be processed later (FIFO)
+|===
+
+The existing *200 OK* response for identical duplicate requests is unchanged.
+
+=== Dry-Run
+
+`POST /api/v1/placements/dry-run`
+
+New fields in `ResourceDryRunResult`:
+
+[cols="2,1,3"]
+|===
+| Field | Type | Description
+
+| `cluster_details`
+| array (optional)
+| Per-cluster rate-limit info. Only present for OcpSandbox resources.
+
+| `cluster_details[].name`
+| string
+| Cluster name
+
+| `cluster_details[].available_slots`
+| integer (optional)
+| Remaining capacity in the rate window. Omitted if no rate limit configured.
+
+| `queued`
+| boolean (optional)
+| `true` if the placement would be queued. Only present when all clusters are rate-limited.
+
+| `queue_position`
+| integer (optional)
+| Position in the queue. Only present when `queued` is `true`.
+|===
+
+== Implementation Checklist
+
+=== DB Migrations (`db/migrations/`)
+
+- [x] `023_cluster_settings.up.sql`: add `settings` JSONB column to `ocp_shared_cluster_configurations`
+- [x] `023_cluster_settings.down.sql`: drop `settings` column
+- [x] `024_placement_queued_status.up.sql`: add `queued` to `placement_status_enum`
+- [x] `024_placement_queued_status.down.sql`: no-op (can't remove enum values)
+- [ ] `025_resource_queued_status.up.sql`: add `queued` to `resource_status_enum`
+- [ ] `025_resource_queued_status.down.sql`: no-op
+
+=== Model Layer (`internal/models/ocp_sandbox.go`)
+
+- [x] Add `ClusterSettings` struct with `ProvisionRateLimit`, `ProvisionRateWindow`
+- [x] Add `Settings ClusterSettings` field to `OcpSharedClusterConfiguration`
+- [x] Update `Save()`, `Update()`, and all `Scan()` calls to include `settings` column
+- [x] Add `GetRecentProvisionCount(window time.Duration) (int, error)` method
+- [x] Add `IsRateLimited() (bool, int, error)` method
+- [x] Add `reserveClusterSlot()` for in-flight rate-limit visibility
+- [x] Define `ErrRateLimited` sentinel error
+- [x] Add `StartQueueProcessor(ctx context.Context)` on `OcpSandboxProvider`
+- [ ] Refactor `Request()`: return queued resource instead of `ErrRateLimited`
+  ** Create resource with `status = "queued"` and provisioning params in `resource_data`
+  ** Do NOT start async provisioning goroutine for queued resources
+  ** For resources with cluster relations: if referenced sibling is `queued`, also queue
+- [ ] Refactor `processQueuedPlacements()` → `processQueuedResources()`
+  ** Query queued resources (not placements)
+  ** Check cluster relations + rate limits before dequeuing
+  ** Trigger provisioning for dequeued resources
+- [ ] Add `FetchQueuedResources()` query function
+- [x] Add `GetQueuePosition(cloudSelector)` query function for dry-run
+
+=== Placement Handling (`internal/models/placements.go`)
+
+- [ ] `LoadActiveResourcesWithCreds`: skip status update when placement is `"queued"`
+  ** Queued placement status is managed by resource dequeuing, not by resource aggregation
+
+=== API Handlers (`cmd/sandbox-api/`)
+
+- [ ] `PostPlacementHandler`: after processing all resources, check if any are `queued`
+  ** If any queued: set placement status to `"queued"`, return 202
+  ** Remove `ErrRateLimited` handler (resources now self-queue)
+- [x] `PostDryRunPlacementHandler`: compute `cluster_details`, `queued`, `queue_position`
+- [x] `UpsertOcpSharedClusterConfigurationHandler`: take `Settings` from request
+- [x] Validate `provision_rate_limit` and `provision_rate_window` (both or neither)
+- [x] `main.go`: start queue processor goroutine
+
+=== API Types (`internal/api/v1/v1.go`)
+
+- [x] Add `ClusterDryRunInfo` struct
+- [x] Add `ClusterDetails`, `Queued`, `QueuePosition` fields to `ResourceDryRunResult`
+
+=== CLI (`internal/cli/`)
+
+- [x] `cluster list`: display rate-limit info
+- [x] `cluster get`: display `provision_rate_limit` and `provision_rate_window`
+- [x] `cluster onboard`: add `--provision-rate-limit` and `--provision-rate-window` flags
+- [x] `placement dry-run`: display `cluster_details` and queue info
+
+=== Documentation
+
+- [x] Update `docs/api-reference/swagger.yaml`
+
+=== Tests (`tests/functional/test_provision_rate_limit.py`)
+
+Single-resource tests:
+
+- [ ] Configure rate limit, create placements up to limit → all succeed
+- [ ] Overflow → resource `status = "queued"`, placement `status = "queued"`
+- [ ] Dry-run shows `available_slots: 0` and `queued: true`
+- [ ] Wait for window → queued resource dequeued, placement becomes `success`
+
+Multi-resource tests:
+
+- [ ] 2 resources on same cluster (rate_limit=2) → both consume slots, overflow queued
+- [ ] 2 resources on different clusters (rate_limit=1 each) → independent rate tracking
+- [ ] Multi-resource placement: 1 resource rate-limited, 1 not → only the rate-limited resource queued, placement `queued`
+- [ ] Queued resource dequeues → placement transitions to `success`
+
+Cluster relation tests:
+
+- [ ] Resource B has `same_cluster_as(A)`: A rate-limited → both queued
+- [ ] A dequeues first → B dequeues next cycle and lands on same cluster as A
+- [ ] `different_cluster_from` with rate limiting: verify correct cluster exclusion after dequeue
+
+Concurrent and ordering tests:
+
+- [ ] Concurrent burst: 5 placements, rate_limit=2 → exactly 2 pass, 3 queued
+- [ ] FIFO ordering: queued resources dequeued in creation order
+- [ ] Rate limit lifecycle: window expiry frees slots, rate limit removal dequeues immediately

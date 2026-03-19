@@ -401,6 +401,29 @@ func runPlacementDryRun(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		// Show cluster details with rate limit info
+		if details, ok := res["cluster_details"].([]any); ok && len(details) > 0 {
+			fmt.Fprintln(out, "  Rate limit status:")
+			for _, d := range details {
+				if detail, ok := d.(map[string]any); ok {
+					name := jsonStr(detail["name"])
+					if slots, ok := detail["available_slots"].(float64); ok {
+						fmt.Fprintf(out, "    - %s: %d available slots\n", name, int(slots))
+					} else {
+						fmt.Fprintf(out, "    - %s: no rate limit\n", name)
+					}
+				}
+			}
+		}
+
+		// Show queue info
+		if queued, ok := res["queued"].(bool); ok && queued {
+			fmt.Fprintln(out, "  Status: placement would be QUEUED")
+			if pos, ok := res["queue_position"].(float64); ok {
+				fmt.Fprintf(out, "  Queue position: %d\n", int(pos))
+			}
+		}
+
 		if errMsg := jsonStr(res["error"]); errMsg != "" {
 			fmt.Fprintf(out, "  Error: %s\n", errMsg)
 		}
