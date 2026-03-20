@@ -3834,8 +3834,17 @@ func (a *OcpSandboxProvider) processQueuedResources() {
 				}
 			}
 
-			rateLimited, _, err := cluster.IsRateLimited()
+			// Use CheckAndReserveSlot (atomic check+reserve) instead of
+			// the read-only IsRateLimited. This sets ocp_cluster on the
+			// queued resource so subsequent queue cycles see it in their
+			// rate-limit count. Without this, rapid consecutive cycles
+			// (from multiple QUEUE_PROCESSORS goroutines) can each dequeue
+			// a resource for the same cluster because IsRateLimited
+			// doesn't see the pending dequeue.
+			rateLimited, err := res.CheckAndReserveSlot(&cluster)
 			if err != nil {
+				log.Logger.Error("QueueProcessor: error checking rate limit slot",
+					"error", err, "cluster", cluster.Name, "resource", res.Name)
 				continue
 			}
 			if !rateLimited {
@@ -3861,6 +3870,11 @@ func (a *OcpSandboxProvider) processQueuedResources() {
 		if err != nil {
 			log.Logger.Error("QueueProcessor: error transitioning resource",
 				"error", err, "resource", res.Name)
+			// Clear the slot reservation since we won't provision this resource
+			if err := res.reserveClusterSlot(""); err != nil {
+				log.Logger.Error("QueueProcessor: error clearing slot reservation",
+					"error", err, "resource", res.Name)
+			}
 			continue
 		}
 		if ct.RowsAffected() > 0 {
@@ -3868,6 +3882,12 @@ func (a *OcpSandboxProvider) processQueuedResources() {
 				"resource", res.Name, "serviceUuid", res.ServiceUuid)
 			toDequeue = append(toDequeue, res)
 			metrics.QueueDequeueTotal.Inc()
+		} else {
+			// CAS missed — resource was already processed; clear the slot
+			if err := res.reserveClusterSlot(""); err != nil {
+				log.Logger.Error("QueueProcessor: error clearing slot reservation",
+					"error", err, "resource", res.Name)
+			}
 		}
 	}
 
