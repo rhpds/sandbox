@@ -377,6 +377,74 @@ def create_multi_resource_placement(
     )
 
 
+def cleanup_test_namespaces(admin_token: str):
+    """Delete leftover namespaces created by THIS test run on the source cluster.
+
+    Safety net: force-delete removes DB records but skips actual cluster cleanup,
+    so namespaces are orphaned. This function finds and deletes them by prefix.
+
+    Namespaces are identified by:
+      - Name starts with 'sandbox-tt{TEST_RUN_ID}' (unique to this run)
+      - Label created-by=sandbox-api
+    """
+    ns_prefix = f"sandbox-tt{TEST_RUN_ID}"
+    try:
+        source = get_source_cluster(admin_token)
+    except Exception as e:
+        logger.warning(f"Could not fetch source cluster for namespace cleanup: {e}")
+        return
+
+    api_url = source.get("api_url", "")
+    token = source.get("token", "")
+    if not token or not api_url:
+        logger.warning("No token/api_url in source config — skipping namespace cleanup")
+        return
+
+    logger.info(f"Checking for leftover namespaces with prefix: {ns_prefix}")
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        resp = requests.get(
+            f"{api_url}/api/v1/namespaces",
+            headers=headers,
+            params={"labelSelector": "created-by=sandbox-api"},
+            verify=False,
+            timeout=30,
+        )
+        resp.raise_for_status()
+    except Exception as e:
+        logger.warning(f"Failed to list namespaces for cleanup: {e}")
+        return
+
+    namespaces = resp.json().get("items", [])
+    test_namespaces = [
+        ns["metadata"]["name"]
+        for ns in namespaces
+        if ns["metadata"]["name"].startswith(ns_prefix)
+    ]
+
+    if not test_namespaces:
+        logger.info("No leftover test namespaces found on cluster")
+        return
+
+    logger.info(f"Found {len(test_namespaces)} leftover test namespace(s) to clean up")
+    for ns_name in test_namespaces:
+        try:
+            resp = requests.delete(
+                f"{api_url}/api/v1/namespaces/{ns_name}",
+                headers=headers,
+                verify=False,
+                timeout=30,
+            )
+            if resp.status_code in (200, 202):
+                logger.info(f"  Deleted namespace: {ns_name}")
+            elif resp.status_code == 404:
+                logger.info(f"  Namespace already gone: {ns_name}")
+            else:
+                logger.warning(f"  Failed to delete namespace {ns_name}: {resp.status_code}")
+        except Exception as e:
+            logger.warning(f"  Failed to delete namespace {ns_name}: {e}")
+
+
 def cleanup(admin_token: str, app_token: str, placement_uuids: list, cluster_names: list = None):
     """Remove test resources.
 
@@ -415,6 +483,9 @@ def cleanup(admin_token: str, app_token: str, placement_uuids: list, cluster_nam
                 admin_token,
                 description=f"delete test cluster {cname}",
             )
+
+    # Clean up orphaned namespaces on the real OCP cluster
+    cleanup_test_namespaces(admin_token)
     logger.info("Cleanup complete")
 
 

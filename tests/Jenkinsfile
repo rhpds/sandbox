@@ -24,6 +24,7 @@ pipeline {
         booleanParam(name: 'run_rbac_tests', defaultValue: true, description: 'Run RBAC functional tests')
         booleanParam(name: 'run_cli_tests', defaultValue: true, description: 'Run sandbox-cli functional tests')
         booleanParam(name: 'run_rate_limit_tests', defaultValue: true, description: 'Run provision rate limit functional tests')
+        booleanParam(name: 'run_rate_limit_load_tests', defaultValue: false, description: 'Run provision rate limit load tests (heavy, not enabled by default)')
     }
 
     stages {

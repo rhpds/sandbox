@@ -371,8 +371,9 @@ RUN_ONBOARD_TESTS="${RUN_ONBOARD_TESTS:-${run_onboard_tests:-true}}"
 RUN_RBAC_TESTS="${RUN_RBAC_TESTS:-${run_rbac_tests:-true}}"
 RUN_CLI_TESTS="${RUN_CLI_TESTS:-${run_cli_tests:-true}}"
 RUN_RATE_LIMIT_TESTS="${RUN_RATE_LIMIT_TESTS:-${run_rate_limit_tests:-true}}"
+RUN_RATE_LIMIT_LOAD_TESTS="${RUN_RATE_LIMIT_LOAD_TESTS:-${run_rate_limit_load_tests:-false}}"
 
-echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS RUN_NO_NAMESPACE_TESTS=$RUN_NO_NAMESPACE_TESTS RUN_ONBOARD_TESTS=$RUN_ONBOARD_TESTS RUN_RBAC_TESTS=$RUN_RBAC_TESTS RUN_CLI_TESTS=$RUN_CLI_TESTS RUN_RATE_LIMIT_TESTS=$RUN_RATE_LIMIT_TESTS"
+echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS RUN_NO_NAMESPACE_TESTS=$RUN_NO_NAMESPACE_TESTS RUN_ONBOARD_TESTS=$RUN_ONBOARD_TESTS RUN_RBAC_TESTS=$RUN_RBAC_TESTS RUN_CLI_TESTS=$RUN_CLI_TESTS RUN_RATE_LIMIT_TESTS=$RUN_RATE_LIMIT_TESTS RUN_RATE_LIMIT_LOAD_TESTS=$RUN_RATE_LIMIT_LOAD_TESTS"
 
 if [ "$RUN_HURL_TESTS" != "false" ] && [ "$RUN_HURL_TESTS" != "no" ]; then
     tests=$1
@@ -627,4 +628,25 @@ if [ "${RUN_RATE_LIMIT_TESTS}" != "false" ] && [ "${RUN_RATE_LIMIT_TESTS}" != "n
         python3 tests/functional/test_provision_rate_limit.py
 else
     echo "Skipping provision rate limit tests (RUN_RATE_LIMIT_TESTS=${RUN_RATE_LIMIT_TESTS})"
+fi
+
+# Run provision rate limit load tests if requested (disabled by default)
+if [ "${RUN_RATE_LIMIT_LOAD_TESTS}" != "false" ] && [ "${RUN_RATE_LIMIT_LOAD_TESTS}" != "no" ]; then
+    echo ""
+    echo "=========================================="
+    echo "Running provision rate limit LOAD tests (QUEUE_PROCESSORS=$QUEUE_PROCESSORS, QUEUE_POLL_INTERVAL=$QUEUE_POLL_INTERVAL)"
+    echo "=========================================="
+    cd $jobdir
+
+    # Install Python dependencies if needed
+    pip3 install -q requests urllib3 2>/dev/null || true
+
+    # Run the Python rate limit load test
+    SANDBOX_API_URL="http://localhost:$PORT" \
+        SANDBOX_LOGIN_TOKEN="$apptoken" \
+        SANDBOX_ADMIN_LOGIN_TOKEN="$admintoken" \
+        OCP_CLUSTER_NAME="ocpvdev01" \
+        python3 tests/functional/test_provision_rate_limit_load.py
+else
+    echo "Skipping provision rate limit load tests (RUN_RATE_LIMIT_LOAD_TESTS=${RUN_RATE_LIMIT_LOAD_TESTS})"
 fi
