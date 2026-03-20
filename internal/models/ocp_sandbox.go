@@ -3763,7 +3763,14 @@ func (a *OcpSandboxProvider) processQueuedResources() {
 	log.Logger.Info("QueueProcessor: processing queued resources", "count", len(queuedResources))
 
 	// Collect resources ready to be dequeued while holding the lock.
+	// Track which clusters have been claimed in this cycle so we don't
+	// dequeue multiple resources targeting the same rate-limited cluster.
+	// The rate-limit check is read-only (IsRateLimited), so without this
+	// guard multiple resources would all see count=0, all be dequeued, but
+	// only the first would get the slot via CheckAndReserveSlot — the rest
+	// would be re-queued with new created_at timestamps, breaking FIFO order.
 	var toDequeue []OcpSandboxWithCreds
+	claimedClusters := make(map[string]bool)
 
 	for _, res := range queuedResources {
 		if res.QueuedParams == nil {
@@ -3812,6 +3819,11 @@ func (a *OcpSandboxProvider) processQueuedResources() {
 
 		canSchedule := false
 		for _, cluster := range clusters {
+			// Skip clusters already claimed by another resource in this cycle
+			if claimedClusters[cluster.Name] {
+				continue
+			}
+
 			if cluster.MaxPlacements != nil {
 				currentCount, err := cluster.GetAccountCount()
 				if err != nil {
@@ -3828,6 +3840,11 @@ func (a *OcpSandboxProvider) processQueuedResources() {
 			}
 			if !rateLimited {
 				canSchedule = true
+				// Mark all candidate clusters as claimed so the next
+				// resource in the queue won't compete for the same slot.
+				for _, c := range clusters {
+					claimedClusters[c.Name] = true
+				}
 				break
 			}
 		}
@@ -3911,6 +3928,8 @@ func (a *OcpSandboxProvider) provisionDequeuedResource(res OcpSandboxWithCreds) 
 	// Re-call Request() which creates a new resource and starts async provisioning.
 	// If still rate-limited, Request() creates a new queued resource (will be
 	// retried next cycle).
+	originalCreatedAt := res.CreatedAt
+
 	newRes, err := a.Request(
 		serviceUuid,
 		params.CloudSelector,
@@ -3931,7 +3950,19 @@ func (a *OcpSandboxProvider) provisionDequeuedResource(res OcpSandboxWithCreds) 
 		return
 	}
 
-	_ = newRes // async provisioning is in progress
+	// If the resource was re-queued (rate limit still exhausted due to
+	// timing), preserve the original created_at so FIFO ordering is
+	// maintained. Without this, re-queued resources get a fresh timestamp
+	// and lose their place in the queue.
+	if newRes.Status == "queued" {
+		if _, err := a.DbPool.Exec(context.Background(),
+			"UPDATE resources SET created_at = $1 WHERE id = $2",
+			originalCreatedAt, newRes.ID,
+		); err != nil {
+			log.Logger.Error("QueueProcessor: error preserving created_at for re-queued resource",
+				"error", err, "id", newRes.ID)
+		}
+	}
 }
 
 // checkPlacementCompletion checks if all resources for a placement's

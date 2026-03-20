@@ -139,47 +139,6 @@ def api_request(
     return response
 
 
-def fetch_metrics() -> Dict[str, float]:
-    """Fetch Prometheus metrics from the sandbox-api /metrics endpoint.
-    Returns a dict of metric_name{labels} -> value for sandbox_* metrics."""
-    try:
-        resp = requests.get(f"{SANDBOX_API_URL}/metrics", verify=False, timeout=5)
-        if resp.status_code != 200:
-            logger.warning(f"Metrics endpoint returned {resp.status_code}")
-            return {}
-        result = {}
-        for line in resp.text.splitlines():
-            if line.startswith("#") or not line.strip():
-                continue
-            # Only capture sandbox_* and go_* pool metrics
-            if not line.startswith("sandbox_"):
-                continue
-            parts = line.rsplit(" ", 1)
-            if len(parts) == 2:
-                try:
-                    result[parts[0]] = float(parts[1])
-                except ValueError:
-                    pass
-        return result
-    except Exception as e:
-        logger.warning(f"Failed to fetch metrics: {e}")
-        return {}
-
-
-def log_metrics(label: str):
-    """Fetch and log all sandbox_* metrics with a descriptive label."""
-    m = fetch_metrics()
-    if not m:
-        logger.info(f"[METRICS:{label}] (no metrics available)")
-        return
-    logger.info(f"[METRICS:{label}] --- begin ---")
-    # Group and sort for readability; skip histogram buckets and _created for brevity
-    for key in sorted(m.keys()):
-        if "_bucket{" in key or key.endswith("_created"):
-            continue
-        logger.info(f"  {key} = {m[key]}")
-    logger.info(f"[METRICS:{label}] --- end ---")
-
 
 def get_source_cluster(admin_token: str) -> Dict[str, Any]:
     """Fetch source cluster config to use as template."""
@@ -395,6 +354,8 @@ def create_multi_resource_placement(
             res["alias"] = spec.get("alias", f"res-{i}")
             if "cluster_condition" in spec:
                 res["cluster_condition"] = spec["cluster_condition"]
+            if "cluster_relation" in spec:
+                res["cluster_relation"] = spec["cluster_relation"]
         else:
             # Backward compat: treat as a plain cloud_selector dict
             res = {"kind": "OcpSandbox", "cloud_selector": spec}
@@ -417,24 +378,26 @@ def create_multi_resource_placement(
 
 
 def cleanup(admin_token: str, app_token: str, placement_uuids: list, cluster_names: list = None):
-    """Remove test resources."""
+    """Remove test resources.
+
+    Uses force-delete to synchronously remove placements and their resources
+    from the DB. This prevents stale resources (still to_cleanup=false during
+    async Release) from interfering with subsequent tests' rate-limit counts.
+    """
     if cluster_names is None:
         cluster_names = [MOCK_CLUSTER]
     logger.info("Cleaning up...")
 
-    # Delete test placements
+    # Force-delete test placements (synchronous DB removal, no cluster cleanup)
     for uuid_str in placement_uuids:
         resp = api_request(
             "DELETE",
-            f"/api/v1/placements/{uuid_str}",
-            app_token,
-            description=f"delete placement {uuid_str}",
+            f"/api/v1/placements/{uuid_str}/force",
+            admin_token,
+            description=f"force-delete placement {uuid_str}",
         )
         if resp.status_code not in (200, 202, 404):
-            logger.warning(f"Failed to delete placement {uuid_str}: {resp.status_code}")
-
-    # Wait briefly for async deletions
-    time.sleep(5)
+            logger.warning(f"Failed to force-delete placement {uuid_str}: {resp.status_code}")
 
     # Remove rate limit and delete clusters
     for cname in cluster_names:
@@ -479,7 +442,7 @@ def run_tests():
         # Step 2: Create cluster with rate limit
         setup_rate_limited_cluster(admin_token, source)
         verify_settings(admin_token)
-        log_metrics("after-cluster-setup")
+
 
         # Step 3: Dry-run before any placements — should show available slots
         dry_result = dry_run(admin_token)
@@ -519,7 +482,6 @@ def run_tests():
                 f"Placement {i+1}/{RATE_LIMIT} created successfully (status={status})"
             )
 
-        log_metrics("after-filling-rate-limit")
 
         # Step 5: Create one more — should be queued
         resp = create_placement(app_token, "overflow")
@@ -533,7 +495,6 @@ def run_tests():
         ), f"Expected overflow placement to be queued, got status={status}"
         logger.info(f"Overflow placement correctly queued (status={status})")
 
-        log_metrics("after-overflow-queued")
 
         # Step 6: Dry-run should now show available_slots=0 and queued=true
         dry_result = dry_run(admin_token)
@@ -597,7 +558,6 @@ def run_tests():
                 final_status != "queued"
             ), f"Placement {ouuid} was not dequeued in time"
 
-        log_metrics("after-dequeue")
 
         # Verify no placement was double-processed: each should appear exactly
         # once in the placement list. If the advisory lock failed, we'd see
@@ -705,7 +665,6 @@ def run_multi_resource_same_cluster_tests():
         assert final_status != "queued", f"Overflow placement still queued after wait"
         logger.info(f"Overflow placement dequeued, status={final_status}")
 
-        log_metrics("multi-same-end")
         logger.info("=== Multi-resource same cluster test PASSED ===")
 
     except Exception as e:
@@ -850,7 +809,6 @@ def run_multi_resource_diff_cluster_tests():
             assert final_status != "queued", f"{label} still queued after wait"
             logger.info(f"{label} dequeued, status={final_status}")
 
-        log_metrics("multi-diff-end")
         logger.info("=== Multi-resource different clusters test PASSED ===")
 
     except Exception as e:
@@ -892,7 +850,6 @@ def run_concurrent_burst_tests():
         )
 
         selector = {"cloud": "cnv-dedicated-shared", "purpose": "dev", "test_group": "rl-burst"}
-        log_metrics("burst-before-fire")
 
         # Fire all placements concurrently
         def fire_placement(idx: int) -> Dict[str, Any]:
@@ -919,17 +876,6 @@ def run_concurrent_burst_tests():
                     f"HTTP {result['status_code']}, status={result['placement_status']}"
                 )
 
-        log_metrics("burst-after-fire")
-
-        # Validate rate-limit metrics
-        m = fetch_metrics()
-        allowed_key = f'sandbox_ratelimit_check_total{{cluster="{MOCK_CLUSTER}",result="allowed"}}'
-        denied_key = f'sandbox_ratelimit_check_total{{cluster="{MOCK_CLUSTER}",result="denied"}}'
-        if allowed_key in m:
-            logger.info(f"Metric check_total allowed={m[allowed_key]}, denied={m.get(denied_key, 0)}")
-        slot_key = f'sandbox_ratelimit_slot_reservations_total{{cluster="{MOCK_CLUSTER}"}}'
-        if slot_key in m:
-            logger.info(f"Metric slot_reservations={m[slot_key]}")
 
         # Count how many were queued vs not queued
         queued = [r for r in results if r["placement_status"] == "queued"]
@@ -961,7 +907,6 @@ def run_concurrent_burst_tests():
             )
             logger.info(f"  Burst placement {r['index']} dequeued, status={final_status}")
 
-        log_metrics("burst-after-dequeue")
         logger.info("=== Concurrent burst test PASSED ===")
 
     except Exception as e:
@@ -1061,7 +1006,6 @@ def run_queue_fifo_tests():
         )
         logger.info("Queue FIFO order verified!")
 
-        log_metrics("fifo-end")
         logger.info("=== Queue FIFO ordering test PASSED ===")
 
     except Exception as e:
@@ -1199,7 +1143,6 @@ def run_rate_limit_lifecycle_tests():
         )
         logger.info(f"Placement dequeued after rate limit removal (status={final_status})")
 
-        log_metrics("lifecycle-end")
         logger.info("=== Rate limit lifecycle test PASSED ===")
 
     except Exception as e:
@@ -1332,7 +1275,6 @@ def run_resource_level_queuing_tests():
         )
         logger.info(f"Placement final status: {final_status}")
 
-        log_metrics("resource-queue-end")
         logger.info("=== Resource-level queuing test PASSED ===")
 
     except Exception as e:
@@ -1466,7 +1408,6 @@ def run_cluster_relation_queuing_tests():
         )
         logger.info(f"Placement final status: {final_status}")
 
-        log_metrics("cluster-relation-end")
         logger.info("=== Cluster relation queuing test PASSED ===")
 
     except Exception as e:
@@ -1555,7 +1496,6 @@ def run_resource_status_verification_tests():
         )
         logger.info(f"Placement status after dequeue: {p_status}")
 
-        log_metrics("resource-status-end")
         logger.info("=== Resource status verification test PASSED ===")
 
     except Exception as e:
@@ -1845,14 +1785,14 @@ def run_child_cluster_relation_tests():
             app_token,
             "child-dsl2",
             [
-                {"cloud_selector": selector, "alias": "A"},
+                {"cloud_selector": parent_selector, "alias": "A"},
                 {
-                    "cloud_selector": selector,
+                    "cloud_selector": all_selector,
                     "alias": "B",
                     "cluster_condition": "child(A)",
                 },
                 {
-                    "cloud_selector": selector,
+                    "cloud_selector": all_selector,
                     "alias": "C",
                     "cluster_condition": "child(A) && different(B)",
                 },
@@ -1899,7 +1839,6 @@ def run_child_cluster_relation_tests():
         )
         logger.info("--- Test 4 PASSED: DSL child+different works correctly ---")
 
-        log_metrics("child-cluster-end")
         logger.info("=== Child cluster relation tests PASSED ===")
 
     except Exception as e:
@@ -2060,7 +1999,6 @@ def run_child_cluster_with_rate_limit_tests():
         )
         logger.info("B correctly landed on a child cluster after rate limit dequeue")
 
-        log_metrics("child-ratelimit-end")
         logger.info("=== Child cluster + rate limit test PASSED ===")
 
     except Exception as e:
