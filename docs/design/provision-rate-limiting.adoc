@@ -165,6 +165,18 @@ A background goroutine polls for queued *resources*:
 - **Startup:** Launched alongside existing background goroutines in `main.go`
 - **Concurrency:** Uses `pg_try_advisory_xact_lock` so only one processor (across all pods) processes the queue at a time. Multiple `QUEUE_PROCESSORS` goroutines compete for the same lock — only the winner runs, the rest skip.
 
+=== FIFO Ordering Guarantees
+
+Maintaining FIFO order across dequeue cycles requires two mechanisms:
+
+1. **Cluster claiming (`claimedClusters` map):** The queue processor uses `IsRateLimited()` (read-only, no locks) to decide which resources to dequeue. If multiple resources target the same cluster and all pass the read-only check, they are all dequeued. But `provisionDequeuedResource` calls `Request()` which uses `CheckAndReserveSlot()` (with advisory lock). Only the first resource gets the slot — the rest are re-queued with fresh `created_at` timestamps, destroying FIFO order.
++
+To prevent this, `processQueuedResources` tracks a `claimedClusters` map. When a resource is selected for dequeuing, ALL its candidate clusters are marked as claimed. Subsequent resources targeting claimed clusters are skipped (retried next cycle). This limits throughput to one dequeue per cluster per cycle, but preserves FIFO.
+
+2. **`created_at` preservation on re-queue:** Even with cluster claiming, timing races at the rate-window boundary can cause `CheckAndReserveSlot` (in `Request()`) to find the rate limit still exhausted. The resource is re-queued with a new `created_at`, jumping to the back of the queue. To prevent this, `provisionDequeuedResource` checks the status after `Request()` returns — if the resource was re-queued, it overwrites `created_at` with the original value.
+
+NOTE: FIFO ordering applies only among resources targeting the _same_ cluster. Resources targeting different clusters may complete in any order depending on each cluster's rate-limit state.
+
 == Resource and Placement Status: `"queued"`
 
 New status added to both enums:
@@ -190,6 +202,7 @@ Resource created in DB with status "initializing":
 - No async provisioning goroutine runs until the resource is dequeued
 - Queued resources have no namespace — `Release()` skips the namespace check for `status = "queued"`
 - Rate-limit count queries exclude resources marked `to_cleanup = true` (deleted resources don't count against the limit)
+- When a dequeued resource is re-queued (timing race at rate-window boundary), `created_at` is preserved to maintain FIFO position
 
 === Placement lifecycle
 
@@ -327,6 +340,78 @@ New fields in `ResourceDryRunResult`:
 | Position in the queue. Only present when `queued` is `true`.
 |===
 
+== Critical Implementation Challenges
+
+These issues were discovered during implementation and testing. They represent ongoing maintenance concerns due to their subtle, timing-dependent nature.
+
+=== 1. TOCTOU Race Under Concurrent Burst
+
+**Problem:** A naive rate-limit implementation checks the count and reserves the slot as two separate operations. Under concurrent burst load (e.g. 50 placements arriving simultaneously), multiple requests all see count=0 and all pass through, exceeding the rate limit.
+
+**Fix:** `CheckAndReserveSlot()` performs the count check AND the slot reservation (`resource_data->>'ocp_cluster'` update) within a single transaction, serialized by `pg_advisory_xact_lock(FNV32a(clusterName))`. Each concurrent request blocks on the lock, sees the updated count from the previous request, and either reserves or denies. The resource must be saved to DB _before_ the check (save as `"initializing"` first) so it's visible to count queries.
+
+**Maintenance risk:** The synchronous-first design (save → check under lock → queue or proceed) is load-bearing. Any refactor that moves the save after the check reintroduces the TOCTOU race.
+
+=== 2. Resource-Level Queuing (Why Not Placement-Level)
+
+**Problem:** The initial design queued entire placements. This broke multi-resource placements: if Resource A provisions on cluster X (success) and Resource B is rate-limited on cluster Y, queuing the _placement_ orphans A's running namespace. Dequeuing later tries to re-create A, causing a conflict.
+
+**Fix:** Each resource is independently queued or provisioned. Only the rate-limited resource gets `status = "queued"`. The placement status is derived from the aggregate: any resource queued → placement queued. The queue processor dequeues individual resources, not placements.
+
+**Maintenance risk:** Resource-level queuing requires `QueuedRequestParams` to store all provisioning parameters in `resource_data` JSONB. Any new parameter added to `Request()` must also be added to `QueuedRequestParams` or it will be lost on dequeue.
+
+=== 3. FIFO Ordering Preservation
+
+**Problem:** The queue processor uses `IsRateLimited()` (read-only, no locks) to decide which resources to dequeue, then calls `provisionDequeuedResource` → `Request()` → `CheckAndReserveSlot()` (with advisory lock). Two distinct failure modes break FIFO:
+
+* **Multiple resources dequeued for same cluster:** All pass the read-only check, but only the first gets the locked slot. The rest are re-queued by `Request()` with **new `created_at`** timestamps (because `provisionDequeuedResource` deletes the old resource and `Request()` creates a new one), pushing them to the back of the queue.
+* **Timing race at window boundary:** Even with one resource dequeued, if the rate window expires between `IsRateLimited()` and `CheckAndReserveSlot()`, the slot is denied and the resource is re-queued with a new timestamp.
+
+**Fix:** Two guards:
+
+1. `claimedClusters` map in `processQueuedResources` — after a resource is selected for dequeuing, ALL its candidate clusters are marked claimed. Subsequent resources targeting claimed clusters are skipped (retried next cycle).
+2. `created_at` preservation — `provisionDequeuedResource` saves the original `created_at` before calling `Request()`. If the new resource ends up re-queued, it overwrites `created_at` with the original value.
+
+**Maintenance risk:** Any change to `processQueuedResources`, `provisionDequeuedResource`, or `Request()` must consider FIFO ordering. The delete-old-resource + create-new-resource pattern in `provisionDequeuedResource` is inherently fragile — the new resource gets fresh timestamps and a new ID.
+
+=== 4. `reserveClusterSlot("")` Clearing After Failed Provisioning
+
+**Problem:** In `providerLoop`, when a cluster attempt fails (connectivity, node issues), `reserveClusterSlot("")` clears the `ocp_cluster` field so the slot doesn't count against the rate limit. This is correct (no deployment happened, the slot should be freed), but it means the rate-limit count can drop mid-provisioning, potentially allowing the queue processor to dequeue resources prematurely.
+
+**Maintenance risk:** The slot clearing is scattered across multiple `continue providerLoop` paths. Missing a clear or adding one incorrectly can either leak slots (count stays inflated) or release them too early.
+
+=== 5. Advisory Lock Scope Mismatch
+
+**Problem:** Three different locking scopes co-exist:
+
+* `CheckAndReserveSlot`: `pg_advisory_xact_lock(FNV32a(clusterName))` — per-cluster lock, serializes concurrent slot reservations
+* Queue processor: `pg_try_advisory_xact_lock(queueProcessorLockID)` — global lock, ensures single-instance execution
+* `IsRateLimited()`: no lock — read-only, used by dry-run and queue processor's pre-check
+
+These are independent locks with different keys. The queue processor's `IsRateLimited()` check runs outside any advisory lock, creating a window where the read-only check and the subsequent `CheckAndReserveSlot` (inside `Request()`) can see different rate-limit states.
+
+**Maintenance risk:** Adding new code paths that check or modify rate-limit state must consider which lock (if any) is held. The `claimedClusters` guard works around this gap but doesn't eliminate it.
+
+=== 6. Cross-Test Interference via Rate-Limit Count
+
+**Problem:** The rate-limit count query (`GetRecentProvisionCount`) counts resources by `ocp_cluster` name and `created_at` window. Regular `DELETE /placements/{uuid}` only marks `to_cleanup=true` — resources are cleaned up asynchronously by `Release()`. If a subsequent test reuses the same cluster name before cleanup completes, stale resources with `to_cleanup=false` inflate the count and cause unexpected rate-limiting. This manifested as tests passing in isolation but failing when run sequentially.
+
+**Fix:** Functional tests use force-delete (`DELETE /placements/{uuid}/force`) which synchronously removes resources from the DB.
+
+**Maintenance risk:** New tests must use force-delete in cleanup. The `to_cleanup=false` filter in the count query means any resource that exists with a matching `ocp_cluster` and hasn't been cleaned up counts against the rate limit.
+
+=== 7. Resource Leak in `GetSchedulableClusters`
+
+**Problem:** When resolving child cluster relations, the original code reused the `rows, err` variables for both the main query and the parent-cluster query. This leaked the first `pgx.Rows` cursor (no `Close()` call before reassignment), eventually exhausting the connection pool under load.
+
+**Fix:** Use distinct variables (`parentRows, parentErr`) for the parent query with explicit `parentRows.Close()` after iteration.
+
+**Maintenance risk:** Any new query branch in `GetSchedulableClusters` must use its own `rows` variable or close the previous one first.
+
+=== 8. Queue Processor Throughput
+
+The `claimedClusters` guard limits dequeue throughput to **one resource per cluster per cycle**. With the default 30-second poll interval, a cluster with `rate_limit=50` and 200 queued placements would take ~100 minutes to drain (one per 30s, not 50 per window). This is a trade-off: strict FIFO vs throughput. For most production scenarios (rate limits of 10-50, moderate queue depths), this is acceptable.
+
 == Implementation Checklist
 
 === DB Migrations (`db/migrations/`)
@@ -408,14 +493,21 @@ Multi-resource tests:
 
 - [x] 2 resources on same cluster (rate_limit=2) → both consume slots, overflow queued
 - [x] 2 resources on different clusters (rate_limit=1 each) → independent rate tracking
-- [ ] Multi-resource placement: 1 resource rate-limited, 1 not → only the rate-limited resource queued, placement `queued`
+- [x] Multi-resource placement: 1 resource rate-limited, 1 not → only the rate-limited resource queued, placement `queued`
 - [x] Queued resource dequeues → placement transitions to `success`
 
 Cluster relation tests:
 
-- [ ] Resource B has `same_cluster_as(A)`: A rate-limited → both queued
-- [ ] A dequeues first → B dequeues next cycle and lands on same cluster as A
-- [ ] `different_cluster_from` with rate limiting: verify correct cluster exclusion after dequeue
+- [x] Resource B has `same_cluster_as(A)`: A rate-limited → both queued
+- [x] A dequeues first → B dequeues next cycle and lands on same cluster as A
+- [x] `different_cluster_from` with rate limiting: verify correct cluster exclusion after dequeue
+
+Child cluster relation tests:
+
+- [x] `child(A)` via `cluster_relation` — B lands on a child cluster of A's cluster
+- [x] `child(A) && different(B)` — C lands on a different child cluster than B
+- [x] `child(A)` via `cluster_condition` DSL — same behavior as `cluster_relation` form
+- [x] `child(A) && different(B)` via `cluster_condition` DSL
 
 Concurrent and ordering tests:
 
