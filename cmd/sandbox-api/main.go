@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/httplog/v2"
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/rhpds/sandbox/cmd/sandbox-api/graph"
@@ -218,6 +219,11 @@ func main() {
 
 	// Start background queue processor for rate-limited placements
 	OcpSandboxProvider.StartQueueProcessor(ctx)
+
+	// Start Prometheus metrics collector for rate-limit and lock state
+	startMetricsCollector(ctx, dbPool, OcpSandboxProvider)
+	// Register queue collector (queries DB on each /metrics scrape for real-time values)
+	registerQueueCollector(dbPool)
 
 	// Start background audit log purge
 	auditRetentionStr := os.Getenv("AUDIT_LOG_RETENTION")
@@ -456,6 +462,9 @@ func main() {
 	// ---------------------------------------------------------------------
 	// Public Routes
 	// ---------------------------------------------------------------------
+
+	// Prometheus metrics — no auth, no OpenAPI validation
+	router.Handle("/metrics", promhttp.Handler())
 
 	// ---------------------------------------------------------------------
 	// Main server loop

@@ -113,8 +113,10 @@ run_api() {
     # Spawn 20 concurrent queue processors to stress-test the advisory lock
     # mechanism that prevents race conditions in multi-pod production.
     export QUEUE_PROCESSORS=20
+    # Poll every 5s (default 30s) so short rate windows in tests don't timeout.
+    export QUEUE_POLL_INTERVAL=5s
 
-    echo "Running sandbox API on port $PORT (QUEUE_PROCESSORS=$QUEUE_PROCESSORS)"
+    echo "Running sandbox API on port $PORT (QUEUE_PROCESSORS=$QUEUE_PROCESSORS, QUEUE_POLL_INTERVAL=$QUEUE_POLL_INTERVAL)"
     setsid make run-api &>$apilog &
     apipid=$!
 
@@ -610,7 +612,7 @@ fi
 if [ "${RUN_RATE_LIMIT_TESTS}" != "false" ] && [ "${RUN_RATE_LIMIT_TESTS}" != "no" ]; then
     echo ""
     echo "=========================================="
-    echo "Running provision rate limit tests (QUEUE_PROCESSORS=$QUEUE_PROCESSORS)"
+    echo "Running provision rate limit tests (QUEUE_PROCESSORS=$QUEUE_PROCESSORS, QUEUE_POLL_INTERVAL=$QUEUE_POLL_INTERVAL)"
     echo "=========================================="
     cd $jobdir
 

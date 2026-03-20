@@ -44,9 +44,11 @@ Concurrency testing:
   To test the advisory lock mechanism under contention (simulating
   multiple pods in production), start the sandbox-api with:
 
-    QUEUE_PROCESSORS=20 ./sandbox-api
+    QUEUE_PROCESSORS=20 QUEUE_POLL_INTERVAL=5s ./sandbox-api
 
-  This spawns 20 concurrent queue processor goroutines. All compete
+  This spawns 20 concurrent queue processor goroutines with a 5s poll
+  interval (default 30s). The shorter interval is important when using
+  short rate windows (e.g. 10s) to avoid test timeouts. All compete
   for the same PostgreSQL advisory lock, so only one processes at a
   time. The test verifies the queued placement is dequeued exactly
   once (not double-processed).
@@ -96,7 +98,7 @@ MOCK_PARENT_CLUSTER = "rl-test-parent"
 MOCK_CHILD_CLUSTER_1 = "rl-test-child-1"
 MOCK_CHILD_CLUSTER_2 = "rl-test-child-2"
 RATE_LIMIT = 2  # Low limit for testing
-RATE_WINDOW = "30s"  # Short window for testing
+RATE_WINDOW = "10s"  # Short window for testing
 SOURCE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 CLI_BINARY = os.path.join(SOURCE_DIR, "build", "sandbox-cli")
 TEST_RUN_ID = uuid.uuid4().hex[:6]
@@ -135,6 +137,48 @@ def api_request(
         method, url, headers=headers, json=json_data, verify=False
     )
     return response
+
+
+def fetch_metrics() -> Dict[str, float]:
+    """Fetch Prometheus metrics from the sandbox-api /metrics endpoint.
+    Returns a dict of metric_name{labels} -> value for sandbox_* metrics."""
+    try:
+        resp = requests.get(f"{SANDBOX_API_URL}/metrics", verify=False, timeout=5)
+        if resp.status_code != 200:
+            logger.warning(f"Metrics endpoint returned {resp.status_code}")
+            return {}
+        result = {}
+        for line in resp.text.splitlines():
+            if line.startswith("#") or not line.strip():
+                continue
+            # Only capture sandbox_* and go_* pool metrics
+            if not line.startswith("sandbox_"):
+                continue
+            parts = line.rsplit(" ", 1)
+            if len(parts) == 2:
+                try:
+                    result[parts[0]] = float(parts[1])
+                except ValueError:
+                    pass
+        return result
+    except Exception as e:
+        logger.warning(f"Failed to fetch metrics: {e}")
+        return {}
+
+
+def log_metrics(label: str):
+    """Fetch and log all sandbox_* metrics with a descriptive label."""
+    m = fetch_metrics()
+    if not m:
+        logger.info(f"[METRICS:{label}] (no metrics available)")
+        return
+    logger.info(f"[METRICS:{label}] --- begin ---")
+    # Group and sort for readability; skip histogram buckets and _created for brevity
+    for key in sorted(m.keys()):
+        if "_bucket{" in key or key.endswith("_created"):
+            continue
+        logger.info(f"  {key} = {m[key]}")
+    logger.info(f"[METRICS:{label}] --- end ---")
 
 
 def get_source_cluster(admin_token: str) -> Dict[str, Any]:
@@ -435,6 +479,7 @@ def run_tests():
         # Step 2: Create cluster with rate limit
         setup_rate_limited_cluster(admin_token, source)
         verify_settings(admin_token)
+        log_metrics("after-cluster-setup")
 
         # Step 3: Dry-run before any placements — should show available slots
         dry_result = dry_run(admin_token)
@@ -474,6 +519,8 @@ def run_tests():
                 f"Placement {i+1}/{RATE_LIMIT} created successfully (status={status})"
             )
 
+        log_metrics("after-filling-rate-limit")
+
         # Step 5: Create one more — should be queued
         resp = create_placement(app_token, "overflow")
         assert resp.status_code == 202, f"Overflow placement failed: {resp.text}"
@@ -485,6 +532,8 @@ def run_tests():
             status == "queued"
         ), f"Expected overflow placement to be queued, got status={status}"
         logger.info(f"Overflow placement correctly queued (status={status})")
+
+        log_metrics("after-overflow-queued")
 
         # Step 6: Dry-run should now show available_slots=0 and queued=true
         dry_result = dry_run(admin_token)
@@ -536,7 +585,7 @@ def run_tests():
         all_overflow_uuids = [overflow_uuid] + [
             make_service_uuid(f"extra{i:03d}") for i in range(extra_overflow_count)
         ]
-        wait_timeout = int(RATE_WINDOW.rstrip("smh")) + 60  # window + buffer
+        wait_timeout = int(RATE_WINDOW.rstrip("smh")) + 30  # window + buffer
         logger.info(
             f"Waiting up to {wait_timeout}s for queued placements to be dequeued..."
         )
@@ -547,6 +596,8 @@ def run_tests():
             assert (
                 final_status != "queued"
             ), f"Placement {ouuid} was not dequeued in time"
+
+        log_metrics("after-dequeue")
 
         # Verify no placement was double-processed: each should appear exactly
         # once in the placement list. If the advisory lock failed, we'd see
@@ -597,7 +648,6 @@ def run_multi_resource_same_cluster_tests():
             MOCK_CLUSTER,
             annotations={
                 "cloud": "cnv-dedicated-shared", "purpose": "dev", "test_group": "rl-multi-same",
-                "purpose": "dev",
                 "name": MOCK_CLUSTER,
             },
             rate_limit=2,
@@ -649,12 +699,13 @@ def run_multi_resource_same_cluster_tests():
                 )
 
         # Step 4: Wait for rate window to pass, verify overflow is dequeued
-        wait_timeout = int(RATE_WINDOW.rstrip("smh")) + 60
+        wait_timeout = int(RATE_WINDOW.rstrip("smh")) + 30
         logger.info(f"Waiting up to {wait_timeout}s for queued placement to be dequeued...")
         final_status = wait_for_dequeue(app_token, overflow_uuid, timeout=wait_timeout)
         assert final_status != "queued", f"Overflow placement still queued after wait"
         logger.info(f"Overflow placement dequeued, status={final_status}")
 
+        log_metrics("multi-same-end")
         logger.info("=== Multi-resource same cluster test PASSED ===")
 
     except Exception as e:
@@ -789,7 +840,7 @@ def run_multi_resource_diff_cluster_tests():
                     logger.info(f"Cluster {cname} correctly shows 0 available slots")
 
         # Step 5: Wait for rate window to pass, verify both overflow placements are dequeued
-        wait_timeout = int(RATE_WINDOW.rstrip("smh")) + 60
+        wait_timeout = int(RATE_WINDOW.rstrip("smh")) + 30
         logger.info(f"Waiting up to {wait_timeout}s for queued placements to be dequeued...")
         for ouuid, label in [
             (service_uuid_a, "cluster-A overflow"),
@@ -799,6 +850,7 @@ def run_multi_resource_diff_cluster_tests():
             assert final_status != "queued", f"{label} still queued after wait"
             logger.info(f"{label} dequeued, status={final_status}")
 
+        log_metrics("multi-diff-end")
         logger.info("=== Multi-resource different clusters test PASSED ===")
 
     except Exception as e:
@@ -834,13 +886,13 @@ def run_concurrent_burst_tests():
             MOCK_CLUSTER,
             annotations={
                 "cloud": "cnv-dedicated-shared", "purpose": "dev", "test_group": "rl-burst",
-                "purpose": "dev",
                 "name": MOCK_CLUSTER,
             },
             rate_limit=burst_rate_limit,
         )
 
         selector = {"cloud": "cnv-dedicated-shared", "purpose": "dev", "test_group": "rl-burst"}
+        log_metrics("burst-before-fire")
 
         # Fire all placements concurrently
         def fire_placement(idx: int) -> Dict[str, Any]:
@@ -867,6 +919,18 @@ def run_concurrent_burst_tests():
                     f"HTTP {result['status_code']}, status={result['placement_status']}"
                 )
 
+        log_metrics("burst-after-fire")
+
+        # Validate rate-limit metrics
+        m = fetch_metrics()
+        allowed_key = f'sandbox_ratelimit_check_total{{cluster="{MOCK_CLUSTER}",result="allowed"}}'
+        denied_key = f'sandbox_ratelimit_check_total{{cluster="{MOCK_CLUSTER}",result="denied"}}'
+        if allowed_key in m:
+            logger.info(f"Metric check_total allowed={m[allowed_key]}, denied={m.get(denied_key, 0)}")
+        slot_key = f'sandbox_ratelimit_slot_reservations_total{{cluster="{MOCK_CLUSTER}"}}'
+        if slot_key in m:
+            logger.info(f"Metric slot_reservations={m[slot_key]}")
+
         # Count how many were queued vs not queued
         queued = [r for r in results if r["placement_status"] == "queued"]
         not_queued = [r for r in results if r["placement_status"] != "queued"]
@@ -886,7 +950,7 @@ def run_concurrent_burst_tests():
         )
 
         # Wait for queued placements to be dequeued
-        wait_timeout = int(RATE_WINDOW.rstrip("smh")) + 60
+        wait_timeout = int(RATE_WINDOW.rstrip("smh")) + 30
         logger.info(f"Waiting up to {wait_timeout}s for queued placements to be dequeued...")
         for r in queued:
             final_status = wait_for_dequeue(
@@ -897,6 +961,7 @@ def run_concurrent_burst_tests():
             )
             logger.info(f"  Burst placement {r['index']} dequeued, status={final_status}")
 
+        log_metrics("burst-after-dequeue")
         logger.info("=== Concurrent burst test PASSED ===")
 
     except Exception as e:
@@ -965,7 +1030,7 @@ def run_queue_fifo_tests():
             logger.info(f"Queued placement {i} created (uuid={q_uuid})")
 
         # Step 3: Wait for dequeue and record the order
-        wait_timeout = int(RATE_WINDOW.rstrip("smh")) * 4 + 60  # enough for 3 windows
+        wait_timeout = int(RATE_WINDOW.rstrip("smh")) * 4 + 30  # enough for 3 windows
         dequeue_order = []
 
         logger.info(f"Waiting for queued placements to be dequeued (timeout={wait_timeout}s)...")
@@ -996,6 +1061,7 @@ def run_queue_fifo_tests():
         )
         logger.info("Queue FIFO order verified!")
 
+        log_metrics("fifo-end")
         logger.info("=== Queue FIFO ordering test PASSED ===")
 
     except Exception as e:
@@ -1031,7 +1097,7 @@ def run_rate_limit_lifecycle_tests():
 
         # --- Scenario 1: Window expiry ---
         logger.info("--- Scenario 1: Window expiry ---")
-        short_window = "15s"
+        short_window = "10s"
         setup_cluster(
             admin_token,
             source,
@@ -1067,7 +1133,7 @@ def run_rate_limit_lifecycle_tests():
 
         # Wait for the queued placement to be dequeued (window expiry)
         window_secs = int(short_window.rstrip("smh"))
-        wait_timeout = window_secs + 60
+        wait_timeout = window_secs + 30
         logger.info(f"Waiting for window expiry ({short_window})...")
         final_status = wait_for_dequeue(app_token, q1_uuid, timeout=wait_timeout)
         assert final_status != "queued", f"Placement still queued after window expiry"
@@ -1133,6 +1199,7 @@ def run_rate_limit_lifecycle_tests():
         )
         logger.info(f"Placement dequeued after rate limit removal (status={final_status})")
 
+        log_metrics("lifecycle-end")
         logger.info("=== Rate limit lifecycle test PASSED ===")
 
     except Exception as e:
@@ -1215,8 +1282,10 @@ def run_resource_level_queuing_tests():
         logger.info(f"Multi-resource placement created with status={p_status}")
 
         # Step 3: Verify resource-level statuses
-        # Give a moment for the non-queued resource to start provisioning
-        time.sleep(3)
+        # Check immediately — Request() sets statuses synchronously before
+        # the HTTP response returns. No sleep needed (and sleeping would let
+        # the fill's goroutine fail on the mock cluster, clearing its rate-limit
+        # slot, which lets the queue processor dequeue res-a prematurely).
         res_statuses = get_resource_statuses(app_token, partial_uuid)
         logger.info(f"Resource statuses: {res_statuses}")
 
@@ -1237,7 +1306,7 @@ def run_resource_level_queuing_tests():
         )
 
         # Step 4: Wait for the queued resource to be dequeued
-        wait_timeout = int(RATE_WINDOW.rstrip("smh")) + 90
+        wait_timeout = int(RATE_WINDOW.rstrip("smh")) + 30
         logger.info(f"Waiting up to {wait_timeout}s for queued resource to be dequeued...")
         start = time.time()
         while time.time() - start < wait_timeout:
@@ -1256,13 +1325,14 @@ def run_resource_level_queuing_tests():
 
         # Step 5: Verify placement status transitions from queued
         # Give a moment for the placement completion check
-        time.sleep(10)
+        time.sleep(5)
         final_status = get_placement_status(app_token, partial_uuid)
         assert final_status != "queued", (
             f"Placement should no longer be queued, got status={final_status}"
         )
         logger.info(f"Placement final status: {final_status}")
 
+        log_metrics("resource-queue-end")
         logger.info("=== Resource-level queuing test PASSED ===")
 
     except Exception as e:
@@ -1353,7 +1423,7 @@ def run_cluster_relation_queuing_tests():
 
         # Step 4: Wait for both resources to be dequeued
         # A should dequeue first (no dependencies), then B (depends on A)
-        wait_timeout = int(RATE_WINDOW.rstrip("smh")) * 3 + 90  # enough for multiple cycles
+        wait_timeout = int(RATE_WINDOW.rstrip("smh")) * 3 + 30  # enough for multiple cycles
         logger.info(f"Waiting up to {wait_timeout}s for resources to be dequeued...")
 
         start = time.time()
@@ -1389,13 +1459,14 @@ def run_cluster_relation_queuing_tests():
             )
 
         # Step 6: Wait for placement to transition from queued
-        time.sleep(10)
+        time.sleep(5)
         final_status = get_placement_status(app_token, rel_uuid)
         assert final_status != "queued", (
             f"Placement should no longer be queued, got status={final_status}"
         )
         logger.info(f"Placement final status: {final_status}")
 
+        log_metrics("cluster-relation-end")
         logger.info("=== Cluster relation queuing test PASSED ===")
 
     except Exception as e:
@@ -1458,7 +1529,7 @@ def run_resource_status_verification_tests():
         logger.info(f"Resource status correctly shows 'queued': {res_statuses[0]}")
 
         # Step 4: Wait for dequeue
-        wait_timeout = int(RATE_WINDOW.rstrip("smh")) + 90
+        wait_timeout = int(RATE_WINDOW.rstrip("smh")) + 30
         logger.info(f"Waiting for resource to be dequeued...")
         start = time.time()
         while time.time() - start < wait_timeout:
@@ -1477,13 +1548,14 @@ def run_resource_status_verification_tests():
         logger.info(f"Resource status after dequeue: {resource_status}")
 
         # Step 6: Verify placement status also transitions
-        time.sleep(10)
+        time.sleep(5)
         p_status = get_placement_status(app_token, q_uuid)
         assert p_status != "queued", (
             f"Placement should no longer be queued, got {p_status}"
         )
         logger.info(f"Placement status after dequeue: {p_status}")
 
+        log_metrics("resource-status-end")
         logger.info("=== Resource status verification test PASSED ===")
 
     except Exception as e:
@@ -1528,6 +1600,7 @@ def run_child_cluster_relation_tests():
         cloud_tag = "rl-child-test"
 
         # Setup: create parent cluster and two child clusters
+        # Children have "parent": <parent-name> so child() relation resolves correctly.
         setup_cluster(
             admin_token,
             source,
@@ -1571,7 +1644,10 @@ def run_child_cluster_relation_tests():
             f"'{MOCK_CHILD_CLUSTER_1}', '{MOCK_CHILD_CLUSTER_2}'"
         )
 
-        selector = {"cloud": "cnv-dedicated-shared", "purpose": "dev", "test_group": cloud_tag}
+        # Parent-only selector targets only the parent cluster (matched by name)
+        parent_selector = {"cloud": "cnv-dedicated-shared", "purpose": "dev", "test_group": cloud_tag, "name": MOCK_PARENT_CLUSTER}
+        # General selector matches all clusters in this test group
+        all_selector = {"cloud": "cnv-dedicated-shared", "purpose": "dev", "test_group": cloud_tag}
 
         # ---------------------------------------------------------------
         # Test 1: child(A) using cluster_relation
@@ -1582,9 +1658,9 @@ def run_child_cluster_relation_tests():
             app_token,
             "child-basic",
             [
-                {"cloud_selector": selector, "alias": "A"},
+                {"cloud_selector": parent_selector, "alias": "A"},
                 {
-                    "cloud_selector": selector,
+                    "cloud_selector": all_selector,
                     "alias": "B",
                     "cluster_relation": [{"relation": "child", "reference": "A"}],
                 },
@@ -1596,7 +1672,7 @@ def run_child_cluster_relation_tests():
         logger.info(f"child(A) placement created (uuid={child_basic_uuid})")
 
         # Wait for success
-        wait_timeout = 120
+        wait_timeout = 60
         start = time.time()
         while time.time() - start < wait_timeout:
             p_status = get_placement_status(app_token, child_basic_uuid)
@@ -1640,14 +1716,14 @@ def run_child_cluster_relation_tests():
             app_token,
             "child-diff",
             [
-                {"cloud_selector": selector, "alias": "A"},
+                {"cloud_selector": parent_selector, "alias": "A"},
                 {
-                    "cloud_selector": selector,
+                    "cloud_selector": all_selector,
                     "alias": "B",
                     "cluster_relation": [{"relation": "child", "reference": "A"}],
                 },
                 {
-                    "cloud_selector": selector,
+                    "cloud_selector": all_selector,
                     "alias": "C",
                     "cluster_relation": [
                         {"relation": "child", "reference": "A"},
@@ -1715,9 +1791,9 @@ def run_child_cluster_relation_tests():
             app_token,
             "child-dsl",
             [
-                {"cloud_selector": selector, "alias": "A"},
+                {"cloud_selector": parent_selector, "alias": "A"},
                 {
-                    "cloud_selector": selector,
+                    "cloud_selector": all_selector,
                     "alias": "B",
                     "cluster_condition": "child(A)",
                 },
@@ -1823,6 +1899,7 @@ def run_child_cluster_relation_tests():
         )
         logger.info("--- Test 4 PASSED: DSL child+different works correctly ---")
 
+        log_metrics("child-cluster-end")
         logger.info("=== Child cluster relation tests PASSED ===")
 
     except Exception as e:
@@ -1948,7 +2025,7 @@ def run_child_cluster_with_rate_limit_tests():
         logger.info(f"Resource(s) queued: {[r['alias'] for r in queued]}")
 
         # Step 4: Wait for all resources to provision
-        wait_timeout = int(RATE_WINDOW.rstrip("smh")) * 3 + 90
+        wait_timeout = int(RATE_WINDOW.rstrip("smh")) * 3 + 30
         logger.info(f"Waiting up to {wait_timeout}s for resources to be dequeued...")
 
         start = time.time()
@@ -1983,6 +2060,7 @@ def run_child_cluster_with_rate_limit_tests():
         )
         logger.info("B correctly landed on a child cluster after rate limit dequeue")
 
+        log_metrics("child-ratelimit-end")
         logger.info("=== Child cluster + rate limit test PASSED ===")
 
     except Exception as e:
