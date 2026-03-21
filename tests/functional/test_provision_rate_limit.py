@@ -44,14 +44,16 @@ Concurrency testing:
   To test the advisory lock mechanism under contention (simulating
   multiple pods in production), start the sandbox-api with:
 
-    QUEUE_POLL_INTERVAL=5s QUEUE_RESCUER_INTERVAL=5s QUEUE_RESCUERS=20 QUEUE_LOCAL_DELAY=30s ./sandbox-api
+    QUEUE_POLL_INTERVAL=5s QUEUE_RESCUER_INTERVAL=5s QUEUE_RESCUERS=20 QUEUE_ORPHAN_AGE=10s ./sandbox-api
 
   This spawns 20 concurrent rescuer goroutines with a 5s poll
   interval (default 30s). The shorter interval is important when using
   short rate windows (e.g. 10s) to avoid test timeouts. All rescuers
   compete for the same PostgreSQL advisory lock, so only one processes
-  at a time. QUEUE_LOCAL_DELAY=30s delays the local processor so the
-  rescuer test can verify orphan recovery works.
+  at a time. QUEUE_ORPHAN_AGE=10s shortens the orphan threshold so the
+  rescuer test completes faster. The rescuer test pauses the local
+  processor via PUT /api/v1/admin/queue-processor to verify orphan
+  recovery works.
 
 Usage:
     export SANDBOX_API_URL="http://localhost:8080"
@@ -993,7 +995,7 @@ def run_queue_fifo_tests():
     Scenario:
       - Cluster with rate_limit=1, short window
       - Create 1 placement to fill the limit
-      - Create 3 more placements sequentially — all queued
+      - Create 10 more placements sequentially — all queued
       - Wait for dequeue — verify they're processed in creation order
     """
     admin_token = get_access_token(SANDBOX_API_URL, SANDBOX_ADMIN_LOGIN_TOKEN)
@@ -1029,9 +1031,9 @@ def run_queue_fifo_tests():
         assert status != "queued", f"Fill placement should not be queued (status={status})"
         logger.info(f"Fill placement created (status={status})")
 
-        # Step 2: Create 3 queued placements in order with small delays
+        # Step 2: Create 10 queued placements in order with small delays
         # to ensure distinct created_at timestamps
-        for i in range(3):
+        for i in range(10):
             time.sleep(0.5)  # ensure distinct timestamps
             suffix = f"fifo-q{i:03d}"
             resp = create_placement(app_token, suffix, cloud_selector=selector)
@@ -1049,7 +1051,8 @@ def run_queue_fifo_tests():
         # verify they completed in FIFO order using their updated_at timestamps.
         # We poll concurrently because the GET endpoint may long-poll, which
         # would block sequential polling and make observation order unreliable.
-        wait_timeout = int(RATE_WINDOW.rstrip("smh")) * 4 + 30  # enough for 3 windows
+        num_queued = len(queued_uuids_in_order)
+        wait_timeout = int(RATE_WINDOW.rstrip("smh")) * (num_queued + 1) + 60  # enough for all windows
         completion_times = {}  # uuid -> timestamp when first observed as non-queued
 
         logger.info(f"Waiting for queued placements to be dequeued (timeout={wait_timeout}s)...")
@@ -2465,20 +2468,32 @@ def get_metric(metric_name: str) -> float:
 MOCK_CLUSTER_RESCUER = "rl-test-rescuer"
 
 
+def set_local_processor_paused(admin_token: str, paused: bool):
+    """Pause or resume the local queue processor via admin API."""
+    resp = api_request(
+        "PUT",
+        "/api/v1/admin/queue-processor",
+        admin_token,
+        json_data={"local_processor_paused": paused},
+        description=f"{'pause' if paused else 'resume'} local processor",
+    )
+    resp.raise_for_status()
+    logger.info(f"Local processor {'paused' if paused else 'resumed'}")
+
+
 def run_rescuer_tests():
     """Test that the rescuer picks up queued resources when the local
-    processor is delayed.
-
-    Requires the API to be started with QUEUE_LOCAL_DELAY=30s so the
-    local processor sleeps before processing. The rescuer (polling every
-    QUEUE_POLL_INTERVAL) should dequeue the resource first.
+    processor is paused.
 
     Scenario:
+      - Pause the local processor via admin API
       - Cluster with rate_limit=1
       - Create 1 placement to fill the limit
       - Create 1 more — gets queued
-      - Verify the rescuer dequeues it (within rescuer interval, not 30s)
+      - Wait for orphan threshold (QUEUE_POLL_INTERVAL + QUEUE_ORPHAN_AGE)
+      - Verify the rescuer dequeues it
       - Check sandbox_queue_rescuer_processed_total metric incremented
+      - Resume the local processor
     """
     admin_token = get_access_token(SANDBOX_API_URL, SANDBOX_ADMIN_LOGIN_TOKEN)
     app_token = get_access_token(SANDBOX_API_URL, SANDBOX_LOGIN_TOKEN)
@@ -2488,6 +2503,9 @@ def run_rescuer_tests():
 
     try:
         logger.info("=== Rescuer test ===")
+
+        # Pause local processor so only rescuers can dequeue
+        set_local_processor_paused(admin_token, True)
 
         setup_cluster(
             admin_token,
@@ -2530,13 +2548,18 @@ def run_rescuer_tests():
         assert status == "queued", f"Expected queued, got status={status}"
         logger.info(f"Queued placement created (uuid={queued_uuid})")
 
-        # Step 3: Wait for dequeue — should happen via rescuer within
-        # ~QUEUE_POLL_INTERVAL (5s in CI) + rate window (10s), NOT the
-        # 30s local delay. If it takes >25s, the local processor did it.
-        dequeue_timeout = 25  # must be less than QUEUE_LOCAL_DELAY (30s)
+        # Step 3: Wait for dequeue. The resource has no queue_checked_at
+        # (local processor is paused, so it never stamps it). The rescuer
+        # considers it orphaned after QUEUE_POLL_INTERVAL + QUEUE_ORPHAN_AGE
+        # (5s + 10s = 15s in CI) based on created_at.
+        # Total wait: orphan threshold + rate window + rescuer interval + margin.
+        orphan_threshold = int(os.environ.get("QUEUE_POLL_INTERVAL", "5s").rstrip("s")) + \
+                           int(os.environ.get("QUEUE_ORPHAN_AGE", "30s").rstrip("s"))
+        rate_window = int(RATE_WINDOW.rstrip("smh"))
+        dequeue_timeout = orphan_threshold + rate_window + 30
         logger.info(
             f"Waiting for rescuer to dequeue (timeout={dequeue_timeout}s, "
-            f"local delay=30s)..."
+            f"orphan_threshold={orphan_threshold}s)..."
         )
         start = time.time()
         final_status = None
@@ -2551,7 +2574,7 @@ def run_rescuer_tests():
 
         assert final_status is not None, (
             f"Placement still queued after {dequeue_timeout}s — rescuer did not "
-            f"pick it up. Check QUEUE_RESCUERS and QUEUE_POLL_INTERVAL."
+            f"pick it up. Check QUEUE_RESCUERS and QUEUE_ORPHAN_AGE."
         )
         logger.info(
             f"Placement dequeued by rescuer in {elapsed}s (status={final_status})"
@@ -2574,6 +2597,11 @@ def run_rescuer_tests():
         logger.error(f"Rescuer test failed: {e}")
         raise
     finally:
+        # Always resume the local processor, even on failure
+        try:
+            set_local_processor_paused(admin_token, False)
+        except Exception:
+            logger.warning("Failed to resume local processor during cleanup")
         cleanup(admin_token, app_token, placement_uuids, [MOCK_CLUSTER_RESCUER])
 
 

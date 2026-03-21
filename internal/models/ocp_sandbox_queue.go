@@ -58,33 +58,39 @@ func (a *OcpSandboxProvider) StartQueueProcessor(ctx context.Context) {
 		}
 	}
 
-	var localDelay time.Duration
-	if v := os.Getenv("QUEUE_LOCAL_DELAY"); v != "" {
+	// Orphan age: how long a resource must go unprocessed before the rescuer
+	// considers it orphaned. Total threshold = localPollInterval + orphanAge.
+	// This keeps rescuers out of the way during normal operation.
+	orphanAge := 30 * time.Second
+	if v := os.Getenv("QUEUE_ORPHAN_AGE"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			localDelay = d
+			orphanAge = d
 		}
 	}
+	orphanThreshold := localPollInterval + orphanAge
 
 	log.Logger.Info("QueueProcessor: starting",
 		"locality", config.LocalityID,
 		"rescuer_interval", rescuerInterval,
 		"rescuer_count", rescuerCount,
 		"local_poll_interval", localPollInterval,
-		"local_delay", localDelay)
+		"orphan_age", orphanAge,
+		"orphan_threshold", orphanThreshold)
 
 	// Local processor goroutine
-	go a.runLocalProcessor(ctx, localPollInterval, localDelay)
+	go a.runLocalProcessor(ctx, localPollInterval)
 
 	// Rescuer goroutines
 	for i := 0; i < rescuerCount; i++ {
 		rescuerID := i
-		go a.runRescuer(ctx, rescuerID, rescuerInterval)
+		go a.runRescuer(ctx, rescuerID, rescuerInterval, orphanThreshold)
 	}
 }
 
 // runLocalProcessor listens for QueueNotify signals and retries on a timer
-// when resources remain queued (rate-limited).
-func (a *OcpSandboxProvider) runLocalProcessor(ctx context.Context, pollInterval, delay time.Duration) {
+// when resources remain queued (rate-limited). Skips processing when
+// LocalProcessorPaused is set (used in tests to verify rescuer behavior).
+func (a *OcpSandboxProvider) runLocalProcessor(ctx context.Context, pollInterval time.Duration) {
 	log.Logger.Info("QueueProcessor: local processor started",
 		"locality", config.LocalityID,
 		"poll_interval", pollInterval)
@@ -115,10 +121,9 @@ func (a *OcpSandboxProvider) runLocalProcessor(ctx context.Context, pollInterval
 				log.Logger.Info("QueueProcessor: drained additional notifications",
 					"count", drained)
 			}
-			if delay > 0 {
-				log.Logger.Info("QueueProcessor: local delay active, sleeping",
-					"delay", delay)
-				time.Sleep(delay)
+			if a.LocalProcessorPaused.Load() {
+				log.Logger.Info("QueueProcessor: local processor paused, skipping")
+				continue
 			}
 			remaining := a.processLocalQueue()
 			if remaining > 0 {
@@ -128,6 +133,10 @@ func (a *OcpSandboxProvider) runLocalProcessor(ctx context.Context, pollInterval
 			}
 
 		case <-retryTimer:
+			if a.LocalProcessorPaused.Load() {
+				retryTimer = nil
+				continue
+			}
 			remaining := a.processLocalQueue()
 			if remaining > 0 {
 				retryTimer = time.After(pollInterval)
@@ -140,16 +149,16 @@ func (a *OcpSandboxProvider) runLocalProcessor(ctx context.Context, pollInterval
 
 // runRescuer polls on interval, acquires a global advisory lock, and processes
 // stale queued resources from any locality.
-func (a *OcpSandboxProvider) runRescuer(ctx context.Context, id int, interval time.Duration) {
+func (a *OcpSandboxProvider) runRescuer(ctx context.Context, id int, interval, orphanThreshold time.Duration) {
 	log.Logger.Info("QueueProcessor: rescuer started",
-		"id", id, "interval", interval)
+		"id", id, "interval", interval, "orphan_threshold", orphanThreshold)
 	for {
 		select {
 		case <-ctx.Done():
 			log.Logger.Info("QueueProcessor: rescuer stopping", "id", id)
 			return
 		case <-time.After(interval):
-			a.processRescuerQueue(interval)
+			a.processRescuerQueue(orphanThreshold)
 		}
 	}
 }
@@ -198,7 +207,8 @@ func (a *OcpSandboxProvider) processLocalQueue() int {
 
 // processRescuerQueue processes ALL queued resources regardless of locality.
 // Uses a global advisory lock to ensure only one rescuer runs across all pods.
-func (a *OcpSandboxProvider) processRescuerQueue(rescuerInterval time.Duration) {
+// Only considers resources orphaned if they haven't been checked for orphanThreshold.
+func (a *OcpSandboxProvider) processRescuerQueue(orphanThreshold time.Duration) {
 	ctx := context.Background()
 
 	// Acquire a transaction-scoped advisory lock. If another instance is
@@ -224,7 +234,7 @@ func (a *OcpSandboxProvider) processRescuerQueue(rescuerInterval time.Duration) 
 	// Fetch queued resources that haven't been checked recently.
 	// Resources actively handled by a local processor will have a fresh
 	// queue_checked_at and are skipped — the rescuer only picks up orphans.
-	queuedResources, err := a.FetchStaleQueuedResources(rescuerInterval)
+	queuedResources, err := a.FetchStaleQueuedResources(orphanThreshold)
 	if err != nil {
 		log.Logger.Error("QueueProcessor: rescuer error fetching queued resources", "error", err)
 		return
@@ -238,12 +248,10 @@ func (a *OcpSandboxProvider) processRescuerQueue(rescuerInterval time.Duration) 
 		"count", len(queuedResources))
 	metrics.QueueRescuerProcessedTotal.Add(float64(len(queuedResources)))
 
-	// Stamp queue_checked_at on all resources while we hold the lock.
+	// Batch-stamp queue_checked_at while we hold the lock.
 	// This prevents other rescuers from re-fetching the same resources
 	// if they acquire the lock before we finish processing.
-	for _, res := range queuedResources {
-		a.stampQueueCheckedAt(res.ID, res.Name)
-	}
+	a.batchStampQueueCheckedAt(queuedResources)
 
 	// Release the advisory lock before processing so we don't hold it
 	// during potentially slow provisioning operations.
@@ -277,13 +285,15 @@ func (a *OcpSandboxProvider) FetchQueuedResourcesByLocality(localityID string) (
 // FetchStaleQueuedResources returns queued resources that haven't been checked
 // by any processor within the given staleness threshold. Resources with a
 // recent queue_checked_at are being actively handled by a local processor
-// and are skipped. Resources with no queue_checked_at are always included.
+// and are skipped. Resources with no queue_checked_at must also be older than
+// the threshold (based on created_at), so the local processor has time to
+// handle them first.
 func (a *OcpSandboxProvider) FetchStaleQueuedResources(staleAfter time.Duration) ([]OcpSandboxWithCreds, error) {
 	return a.fetchQueuedResources(
 		`WHERE resource_type = 'OcpSandbox'
 		   AND status = 'queued'
 		   AND (
-		     resource_data->>'queue_checked_at' IS NULL
+		     (resource_data->>'queue_checked_at' IS NULL AND created_at < now() - $1::interval)
 		     OR (resource_data->>'queue_checked_at')::timestamptz < now() - $1::interval
 		   )`,
 		fmt.Sprintf("%d seconds", int(staleAfter.Seconds())),
@@ -325,11 +335,16 @@ func (a *OcpSandboxProvider) fetchQueuedResources(whereClause string, args ...in
 
 // processQueuedResourceList is the shared processing loop for both the local
 // processor and the rescuer. For each resource it:
-//  1. Stamps queue_checked_at (so the rescuer skips recently-checked resources)
+//  1. Batch-stamps queue_checked_at (single timestamp for all resources)
 //  2. Evaluates whether the resource can be dequeued (business logic)
 //  3. CAS-transitions the resource from "queued" to "initializing"
 //  4. Triggers provisioning for dequeued resources
 func (a *OcpSandboxProvider) processQueuedResourceList(queuedResources []OcpSandboxWithCreds) {
+	// Batch-stamp all resources with a single timestamp. This prevents the
+	// rescuer from picking up resources being processed, and ensures all
+	// resources in a batch become stale simultaneously (see batchStampQueueCheckedAt).
+	a.batchStampQueueCheckedAt(queuedResources)
+
 	var toProvision []OcpSandboxWithCreds
 	claimedClusters := make(map[string]bool)
 
@@ -339,8 +354,6 @@ func (a *OcpSandboxProvider) processQueuedResourceList(queuedResources []OcpSand
 				"id", res.ID, "name", res.Name)
 			continue
 		}
-
-		a.stampQueueCheckedAt(res.ID, res.Name)
 
 		if !a.canDequeue(&res, claimedClusters) {
 			continue
@@ -438,18 +451,29 @@ func (a *OcpSandboxProvider) canDequeue(res *OcpSandboxWithCreds, claimedCluster
 // Queue processing: helpers
 // ---------------------------------------------------------------------------
 
-// stampQueueCheckedAt updates the queue_checked_at timestamp so the rescuer
-// knows this resource was recently evaluated and can skip it.
-func (a *OcpSandboxProvider) stampQueueCheckedAt(resourceID int, resourceName string) {
+// batchStampQueueCheckedAt stamps all resources with the same timestamp in a
+// single query. Using one timestamp for the entire batch is critical: it
+// ensures all resources cross the staleness threshold simultaneously, so the
+// next rescuer either fetches ALL of them or NONE. Without this, individual
+// stamps create millisecond gaps that let concurrent rescuers grab subsets,
+// each with its own claimedClusters map, breaking FIFO ordering.
+func (a *OcpSandboxProvider) batchStampQueueCheckedAt(resources []OcpSandboxWithCreds) {
+	if len(resources) == 0 {
+		return
+	}
+	ids := make([]int, len(resources))
+	for i, r := range resources {
+		ids[i] = r.ID
+	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	if _, err := a.DbPool.Exec(context.Background(),
 		`UPDATE resources
-		 SET resource_data = jsonb_set(resource_data, '{queue_checked_at}', to_jsonb($2::text))
-		 WHERE id = $1 AND status = 'queued'`,
-		resourceID, now,
+		 SET resource_data = jsonb_set(resource_data, '{queue_checked_at}', to_jsonb($1::text))
+		 WHERE id = ANY($2) AND status = 'queued'`,
+		now, ids,
 	); err != nil {
-		log.Logger.Error("QueueProcessor: error stamping queue_checked_at",
-			"error", err, "resource", resourceName)
+		log.Logger.Error("QueueProcessor: error batch-stamping queue_checked_at",
+			"error", err, "count", len(ids))
 	}
 }
 

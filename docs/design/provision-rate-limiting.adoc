@@ -172,49 +172,79 @@ Each resource is independently queued or provisioned. The placement status is de
 
 == Queue Processing
 
-The queue processor uses a **local processor + rescuer** architecture. Exactly **2 goroutines** run per pod, regardless of queue depth.
+The queue processor uses a **local processor + rescuer** architecture. Exactly **1 + N goroutines** run per pod (1 local processor + N rescuers, default N=1).
 
 === Local Processor (signal-driven, locality-scoped)
 
-Each pod runs a single local processor goroutine that handles resources queued by that pod.
+Each pod runs a single local processor goroutine that handles resources queued by that pod. This is the **primary processing path** — all normal dequeuing happens here.
 
 - **Wake mechanism:** Listens on `QueueNotify` channel. When `Request()` queues a resource, it sends a signal → local processor wakes immediately (no polling delay).
 - **Retry:** After processing, if any resources remain queued (rate-limited), the local processor sets a retry timer (`QUEUE_POLL_INTERVAL`, default 5s). It re-evaluates every interval until the local queue is drained, then goes back to sleep waiting for the next `QueueNotify` signal.
 - **Scope:** Only processes resources matching `config.LocalityID` (stored in `QueuedRequestParams.LocalityID`). Each pod's nanoid is unique, so pods don't compete.
 - **No global lock:** Since each pod only processes its own resources, no advisory lock is needed.
+- **Pause support:** Can be paused at runtime via `PUT /api/v1/admin/queue-processor` (sets `LocalProcessorPaused` atomic flag). Used in tests to verify rescuer behavior without local processor interference.
 
-=== Rescuer (poll-based, all localities)
+=== Rescuer (poll-based, orphan recovery only)
 
-A single rescuer goroutine runs per pod, but only one instance executes across all pods (advisory lock).
+The rescuer is a **safety net**, not a primary processor. It handles orphaned resources from dead/restarting pods. In normal operation, the rescuer should process zero resources.
 
-- **Interval:** 30 seconds by default, configurable via `QUEUE_POLL_INTERVAL` env var.
-- **Scope:** Processes ALL queued resources regardless of locality. Picks up orphans from dead pods.
-- **Staleness filter:** Only fetches resources where `queue_checked_at IS NULL OR queue_checked_at < (now() - rescuer_interval)`. Resources recently evaluated by a local processor are skipped.
-- **Concurrency:** Uses `pg_try_advisory_xact_lock` — only one rescuer across all pods runs per cycle. Losers skip silently.
+- **Interval:** `QUEUE_RESCUER_INTERVAL` (default 30s).
+- **Scope:** Processes ALL queued resources regardless of locality.
+- **Orphan threshold:** Resources must be untouched for `QUEUE_POLL_INTERVAL + QUEUE_ORPHAN_AGE` (default 5s + 30s = 35s) before the rescuer considers them. This keeps the rescuer out of the way during normal operation. For resources with no `queue_checked_at`, the `created_at` timestamp is used instead.
+- **Concurrency:** Uses `pg_try_advisory_xact_lock` — only one rescuer across all pods runs per cycle. Losers skip silently. Multiple rescuer goroutines can be spawned per pod via `QUEUE_RESCUERS` (default 1) for stress-testing the lock mechanism.
+- **Monitoring:** `sandbox_queue_rescuer_processed_total` Prometheus counter tracks rescuer activity. High values indicate pod instability or local processor issues.
 
 === Shared Processing Logic
 
 Both processors call `processQueuedResourceList()`, which:
 
-1. Stamps `queue_checked_at` on each resource before evaluation (so the rescuer skips recently-checked resources)
+1. Batch-stamps `queue_checked_at` on all resources with a single timestamp (critical for FIFO — see below)
 2. Checks cluster relation dependencies (referenced siblings must not be `queued`)
-3. Calls `CheckAndReserveSlot()` (atomic, per-cluster advisory lock) — NOT the read-only `IsRateLimited()`
-4. Uses `claimedClusters` map to skip clusters already reserved in the current cycle
-5. CAS update: `UPDATE ... WHERE status = 'queued'` to prevent double-dequeue
-6. Triggers `provisionDequeuedResource` for each dequeued resource
+3. Applies `ApplyPriorityWeight` for `cloud_preference` sorting
+4. Calls `CheckAndReserveSlot()` (atomic, per-cluster advisory lock) — NOT the read-only `IsRateLimited()`
+5. Uses `claimedClusters` map to skip clusters already reserved in the current cycle
+6. CAS update: `UPDATE ... WHERE status = 'queued'` to prevent double-dequeue
+7. Triggers `provisionDequeuedResource` for each dequeued resource
+
+=== Batch Stamping
+
+The `queue_checked_at` timestamp is set using a **single `time.Now()` call for the entire batch** via `batchStampQueueCheckedAt()`. This is critical for FIFO ordering: if resources were stamped individually with separate `time.Now()` calls, the millisecond gaps between timestamps would cause resources to cross the orphan threshold at slightly different times. Concurrent rescuers could each grab a subset of resources, each with its own `claimedClusters` map, breaking FIFO ordering. With batch stamping, all resources become stale simultaneously — the next rescuer gets ALL of them or NONE.
 
 === Goroutine Count
 
-Exactly **2 goroutines** per pod:
+**1 + N goroutines** per pod (default N=1):
 
 1. **Local processor** — sleeps on channel, wakes on signal or retry timer
-2. **Rescuer** — sleeps on interval timer
+2. **Rescuer(s)** — sleep on interval timer, acquire global advisory lock
 
-No per-resource goroutines are created. A single goroutine processes all queued resources in a batch loop. This is a deliberate simplification from the earlier design that used `QUEUE_PROCESSORS` parallel goroutines all competing for a global lock.
+No per-resource goroutines are created. A single goroutine processes all queued resources in a batch loop.
 
 - **Order:** `created_at ASC` (FIFO)
 - **After provisioning a resource:** Check if all resources for the placement are done. If so, the placement status is updated by the normal `LoadActiveResources` flow.
 - **Startup:** Launched alongside existing background goroutines in `main.go`
+
+=== Environment Variables
+
+[cols="1,1,2"]
+|===
+| Variable | Default | Purpose
+
+| `QUEUE_POLL_INTERVAL`
+| `5s`
+| Local processor retry interval when resources remain queued
+
+| `QUEUE_RESCUER_INTERVAL`
+| `30s`
+| How often rescuers poll for orphaned resources
+
+| `QUEUE_ORPHAN_AGE`
+| `30s`
+| How long a resource must go unprocessed before the rescuer considers it orphaned. Actual threshold = `QUEUE_POLL_INTERVAL + QUEUE_ORPHAN_AGE`
+
+| `QUEUE_RESCUERS`
+| `1`
+| Number of rescuer goroutines per pod (>1 for stress-testing)
+|===
 
 === FIFO Ordering Guarantees
 
@@ -456,19 +486,22 @@ The queue processor previously used `IsRateLimited()` (read-only) as a pre-check
 
 === 8. Queue Processor Throughput
 
-The `claimedClusters` guard limits dequeue throughput to **one resource per cluster per cycle**. The local processor retries every `QUEUE_POLL_INTERVAL` (default 5s) when resources remain queued, so a cluster with `rate_limit=50` and 200 queued placements would take ~1000s (~17 minutes) to drain (one per 5s). The rescuer runs every 30s and handles orphaned resources from dead pods.
+The `claimedClusters` guard limits dequeue throughput to **one resource per cluster per cycle**. The local processor retries every `QUEUE_POLL_INTERVAL` (default 5s) when resources remain queued, so a cluster with `rate_limit=50` and 200 queued placements would take ~1000s (~17 minutes) to drain (one per 5s). The rescuer only handles orphaned resources and does not contribute to normal throughput.
 
 This is a trade-off: strict FIFO vs throughput. For most production scenarios (rate limits of 10-50, moderate queue depths), this is acceptable.
 
 === 9. Local Processor + Rescuer Coordination
 
-**Design:** The local processor handles resources queued by its own pod (fast path). The rescuer handles all resources (orphan recovery). To avoid duplicate work:
+**Design:** The local processor handles resources queued by its own pod (primary path). The rescuer is purely for orphan recovery — it should process zero resources during normal operation. To avoid duplicate work:
 
-* `queue_checked_at` is stamped on each resource when evaluated by either processor
-* The rescuer skips resources where `queue_checked_at` is more recent than its polling interval
-* If a pod dies, its resources have stale `queue_checked_at` values → the rescuer picks them up
+* `queue_checked_at` is batch-stamped (single timestamp for all resources in a batch) when evaluated by either processor
+* The rescuer only considers resources orphaned after `QUEUE_POLL_INTERVAL + QUEUE_ORPHAN_AGE` (default 35s) without being processed. For resources with no `queue_checked_at`, `created_at` is checked instead
+* If a pod dies, its resources have stale `queue_checked_at` values (or NULL) → the rescuer picks them up after the orphan threshold
+* Batch stamping is critical: individual stamps with separate `time.Now()` calls create millisecond gaps that let concurrent rescuers split resources across separate `claimedClusters` maps, breaking FIFO ordering
 
 **Maintenance risk:** The `queue_checked_at` field lives in `resource_data` JSONB (not a top-level column), so it's updated via `jsonb_set`. If `resource_data` is overwritten elsewhere without preserving this field, the rescuer may re-process resources prematurely (harmless but wasteful due to CAS protection).
+
+**Testing:** The local processor can be paused at runtime via `PUT /api/v1/admin/queue-processor {"local_processor_paused": true}`. The rescuer test uses this to verify orphan recovery without local processor interference.
 
 == Implementation Checklist
 
@@ -493,8 +526,9 @@ This is a trade-off: strict FIFO vs throughput. For most production scenarios (r
 - [x] Define `ErrRateLimited` sentinel error
 - [x] Add `StartQueueProcessor(ctx context.Context)` on `OcpSandboxProvider`
   ** Local processor (signal-driven via `QueueNotify`, locality-scoped, retries on `QUEUE_POLL_INTERVAL`)
-  ** Rescuer (polls every `QUEUE_POLL_INTERVAL`, processes all localities, `pg_try_advisory_xact_lock`)
-  ** 2 goroutines total per pod
+  ** Rescuer (polls every `QUEUE_RESCUER_INTERVAL`, orphan threshold = `QUEUE_POLL_INTERVAL + QUEUE_ORPHAN_AGE`, `pg_try_advisory_xact_lock`)
+  ** 1 + N goroutines per pod (default N=1)
+- [x] Add `LocalProcessorPaused` atomic flag + `PUT /api/v1/admin/queue-processor` endpoint
 - [x] Refactor `Request()`: synchronous slot reservation after resource creation
   ** Save resource as `"initializing"` first (so it exists for count queries)
   ** Synchronously loop `CheckAndReserveSlot()` through candidate clusters
@@ -502,11 +536,12 @@ This is a trade-off: strict FIFO vs throughput. For most production scenarios (r
   ** If ALL deny → convert resource to `"queued"` with `queued_params` in `resource_data`
   ** For resources with cluster relations: if referenced sibling is `queued`, also queue
 - [x] Implement `processQueuedResourceList()` (shared logic for both processors)
-  ** Stamps `queue_checked_at`, checks cluster relations + rate limits via `CheckAndReserveSlot`
+  ** Batch-stamps `queue_checked_at` (single timestamp), checks cluster relations + rate limits via `CheckAndReserveSlot`
+  ** Applies `ApplyPriorityWeight` for `cloud_preference` sorting
   ** Uses `claimedClusters` map + CAS update, triggers provisioning for dequeued resources
 - [x] Add `FetchQueuedResources()` query function
 - [x] Add `FetchQueuedResourcesByLocality(localityID)` — filters by `queued_params.locality_id`
-- [x] Add `FetchStaleQueuedResources(staleAfter)` — filters by `queue_checked_at` staleness
+- [x] Add `FetchStaleQueuedResources(staleAfter)` — filters by `queue_checked_at` staleness AND `created_at` for NULL stamps
 - [x] Add `QueueNotify chan string` on `OcpSandboxProvider` — signal channel for local processor
 - [x] Add `LocalityID` to `QueuedRequestParams` — stores `config.LocalityID` at queue time
 - [x] Add `QueueCheckedAt` to `OcpSandbox` — tracks last evaluation time per resource

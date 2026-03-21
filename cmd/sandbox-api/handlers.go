@@ -2270,3 +2270,23 @@ func (h *BaseHandler) GetReservationResourcesHandler(w http.ResponseWriter, r *h
 		HTTPStatusCode: http.StatusOK,
 	})
 }
+
+// PutQueueProcessorHandler toggles the local queue processor pause state.
+// PUT /api/v1/admin/queue-processor { "local_processor_paused": true/false }
+func (h *BaseHandler) PutQueueProcessorHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		LocalProcessorPaused bool `json:"local_processor_paused"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	h.OcpSandboxProvider.LocalProcessorPaused.Store(req.LocalProcessorPaused)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{
+		"local_processor_paused": req.LocalProcessorPaused,
+	})
+}

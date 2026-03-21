@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"strconv"
@@ -63,6 +64,11 @@ type OcpSandboxProvider struct {
 	// queued on this pod. The local processor handles it immediately
 	// instead of waiting for the next poll cycle.
 	QueueNotify chan string
+
+	// LocalProcessorPaused disables the local queue processor when set.
+	// Used in tests to verify rescuer behavior without local processor
+	// interference. Toggle via PUT /api/v1/admin/queue-processor.
+	LocalProcessorPaused *atomic.Bool
 }
 
 type OcpSharedClusterConfiguration struct {
@@ -3393,9 +3399,10 @@ func (a *OcpSandboxProvider) Release(service_uuid string) error {
 
 func NewOcpSandboxProvider(dbpool *pgxpool.Pool, vaultSecret string) OcpSandboxProvider {
 	return OcpSandboxProvider{
-		DbPool:      dbpool,
-		VaultSecret: vaultSecret,
-		RotateNow:   make(chan struct{}, 1),
+		DbPool:               dbpool,
+		VaultSecret:          vaultSecret,
+		RotateNow:            make(chan struct{}, 1),
+		LocalProcessorPaused: &atomic.Bool{},
 	}
 }
 

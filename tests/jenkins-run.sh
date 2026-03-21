@@ -117,10 +117,11 @@ run_api() {
     # Spawn 20 concurrent rescuer goroutines to stress-test the advisory lock
     # mechanism that prevents race conditions in multi-pod production.
     export QUEUE_RESCUERS=20
-    # Delay local processor by 30s so the rescuer test can verify orphan recovery.
-    export QUEUE_LOCAL_DELAY=30s
+    # Short orphan age for the rescuer test (default 30s). Resources must be
+    # unprocessed for poll_interval + orphan_age before rescuer picks them up.
+    export QUEUE_ORPHAN_AGE=10s
 
-    echo "Running sandbox API on port $PORT (QUEUE_POLL_INTERVAL=$QUEUE_POLL_INTERVAL, QUEUE_RESCUER_INTERVAL=$QUEUE_RESCUER_INTERVAL, QUEUE_RESCUERS=$QUEUE_RESCUERS, QUEUE_LOCAL_DELAY=$QUEUE_LOCAL_DELAY)"
+    echo "Running sandbox API on port $PORT (QUEUE_POLL_INTERVAL=$QUEUE_POLL_INTERVAL, QUEUE_RESCUER_INTERVAL=$QUEUE_RESCUER_INTERVAL, QUEUE_RESCUERS=$QUEUE_RESCUERS, QUEUE_ORPHAN_AGE=$QUEUE_ORPHAN_AGE)"
     setsid make run-api &>$apilog &
     apipid=$!
 

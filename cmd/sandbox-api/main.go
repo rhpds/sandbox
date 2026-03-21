@@ -377,6 +377,7 @@ func main() {
 		r.Put("/api/v1/reservations/{name}", baseHandler.UpdateReservationHandler)
 		r.Delete("/api/v1/reservations/{name}", baseHandler.DeleteReservationHandler)
 		r.Put("/api/v1/reservations/{name}/rename", baseHandler.RenameReservationHandler)
+
 	})
 
 	// ---------------------------------------------------------------------
@@ -416,6 +417,9 @@ func main() {
 		r.Get("/debug/pprof/trace", pprof.Trace)
 		r.Get("/debug/pprof/cmdline", pprof.Cmdline)
 		r.Get("/debug/pprof/symbol", pprof.Symbol)
+
+		// Queue processor control (testing)
+		r.Put("/api/v1/admin/queue-processor", baseHandler.PutQueueProcessorHandler)
 	})
 
 	// ---------------------------------------------------------------------
