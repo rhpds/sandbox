@@ -35,7 +35,7 @@ type BaseHandler struct {
 	doc                             *openapi3.T
 	oaRouter                        oarouters.Router
 	awsAccountProvider              models.AwsAccountProvider
-	OcpSandboxProvider              models.OcpSandboxProvider
+	OcpSandboxProvider              *models.OcpSandboxProvider
 	DNSSandboxProvider              models.DNSSandboxProvider
 	IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider
 }
@@ -45,7 +45,7 @@ type AdminHandler struct {
 	tokenAuth *jwtauth.JWTAuth
 }
 
-func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider models.OcpSandboxProvider, DNSSandboxProvider models.DNSSandboxProvider, IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider) *BaseHandler {
+func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider *models.OcpSandboxProvider, DNSSandboxProvider models.DNSSandboxProvider, IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider) *BaseHandler {
 	return &BaseHandler{
 		svc:                             svc,
 		dbpool:                          dbpool,

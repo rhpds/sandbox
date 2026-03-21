@@ -18,12 +18,12 @@ import (
 
 type AccountHandler struct {
 	awsAccountProvider              models.AwsAccountProvider
-	OcpSandboxProvider              models.OcpSandboxProvider
+	OcpSandboxProvider              *models.OcpSandboxProvider
 	DNSSandboxProvider              models.DNSSandboxProvider
 	IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider
 }
 
-func NewAccountHandler(awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider models.OcpSandboxProvider, DNSSandboxProvider models.DNSSandboxProvider, IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider) *AccountHandler {
+func NewAccountHandler(awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider *models.OcpSandboxProvider, DNSSandboxProvider models.DNSSandboxProvider, IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider) *AccountHandler {
 	return &AccountHandler{
 		awsAccountProvider:              awsAccountProvider,
 		OcpSandboxProvider:              OcpSandboxProvider,

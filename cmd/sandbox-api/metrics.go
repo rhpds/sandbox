@@ -170,7 +170,7 @@ var (
 
 // startMetricsCollector starts a background goroutine that periodically
 // refreshes Prometheus metrics for rate limiting, queue state, and PG locks.
-func startMetricsCollector(ctx context.Context, dbPool *pgxpool.Pool, ocpProvider models.OcpSandboxProvider) {
+func startMetricsCollector(ctx context.Context, dbPool *pgxpool.Pool, ocpProvider *models.OcpSandboxProvider) {
 	var mu sync.Mutex
 
 	go func() {
@@ -198,7 +198,7 @@ func startMetricsCollector(ctx context.Context, dbPool *pgxpool.Pool, ocpProvide
 }
 
 // clusterNameByLockKey builds a reverse lookup from FNV32a hash → cluster name.
-func clusterNameByLockKey(ocpProvider models.OcpSandboxProvider) map[int64]string {
+func clusterNameByLockKey(ocpProvider *models.OcpSandboxProvider) map[int64]string {
 	clusters, err := ocpProvider.GetOcpSharedClusterConfigurations()
 	if err != nil {
 		return nil
@@ -212,7 +212,7 @@ func clusterNameByLockKey(ocpProvider models.OcpSandboxProvider) map[int64]strin
 	return m
 }
 
-func collectRateLimitMetrics(dbPool *pgxpool.Pool, ocpProvider models.OcpSandboxProvider) {
+func collectRateLimitMetrics(dbPool *pgxpool.Pool, ocpProvider *models.OcpSandboxProvider) {
 	clusters, err := ocpProvider.GetOcpSharedClusterConfigurations()
 	if err != nil {
 		log.Logger.Error("metrics: error fetching clusters", "error", err)
@@ -244,7 +244,7 @@ func collectRateLimitMetrics(dbPool *pgxpool.Pool, ocpProvider models.OcpSandbox
 	}
 }
 
-func collectPgLockMetrics(dbPool *pgxpool.Pool, ocpProvider models.OcpSandboxProvider) {
+func collectPgLockMetrics(dbPool *pgxpool.Pool, ocpProvider *models.OcpSandboxProvider) {
 	// Build reverse lookup: FNV hash → cluster name
 	lookup := clusterNameByLockKey(ocpProvider)
 

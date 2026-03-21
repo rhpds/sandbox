@@ -68,7 +68,7 @@ type OcpSandboxProvider struct {
 	// LocalProcessorPaused disables the local queue processor when set.
 	// Used in tests to verify rescuer behavior without local processor
 	// interference. Toggle via PUT /api/v1/admin/queue-processor.
-	LocalProcessorPaused *atomic.Bool
+	LocalProcessorPaused atomic.Bool
 }
 
 type OcpSharedClusterConfiguration struct {
@@ -1067,7 +1067,7 @@ func (a *OcpSandboxProvider) ExecuteOffboard(
 			continue
 		}
 
-		placement.Delete(awsProvider, *a, dnsProvider, ibmProvider)
+		placement.Delete(awsProvider, a, dnsProvider, ibmProvider)
 
 		report.PlacementsDeleted = append(report.PlacementsDeleted, OffboardPlacementInfo{
 			PlacementID: pi.PlacementID,
@@ -3397,12 +3397,11 @@ func (a *OcpSandboxProvider) Release(service_uuid string) error {
 	return errorHappened
 }
 
-func NewOcpSandboxProvider(dbpool *pgxpool.Pool, vaultSecret string) OcpSandboxProvider {
-	return OcpSandboxProvider{
-		DbPool:               dbpool,
-		VaultSecret:          vaultSecret,
-		RotateNow:            make(chan struct{}, 1),
-		LocalProcessorPaused: &atomic.Bool{},
+func NewOcpSandboxProvider(dbpool *pgxpool.Pool, vaultSecret string) *OcpSandboxProvider {
+	return &OcpSandboxProvider{
+		DbPool:      dbpool,
+		VaultSecret: vaultSecret,
+		RotateNow:   make(chan struct{}, 1),
 	}
 }
 
