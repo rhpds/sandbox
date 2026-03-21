@@ -44,7 +44,7 @@ Concurrency testing:
   To test the advisory lock mechanism under contention (simulating
   multiple pods in production), start the sandbox-api with:
 
-    QUEUE_RESCUERS=20 QUEUE_POLL_INTERVAL=5s QUEUE_LOCAL_DELAY=30s ./sandbox-api
+    QUEUE_POLL_INTERVAL=5s QUEUE_RESCUER_INTERVAL=5s QUEUE_RESCUERS=20 QUEUE_LOCAL_DELAY=30s ./sandbox-api
 
   This spawns 20 concurrent rescuer goroutines with a 5s poll
   interval (default 30s). The shorter interval is important when using

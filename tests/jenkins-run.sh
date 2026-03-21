@@ -110,15 +110,17 @@ run_api() {
     set -o pipefail
     export PORT
 
+    # Local processor retries every 5s (default 5s) when resources remain queued.
+    export QUEUE_POLL_INTERVAL=5s
+    # Rescuer polls every 5s (default 30s) so short rate windows in tests don't timeout.
+    export QUEUE_RESCUER_INTERVAL=5s
     # Spawn 20 concurrent rescuer goroutines to stress-test the advisory lock
     # mechanism that prevents race conditions in multi-pod production.
     export QUEUE_RESCUERS=20
-    # Poll every 5s (default 30s) so short rate windows in tests don't timeout.
-    export QUEUE_POLL_INTERVAL=5s
     # Delay local processor by 30s so the rescuer test can verify orphan recovery.
     export QUEUE_LOCAL_DELAY=30s
 
-    echo "Running sandbox API on port $PORT (QUEUE_RESCUERS=$QUEUE_RESCUERS, QUEUE_POLL_INTERVAL=$QUEUE_POLL_INTERVAL, QUEUE_LOCAL_DELAY=$QUEUE_LOCAL_DELAY)"
+    echo "Running sandbox API on port $PORT (QUEUE_POLL_INTERVAL=$QUEUE_POLL_INTERVAL, QUEUE_RESCUER_INTERVAL=$QUEUE_RESCUER_INTERVAL, QUEUE_RESCUERS=$QUEUE_RESCUERS, QUEUE_LOCAL_DELAY=$QUEUE_LOCAL_DELAY)"
     setsid make run-api &>$apilog &
     apipid=$!
 
