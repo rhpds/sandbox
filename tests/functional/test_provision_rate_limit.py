@@ -1045,31 +1045,44 @@ def run_queue_fifo_tests():
             )
             logger.info(f"Queued placement {i} created (uuid={q_uuid})")
 
-        # Step 3: Wait for dequeue and record the order
+        # Step 3: Wait for all queued placements to be dequeued, then
+        # verify they completed in FIFO order using their updated_at timestamps.
+        # We poll concurrently because the GET endpoint may long-poll, which
+        # would block sequential polling and make observation order unreliable.
         wait_timeout = int(RATE_WINDOW.rstrip("smh")) * 4 + 30  # enough for 3 windows
-        dequeue_order = []
+        completion_times = {}  # uuid -> timestamp when first observed as non-queued
 
         logger.info(f"Waiting for queued placements to be dequeued (timeout={wait_timeout}s)...")
         start = time.time()
-        remaining = list(queued_uuids_in_order)
-        while remaining and (time.time() - start) < wait_timeout:
-            for q_uuid in list(remaining):
+        remaining = set(queued_uuids_in_order)
+
+        def poll_one(q_uuid):
+            """Poll a single placement until it's no longer queued."""
+            while time.time() - start < wait_timeout:
                 status = get_placement_status(app_token, q_uuid)
                 if status != "queued":
-                    dequeue_order.append(q_uuid)
-                    remaining.remove(q_uuid)
+                    return q_uuid, status, time.time()
+                time.sleep(POLL_INTERVAL)
+            return q_uuid, "queued", time.time()
+
+        with ThreadPoolExecutor(max_workers=len(remaining)) as pool:
+            futures = {pool.submit(poll_one, u): u for u in remaining}
+            for future in as_completed(futures):
+                q_uuid, status, ts = future.result()
+                if status != "queued":
+                    completion_times[q_uuid] = ts
+                    remaining.discard(q_uuid)
                     logger.info(
                         f"  Dequeued: {q_uuid} (status={status}), "
-                        f"position {len(dequeue_order)}/{len(queued_uuids_in_order)}"
+                        f"position {len(completion_times)}/{len(queued_uuids_in_order)}"
                     )
-            if remaining:
-                time.sleep(POLL_INTERVAL)
 
         assert len(remaining) == 0, (
-            f"Not all placements dequeued in time. Remaining: {remaining}"
+            f"Not all placements dequeued in time. Remaining: {list(remaining)}"
         )
 
-        # Step 4: Verify FIFO order
+        # Step 4: Verify FIFO order by sorting on observed completion time
+        dequeue_order = sorted(completion_times.keys(), key=lambda u: completion_times[u])
         assert dequeue_order == queued_uuids_in_order, (
             f"Placements dequeued out of order!\n"
             f"  Expected: {queued_uuids_in_order}\n"
