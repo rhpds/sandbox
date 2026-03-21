@@ -27,15 +27,17 @@ const (
 )
 
 var (
-	onboardForce          bool
-	onboardPurpose        string
-	onboardAnnotations    string
-	onboardConfigFile     string
-	onboardDryRun         bool
-	onboardSkipValidation bool
-	onboardKubeconfig     string
-	onboardKubecontext    string
-	onboardMaxPlacements  int
+	onboardForce              bool
+	onboardPurpose            string
+	onboardAnnotations        string
+	onboardConfigFile         string
+	onboardDryRun             bool
+	onboardSkipValidation     bool
+	onboardKubeconfig         string
+	onboardKubecontext        string
+	onboardMaxPlacements      int
+	onboardProvisionRateLimit int
+	onboardProvisionRateWindow string
 )
 
 var clusterOnboardCmd = &cobra.Command{
@@ -79,6 +81,8 @@ func init() {
 	clusterOnboardCmd.Flags().StringVar(&onboardKubeconfig, "kubeconfig", "", "Path to kubeconfig file")
 	clusterOnboardCmd.Flags().StringVar(&onboardKubecontext, "context", "", "Kubeconfig context to use")
 	clusterOnboardCmd.Flags().IntVar(&onboardMaxPlacements, "max-placements", 0, "Maximum number of placements (0 = no limit)")
+	clusterOnboardCmd.Flags().IntVar(&onboardProvisionRateLimit, "provision-rate-limit", 0, "Max new placements within the rate window (0 = no limit)")
+	clusterOnboardCmd.Flags().StringVar(&onboardProvisionRateWindow, "provision-rate-window", "", "Rate limit time window (e.g. 10m, 1h)")
 	clusterOnboardCmd.MarkFlagsOneRequired("annotations", "config")
 
 	clusterCmd.AddCommand(clusterOnboardCmd)
@@ -426,6 +430,13 @@ func buildOnboardPayload(name, apiURL, ingressDomain, token string) (map[string]
 	}
 	if onboardMaxPlacements > 0 {
 		payload["max_placements"] = onboardMaxPlacements
+	}
+
+	if onboardProvisionRateLimit > 0 && onboardProvisionRateWindow != "" {
+		payload["settings"] = map[string]any{
+			"provision_rate_limit":  onboardProvisionRateLimit,
+			"provision_rate_window": onboardProvisionRateWindow,
+		}
 	}
 
 	return payload, nil

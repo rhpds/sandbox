@@ -2535,6 +2535,20 @@ paths:
                   type: string
                   example: "cluster_admin_agnosticd_sa_token"
                   description: Variable name in cluster_additional_vars for the deployer-admin SA token.
+                settings:
+                  type: object
+                  description: |-
+                    User-configurable settings. Both rate limit fields must be set together.
+                    When absent or null, no rate limiting is applied.
+                  properties:
+                    provision_rate_limit:
+                      type: integer
+                      description: Max new placements within the rate window. Must be > 0.
+                      example: 50
+                    provision_rate_window:
+                      type: string
+                      description: Duration string (e.g. "10m", "1h", "30s").
+                      example: "10m"
             example:
               strict_default_sandbox_quota: true
               quota_required: true
@@ -4434,6 +4448,26 @@ components:
             This is useful for dedicated-shared scenarios where you want to limit
             the number of "seats" or persons on a particular cluster.
           example: 50
+        settings:
+          type: object
+          description: |-
+            User-configurable settings stored as JSONB. Taken from the request —
+            the user controls these values. Separate from `data` which holds
+            system-managed internal state.
+          properties:
+            provision_rate_limit:
+              type: integer
+              description: |-
+                Maximum number of new placements allowed within the rate window.
+                Must be > 0. Must be set together with provision_rate_window.
+                When absent or null, no rate limiting is applied.
+              example: 50
+            provision_rate_window:
+              type: string
+              description: |-
+                Duration string for the rate limiting window (e.g. "10m", "1h", "30s").
+                Must be set together with provision_rate_limit.
+              example: "10m"
         deployer_admin_sa_token_ttl:
           type: string
           description: |-
@@ -4669,6 +4703,31 @@ components:
           example:
             - cluster-a
             - cluster-b
+        cluster_details:
+          type: array
+          description: >-
+            Per-cluster rate-limit info. Only present for OcpSandbox resources.
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: Cluster name
+              available_slots:
+                type: integer
+                description: >-
+                  Remaining capacity in the rate window. Omitted if no rate
+                  limit is configured on the cluster.
+        queued:
+          type: boolean
+          description: >-
+            True if the placement would be queued because all clusters are
+            at their rate limit. Only present when all clusters are rate-limited.
+        queue_position:
+          type: integer
+          description: >-
+            Number of existing queued placements ahead in the queue.
+            Only present when queued is true.
       example:
         message: Not enough AWS accounts available
         available: false

@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/httplog/v2"
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/rhpds/sandbox/cmd/sandbox-api/graph"
@@ -216,6 +217,14 @@ func main() {
 	// Start background admin SA token rotation for OCP clusters
 	OcpSandboxProvider.StartDeployerAdminSATokenRotation(ctx)
 
+	// Start background queue processor for rate-limited placements
+	OcpSandboxProvider.StartQueueProcessor(ctx)
+
+	// Start Prometheus metrics collector for rate-limit and lock state
+	startMetricsCollector(ctx, dbPool, OcpSandboxProvider)
+	// Register queue collector (queries DB on each /metrics scrape for real-time values)
+	registerQueueCollector(dbPool)
+
 	// Start background audit log purge
 	auditRetentionStr := os.Getenv("AUDIT_LOG_RETENTION")
 	if auditRetentionStr == "" {
@@ -368,6 +377,7 @@ func main() {
 		r.Put("/api/v1/reservations/{name}", baseHandler.UpdateReservationHandler)
 		r.Delete("/api/v1/reservations/{name}", baseHandler.DeleteReservationHandler)
 		r.Put("/api/v1/reservations/{name}/rename", baseHandler.RenameReservationHandler)
+
 	})
 
 	// ---------------------------------------------------------------------
@@ -407,6 +417,9 @@ func main() {
 		r.Get("/debug/pprof/trace", pprof.Trace)
 		r.Get("/debug/pprof/cmdline", pprof.Cmdline)
 		r.Get("/debug/pprof/symbol", pprof.Symbol)
+
+		// Queue processor control (testing)
+		r.Put("/api/v1/admin/queue-processor", baseHandler.PutQueueProcessorHandler)
 	})
 
 	// ---------------------------------------------------------------------
@@ -453,6 +466,9 @@ func main() {
 	// ---------------------------------------------------------------------
 	// Public Routes
 	// ---------------------------------------------------------------------
+
+	// Prometheus metrics — no auth, no OpenAPI validation
+	router.Handle("/metrics", promhttp.Handler())
 
 	// ---------------------------------------------------------------------
 	// Main server loop

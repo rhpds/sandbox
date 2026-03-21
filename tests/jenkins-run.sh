@@ -110,7 +110,18 @@ run_api() {
     set -o pipefail
     export PORT
 
-    echo "Running sandbox API on port $PORT"
+    # Local processor retries every 5s (default 5s) when resources remain queued.
+    export QUEUE_POLL_INTERVAL=5s
+    # Rescuer polls every 5s (default 30s) so short rate windows in tests don't timeout.
+    export QUEUE_RESCUER_INTERVAL=5s
+    # Spawn 20 concurrent rescuer goroutines to stress-test the advisory lock
+    # mechanism that prevents race conditions in multi-pod production.
+    export QUEUE_RESCUERS=20
+    # Short orphan age for the rescuer test (default 30s). Resources must be
+    # unprocessed for poll_interval + orphan_age before rescuer picks them up.
+    export QUEUE_ORPHAN_AGE=10s
+
+    echo "Running sandbox API on port $PORT (QUEUE_POLL_INTERVAL=$QUEUE_POLL_INTERVAL, QUEUE_RESCUER_INTERVAL=$QUEUE_RESCUER_INTERVAL, QUEUE_RESCUERS=$QUEUE_RESCUERS, QUEUE_ORPHAN_AGE=$QUEUE_ORPHAN_AGE)"
     setsid make run-api &>$apilog &
     apipid=$!
 
@@ -364,8 +375,10 @@ RUN_NO_NAMESPACE_TESTS="${RUN_NO_NAMESPACE_TESTS:-${run_no_namespace_tests:-true
 RUN_ONBOARD_TESTS="${RUN_ONBOARD_TESTS:-${run_onboard_tests:-true}}"
 RUN_RBAC_TESTS="${RUN_RBAC_TESTS:-${run_rbac_tests:-true}}"
 RUN_CLI_TESTS="${RUN_CLI_TESTS:-${run_cli_tests:-true}}"
+RUN_RATE_LIMIT_TESTS="${RUN_RATE_LIMIT_TESTS:-${run_rate_limit_tests:-true}}"
+RUN_RATE_LIMIT_LOAD_TESTS="${RUN_RATE_LIMIT_LOAD_TESTS:-${run_rate_limit_load_tests:-false}}"
 
-echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS RUN_NO_NAMESPACE_TESTS=$RUN_NO_NAMESPACE_TESTS RUN_ONBOARD_TESTS=$RUN_ONBOARD_TESTS RUN_RBAC_TESTS=$RUN_RBAC_TESTS RUN_CLI_TESTS=$RUN_CLI_TESTS"
+echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS RUN_NO_NAMESPACE_TESTS=$RUN_NO_NAMESPACE_TESTS RUN_ONBOARD_TESTS=$RUN_ONBOARD_TESTS RUN_RBAC_TESTS=$RUN_RBAC_TESTS RUN_CLI_TESTS=$RUN_CLI_TESTS RUN_RATE_LIMIT_TESTS=$RUN_RATE_LIMIT_TESTS RUN_RATE_LIMIT_LOAD_TESTS=$RUN_RATE_LIMIT_LOAD_TESTS"
 
 if [ "$RUN_HURL_TESTS" != "false" ] && [ "$RUN_HURL_TESTS" != "no" ]; then
     tests=$1
@@ -599,4 +612,46 @@ if [ "${RUN_CLI_TESTS}" != "false" ] && [ "${RUN_CLI_TESTS}" != "no" ]; then
         python3 tests/functional/test_sandbox_cli.py
 else
     echo "Skipping sandbox-cli tests (RUN_CLI_TESTS=${RUN_CLI_TESTS})"
+fi
+
+# Run provision rate limit tests if requested
+if [ "${RUN_RATE_LIMIT_TESTS}" != "false" ] && [ "${RUN_RATE_LIMIT_TESTS}" != "no" ]; then
+    echo ""
+    echo "=========================================="
+    echo "Running provision rate limit tests (QUEUE_RESCUERS=$QUEUE_RESCUERS, QUEUE_POLL_INTERVAL=$QUEUE_POLL_INTERVAL)"
+    echo "=========================================="
+    cd $jobdir
+
+    # Install Python dependencies if needed
+    pip3 install -q requests urllib3 2>/dev/null || true
+
+    # Run the Python rate limit test
+    SANDBOX_API_URL="http://localhost:$PORT" \
+        SANDBOX_LOGIN_TOKEN="$apptoken" \
+        SANDBOX_ADMIN_LOGIN_TOKEN="$admintoken" \
+        OCP_CLUSTER_NAME="ocpvdev01" \
+        python3 tests/functional/test_provision_rate_limit.py
+else
+    echo "Skipping provision rate limit tests (RUN_RATE_LIMIT_TESTS=${RUN_RATE_LIMIT_TESTS})"
+fi
+
+# Run provision rate limit load tests if requested (disabled by default)
+if [ "${RUN_RATE_LIMIT_LOAD_TESTS}" != "false" ] && [ "${RUN_RATE_LIMIT_LOAD_TESTS}" != "no" ]; then
+    echo ""
+    echo "=========================================="
+    echo "Running provision rate limit LOAD tests (QUEUE_RESCUERS=$QUEUE_RESCUERS, QUEUE_POLL_INTERVAL=$QUEUE_POLL_INTERVAL)"
+    echo "=========================================="
+    cd $jobdir
+
+    # Install Python dependencies if needed
+    pip3 install -q requests urllib3 2>/dev/null || true
+
+    # Run the Python rate limit load test
+    SANDBOX_API_URL="http://localhost:$PORT" \
+        SANDBOX_LOGIN_TOKEN="$apptoken" \
+        SANDBOX_ADMIN_LOGIN_TOKEN="$admintoken" \
+        OCP_CLUSTER_NAME="ocpvdev01" \
+        python3 tests/functional/test_provision_rate_limit_load.py
+else
+    echo "Skipping provision rate limit load tests (RUN_RATE_LIMIT_LOAD_TESTS=${RUN_RATE_LIMIT_LOAD_TESTS})"
 fi

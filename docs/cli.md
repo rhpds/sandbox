@@ -115,6 +115,96 @@ auto-detection.
 | `placement delete <uuid>` | Delete a placement |
 | `placement dry-run` | Test cloud selectors against available clusters |
 
+### cluster onboard
+
+Onboards an OCP shared cluster to the sandbox API fleet. The command:
+1. Connects to the cluster using your current kubeconfig context (or `--kubeconfig` / `--context`)
+2. Creates the `sandbox-api-manager` service account with cluster-admin
+3. Generates a long-lived token for that service account via the `TokenRequest` API
+4. Registers the cluster with the sandbox API
+5. Validates the cluster is reachable from the sandbox API
+
+> **Note:** The token lifetime is bounded by the cluster's
+> `--service-account-max-expiration-seconds` setting. OpenShift defaults this
+> to 1 year. The token is renewed automatically by the sandbox API's deployer
+> admin token rotation goroutine (configured via `deployer_admin_sa_token_ttl`
+> and `deployer_admin_sa_token_refresh_interval` in the config file).
+
+#### config.json
+
+The `--config` flag accepts a JSON file for advanced settings. The
+`deployer_admin_sa_token_*` fields are **required** for
+`cluster_admin_agnosticd_sa_token` to be available in AgnosticD workloads.
+Without them the sandbox API will not generate the deployer admin token and
+workloads that need cluster-scoped access will fail with a 403.
+
+```json
+{
+  "annotations": {
+    "cloud": "cnv-dedicated-shared",
+    "purpose": "dev",
+    "virt": "yes",
+    "keycloak": "yes",
+    "lab": "<lab-annotation>"
+  },
+  "deployer_admin_sa_token_ttl": "1h",
+  "deployer_admin_sa_token_refresh_interval": "30m",
+  "deployer_admin_sa_token_target_var": "cluster_admin_agnosticd_sa_token",
+  "skip_quota": true
+}
+```
+
+#### Onboarding steps
+
+```bash
+# 1. Login to the target OCP cluster
+oc login --token=<admin-token> --server=https://api.<cluster>:6443 --insecure-skip-tls-verify
+
+# 2. Create cluster-config.json (see template above)
+
+# 3. Dry run to verify the payload before registering
+sandbox-cli cluster onboard --config cluster-config.json --dry-run
+
+# 4. Onboard
+sandbox-cli cluster onboard --config cluster-config.json
+```
+
+`deployer_admin_sa_token_*` fields explained:
+
+| Field | Description |
+|-------|-------------|
+| `deployer_admin_sa_token_ttl` | Lifetime of the generated deployer admin token (e.g. `1h`, `48h`) |
+| `deployer_admin_sa_token_refresh_interval` | How often the background goroutine rotates the token |
+| `deployer_admin_sa_token_target_var` | Ansible variable name injected into AgnosticD workloads |
+
+#### Verifying the deployer admin token was generated
+
+The sandbox API generates the deployer admin token in the background after
+onboarding. Verify it has been created before attempting a placement:
+
+```bash
+sleep 10
+sandbox-cli cluster get <cluster-name> | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print('token_set:', bool(d.get('deployer_admin_sa_token')))
+print('token_updated_at:', d.get('data', {}).get('deployer_admin_sa_token_updated_at'))
+"
+```
+
+`token_set` should be `True`. If it remains `False`, check that the
+`deployer_admin_sa_token_ttl` field was included in the config and that you
+used a released binary (not a local dev build).
+
+#### Verifying placement
+
+After onboarding, confirm your AgnosticV catalog item will match the cluster:
+
+```bash
+sandbox-cli placement dry-run -f catalog-item/common.yaml
+```
+
+>>>>>>> 25d0b56 (docs: move config.json before onboard steps so order is clear)
 ### placement dry-run
 
 Simulate a placement to check which clusters match your cloud selectors.
