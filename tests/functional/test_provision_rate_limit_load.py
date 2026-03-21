@@ -15,7 +15,7 @@ validate rate limiting under load.
 Prerequisites:
   - SANDBOX_API_URL and SANDBOX_ADMIN_LOGIN_TOKEN must be set
   - The source cluster must already be configured in the sandbox API
-  - API should be started with QUEUE_PROCESSORS=20 QUEUE_POLL_INTERVAL=5s
+  - API should be started with QUEUE_RESCUERS=20 QUEUE_POLL_INTERVAL=5s
 
 Usage:
     export SANDBOX_API_URL="http://localhost:8080"

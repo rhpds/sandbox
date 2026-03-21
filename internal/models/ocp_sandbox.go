@@ -20,6 +20,7 @@ import (
 
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
 	"github.com/rhpds/sandbox/internal/metrics"
 	authenticationv1 "k8s.io/api/authentication/v1"
@@ -58,6 +59,11 @@ type OcpSandboxProvider struct {
 	// RotateNow is a channel that signals the background rotation goroutine
 	// to wake up and run immediately (e.g. after a config update).
 	RotateNow chan struct{}
+
+	// QueueNotify signals the local queue processor that a resource was
+	// queued on this pod. The local processor handles it immediately
+	// instead of waiting for the next poll cycle.
+	QueueNotify chan string
 }
 
 type OcpSharedClusterConfiguration struct {
@@ -277,6 +283,7 @@ type QueuedRequestParams struct {
 	RequestedLimitRange *v1.LimitRange    `json:"requested_limit_range,omitempty"`
 	KeycloakUserPrefix  string            `json:"keycloak_user_prefix,omitempty"`
 	Multiple            bool              `json:"multiple"`
+	LocalityID          string            `json:"locality_id,omitempty"`
 }
 
 type OcpSandbox struct {
@@ -300,6 +307,7 @@ type OcpSandbox struct {
 	Alias                             string               `json:"alias,omitempty"`
 	NoNamespace                       bool                 `json:"no_namespace,omitempty"`
 	QueuedParams                      *QueuedRequestParams `json:"queued_params,omitempty"`
+	QueueCheckedAt                    *time.Time           `json:"queue_checked_at,omitempty"`
 }
 
 type OcpSandboxWithCreds struct {
@@ -1560,6 +1568,9 @@ func (a *OcpSandboxProvider) createQueuedResource(
 		"alias", alias,
 		"serviceUuid", serviceUuid)
 
+	// Notify local queue processor
+	a.notifyQueue(serviceUuid)
+
 	return rnew, nil
 }
 
@@ -2264,6 +2275,7 @@ func (a *OcpSandboxProvider) Request(
 								RequestedLimitRange: requestedLimitRange,
 								KeycloakUserPrefix:  keycloakUserPrefix,
 								Multiple:            multiple,
+								LocalityID:          config.LocalityID,
 							})
 					}
 				}
@@ -2332,6 +2344,7 @@ func (a *OcpSandboxProvider) Request(
 				RequestedLimitRange: requestedLimitRange,
 				KeycloakUserPrefix:  keycloakUserPrefix,
 				Multiple:            multiple,
+				LocalityID:          config.LocalityID,
 			}
 			// Clear any partial cluster reservation
 			if rnew.OcpSharedClusterConfigurationName != "" {
@@ -2343,6 +2356,8 @@ func (a *OcpSandboxProvider) Request(
 				log.Logger.Error("Error saving queued resource", "error", err)
 				return OcpSandboxWithCreds{}, err
 			}
+			// Notify local queue processor
+			a.notifyQueue(serviceUuid)
 			return rnew, nil
 		}
 	}
@@ -3680,61 +3695,196 @@ func (a *OcpSandboxProvider) FetchQueuedResources() ([]OcpSandboxWithCreds, erro
 	return resources, nil
 }
 
-// StartQueueProcessor starts background goroutines that poll for queued
-// placements and re-attempt scheduling every 30 seconds.
-//
-// By default, a single goroutine is started. Set QUEUE_PROCESSORS to a higher
-// value to spawn multiple concurrent processors (useful for testing the
-// advisory lock mechanism under contention, simulating multi-pod production).
-func (a *OcpSandboxProvider) StartQueueProcessor(ctx context.Context) {
-	n := 1
-	if v := os.Getenv("QUEUE_PROCESSORS"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
-			n = parsed
-		}
+// notifyQueue sends a non-blocking signal to the local queue processor
+// that a resource was queued and needs processing.
+func (a *OcpSandboxProvider) notifyQueue(serviceUuid string) {
+	if a.QueueNotify == nil {
+		return
 	}
+	select {
+	case a.QueueNotify <- serviceUuid:
+	default:
+		// Channel full — local processor will pick it up on next drain
+	}
+}
 
-	log.Logger.Info("QueueProcessor: starting", "processors", n)
+// StartQueueProcessor starts two background components:
+//
+//  1. Local processor — signal-driven, processes resources queued by this pod
+//     (matching locality_id). Wakes up immediately when notified via QueueNotify.
+//     No global advisory lock needed (locality scoping prevents cross-pod conflict).
+//
+//  2. Rescuer — polls every QUEUE_POLL_INTERVAL (default 30s), processes ALL
+//     queued resources regardless of locality. Uses a global advisory lock to
+//     ensure only one rescuer runs across all pods. Handles orphans from dead
+//     pods and resources stuck in queue.
+func (a *OcpSandboxProvider) StartQueueProcessor(ctx context.Context) {
+	// Initialize the notification channel
+	a.QueueNotify = make(chan string, 100)
 
-	pollInterval := 30 * time.Second
+	rescuerInterval := 30 * time.Second
 	if v := os.Getenv("QUEUE_POLL_INTERVAL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			pollInterval = d
+			rescuerInterval = d
 		}
 	}
-	log.Logger.Info("QueueProcessor: starting", "poll_interval", pollInterval)
 
-	for i := range n {
-		id := i
+	// Number of rescuer goroutines. Default 1. Set higher in CI to
+	// stress-test the advisory lock mechanism that prevents race
+	// conditions in multi-pod production.
+	rescuerCount := 1
+	if v := os.Getenv("QUEUE_RESCUERS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			rescuerCount = n
+		}
+	}
+
+	// Local poll interval: how often the local processor retries when
+	// resources remain queued (rate-limited). Defaults to 5s.
+	localPollInterval := 5 * time.Second
+	if v := os.Getenv("QUEUE_POLL_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			localPollInterval = d
+		}
+	}
+
+	// Optional delay before the local processor starts processing.
+	// For testing only: allows the rescuer to pick up resources first,
+	// verifying that orphan recovery works.
+	var localDelay time.Duration
+	if v := os.Getenv("QUEUE_LOCAL_DELAY"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			localDelay = d
+		}
+	}
+
+	log.Logger.Info("QueueProcessor: starting",
+		"locality", config.LocalityID,
+		"rescuer_interval", rescuerInterval,
+		"rescuer_count", rescuerCount,
+		"local_poll_interval", localPollInterval,
+		"local_delay", localDelay)
+
+	// Local processor: wakes on QueueNotify, processes own locality.
+	// After processing, if any resources remain queued, it retries on
+	// localPollInterval until the local queue is drained.
+	// Goroutine count: 1 (local) + rescuerCount (rescuers).
+	go func() {
+		log.Logger.Info("QueueProcessor: local processor started",
+			"locality", config.LocalityID,
+			"poll_interval", localPollInterval)
+
+		var retryTimer <-chan time.Time // nil until resources remain queued
+
+		for {
+			select {
+			case <-ctx.Done():
+				log.Logger.Info("QueueProcessor: local processor stopping")
+				return
+
+			case svcUuid := <-a.QueueNotify:
+				log.Logger.Info("QueueProcessor: local notification received",
+					"serviceUuid", svcUuid, "locality", config.LocalityID)
+				// Drain any additional notifications that arrived
+				drained := 0
+			drain:
+				for {
+					select {
+					case <-a.QueueNotify:
+						drained++
+					default:
+						break drain
+					}
+				}
+				if drained > 0 {
+					log.Logger.Info("QueueProcessor: drained additional notifications",
+						"count", drained)
+				}
+				if localDelay > 0 {
+					log.Logger.Info("QueueProcessor: local delay active, sleeping",
+						"delay", localDelay)
+					time.Sleep(localDelay)
+				}
+				remaining := a.processLocalQueue()
+				if remaining > 0 {
+					retryTimer = time.After(localPollInterval)
+				} else {
+					retryTimer = nil
+				}
+
+			case <-retryTimer:
+				remaining := a.processLocalQueue()
+				if remaining > 0 {
+					retryTimer = time.After(localPollInterval)
+				} else {
+					retryTimer = nil
+				}
+			}
+		}
+	}()
+
+	// Rescuers: poll on interval, process all localities (orphan recovery).
+	// Multiple rescuers compete for the same advisory lock — only one runs
+	// per cycle. This simulates multi-pod contention in CI.
+	for i := 0; i < rescuerCount; i++ {
+		rescuerID := i
 		go func() {
-			log.Logger.Info("QueueProcessor: goroutine started", "id", id)
-
+			log.Logger.Info("QueueProcessor: rescuer started",
+				"id", rescuerID, "interval", rescuerInterval)
 			for {
 				select {
 				case <-ctx.Done():
-					log.Logger.Info("QueueProcessor: context cancelled, stopping", "id", id)
+					log.Logger.Info("QueueProcessor: rescuer stopping",
+						"id", rescuerID)
 					return
-				case <-time.After(pollInterval):
-					a.processQueuedResources()
+				case <-time.After(rescuerInterval):
+					a.processRescuerQueue(rescuerInterval)
 				}
 			}
 		}()
 	}
 }
 
-// queueProcessorLockID is a fixed advisory lock ID for the queue processor.
+// queueProcessorLockID is a fixed advisory lock ID for the rescuer.
 // Only one instance across all pods can hold this lock at a time, preventing
-// race conditions when multiple instances poll concurrently.
+// race conditions when multiple rescuers poll concurrently.
 const queueProcessorLockID = 0x53414E44424F5851 // "SANDBOXQ"
 
-func (a *OcpSandboxProvider) processQueuedResources() {
+// processLocalQueue processes queued resources that belong to this pod's
+// locality. No global advisory lock — each pod only processes its own items.
+// Returns the number of resources still queued after processing (so the caller
+// can schedule a retry).
+func (a *OcpSandboxProvider) processLocalQueue() int {
+	queuedResources, err := a.FetchQueuedResourcesByLocality(config.LocalityID)
+	if err != nil {
+		log.Logger.Error("QueueProcessor: error fetching local queued resources", "error", err)
+		return 0
+	}
+	if len(queuedResources) == 0 {
+		return 0
+	}
+	log.Logger.Info("QueueProcessor: processing local queue",
+		"count", len(queuedResources), "locality", config.LocalityID)
+	a.processQueuedResourceList(queuedResources)
+
+	// Re-fetch to see how many are still queued after processing
+	remaining, err := a.FetchQueuedResourcesByLocality(config.LocalityID)
+	if err != nil {
+		return 0
+	}
+	return len(remaining)
+}
+
+// processRescuerQueue processes ALL queued resources regardless of locality.
+// Uses a global advisory lock to ensure only one rescuer runs across all pods.
+func (a *OcpSandboxProvider) processRescuerQueue(rescuerInterval time.Duration) {
 	ctx := context.Background()
 
 	// Acquire a transaction-scoped advisory lock. If another instance is
 	// already processing the queue, skip this cycle.
 	tx, err := a.DbPool.Begin(ctx)
 	if err != nil {
-		log.Logger.Error("QueueProcessor: error starting transaction", "error", err)
+		log.Logger.Error("QueueProcessor: rescuer error starting transaction", "error", err)
 		return
 	}
 	defer tx.Rollback(ctx)
@@ -3743,16 +3893,19 @@ func (a *OcpSandboxProvider) processQueuedResources() {
 	if err := tx.QueryRow(ctx,
 		"SELECT pg_try_advisory_xact_lock($1)", queueProcessorLockID,
 	).Scan(&locked); err != nil {
-		log.Logger.Error("QueueProcessor: error acquiring advisory lock", "error", err)
+		log.Logger.Error("QueueProcessor: rescuer error acquiring advisory lock", "error", err)
 		return
 	}
 	if !locked {
 		return
 	}
 
-	queuedResources, err := a.FetchQueuedResources()
+	// Fetch queued resources that haven't been checked recently.
+	// Resources actively handled by a local processor will have a fresh
+	// queue_checked_at and are skipped — the rescuer only picks up orphans.
+	queuedResources, err := a.FetchStaleQueuedResources(rescuerInterval)
 	if err != nil {
-		log.Logger.Error("QueueProcessor: error fetching queued resources", "error", err)
+		log.Logger.Error("QueueProcessor: rescuer error fetching queued resources", "error", err)
 		return
 	}
 
@@ -3760,15 +3913,24 @@ func (a *OcpSandboxProvider) processQueuedResources() {
 		return
 	}
 
-	log.Logger.Info("QueueProcessor: processing queued resources", "count", len(queuedResources))
+	log.Logger.Info("QueueProcessor: rescuer processing queued resources",
+		"count", len(queuedResources))
+	metrics.QueueRescuerProcessedTotal.Add(float64(len(queuedResources)))
 
-	// Collect resources ready to be dequeued while holding the lock.
-	// Track which clusters have been claimed in this cycle so we don't
-	// dequeue multiple resources targeting the same rate-limited cluster.
-	// The rate-limit check is read-only (IsRateLimited), so without this
-	// guard multiple resources would all see count=0, all be dequeued, but
-	// only the first would get the slot via CheckAndReserveSlot — the rest
-	// would be re-queued with new created_at timestamps, breaking FIFO order.
+	// Release the advisory lock before processing so we don't hold it
+	// during potentially slow provisioning operations.
+	if err := tx.Commit(ctx); err != nil {
+		log.Logger.Error("QueueProcessor: rescuer error committing transaction", "error", err)
+		return
+	}
+
+	a.processQueuedResourceList(queuedResources)
+}
+
+// processQueuedResourceList is the shared logic for both the local processor
+// and the rescuer. It evaluates each queued resource, checks rate limits via
+// CheckAndReserveSlot (atomic), and provisions resources that can be dequeued.
+func (a *OcpSandboxProvider) processQueuedResourceList(queuedResources []OcpSandboxWithCreds) {
 	var toDequeue []OcpSandboxWithCreds
 	claimedClusters := make(map[string]bool)
 
@@ -3777,6 +3939,18 @@ func (a *OcpSandboxProvider) processQueuedResources() {
 			log.Logger.Error("QueueProcessor: resource has no queued_params",
 				"id", res.ID, "name", res.Name)
 			continue
+		}
+
+		// Stamp queue_checked_at so the rescuer knows this resource was
+		// recently evaluated and can skip it.
+		if _, err := a.DbPool.Exec(context.Background(),
+			`UPDATE resources
+			 SET resource_data = jsonb_set(resource_data, '{queue_checked_at}', to_jsonb(now()::text))
+			 WHERE id = $1 AND status = 'queued'`,
+			res.ID,
+		); err != nil {
+			log.Logger.Error("QueueProcessor: error stamping queue_checked_at",
+				"error", err, "resource", res.Name)
 		}
 
 		params := res.QueuedParams
@@ -3836,11 +4010,8 @@ func (a *OcpSandboxProvider) processQueuedResources() {
 
 			// Use CheckAndReserveSlot (atomic check+reserve) instead of
 			// the read-only IsRateLimited. This sets ocp_cluster on the
-			// queued resource so subsequent queue cycles see it in their
-			// rate-limit count. Without this, rapid consecutive cycles
-			// (from multiple QUEUE_PROCESSORS goroutines) can each dequeue
-			// a resource for the same cluster because IsRateLimited
-			// doesn't see the pending dequeue.
+			// queued resource so it's visible to rate-limit counts,
+			// preventing concurrent processors from double-dequeuing.
 			rateLimited, err := res.CheckAndReserveSlot(&cluster)
 			if err != nil {
 				log.Logger.Error("QueueProcessor: error checking rate limit slot",
@@ -3863,7 +4034,7 @@ func (a *OcpSandboxProvider) processQueuedResources() {
 		}
 
 		// CAS-style update: only transition if still queued.
-		ct, err := a.DbPool.Exec(ctx,
+		ct, err := a.DbPool.Exec(context.Background(),
 			"UPDATE resources SET status = 'initializing', resource_data = jsonb_set(resource_data, '{status}', '\"initializing\"') WHERE id = $1 AND status = 'queued'",
 			res.ID,
 		)
@@ -3891,20 +4062,12 @@ func (a *OcpSandboxProvider) processQueuedResources() {
 		}
 	}
 
-	// Commit releases the advisory lock BEFORE provisioning.
-	if err := tx.Commit(ctx); err != nil {
-		log.Logger.Error("QueueProcessor: error committing transaction", "error", err)
-		return
-	}
-
-	// Trigger provisioning for each dequeued resource outside the lock.
+	// Trigger provisioning for each dequeued resource.
 	for _, res := range toDequeue {
 		a.provisionDequeuedResource(res)
 	}
 
 	// Check if any queued placements have all their resources provisioned.
-	// This handles the case where a resource was dequeued in a previous
-	// cycle and has since finished async provisioning.
 	queuedPlacements, err := FetchQueuedPlacements(a.DbPool)
 	if err != nil {
 		log.Logger.Error("QueueProcessor: error fetching queued placements for completion check", "error", err)
@@ -3913,6 +4076,110 @@ func (a *OcpSandboxProvider) processQueuedResources() {
 	for _, p := range queuedPlacements {
 		a.checkPlacementCompletion(p.ServiceUuid)
 	}
+}
+
+// FetchQueuedResourcesByLocality returns OcpSandbox resources with status "queued"
+// that were queued by the given locality (pod), ordered by creation time (FIFO).
+func (a *OcpSandboxProvider) FetchQueuedResourcesByLocality(localityID string) ([]OcpSandboxWithCreds, error) {
+	rows, err := a.DbPool.Query(
+		context.Background(),
+		`SELECT
+			resource_data,
+			id,
+			resource_name,
+			resource_type,
+			service_uuid,
+			created_at,
+			updated_at,
+			status,
+			cleanup_count
+		FROM resources
+		WHERE resource_type = 'OcpSandbox'
+		  AND status = 'queued'
+		  AND resource_data->'queued_params'->>'locality_id' = $1
+		ORDER BY created_at ASC`,
+		localityID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var resources []OcpSandboxWithCreds
+	for rows.Next() {
+		var r OcpSandboxWithCreds
+		if err := rows.Scan(
+			&r,
+			&r.ID,
+			&r.Name,
+			&r.Kind,
+			&r.ServiceUuid,
+			&r.CreatedAt,
+			&r.UpdatedAt,
+			&r.Status,
+			&r.CleanupCount,
+		); err != nil {
+			return nil, err
+		}
+		r.Provider = a
+		resources = append(resources, r)
+	}
+	return resources, nil
+}
+
+// FetchStaleQueuedResources returns queued resources that haven't been checked
+// by any processor within the given staleness threshold. Resources with a
+// recent queue_checked_at are being actively handled by a local processor
+// and are skipped. Resources with no queue_checked_at (e.g. from before this
+// feature) are always included.
+func (a *OcpSandboxProvider) FetchStaleQueuedResources(staleAfter time.Duration) ([]OcpSandboxWithCreds, error) {
+	rows, err := a.DbPool.Query(
+		context.Background(),
+		`SELECT
+			resource_data,
+			id,
+			resource_name,
+			resource_type,
+			service_uuid,
+			created_at,
+			updated_at,
+			status,
+			cleanup_count
+		FROM resources
+		WHERE resource_type = 'OcpSandbox'
+		  AND status = 'queued'
+		  AND (
+		    resource_data->>'queue_checked_at' IS NULL
+		    OR resource_data->>'queue_checked_at' < (now() - $1::interval)::text
+		  )
+		ORDER BY created_at ASC`,
+		fmt.Sprintf("%d seconds", int(staleAfter.Seconds())),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var resources []OcpSandboxWithCreds
+	for rows.Next() {
+		var r OcpSandboxWithCreds
+		if err := rows.Scan(
+			&r,
+			&r.ID,
+			&r.Name,
+			&r.Kind,
+			&r.ServiceUuid,
+			&r.CreatedAt,
+			&r.UpdatedAt,
+			&r.Status,
+			&r.CleanupCount,
+		); err != nil {
+			return nil, err
+		}
+		r.Provider = a
+		resources = append(resources, r)
+	}
+	return resources, nil
 }
 
 // provisionDequeuedResource provisions a previously queued resource by

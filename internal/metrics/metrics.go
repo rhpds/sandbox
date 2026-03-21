@@ -38,6 +38,12 @@ var (
 			Help: "Total number of resources dequeued from the provision queue",
 		},
 	)
+	QueueRescuerProcessedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "sandbox_queue_rescuer_processed_total",
+			Help: "Total number of resources processed by the rescuer (orphan recovery). High values indicate pod instability or local processor issues.",
+		},
+	)
 	PreCheckTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "sandbox_ratelimit_precheck_total",

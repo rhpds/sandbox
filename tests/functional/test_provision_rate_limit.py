@@ -44,14 +44,14 @@ Concurrency testing:
   To test the advisory lock mechanism under contention (simulating
   multiple pods in production), start the sandbox-api with:
 
-    QUEUE_PROCESSORS=20 QUEUE_POLL_INTERVAL=5s ./sandbox-api
+    QUEUE_RESCUERS=20 QUEUE_POLL_INTERVAL=5s QUEUE_LOCAL_DELAY=30s ./sandbox-api
 
-  This spawns 20 concurrent queue processor goroutines with a 5s poll
+  This spawns 20 concurrent rescuer goroutines with a 5s poll
   interval (default 30s). The shorter interval is important when using
-  short rate windows (e.g. 10s) to avoid test timeouts. All compete
-  for the same PostgreSQL advisory lock, so only one processes at a
-  time. The test verifies the queued placement is dequeued exactly
-  once (not double-processed).
+  short rate windows (e.g. 10s) to avoid test timeouts. All rescuers
+  compete for the same PostgreSQL advisory lock, so only one processes
+  at a time. QUEUE_LOCAL_DELAY=30s delays the local processor so the
+  rescuer test can verify orphan recovery works.
 
 Usage:
     export SANDBOX_API_URL="http://localhost:8080"
@@ -592,7 +592,7 @@ def run_tests():
             )
 
         # Step 7: Create additional overflow placements to stress-test
-        # concurrent queue processing (especially with QUEUE_PROCESSORS > 1)
+        # concurrent queue processing (especially with QUEUE_RESCUERS > 1)
         extra_overflow_count = 3
         logger.info(
             f"Creating {extra_overflow_count} additional overflow placements..."
@@ -2439,6 +2439,131 @@ __meta__:
         logger.info("Dry-run test clusters cleaned up")
 
 
+def get_metric(metric_name: str) -> float:
+    """Fetch a Prometheus metric value from the /metrics endpoint."""
+    resp = requests.get(f"{SANDBOX_API_URL}/metrics", verify=False)
+    resp.raise_for_status()
+    for line in resp.text.splitlines():
+        if line.startswith(metric_name + " "):
+            return float(line.split()[-1])
+    return 0.0
+
+
+MOCK_CLUSTER_RESCUER = "rl-test-rescuer"
+
+
+def run_rescuer_tests():
+    """Test that the rescuer picks up queued resources when the local
+    processor is delayed.
+
+    Requires the API to be started with QUEUE_LOCAL_DELAY=30s so the
+    local processor sleeps before processing. The rescuer (polling every
+    QUEUE_POLL_INTERVAL) should dequeue the resource first.
+
+    Scenario:
+      - Cluster with rate_limit=1
+      - Create 1 placement to fill the limit
+      - Create 1 more — gets queued
+      - Verify the rescuer dequeues it (within rescuer interval, not 30s)
+      - Check sandbox_queue_rescuer_processed_total metric incremented
+    """
+    admin_token = get_access_token(SANDBOX_API_URL, SANDBOX_ADMIN_LOGIN_TOKEN)
+    app_token = get_access_token(SANDBOX_API_URL, SANDBOX_LOGIN_TOKEN)
+    source = get_source_cluster(admin_token)
+
+    placement_uuids = []
+
+    try:
+        logger.info("=== Rescuer test ===")
+
+        setup_cluster(
+            admin_token,
+            source,
+            MOCK_CLUSTER_RESCUER,
+            annotations={
+                "cloud": "cnv-dedicated-shared",
+                "purpose": "dev",
+                "test_group": "rl-rescuer",
+                "name": MOCK_CLUSTER_RESCUER,
+            },
+            rate_limit=1,
+        )
+
+        selector = {
+            "cloud": "cnv-dedicated-shared",
+            "purpose": "dev",
+            "test_group": "rl-rescuer",
+        }
+
+        # Record rescuer metric before test
+        rescuer_before = get_metric("sandbox_queue_rescuer_processed_total")
+        logger.info(f"Rescuer metric before: {rescuer_before}")
+
+        # Step 1: Fill the rate limit
+        resp = create_placement(app_token, "rescuer-fill", cloud_selector=selector)
+        assert resp.status_code == 202, f"Fill placement failed: {resp.text}"
+        fill_uuid = make_service_uuid("rescuer-fill")
+        placement_uuids.append(fill_uuid)
+        status = resp.json().get("Placement", {}).get("status", "")
+        assert status != "queued", f"Fill placement should not be queued (status={status})"
+        logger.info(f"Fill placement created (status={status})")
+
+        # Step 2: Create a queued placement
+        resp = create_placement(app_token, "rescuer-queued", cloud_selector=selector)
+        assert resp.status_code == 202, f"Queued placement failed: {resp.text}"
+        queued_uuid = make_service_uuid("rescuer-queued")
+        placement_uuids.append(queued_uuid)
+        status = resp.json().get("Placement", {}).get("status", "")
+        assert status == "queued", f"Expected queued, got status={status}"
+        logger.info(f"Queued placement created (uuid={queued_uuid})")
+
+        # Step 3: Wait for dequeue — should happen via rescuer within
+        # ~QUEUE_POLL_INTERVAL (5s in CI) + rate window (10s), NOT the
+        # 30s local delay. If it takes >25s, the local processor did it.
+        dequeue_timeout = 25  # must be less than QUEUE_LOCAL_DELAY (30s)
+        logger.info(
+            f"Waiting for rescuer to dequeue (timeout={dequeue_timeout}s, "
+            f"local delay=30s)..."
+        )
+        start = time.time()
+        final_status = None
+        while time.time() - start < dequeue_timeout:
+            status = get_placement_status(app_token, queued_uuid)
+            if status != "queued":
+                final_status = status
+                break
+            time.sleep(POLL_INTERVAL)
+
+        elapsed = int(time.time() - start)
+
+        assert final_status is not None, (
+            f"Placement still queued after {dequeue_timeout}s — rescuer did not "
+            f"pick it up. Check QUEUE_RESCUERS and QUEUE_POLL_INTERVAL."
+        )
+        logger.info(
+            f"Placement dequeued by rescuer in {elapsed}s (status={final_status})"
+        )
+
+        # Step 4: Verify rescuer metric incremented
+        rescuer_after = get_metric("sandbox_queue_rescuer_processed_total")
+        logger.info(f"Rescuer metric after: {rescuer_after}")
+        assert rescuer_after > rescuer_before, (
+            f"Rescuer metric did not increment: before={rescuer_before}, "
+            f"after={rescuer_after}. The local processor may have handled it."
+        )
+        logger.info(
+            f"Rescuer metric incremented: {rescuer_before} → {rescuer_after}"
+        )
+
+        logger.info("=== Rescuer test PASSED ===")
+
+    except Exception as e:
+        logger.error(f"Rescuer test failed: {e}")
+        raise
+    finally:
+        cleanup(admin_token, app_token, placement_uuids, [MOCK_CLUSTER_RESCUER])
+
+
 if __name__ == "__main__":
     run_tests()
     run_multi_resource_same_cluster_tests()
@@ -2452,3 +2577,4 @@ if __name__ == "__main__":
     run_child_cluster_relation_tests()
     run_child_cluster_with_rate_limit_tests()
     run_cli_dry_run_tests()
+    run_rescuer_tests()
