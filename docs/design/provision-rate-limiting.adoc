@@ -73,32 +73,53 @@ Both rate-limit fields must be set together. When absent or null, no rate limiti
 Placement request arrives
 │
 ├─ For each resource in the placement:
-│   ├─ Find candidate clusters (existing: annotations, max_placements)
 │   │
-│   ├─ Create resource with status: "initializing" (saved to DB)
+│   ├─ Request() is called, which does everything below:
 │   │
-│   ├─ Synchronous slot reservation (resources WITHOUT cluster relations):
-│   │   └─ Loop through candidate clusters calling CheckAndReserveSlot()
-│   │       which uses pg_advisory_xact_lock to serialize concurrent checks
-│   │   └─ If one cluster has capacity → slot is reserved, proceed to async
-│   │   └─ If ALL clusters rate-limited → convert resource to "queued"
-│   │       └─ No async provisioning goroutine — resource waits in queue
+│   │  1. Find candidate clusters (cloud_selector annotations, max_placements)
 │   │
-│   ├─ Async provisioning goroutine (if slot was reserved):
-│   │   └─ Pre-reserved cluster is tried first (skips rate-limit re-check)
-│   │   └─ If pre-reserved cluster fails (connectivity, etc.) → fallback to
-│   │       other candidates with normal CheckAndReserveSlot() checks
+│   │  2. Apply cloud_preference — sort candidates by priority weight
+│   │     (ApplyPriorityWeight). Preferred clusters are tried first in
+│   │     all subsequent steps.
+│   │
+│   │  3. Save resource to DB with status "initializing"
+│   │     (must exist before rate-limit count queries run)
+│   │
+│   │  4. Synchronous rate-limit check (resources WITHOUT cluster relations):
+│   │     └─ Loop through candidates (priority order) calling
+│   │         CheckAndReserveSlot() (pg_advisory_xact_lock serializes)
+│   │     └─ If one cluster has capacity:
+│   │         └─ Slot is reserved (ocp_cluster set on the resource)
+│   │         └─ Launch async provisioning goroutine (step 5)
+│   │     └─ If ALL clusters rate-limited:
+│   │         └─ Convert resource to "queued", return — no goroutine
+│   │
+│   │  5. Async provisioning goroutine (only if step 4 reserved a slot):
+│   │     └─ Provisions on the reserved cluster (namespace, RBAC, quota, etc.)
+│   │     └─ No rate-limit re-check needed — slot was reserved in step 4
+│   │     └─ If the cluster fails (connectivity, node issues, etc.):
+│   │         └─ Slot is cleared (reserveClusterSlot(""))
+│   │         └─ Falls back to other candidates with CheckAndReserveSlot()
+│   │             (legacy resilience from pre-rate-limiting providerLoop)
 │   │
 │   └─ Resource ends up with status: "initializing", "scheduling", or "queued"
 │
 ├─ Cluster relation handling (same_cluster_as, different_cluster_from):
-│   ├─ Resources WITH cluster relations skip the synchronous slot
-│   │   reservation (candidate clusters can't be resolved until siblings
-│   │   provision). Rate-limit checks happen in the async goroutine via
+│   ├─ Resources WITH cluster relations skip steps 1-2 and 4 — candidate
+│   │   clusters can't be resolved until sibling resources provision.
+│   │   Steps 1-2 (cluster lookup + cloud_preference sort) and rate-limit
+│   │   checks happen inside the async goroutine (step 5) via
 │   │   CheckAndReserveSlot() after cluster relations are resolved.
 │   ├─ If a referenced sibling resource is "queued", the dependent
 │   │   resource is also created as "queued" (it can't resolve yet)
 │   └─ The queue processor dequeues them in dependency order
+│
+├─ Queue processing (dequeued resources):
+│   ├─ canDequeue() applies cloud_preference (ApplyPriorityWeight)
+│   │   before trying CheckAndReserveSlot on candidates
+│   ├─ provisionDequeuedResource() re-calls Request() which applies
+│   │   cloud_preference again in steps 1-2 above
+│   └─ Preferred clusters are respected throughout the full lifecycle
 │
 └─ After all resources processed:
     ├─ Any resource "queued" → set placement status to "queued"

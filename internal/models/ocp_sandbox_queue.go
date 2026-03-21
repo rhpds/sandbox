@@ -393,6 +393,13 @@ func (a *OcpSandboxProvider) canDequeue(res *OcpSandboxWithCreds, claimedCluster
 		return false
 	}
 
+	// Apply cloud_preference to sort candidates by priority.
+	// This matters because claimedClusters limits to one dequeue per
+	// cluster per cycle — preferred clusters should be tried first.
+	if len(params.CloudPreference) > 0 {
+		clusters = ApplyPriorityWeight(clusters, params.CloudPreference, 1)
+	}
+
 	for _, cluster := range clusters {
 		if claimedClusters[cluster.Name] {
 			continue
