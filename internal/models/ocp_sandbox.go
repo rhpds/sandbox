@@ -1328,18 +1328,21 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByAnnotations(annot
 		return []OcpSharedClusterConfiguration{}, err
 	}
 
+	var clusterNames []string
 	for rows.Next() {
 		var clusterName string
-
 		if err := rows.Scan(&clusterName); err != nil {
 			return []OcpSharedClusterConfiguration{}, err
 		}
+		clusterNames = append(clusterNames, clusterName)
+	}
+	rows.Close()
 
+	for _, clusterName := range clusterNames {
 		cluster, err := p.GetOcpSharedClusterConfigurationByName(clusterName)
 		if err != nil {
 			return []OcpSharedClusterConfiguration{}, err
 		}
-
 		clusters = append(clusters, cluster)
 	}
 
@@ -1899,18 +1902,25 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(
 		return OcpSharedClusterConfigurations{}, err
 	}
 
+	// Collect cluster names first and close rows to release the pool
+	// connection. Calling GetOcpSharedClusterConfigurationByName inside the
+	// rows.Next() loop would hold one connection (for rows) while acquiring
+	// another (for the inner query), causing pool deadlock under burst load.
+	var clusterNames []string
 	for rows.Next() {
 		var clusterName string
-
 		if err := rows.Scan(&clusterName); err != nil {
 			return OcpSharedClusterConfigurations{}, err
 		}
+		clusterNames = append(clusterNames, clusterName)
+	}
+	rows.Close()
 
+	for _, clusterName := range clusterNames {
 		cluster, err := a.GetOcpSharedClusterConfigurationByName(clusterName)
 		if err != nil {
 			return OcpSharedClusterConfigurations{}, err
 		}
-
 		clusters = append(clusters, cluster)
 	}
 
