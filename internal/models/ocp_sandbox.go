@@ -69,6 +69,20 @@ type OcpSandboxProvider struct {
 	// Used in tests to verify rescuer behavior without local processor
 	// interference. Toggle via PUT /api/v1/admin/queue-processor.
 	LocalProcessorPaused atomic.Bool
+
+	// clusterLocks serializes CheckAndReserveSlot calls per cluster
+	// within this pod. This prevents multiple goroutines from holding
+	// pool connections while blocking on the same advisory lock in the DB,
+	// keeping the connection pool small. The DB advisory lock still
+	// protects cross-pod concurrency.
+	clusterLocks sync.Map
+}
+
+// clusterLock returns a mutex for the given cluster name, creating one
+// on first access. Used by CheckAndReserveSlot to serialize within a pod.
+func (p *OcpSandboxProvider) clusterLock(name string) *sync.Mutex {
+	v, _ := p.clusterLocks.LoadOrStore(name, &sync.Mutex{})
+	return v.(*sync.Mutex)
 }
 
 type OcpSharedClusterConfiguration struct {
@@ -1431,7 +1445,8 @@ func (a *OcpSandboxWithCreds) reserveClusterSlot(clusterName string) error {
 }
 
 // CheckAndReserveSlot atomically checks the rate limit and reserves a slot on the cluster.
-// Uses pg_advisory_xact_lock to serialize concurrent checks for the same cluster.
+// Uses a per-cluster Go mutex to serialize within this pod (avoiding pool
+// connection exhaustion) and pg_advisory_xact_lock to serialize across pods.
 // Returns (rateLimited bool, err error). If not rate limited, the slot is reserved.
 func (a *OcpSandboxWithCreds) CheckAndReserveSlot(cluster *OcpSharedClusterConfiguration) (bool, error) {
 	if cluster.Settings.ProvisionRateLimit == nil {
@@ -1439,6 +1454,13 @@ func (a *OcpSandboxWithCreds) CheckAndReserveSlot(cluster *OcpSharedClusterConfi
 		metrics.SlotReservationTotal.WithLabelValues(cluster.Name).Inc()
 		return false, a.reserveClusterSlot(cluster.Name)
 	}
+
+	// Serialize within this pod: only one goroutine per cluster enters the
+	// DB transaction at a time. Others wait here in Go memory, not holding
+	// a pool connection. This keeps the pool small even under burst load.
+	mu := a.Provider.clusterLock(cluster.Name)
+	mu.Lock()
+	defer mu.Unlock()
 
 	window, err := ParseHumanDuration(cluster.Settings.ProvisionRateWindow)
 	if err != nil {
@@ -1458,7 +1480,10 @@ func (a *OcpSandboxWithCreds) CheckAndReserveSlot(cluster *OcpSharedClusterConfi
 	}
 	defer tx.Rollback(context.Background())
 
-	// Acquire an advisory lock scoped to this cluster (released on commit/rollback)
+	// Acquire an advisory lock scoped to this cluster (released on commit/rollback).
+	// This blocks until the lock is available, serializing concurrent rate-limit
+	// checks for the same cluster. The connection pool must be sized large enough
+	// (DATABASE_MAX_CONNS) to avoid exhaustion under concurrent burst load.
 	lockStart := time.Now()
 	if _, err := tx.Exec(context.Background(),
 		"SELECT pg_advisory_xact_lock($1)", lockKey); err != nil {

@@ -429,7 +429,8 @@ def cleanup_test_namespaces(admin_token: str):
         return
 
     logger.info(f"Found {len(test_namespaces)} leftover test namespace(s) to clean up")
-    for ns_name in test_namespaces:
+
+    def delete_namespace(ns_name):
         try:
             resp = requests.delete(
                 f"{api_url}/api/v1/namespaces/{ns_name}",
@@ -446,6 +447,9 @@ def cleanup_test_namespaces(admin_token: str):
         except Exception as e:
             logger.warning(f"  Failed to delete namespace {ns_name}: {e}")
 
+    with ThreadPoolExecutor(max_workers=50) as executor:
+        list(executor.map(delete_namespace, test_namespaces))
+
 
 def cleanup(admin_token: str, app_token: str, placement_uuids: list, cluster_names: list = None):
     """Remove test resources.
@@ -458,8 +462,8 @@ def cleanup(admin_token: str, app_token: str, placement_uuids: list, cluster_nam
         cluster_names = [MOCK_CLUSTER]
     logger.info("Cleaning up...")
 
-    # Force-delete test placements (synchronous DB removal, no cluster cleanup)
-    for uuid_str in placement_uuids:
+    # Force-delete test placements concurrently (synchronous DB removal, no cluster cleanup)
+    def force_delete_one(uuid_str):
         resp = api_request(
             "DELETE",
             f"/api/v1/placements/{uuid_str}/force",
@@ -468,6 +472,9 @@ def cleanup(admin_token: str, app_token: str, placement_uuids: list, cluster_nam
         )
         if resp.status_code not in (200, 202, 404):
             logger.warning(f"Failed to force-delete placement {uuid_str}: {resp.status_code}")
+
+    with ThreadPoolExecutor(max_workers=50) as executor:
+        list(executor.map(force_delete_one, placement_uuids))
 
     # Remove rate limit and delete clusters
     for cname in cluster_names:
@@ -2619,3 +2626,7 @@ if __name__ == "__main__":
     run_child_cluster_with_rate_limit_tests()
     run_cli_dry_run_tests()
     run_rescuer_tests()
+
+    # Print rescuer activity metric to verify rescuers are not interfering
+    rescuer_total = get_metric("sandbox_queue_rescuer_processed_total")
+    logger.info(f"sandbox_queue_rescuer_processed_total = {rescuer_total}")

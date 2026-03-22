@@ -132,7 +132,7 @@ A naive implementation checks the rate limit and reserves the slot as two separa
 
 The solution uses PostgreSQL advisory locks (`pg_advisory_xact_lock`) keyed on a hash of the cluster name:
 
-1. **Synchronous slot reservation (`CheckAndReserveSlot`):** After the resource is saved to the database, the `Request()` function synchronously loops through candidate clusters calling `CheckAndReserveSlot()`. Each call acquires an advisory lock for one cluster, checks the count, and if under the limit, reserves the slot (updates `resource_data->>'ocp_cluster'`) — all within the same transaction. The lock is released on commit/rollback.
+1. **Synchronous slot reservation (`CheckAndReserveSlot`):** After the resource is saved to the database, the `Request()` function synchronously loops through candidate clusters calling `CheckAndReserveSlot()`. A per-cluster Go mutex serializes access within each pod — only one goroutine per cluster enters the DB at a time, others wait in Go memory without holding a pool connection. The DB transaction acquires `pg_advisory_xact_lock` (for cross-pod safety), checks the count, and if under the limit, reserves the slot (updates `resource_data->>'ocp_cluster'`). The lock is released on commit/rollback.
 
 2. **Why synchronous?** The resource must exist in the database _before_ the rate-limit count check runs. This prevents the TOCTOU race where concurrent requests all see count=0 and all pass through. By saving first and then checking under an advisory lock, each concurrent request sees the correct count of existing resources.
 
@@ -427,7 +427,7 @@ These issues were discovered during implementation and testing. They represent o
 
 **Problem:** A naive rate-limit implementation checks the count and reserves the slot as two separate operations. Under concurrent burst load (e.g. 50 placements arriving simultaneously), multiple requests all see count=0 and all pass through, exceeding the rate limit.
 
-**Fix:** `CheckAndReserveSlot()` performs the count check AND the slot reservation (`resource_data->>'ocp_cluster'` update) within a single transaction, serialized by `pg_advisory_xact_lock(FNV32a(clusterName))`. Each concurrent request blocks on the lock, sees the updated count from the previous request, and either reserves or denies. The resource must be saved to DB _before_ the check (save as `"initializing"` first) so it's visible to count queries.
+**Fix:** `CheckAndReserveSlot()` performs the count check AND the slot reservation (`resource_data->>'ocp_cluster'` update) within a single transaction, serialized by a per-cluster Go mutex (within-pod) and `pg_advisory_xact_lock(FNV32a(clusterName))` (cross-pod). The Go mutex prevents pool connection exhaustion under burst load by ensuring only one goroutine per cluster holds a DB connection at a time. The resource must be saved to DB _before_ the check (save as `"initializing"` first) so it's visible to count queries.
 
 **Maintenance risk:** The synchronous-first design (save → check under lock → queue or proceed) is load-bearing. Any refactor that moves the save after the check reintroduces the TOCTOU race.
 
@@ -460,7 +460,7 @@ These issues were discovered during implementation and testing. They represent o
 
 **Design:** Three different locking scopes co-exist:
 
-* `CheckAndReserveSlot`: `pg_advisory_xact_lock(FNV32a(clusterName))` — per-cluster lock, serializes concurrent slot reservations. Used by both `Request()` (synchronous path) and `processQueuedResourceList` (queue processor).
+* `CheckAndReserveSlot`: per-cluster Go mutex (within-pod, `sync.Map` of `*sync.Mutex`) + `pg_advisory_xact_lock(FNV32a(clusterName))` (cross-pod). The Go mutex ensures only one goroutine per cluster holds a pool connection, preventing exhaustion under burst load. Used by both `Request()` (synchronous path) and `processQueuedResourceList` (queue processor).
 * Rescuer: `pg_try_advisory_xact_lock(queueProcessorLockID)` — global lock, ensures single-instance execution across pods. The local processor does NOT use this lock (locality-scoped, no contention).
 * `IsRateLimited()`: no lock — read-only, used by dry-run only.
 

@@ -36,6 +36,7 @@ from test_provision_rate_limit import (
     SANDBOX_LOGIN_TOKEN,
     POLL_INTERVAL,
     get_access_token,
+    get_metric,
     get_source_cluster,
     setup_cluster,
     make_service_uuid,
@@ -146,7 +147,9 @@ def run_load_test():
             f"Cluster B: {len(passed_b)} passed, {len(queued_b)} queued"
         )
 
-        # All should pass (100 per cluster, limit=100)
+        # All should pass (100 per cluster, limit=100).
+        # With DATABASE_MAX_CONNS=50 the blocking advisory lock can handle
+        # 200 concurrent requests without pool exhaustion.
         assert len(passed_a) == phase1_count, (
             f"Cluster A: expected {phase1_count} to pass, got {len(passed_a)} "
             f"({len(queued_a)} queued)"
@@ -278,3 +281,6 @@ def run_load_test():
 
 if __name__ == "__main__":
     run_load_test()
+
+    rescuer_total = get_metric("sandbox_queue_rescuer_processed_total")
+    logger.info(f"sandbox_queue_rescuer_processed_total = {rescuer_total}")
