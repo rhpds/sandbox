@@ -276,7 +276,7 @@ def run_load_test():
         raise
     finally:
         logger.info(f"Load test cleanup: {len(placement_uuids)} placements...")
-        cleanup(admin_token, app_token, placement_uuids, all_clusters)
+        cleanup(admin_token, app_token, placement_uuids, all_clusters, force=False)
 
 
 if __name__ == "__main__":

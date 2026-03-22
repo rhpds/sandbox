@@ -451,30 +451,40 @@ def cleanup_test_namespaces(admin_token: str):
         list(executor.map(delete_namespace, test_namespaces))
 
 
-def cleanup(admin_token: str, app_token: str, placement_uuids: list, cluster_names: list = None):
+def cleanup(admin_token: str, app_token: str, placement_uuids: list, cluster_names: list = None,
+            force: bool = True):
     """Remove test resources.
 
-    Uses force-delete to synchronously remove placements and their resources
-    from the DB. This prevents stale resources (still to_cleanup=false during
-    async Release) from interfering with subsequent tests' rate-limit counts.
+    By default uses force-delete (synchronous DB removal, no cluster cleanup)
+    to prevent stale resources from interfering with subsequent tests'
+    rate-limit counts.
+
+    Set force=False to use regular delete — the API handles cleanup
+    asynchronously (faster for large batches like load tests).
     """
     if cluster_names is None:
         cluster_names = [MOCK_CLUSTER]
     logger.info("Cleaning up...")
 
-    # Force-delete test placements concurrently (synchronous DB removal, no cluster cleanup)
-    def force_delete_one(uuid_str):
+    if force:
+        delete_path = lambda uuid_str: f"/api/v1/placements/{uuid_str}/force"
+        token = admin_token
+    else:
+        delete_path = lambda uuid_str: f"/api/v1/placements/{uuid_str}"
+        token = app_token
+
+    def delete_one(uuid_str):
         resp = api_request(
             "DELETE",
-            f"/api/v1/placements/{uuid_str}/force",
-            admin_token,
-            description=f"force-delete placement {uuid_str}",
+            delete_path(uuid_str),
+            token,
+            description=f"{'force-' if force else ''}delete placement {uuid_str}",
         )
         if resp.status_code not in (200, 202, 404):
-            logger.warning(f"Failed to force-delete placement {uuid_str}: {resp.status_code}")
+            logger.warning(f"Failed to delete placement {uuid_str}: {resp.status_code}")
 
     with ThreadPoolExecutor(max_workers=50) as executor:
-        list(executor.map(force_delete_one, placement_uuids))
+        list(executor.map(delete_one, placement_uuids))
 
     # Remove rate limit and delete clusters
     for cname in cluster_names:
