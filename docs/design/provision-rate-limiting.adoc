@@ -87,7 +87,7 @@ Placement request arrives
 │   │
 │   │  4. Synchronous rate-limit check (resources WITHOUT cluster relations):
 │   │     └─ Loop through candidates (priority order) calling
-│   │         CheckAndReserveSlot() (pg_advisory_xact_lock serializes)
+│   │         CheckAndReserveSlot() (Go mutex + pg_advisory_xact_lock)
 │   │     └─ If one cluster has capacity:
 │   │         └─ Slot is reserved (ocp_cluster set on the resource)
 │   │         └─ Launch async provisioning goroutine (step 5)
@@ -244,6 +244,10 @@ No per-resource goroutines are created. A single goroutine processes all queued 
 | `QUEUE_RESCUERS`
 | `1`
 | Number of rescuer goroutines per pod (>1 for stress-testing)
+
+| `DATABASE_MAX_CONNS`
+| `10`
+| Maximum database connection pool size per pod. The per-cluster Go mutex keeps actual usage low (1 connection per cluster at a time), but a higher pool allows headroom for non-rate-limit queries under load.
 |===
 
 === FIFO Ordering Guarantees
@@ -522,7 +526,7 @@ This is a trade-off: strict FIFO vs throughput. For most production scenarios (r
 - [x] Add `GetRecentProvisionCount(window time.Duration) (int, error)` method
 - [x] Add `IsRateLimited() (bool, int, error)` method (read-only, used by dry-run and queue processor)
 - [x] Add `reserveClusterSlot()` for setting `ocp_cluster` on a resource
-- [x] Add `CheckAndReserveSlot()` — atomic check + reserve using `pg_advisory_xact_lock`
+- [x] Add `CheckAndReserveSlot()` — per-cluster Go mutex (`clusterLocks sync.Map`) + `pg_advisory_xact_lock` for atomic check + reserve
 - [x] Define `ErrRateLimited` sentinel error
 - [x] Add `StartQueueProcessor(ctx context.Context)` on `OcpSandboxProvider`
   ** Local processor (signal-driven via `QueueNotify`, locality-scoped, retries on `QUEUE_POLL_INTERVAL`)
