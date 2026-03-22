@@ -8,6 +8,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 014/quick-login-admin-token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -22,6 +23,7 @@ jsonpath "$.access_token_exp" isString
 # Ensure no job is running before starting test
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 014/quick-wait-no-running
 [Options]
 retry: 10
 HTTP 200
@@ -30,6 +32,7 @@ jsonpath "$.status" != "running"
 
 POST {{host}}/api/v1/ocp-shared-clusters/status?debug_force_fail=immediate&debug_custom_timeout=10s
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 014/quick-trigger-immediate-fail
 HTTP 202
 [Captures]
 quick_fail_request_id: jsonpath "$.request_id"
@@ -41,6 +44,7 @@ jsonpath "$.message" == "Status Request successfully created"
 # Wait a moment and check that it failed immediately
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 014/quick-verify-immediate-fail-error
 [Options]
 retry: 10
 HTTP 200
@@ -57,6 +61,7 @@ jsonpath "$.completed_at" isString
 # Ensure no job is running before starting normal test
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 014/quick-wait-no-running-before-normal
 [Options]
 retry: 10
 HTTP 200
@@ -65,6 +70,7 @@ jsonpath "$.status" != "running"
 
 POST {{host}}/api/v1/ocp-shared-clusters/status?debug_custom_timeout=10s
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 014/quick-trigger-normal-status
 HTTP 202
 [Captures]
 normal_request_id: jsonpath "$.request_id"
@@ -76,6 +82,7 @@ jsonpath "$.message" == "Status Request successfully created"
 # Check that it runs normally
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 014/quick-verify-normal-status
 [Options]
 retry: 5
 HTTP 200

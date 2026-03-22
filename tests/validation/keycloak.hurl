@@ -4,6 +4,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: validation/keycloak/login: get app access token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -17,6 +18,7 @@ jsonpath "$.access_token_exp" isString
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/keycloak/test: create placement with keycloak
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -49,6 +51,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/keycloak/test: wait for keycloak placement
 [Options]
 retry: 40
 HTTP 200
@@ -71,10 +74,12 @@ jsonpath "$.resources[0].console_url" contains "https://"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/keycloak/cleanup: delete keycloak placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/keycloak/cleanup: wait for keycloak deletion
 [Options]
 retry: 40
 HTTP 404

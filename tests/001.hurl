@@ -4,6 +4,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 001/login: get app access token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -17,6 +18,7 @@ jsonpath "$.access_token_exp" isString
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 001/login: get admin access token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -29,6 +31,7 @@ jsonpath "$.access_token_exp" isString
 #################################################################################
 DELETE {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 001/delete-reservation: cleanup before test
 [Options]
 retry: 3
 HTTP 404
@@ -39,6 +42,7 @@ HTTP 404
 
 POST {{host}}/api/v1/reservations
 Authorization: Bearer {{access_token}}
+X-Test-Description: 001/create-reservation-no-admin: post without admin token
 {
   "name": "reservation-{{guid}}",
   "resources": [
@@ -52,6 +56,7 @@ HTTP 401
 
 PUT {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 001/update-reservation-no-admin: put without admin token
 {
   "name": "reservation-{{guid}}",
   "resources": [
@@ -65,6 +70,7 @@ HTTP 401
 
 DELETE {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 001/delete-reservation-no-admin: delete without admin token
 HTTP 401
 
 #################################################################################
@@ -74,6 +80,7 @@ HTTP 401
 
 POST {{host}}/api/v1/reservations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 001/create-reservation-too-big: reservation exceeds max
 {
   "name": "reservation-{{guid}}",
   "resources": [
@@ -94,6 +101,7 @@ jsonpath "$.message" contains "You can only reserve up to"
 
 POST {{host}}/api/v1/reservations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 001/create-reservation-duplicate-resources: duplicate kind returns 400
 {
   "name": "reservation-{{guid}}",
   "resources": [
@@ -138,6 +146,7 @@ jsonpath "$.message" == "Kind AwsSandbox is defined more than once"
 
 POST {{host}}/api/v1/reservations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 001/create-reservation: new reservation
 {
   "name": "reservation-{{guid}}",
   "resources": [
@@ -157,6 +166,7 @@ jsonpath "$.message" == "Reservation request created"
 
 POST {{host}}/api/v1/reservations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 001/create-reservation-conflict: reservation already exists
 {
   "name": "reservation-{{guid}}",
   "resources": [
@@ -176,6 +186,7 @@ jsonpath "$.message" == "Reservation already exists"
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 001/wait-reservation: wait for ready
 [Options]
 retry: 50
 HTTP 200
@@ -188,6 +199,7 @@ jsonpath "$.reservation.status" == "success"
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 001/check-reservation-2-resources: ensure definition has 2 resources
 HTTP 200
 [Asserts]
 jsonpath "$.reservation.request.resources[0].count" == 2
@@ -198,6 +210,7 @@ jsonpath "$.reservation.request.resources[0].count" == 2
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}/resources
 Authorization: Bearer {{access_token}}
+X-Test-Description: 001/list-2-resources: ensure 2 resources listed
 HTTP 200
 [Asserts]
 jsonpath "$.resources" count == 2
@@ -209,6 +222,7 @@ jsonpath "$.count" == 2
 
 PUT {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 001/update-reservation-scale-up: scale up to 5
 {
   "resources": [
     {
@@ -227,6 +241,7 @@ jsonpath "$.message" == "Reservation update request created"
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 001/wait-updating-after-scale-up: ensure status is updating
 [Options]
 retry: 20
 HTTP 200
@@ -239,6 +254,7 @@ jsonpath "$.reservation.status" == "updating"
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 001/wait-ready-after-scale-up: ensure reservation is ready
 [Options]
 retry: 25
 HTTP 200
@@ -251,6 +267,7 @@ jsonpath "$.reservation.status" == "success"
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 001/check-reservation-5-resources: ensure definition has 5 resources
 HTTP 200
 [Asserts]
 jsonpath "$.reservation.request.resources[0].count" == 5
@@ -261,6 +278,7 @@ jsonpath "$.reservation.request.resources[0].count" == 5
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}/resources
 Authorization: Bearer {{access_token}}
+X-Test-Description: 001/list-5-resources: ensure 5 resources listed
 [Options]
 retry: 10
 HTTP 200
@@ -274,6 +292,7 @@ jsonpath "$.count" == 5
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 001/create-placement: order account with reservation
 {
   "service_uuid": "{{uuid}}",
   "reservation": "reservation-{{guid}}",
@@ -300,6 +319,7 @@ jsonpath "$.Placement.resources[0].reservation" == "reservation-{{guid}}"
 
 PUT {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 001/scale-down-reservation: scale down to 1
 {
   "resources": [
     {
@@ -318,6 +338,7 @@ jsonpath "$.message" == "Reservation update request created"
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 001/wait-updating-after-scale-down: ensure status is updating
 [Options]
 retry: 10
 HTTP 200
@@ -330,6 +351,7 @@ jsonpath "$.reservation.status" == "updating"
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 001/wait-ready-after-scale-down: ensure reservation is ready
 [Options]
 retry: 20
 HTTP 200
@@ -342,6 +364,7 @@ jsonpath "$.reservation.status" == "success"
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 001/check-reservation-1-resource: ensure definition has 1 resource
 HTTP 200
 [Asserts]
 jsonpath "$.reservation.request.resources[0].count" == 1
@@ -352,6 +375,7 @@ jsonpath "$.reservation.request.resources[0].count" == 1
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}/resources
 Authorization: Bearer {{access_token}}
+X-Test-Description: 001/list-1-resource: ensure 1 resource listed
 HTTP 200
 [Asserts]
 jsonpath "$.resources" count == 1
@@ -363,6 +387,7 @@ jsonpath "$.count" == 1
 
 DELETE {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 001/delete-reservation-final: delete the reservation
 HTTP 202
 [Asserts]
 jsonpath "$.message" == "Reservation deletion request created"
@@ -373,6 +398,7 @@ jsonpath "$.message" == "Reservation deletion request created"
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 001/wait-deleting: ensure status is deleting
 HTTP 200
 [Asserts]
 jsonpath "$.reservation.status" == "deleting"
@@ -383,6 +409,7 @@ jsonpath "$.reservation.status" == "deleting"
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 001/wait-reservation-gone: ensure reservation is gone
 [Options]
 retry: 30
 HTTP 404

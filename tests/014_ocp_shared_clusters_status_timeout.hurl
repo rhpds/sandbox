@@ -8,6 +8,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 014/login-admin-token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -22,6 +23,7 @@ jsonpath "$.access_token_exp" isString
 
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 014/wait-no-running-before-immediate-fail
 [Options]
 retry: 30
 HTTP 200
@@ -30,6 +32,7 @@ jsonpath "$.status" != "running"
 
 POST {{host}}/api/v1/ocp-shared-clusters/status?debug_force_fail=immediate&debug_custom_timeout=10s
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 014/trigger-immediate-fail
 HTTP 202
 [Captures]
 immediate_fail_request_id: jsonpath "$.request_id"
@@ -41,6 +44,7 @@ jsonpath "$.message" == "Status Request successfully created"
 # Wait a moment and check that it failed immediately
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 014/verify-immediate-fail-error
 [Options]
 retry: 10
 HTTP 200
@@ -57,6 +61,7 @@ jsonpath "$.completed_at" isString
 # Ensure no job is running before starting fleet timeout test
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 014/wait-no-running-before-fleet-timeout
 [Options]
 retry: 10
 HTTP 200
@@ -65,6 +70,7 @@ jsonpath "$.status" != "running"
 
 POST {{host}}/api/v1/ocp-shared-clusters/status?debug_force_timeout=fleet&debug_custom_timeout=10s
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 014/trigger-fleet-timeout
 HTTP 202
 [Captures]
 fleet_timeout_request_id: jsonpath "$.request_id"
@@ -76,6 +82,7 @@ jsonpath "$.message" == "Status Request successfully created"
 # Check that it's initially running
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 014/verify-fleet-timeout-running
 [Options]
 retry: 10
 HTTP 200
@@ -86,6 +93,7 @@ jsonpath "$.status" == "running"
 # Wait for timeout to occur and verify it's marked as error
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 014/verify-fleet-timeout-error
 [Options]
 retry: 15
 HTTP 200
@@ -102,6 +110,7 @@ jsonpath "$.completed_at" isString
 # Ensure no job is running before starting cluster timeout test
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 014/wait-no-running-before-cluster-timeout
 [Options]
 retry: 10
 HTTP 200
@@ -110,6 +119,7 @@ jsonpath "$.status" != "running"
 
 POST {{host}}/api/v1/ocp-shared-clusters/status?debug_force_timeout=cluster&debug_custom_timeout=10s
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 014/trigger-cluster-timeout
 HTTP 202
 [Captures]
 cluster_timeout_request_id: jsonpath "$.request_id"
@@ -121,6 +131,7 @@ jsonpath "$.message" == "Status Request successfully created"
 # Check that it's initially running
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 014/verify-cluster-timeout-running
 [Options]
 retry: 10
 HTTP 200
@@ -131,6 +142,7 @@ jsonpath "$.status" == "running"
 # Wait for cluster timeout to be detected and fleet marked as error
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 014/verify-cluster-timeout-error
 [Options]
 retry: 20
 HTTP 200

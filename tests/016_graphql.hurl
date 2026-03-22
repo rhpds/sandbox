@@ -8,6 +8,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 016/login-admin-access-token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -20,6 +21,7 @@ jsonpath "$.access_token" isString
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 016/login-regular-access-token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -31,6 +33,7 @@ jsonpath "$.access_token" isString
 #################################################################################
 
 POST {{host}}/api/v1/graphql
+X-Test-Description: 016/graphql-no-auth
 Content-Type: application/json
 {
   "query": "{ placements(limit: 1) { id } }"
@@ -43,6 +46,7 @@ HTTP 401
 
 POST {{host}}/api/v1/graphql
 Authorization: Bearer {{access_token}}
+X-Test-Description: 016/graphql-regular-token-denied
 Content-Type: application/json
 {
   "query": "{ placements(limit: 1) { id } }"
@@ -55,6 +59,7 @@ HTTP 401
 
 POST {{host}}/api/v1/graphql
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 016/graphql-query-placements
 Content-Type: application/json
 {
   "query": "{ placements(limit: 5) { id serviceUuid status toCleanup createdAt updatedAt } }"
@@ -69,6 +74,7 @@ jsonpath "$.data.placements" isCollection
 
 POST {{host}}/api/v1/graphql
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 016/graphql-placements-status-filter
 Content-Type: application/json
 {
   "query": "{ placements(status: \"success\", limit: 10) { id serviceUuid status } }"
@@ -83,6 +89,7 @@ jsonpath "$.data.placements" isCollection
 
 POST {{host}}/api/v1/graphql
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 016/graphql-placements-tocleanup-filter
 Content-Type: application/json
 {
   "query": "{ placements(toCleanup: false, limit: 5) { id serviceUuid toCleanup } }"
@@ -97,6 +104,7 @@ jsonpath "$.data.placements" isCollection
 
 POST {{host}}/api/v1/graphql
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 016/graphql-placement-by-id-nonexistent
 Content-Type: application/json
 {
   "query": "{ placement(id: 999999999) { id serviceUuid status } }"
@@ -111,6 +119,7 @@ jsonpath "$.data.placement" == null
 
 POST {{host}}/api/v1/graphql
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 016/graphql-placement-by-uuid-nonexistent
 Content-Type: application/json
 {
   "query": "{ placementByServiceUuid(serviceUuid: \"non-existent-uuid-12345\") { id serviceUuid status } }"
@@ -125,6 +134,7 @@ jsonpath "$.data.placementByServiceUuid" == null
 
 POST {{host}}/api/v1/graphql
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 016/graphql-invalid-query
 Content-Type: application/json
 {
   "query": "{ invalidField }"
@@ -140,6 +150,7 @@ jsonpath "$.errors" count >= 1
 
 POST {{host}}/api/v1/graphql
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 016/graphql-placements-pagination
 Content-Type: application/json
 {
   "query": "{ placements(limit: 2, offset: 0) { id serviceUuid } }"
@@ -154,6 +165,7 @@ jsonpath "$.data.placements" isCollection
 
 POST {{host}}/api/v1/graphql
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 016/graphql-placements-annotations-filter
 Content-Type: application/json
 {
   "query": "{ placements(annotations: {env_type: \"graphql-test\"}, limit: 10) { id serviceUuid annotations } }"
@@ -168,6 +180,7 @@ jsonpath "$.data.placements" isCollection
 
 POST {{host}}/api/v1/graphql
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 016/graphql-placements-multiple-annotations
 Content-Type: application/json
 {
   "query": "{ placements(annotations: {env_type: \"graphql-test\", created_by: \"fixture\"}, limit: 5) { id serviceUuid annotations } }"
@@ -181,4 +194,5 @@ jsonpath "$.data.placements" isCollection
 #################################################################################
 
 GET {{host}}/api/v1/graphql/playground
+X-Test-Description: 016/graphql-playground-accessible
 HTTP 200

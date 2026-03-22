@@ -4,6 +4,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 007/login-app-token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -17,6 +18,7 @@ jsonpath "$.access_token_exp" isString
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 007/login-admin-token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -30,6 +32,7 @@ jsonpath "$.access_token_exp" isString
 #################################################################################
 POST {{host}}/api/v1/dns-account-configurations
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/create-dns-config-unauthorized
 {
     "name": "devaccount",
     "aws_access_key_id": "AA",
@@ -46,12 +49,14 @@ jsonpath "$.message" == "Unauthorized"
 
 DELETE {{host}}/api/v1/dns-account-configurations/devaccount
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 007/cleanup-dns-config
 [Options]
 retry: 2
 HTTP 404
 
 POST {{host}}/api/v1/dns-account-configurations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 007/create-dns-config-missing-annotations
 {
     "name": "devaccount",
     "aws_access_key_id": "AA",
@@ -65,6 +70,7 @@ jsonpath "$.message" == "Bad request: payload doesn't pass OpenAPI spec"
 
 POST {{host}}/api/v1/dns-account-configurations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 007/create-dns-config
 {
     "name": "devaccount",
     "aws_access_key_id": "AA",
@@ -81,6 +87,7 @@ jsonpath "$.message" == "DNS account configuration created"
 
 POST {{host}}/api/v1/dns-account-configurations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 007/create-dns-config-duplicate
 {
     "name": "devaccount",
     "aws_access_key_id": "AA",
@@ -98,6 +105,7 @@ jsonpath "$.error_multiline[0]" contains "duplicate key value violates unique co
 
 GET {{host}}/api/v1/dns-account-configurations/devaccount
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 007/get-dns-config
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "devaccount"
@@ -106,12 +114,14 @@ jsonpath "$.valid" == true
 
 PUT {{host}}/api/v1/dns-account-configurations/devaccount/disable
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 007/disable-dns-config
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "DNS account configuration is disabled"
 
 GET {{host}}/api/v1/dns-account-configurations/devaccount
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 007/verify-dns-config-disabled
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "devaccount"
@@ -121,12 +131,14 @@ jsonpath "$.valid" == false
 # Enable cluster
 PUT {{host}}/api/v1/dns-account-configurations/devaccount/enable
 Authorization: Bearer {{ access_token_admin }}
+X-Test-Description: 007/enable-dns-config
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "DNS account configuration is enabled"
 
 GET {{host}}/api/v1/dns-account-configurations/devaccount
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 007/verify-dns-config-enabled
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "devaccount"
@@ -156,6 +168,7 @@ jsonpath "$.valid" == true
 
 DELETE {{host}}/api/v1/dns-account-configurations/devaccount
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 007/delete-dns-config
 [Options]
 retry: 2
 HTTP 404
@@ -165,10 +178,12 @@ HTTP 404
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/cleanup-placement
 HTTP *
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/wait-placement-cleanup
 [Options]
 retry: 40
 HTTP 404
@@ -179,6 +194,7 @@ HTTP 404
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/ensure-no-placement
 HTTP 404
 
 #################################################################################
@@ -186,6 +202,7 @@ HTTP 404
 #################################################################################
 DELETE {{host}}/api/v1/dns/{{guid}}
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 007/cleanup-dns-record
 [Options]
 retry: 10
 HTTP 404
@@ -196,6 +213,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/create-placement-cloud-selector-too-restrictive
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -222,6 +240,7 @@ jsonpath "$.message" == "No DNS account configuration found"
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/create-placement-multiple-dns
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -263,6 +282,7 @@ jsonpath "$.Placement.resources[0].status" matches "^(initializing|success)$"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/wait-placement-multiple-dns-ready
 [Options]
 retry: 40
 HTTP 200
@@ -281,10 +301,12 @@ jsonpath "$.resources[2].status" == "success"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/delete-placement-multiple-dns
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/check-deleting-multiple-dns
 [Options]
 HTTP 200
 [Asserts]
@@ -292,6 +314,7 @@ jsonpath "$.status" == "deleting"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/wait-delete-multiple-dns
 [Options]
 retry: 40
 HTTP 404
@@ -302,6 +325,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/create-placement-multiple-dns-one-unschedulable
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -333,6 +357,7 @@ jsonpath "$.message" == "No DNS account configuration found"
 #################################################################################
 GET {{host}}/api/v1/accounts/DNSSandbox
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/ensure-no-dns-sandbox
 [QueryStringParams]
 service_uuid: {{uuid}}
 [Options]
@@ -347,6 +372,7 @@ jsonpath "$" count == 0
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/create-placement-single-dns
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -375,6 +401,7 @@ jsonpath "$.Placement.resources[0].status" matches "^(initializing|success)$"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/wait-placement-single-dns-ready
 [Options]
 retry: 40
 HTTP 200
@@ -390,6 +417,7 @@ jsonpath "$.resources[0].status" == "success"
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/create-placement-duplicate-identical
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -413,6 +441,7 @@ jsonpath "$.message" == "Placement already exists with identical request"
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/create-placement-different-same-uuid
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -438,6 +467,7 @@ jsonpath "$.message" == "UUID already in use by another placement"
 #################################################################################
 GET {{host}}/api/v1/accounts/DNSSandbox
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/get-all-dns-sandboxes
 HTTP 200
 [Asserts]
 jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 1
@@ -447,6 +477,7 @@ jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 1
 #################################################################################
 GET {{host}}/api/v1/accounts/DNSSandbox
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/get-dns-sandboxes-by-uuid
 [QueryStringParams]
 service_uuid: {{uuid}}
 HTTP 200
@@ -458,6 +489,7 @@ jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 1
 #################################################################################
 GET {{host}}/api/v1/accounts/DNSSandbox/{{sandbox_name}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/get-dns-sandbox-by-name
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "{{sandbox_name}}"
@@ -469,10 +501,12 @@ jsonpath "$.service_uuid" == "{{uuid}}"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/delete-placement-single-dns
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/wait-delete-single-dns
 [Options]
 retry: 40
 HTTP 404
@@ -483,6 +517,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/create-placement-with-sandbox-suffix
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -511,6 +546,7 @@ jsonpath "$.Placement.resources[0].status" matches "^(initializing|success)$"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/wait-placement-sandbox-suffix-ready
 [Options]
 retry: 40
 HTTP 200
@@ -530,6 +566,7 @@ jsonpath "$.resources[?(@.annotations.sandbox_suffix == 'prod')].credentials[0].
 #################################################################################
 GET {{host}}/api/v1/accounts/DNSSandbox
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/get-dns-sandboxes-by-uuid-suffix
 [QueryStringParams]
 service_uuid: {{uuid}}
 HTTP 200
@@ -542,10 +579,12 @@ jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 3
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/delete-placement-sandbox-suffix
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/wait-delete-sandbox-suffix
 [Options]
 retry: 40
 HTTP 404
@@ -556,6 +595,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/create-placement-aws-plus-dns
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -583,6 +623,7 @@ jsonpath "$.Placement.resources[0].annotations.purpose" == "dev"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/wait-placement-aws-plus-dns-ready
 [Options]
 retry: 40
 HTTP 200
@@ -602,10 +643,12 @@ jsonpath "$.resources[?(@.annotations.purpose == 'aws')].kind" contains "AwsSand
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/delete-placement-aws-plus-dns
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/check-deleting-aws-plus-dns
 [Options]
 HTTP 200
 [Asserts]
@@ -613,6 +656,7 @@ jsonpath "$.status" == "deleting"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 007/wait-delete-aws-plus-dns
 [Options]
 retry: 40
 HTTP 404

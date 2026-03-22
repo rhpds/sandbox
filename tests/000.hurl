@@ -4,6 +4,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 000/login: get app access token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -17,6 +18,7 @@ jsonpath "$.access_token_exp" isString
 
 GET {{host}}/api/v1/accounts/aws/sandbox3192
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/get-aws-sandbox: get an aws sandbox
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "sandbox3192"
@@ -27,6 +29,7 @@ jsonpath "$.name" == "sandbox3192"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/cleanup: ensure placement is deleted before starting
 HTTP *
 
 #################################################################################
@@ -35,6 +38,7 @@ HTTP *
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/verify-no-placement: ensure placement doesn't exist
 [Options]
 retry: 10
 HTTP 404
@@ -44,6 +48,7 @@ HTTP 404
 #################################################################################
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/capacity-error: placement too big
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -63,6 +68,7 @@ jsonpath "$.message" == "Not enough AWS accounts available"
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/create-placement: aws sandbox
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -96,6 +102,7 @@ jsonpath "$.Placement.resources[0].annotations.purpose" == "backend"
 
 PUT {{host}}/api/v1/placements/{{uuid}}/stop
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/stop-placement: stop all instances
 HTTP 202
 [Captures]
 r_stop: jsonpath "$.request_id"
@@ -108,6 +115,7 @@ jsonpath "$.message" == "stop request created"
 
 GET {{host}}/api/v1/requests/{{r_stop}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/wait-stop: wait for stop request to finish
 [Options]
 retry: 60
 HTTP 200
@@ -120,6 +128,7 @@ jsonpath "$.status" == "success"
 
 PUT {{host}}/api/v1/placements/{{uuid}}/start
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/start-placement: create a start request
 HTTP 202
 [Captures]
 r_start: jsonpath "$.request_id"
@@ -132,6 +141,7 @@ jsonpath "$.message" == "start request created"
 
 GET {{host}}/api/v1/requests/{{r_start}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/wait-start: wait for start request to finish
 [Options]
 retry: 50
 HTTP 200
@@ -143,6 +153,7 @@ jsonpath "$.status" == "success"
 #################################################################################
 GET {{host}}/api/v1/placements/{{uuid}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/status-error: get status returns error
 HTTP 500
 [Asserts]
 jsonpath "$.message" == "Error getting last jobs"
@@ -153,6 +164,7 @@ jsonpath "$.message" == "Error getting last jobs"
 
 PUT {{host}}/api/v1/placements/{{uuid}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/create-status-request: create a status request
 HTTP 202
 [Captures]
 r_status: jsonpath "$.request_id"
@@ -165,6 +177,7 @@ jsonpath "$.message" == "status request created"
 
 GET {{host}}/api/v1/requests/{{r_status}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/wait-status: wait for status request to finish
 [Options]
 retry: 50
 HTTP 200
@@ -177,6 +190,7 @@ jsonpath "$.status" == "success"
 
 GET {{host}}/api/v1/placements/{{uuid}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/get-status: get status after status request
 HTTP 200
 [Asserts]
 jsonpath "$.status" count >= 1
@@ -190,6 +204,7 @@ jsonpath "$.status[0].status" == "success"
 
 PUT {{host}}/api/v1/placements/{{uuid}}/start
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/start-before-delete: start request before deleting
 HTTP 202
 [Captures]
 r_start: jsonpath "$.request_id"
@@ -203,12 +218,14 @@ jsonpath "$.message" == "start request created"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/delete-fail: delete placement with fail on delete
 [QueryStringParams]
 failOnDelete: true
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/verify-error: verify placement status is error
 [Options]
 retry: 10
 HTTP 200
@@ -217,10 +234,12 @@ jsonpath "$.status" == "error"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/delete-placement: delete placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/verify-deleting: verify placement is deleting
 [Options]
 HTTP 200
 [Asserts]
@@ -228,6 +247,7 @@ jsonpath "$.status" == "deleting"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/wait-deleted: wait for placement to be deleted
 [Options]
 retry: 40
 HTTP 404
@@ -238,6 +258,7 @@ HTTP 404
 
 GET {{host}}/api/v1/requests/{{r_start}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/verify-start-deleted: ensure start request doesn't exist
 HTTP 404
 
 #################################################################################
@@ -246,6 +267,7 @@ HTTP 404
 
 GET {{host}}/api/v1/requests/{{r_stop}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/verify-stop-deleted: ensure stop request doesn't exist
 HTTP 404
 
 #################################################################################
@@ -254,4 +276,5 @@ HTTP 404
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 000/verify-placement-gone: ensure placement doesn't exist
 HTTP 404

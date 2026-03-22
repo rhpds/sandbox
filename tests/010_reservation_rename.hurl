@@ -4,6 +4,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 010/login-app-token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -17,6 +18,7 @@ jsonpath "$.access_token_exp" isString
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 010/login-admin-token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -29,6 +31,7 @@ jsonpath "$.access_token_exp" isString
 #################################################################################
 DELETE {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 010/cleanup-reservation
 [Options]
 retry: 3
 HTTP 404
@@ -38,6 +41,7 @@ HTTP 404
 #################################################################################
 DELETE {{host}}/api/v1/reservations/reservation-{{guid}}2
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 010/cleanup-renamed-reservation
 [Options]
 retry: 3
 HTTP 404
@@ -48,6 +52,7 @@ HTTP 404
 
 POST {{host}}/api/v1/reservations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 010/create-reservation
 {
   "name": "reservation-{{guid}}",
   "resources": [
@@ -67,6 +72,7 @@ jsonpath "$.message" == "Reservation request created"
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 010/wait-reservation-ready
 [Options]
 retry: 30
 HTTP 200
@@ -79,6 +85,7 @@ jsonpath "$.reservation.status" == "success"
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 010/check-reservation-definition
 HTTP 200
 [Asserts]
 jsonpath "$.reservation.request.resources[0].count" == 2
@@ -89,6 +96,7 @@ jsonpath "$.reservation.request.resources[0].count" == 2
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}/resources
 Authorization: Bearer {{access_token}}
+X-Test-Description: 010/check-reservation-resources
 HTTP 200
 [Asserts]
 jsonpath "$.resources" count == 2
@@ -100,6 +108,7 @@ jsonpath "$.count" == 2
 
 PUT {{host}}/api/v1/reservations/reservation-{{guid}}/rename
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 010/rename-to-existing-fails
 {
   "new_name": "reservation-{{guid}}"
 }
@@ -113,6 +122,7 @@ jsonpath "$.message" == "Reservation already exists"
 
 PUT {{host}}/api/v1/reservations/reservation-{{guid}}/rename
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 010/rename-reservation
 {
   "new_name": "reservation-{{guid}}2"
 }
@@ -126,6 +136,7 @@ jsonpath "$.reservation.status" == "updating"
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}2
 Authorization: Bearer {{access_token}}
+X-Test-Description: 010/wait-renamed-reservation-ready
 [Options]
 retry: 30
 HTTP 200
@@ -138,6 +149,7 @@ jsonpath "$.reservation.status" == "success"
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 010/check-old-reservation-gone
 HTTP 404
 
 #################################################################################
@@ -146,6 +158,7 @@ HTTP 404
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}/resources
 Authorization: Bearer {{access_token}}
+X-Test-Description: 010/check-old-reservation-no-resources
 [QueryStringParams]
 skipReservationCheck: true
 HTTP 404
@@ -158,6 +171,7 @@ jsonpath "$.count" == 0
 
 GET {{host}}/api/v1/reservations/reservation-{{guid}}2/resources
 Authorization: Bearer {{access_token}}
+X-Test-Description: 010/check-renamed-reservation-resources
 HTTP 200
 [Asserts]
 jsonpath "$.resources" count == 2
@@ -168,6 +182,7 @@ jsonpath "$.count" == 2
 #################################################################################
 DELETE {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 010/delete-old-reservation
 [Options]
 retry: 3
 HTTP 404
@@ -177,6 +192,7 @@ HTTP 404
 #################################################################################
 DELETE {{host}}/api/v1/reservations/reservation-{{guid}}2
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 010/delete-renamed-reservation
 [Options]
 retry: 7
 HTTP 404

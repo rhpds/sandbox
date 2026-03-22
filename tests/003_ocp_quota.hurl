@@ -4,6 +4,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 003/login-app-token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -17,6 +18,7 @@ jsonpath "$.access_token_exp" isString
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 003/login-admin-token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -30,12 +32,14 @@ jsonpath "$.access_token_exp" isString
 
 DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 003/cleanup-cluster-config
 [Options]
 retry: 2
 HTTP 404
 
 POST {{host}}/api/v1/ocp-shared-cluster-configurations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 003/create-cluster-config
 {
     "name": "ocp-cluster-test1",
     "api_url": "https://api.ocp-cluster-1.com:6443",
@@ -54,12 +58,14 @@ jsonpath "$.message" == "OCP shared cluster configuration created"
 
 GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 003/get-default-quota
 HTTP 200
 [Asserts]
 jsonpath "$.default_sandbox_quota.spec.hard['requests.memory']" == "20Gi"
 
 PUT {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1/update
 Authorization: Bearer {{ access_token_admin }}
+X-Test-Description: 003/update-default-quota
 {
   "default_sandbox_quota": {
     "spec": {
@@ -75,12 +81,14 @@ jsonpath "$.message" == "OCP shared cluster configuration updated"
 
 GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 003/verify-updated-quota
 HTTP 200
 [Asserts]
 jsonpath "$.default_sandbox_quota.spec.hard['requests.memory']" == "700Gi"
 
 DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 003/delete-cluster-config
 [Options]
 retry: 2
 HTTP 404
@@ -91,10 +99,12 @@ HTTP 404
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 003/cleanup-placement
 HTTP *
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 003/wait-placement-cleanup
 [Options]
 retry: 6
 HTTP 404
@@ -104,6 +114,7 @@ HTTP 404
 #################################################################################
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 003/create-placement-invalid-quota-syntax
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -130,6 +141,7 @@ jsonpath "$.error_multiline[0]" contains "quantities must match the regular expr
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 003/create-placement-default-quota
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -161,6 +173,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 003/wait-placement-default-quota-ready
 [Options]
 retry: 40
 HTTP 200
@@ -182,10 +195,12 @@ jsonpath "$.resources[0].quota['requests.memory']" == "1280Gi"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 003/delete-placement-default-quota
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 003/wait-delete-placement-default-quota
 [Options]
 retry: 40
 HTTP 404
@@ -196,6 +211,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 003/create-placement-with-quota
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -230,6 +246,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 003/wait-placement-with-quota-ready
 [Options]
 retry: 40
 HTTP 200
@@ -248,10 +265,12 @@ jsonpath "$.resources[0].quota['cnv.storageclass.storage.k8s.io/requests.storage
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 003/delete-placement-with-quota
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 003/wait-delete-placement-with-quota
 [Options]
 retry: 40
 HTTP 404
@@ -264,6 +283,7 @@ HTTP 404
 # Set quota_required to true
 PUT {{host}}/api/v1/ocp-shared-cluster-configurations/{{testcluster}}/update
 Authorization: Bearer {{ access_token_admin }}
+X-Test-Description: 003/set-quota-required-true
 {
   "quota_required": true
 }
@@ -275,6 +295,7 @@ jsonpath "$.message" == "OCP shared cluster configuration updated"
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 003/create-placement-missing-quota
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -302,6 +323,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 003/wait-placement-quota-required-error
 [Options]
 retry: 40
 HTTP 200
@@ -315,6 +337,7 @@ jsonpath "$.resources[0].error_message" contains "Quota is required for this clu
 
 PUT {{host}}/api/v1/ocp-shared-cluster-configurations/{{testcluster}}/update
 Authorization: Bearer {{ access_token_admin }}
+X-Test-Description: 003/set-quota-required-false
 {
   "quota_required": false
 }
@@ -327,10 +350,12 @@ jsonpath "$.message" == "OCP shared cluster configuration updated"
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 003/final-delete-placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 003/wait-final-delete-placement
 [Options]
 retry: 40
 HTTP 404

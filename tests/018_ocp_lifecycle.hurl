@@ -10,6 +10,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 018/login-regular-access-token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -23,6 +24,7 @@ jsonpath "$.access_token_exp" isString
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 018/login-admin-access-token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -35,10 +37,12 @@ jsonpath "$.access_token_exp" isString
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/cleanup-delete-placement
 HTTP *
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/cleanup-wait-deletion
 [Options]
 retry: 40
 HTTP 404
@@ -49,6 +53,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/create-placement
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -80,6 +85,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/wait-placement-success
 [Options]
 retry: 60
 HTTP 200
@@ -97,6 +103,7 @@ jsonpath "$.resources[0].credentials" count >= 1
 
 PUT {{host}}/api/v1/placements/{{uuid}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/request-placement-status
 HTTP 202
 [Captures]
 status_request_id: jsonpath "$.request_id"
@@ -110,6 +117,7 @@ jsonpath "$.message" isString
 
 GET {{host}}/api/v1/requests/{{status_request_id}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/poll-placement-status-request
 [Options]
 retry: 30
 HTTP 200
@@ -122,6 +130,7 @@ jsonpath "$.status" == "success"
 
 GET {{host}}/api/v1/placements/{{uuid}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/get-placement-status
 HTTP 200
 [Asserts]
 jsonpath "$.status" isCollection
@@ -132,6 +141,7 @@ jsonpath "$.status" isCollection
 
 PUT {{host}}/api/v1/accounts/OcpSandbox/{{sandbox_name}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/request-account-status
 HTTP 202
 [Captures]
 account_status_request_id: jsonpath "$.request_id"
@@ -144,6 +154,7 @@ jsonpath "$.request_id" isString
 
 GET {{host}}/api/v1/requests/{{account_status_request_id}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/poll-account-status-request
 [Options]
 retry: 30
 HTTP 200
@@ -159,6 +170,7 @@ jsonpath "$.status" == "success"
 
 GET {{host}}/api/v1/accounts/OcpSandbox/{{sandbox_name}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/get-account-status
 HTTP 200
 [Asserts]
 jsonpath "$.account_name" == "{{sandbox_name}}"
@@ -170,6 +182,7 @@ jsonpath "$.account_kind" == "OcpSandbox"
 
 PUT {{host}}/api/v1/placements/{{uuid}}/stop
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/stop-placement
 HTTP 202
 [Captures]
 stop_request_id: jsonpath "$.request_id"
@@ -183,6 +196,7 @@ jsonpath "$.message" isString
 
 GET {{host}}/api/v1/requests/{{stop_request_id}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/poll-stop-request
 [Options]
 retry: 60
 HTTP 200
@@ -195,6 +209,7 @@ jsonpath "$.status" == "success"
 
 PUT {{host}}/api/v1/placements/{{uuid}}/start
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/start-placement
 HTTP 202
 [Captures]
 start_request_id: jsonpath "$.request_id"
@@ -208,6 +223,7 @@ jsonpath "$.message" isString
 
 GET {{host}}/api/v1/requests/{{start_request_id}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/poll-start-request
 [Options]
 retry: 60
 HTTP 200
@@ -220,6 +236,7 @@ jsonpath "$.status" == "success"
 
 PUT {{host}}/api/v1/accounts/OcpSandbox/{{sandbox_name}}/stop
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/stop-account
 HTTP 202
 [Captures]
 account_stop_request_id: jsonpath "$.request_id"
@@ -232,6 +249,7 @@ jsonpath "$.request_id" isString
 
 GET {{host}}/api/v1/requests/{{account_stop_request_id}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/poll-account-stop-request
 [Options]
 retry: 60
 HTTP 200
@@ -244,6 +262,7 @@ jsonpath "$.status" == "success"
 
 PUT {{host}}/api/v1/accounts/OcpSandbox/{{sandbox_name}}/start
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/start-account
 HTTP 202
 [Captures]
 account_start_request_id: jsonpath "$.request_id"
@@ -256,6 +275,7 @@ jsonpath "$.request_id" isString
 
 GET {{host}}/api/v1/requests/{{account_start_request_id}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/poll-account-start-request
 [Options]
 retry: 60
 HTTP 200
@@ -268,12 +288,14 @@ jsonpath "$.status" == "success"
 
 PUT {{host}}/api/v1/accounts/OcpSandbox/{{sandbox_name}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/final-account-status-request
 HTTP 202
 [Captures]
 final_status_request_id: jsonpath "$.request_id"
 
 GET {{host}}/api/v1/requests/{{final_status_request_id}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/poll-final-status-request
 [Options]
 retry: 30
 HTTP 200
@@ -282,6 +304,7 @@ jsonpath "$.status" == "success"
 
 GET {{host}}/api/v1/accounts/OcpSandbox/{{sandbox_name}}/status
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/final-account-status-check
 HTTP 200
 [Asserts]
 jsonpath "$.account_name" == "{{sandbox_name}}"
@@ -293,10 +316,12 @@ jsonpath "$.account_kind" == "OcpSandbox"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/delete-placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/verify-deleting-status
 [Options]
 HTTP 200
 [Asserts]
@@ -304,6 +329,7 @@ jsonpath "$.status" == "deleting"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 018/wait-placement-deleted
 [Options]
 retry: 40
 HTTP 404

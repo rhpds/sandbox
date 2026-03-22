@@ -12,6 +12,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 021/login: get app access token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -25,6 +26,7 @@ jsonpath "$.access_token" isString
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 021/test: create placement with default prefix
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -51,6 +53,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 021/test: wait for default prefix placement
 [Options]
 retry: 40
 HTTP 200
@@ -66,10 +69,12 @@ jsonpath "$.resources[0].credentials[?(@.kind == 'KeycloakUser')].username" cont
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 021/cleanup: delete default prefix placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 021/cleanup: wait for default prefix deletion
 [Options]
 retry: 40
 HTTP 404
@@ -81,6 +86,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 021/test: create placement with dev- prefix
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -107,6 +113,7 @@ jsonpath "$.Placement.resources" count == 1
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 021/test: wait for dev- prefix placement
 [Options]
 retry: 40
 HTTP 200
@@ -122,10 +129,12 @@ jsonpath "$.resources[0].credentials[?(@.kind == 'KeycloakUser')].username" cont
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 021/cleanup: delete dev- prefix placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 021/cleanup: wait for dev- prefix deletion
 [Options]
 retry: 40
 HTTP 404
@@ -138,6 +147,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 021/test: create same-cluster placement with lab- prefix
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -174,6 +184,7 @@ jsonpath "$.Placement.resources" count == 2
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 021/test: wait for same-cluster lab- prefix placement
 [Options]
 retry: 40
 HTTP 200
@@ -201,10 +212,12 @@ variable "password_a" == "{{password_b}}"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 021/cleanup: delete same-cluster lab- placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 021/cleanup: wait for same-cluster lab- deletion
 [Options]
 retry: 40
 HTTP 404

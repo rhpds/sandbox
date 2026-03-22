@@ -3,6 +3,7 @@
 #################################################################################
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 012/login-app-token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -15,6 +16,7 @@ jsonpath "$.access_token_exp" isString
 #################################################################################
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 012/login-admin-token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -27,12 +29,14 @@ jsonpath "$.access_token_exp" isString
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 012/cleanup-delete-placement
 [Options]
 retry: 4
 HTTP *
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 012/cleanup-wait-placement-deleted
 [Options]
 retry: 20
 HTTP 404
@@ -43,6 +47,7 @@ HTTP 404
 #################################################################################
 POST {{host}}/api/v1/placements/dry-run
 Authorization: Bearer {{access_token}}
+X-Test-Description: 012/dry-run-large-request-fail
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -67,6 +72,7 @@ jsonpath "$.results[0].error" isString
 #################################################################################
 POST {{host}}/api/v1/placements/dry-run
 Authorization: Bearer {{access_token}}
+X-Test-Description: 012/dry-run-reasonable-request-success
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -91,6 +97,7 @@ jsonpath "$.results[0].error" not exists
 #################################################################################
 POST {{host}}/api/v1/placements/dry-run
 Authorization: Bearer {{access_token}}
+X-Test-Description: 012/dry-run-no-uuid-success
 {
   "resources": [
     {
@@ -113,6 +120,7 @@ jsonpath "$.results[0].error" not exists
 #################################################################################
 POST {{host}}/api/v1/placements/dry-run
 Authorization: Bearer {{access_token}}
+X-Test-Description: 012/dry-run-multiple-resources-success
 {
   "resources": [
     {
@@ -142,6 +150,7 @@ jsonpath "$.results[1].schedulable_cluster_count" > 0
 #################################################################################
 POST {{host}}/api/v1/placements/dry-run
 Authorization: Bearer {{access_token}}
+X-Test-Description: 012/dry-run-multiple-one-failure
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -171,6 +180,7 @@ jsonpath "$.results[1].available" == true
 #################################################################################
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 012/verify-no-placement-after-dry-run
 HTTP 404
 
 #################################################################################
@@ -178,6 +188,7 @@ HTTP 404
 #################################################################################
 POST {{host}}/api/v1/reservations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 012/create-reservation
 {
   "name": "reservation-{{guid}}",
   "resources": [
@@ -196,6 +207,7 @@ jsonpath "$.message" == "Reservation request created"
 #################################################################################
 GET {{host}}/api/v1/reservations/reservation-{{guid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 012/wait-reservation-ready
 [Options]
 retry: 30
 HTTP 200
@@ -207,6 +219,7 @@ jsonpath "$.reservation.status" == "success"
 #################################################################################
 POST {{host}}/api/v1/placements/dry-run
 Authorization: Bearer {{access_token}}
+X-Test-Description: 012/dry-run-reservation-success
 {
   "service_uuid": "{{uuid}}",
   "reservation": "reservation-{{guid}}",
@@ -228,6 +241,7 @@ jsonpath "$.results[0].message" == "Matching AWS accounts are available"
 #################################################################################
 POST {{host}}/api/v1/placements/dry-run
 Authorization: Bearer {{access_token}}
+X-Test-Description: 012/dry-run-missing-reservation-fail
 {
   "service_uuid": "{{uuid}}",
   "reservation": "doesnotexist",
@@ -250,6 +264,7 @@ jsonpath "$.results[0].error" isString
 #################################################################################
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 012/verify-no-placement-after-reservation-dry-runs
 HTTP 404
 
 
@@ -326,6 +341,7 @@ HTTP 404
 #################################################################################
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 012/verify-no-placement-after-relation-dry-run
 HTTP 404
 
 
@@ -335,6 +351,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements/dry-run
 Authorization: Bearer {{access_token}}
+X-Test-Description: 012/dry-run-impossible-relations
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -385,4 +402,5 @@ jsonpath "$.results[1].available" == false
 #################################################################################
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 012/verify-no-placement-after-impossible-dry-run
 HTTP 404

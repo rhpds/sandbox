@@ -4,6 +4,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 013/login-app-token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -17,6 +18,7 @@ jsonpath "$.access_token_exp" isString
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 013/login-admin-token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -29,6 +31,7 @@ jsonpath "$.access_token_exp" isString
 #################################################################################
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 013/login-non-admin-token
 HTTP 200
 [Captures]
 access_token_user: jsonpath "$.access_token"
@@ -38,6 +41,7 @@ access_token_user: jsonpath "$.access_token"
 #################################################################################
 POST {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_user}}
+X-Test-Description: 013/non-admin-cannot-trigger-status
 HTTP 401
 
 #################################################################################
@@ -45,6 +49,7 @@ HTTP 401
 #################################################################################
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_user}}
+X-Test-Description: 013/non-admin-cannot-get-status
 HTTP 401
 
 #################################################################################
@@ -53,6 +58,7 @@ HTTP 401
 
 POST {{host}}/api/v1/ocp-shared-clusters/status?debug_custom_timeout=10s
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 013/trigger-status-check
 HTTP 202
 [Captures]
 status_request_id: jsonpath "$.request_id"
@@ -63,6 +69,7 @@ jsonpath "$.message" == "Status Request successfully created"
 
 POST {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 013/trigger-status-already-in-progress
 HTTP 409
 [Asserts]
 jsonpath "$.message" == "A status check is already in progress. Please wait for it to complete before starting a new one."
@@ -73,6 +80,7 @@ jsonpath "$.message" == "A status check is already in progress. Please wait for 
 
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 013/get-status-in-progress
 [Options]
 retry: 10
 HTTP 200
@@ -86,6 +94,7 @@ jsonpath "$.status" != "error"
 #################################################################################
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 013/poll-status-success
 [Options]
 retry: 20
 HTTP 200

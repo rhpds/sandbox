@@ -10,6 +10,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 015/login-admin-access-token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -25,6 +26,7 @@ jsonpath "$.access_token_exp" isString
 # Wait for any job to complete
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 015/wait-existing-job-complete
 [Options]
 retry: 60
 HTTP 200
@@ -39,11 +41,13 @@ jsonpath "$.status" != "initializing"
 # First POST - should succeed now
 POST {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 015/create-fresh-job
 HTTP 202
 
 # Second POST immediately after - should get 409
 POST {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 015/duplicate-job-conflict
 HTTP 409
 
 #################################################################################
@@ -53,6 +57,7 @@ HTTP 409
 # Wait for any job to complete
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 015/wait-job-complete-before-fresh
 [Options]
 retry: 60
 HTTP 200
@@ -63,6 +68,7 @@ jsonpath "$.status" != "initializing"
 # Now create a fresh job - should succeed
 POST {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 015/create-fresh-job-after-wait
 HTTP 202
 [Captures]
 fresh_job_request_id: jsonpath "$.request_id"
@@ -73,6 +79,7 @@ jsonpath "$.status" == "initializing"
 # Verify it starts running
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 015/verify-job-starts-running
 [Options]
 retry: 10
 HTTP 200
@@ -87,6 +94,7 @@ jsonpath "$.status" matches "^(running|success|error)$"
 # Wait for job to finish
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 015/wait-job-finish
 [Options]
 retry: 60
 HTTP 200
@@ -97,6 +105,7 @@ jsonpath "$.status" != "initializing"
 # Now create a new job - should succeed
 POST {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 015/create-second-job
 HTTP 202
 [Captures]
 second_job_request_id: jsonpath "$.request_id"
@@ -113,6 +122,7 @@ jsonpath "$.status" == "initializing"
 # Ensure job is running
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 015/ensure-job-running
 [Options]
 retry: 10
 HTTP 200
@@ -123,6 +133,7 @@ jsonpath "$.status" matches "^(running|initializing)$"
 # Rapid POSTs - should all get 409
 POST {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 015/rapid-post-conflict-1
 HTTP 409
 [Asserts]
 jsonpath "$.http_code" == 409
@@ -130,18 +141,21 @@ jsonpath "$.message" contains "already in progress"
 
 POST {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 015/rapid-post-conflict-2
 HTTP 409
 [Asserts]
 jsonpath "$.http_code" == 409
 
 POST {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 015/rapid-post-conflict-3
 HTTP 409
 [Asserts]
 jsonpath "$.http_code" == 409
 
 POST {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 015/rapid-post-conflict-4
 HTTP 409
 [Asserts]
 jsonpath "$.http_code" == 409
@@ -149,6 +163,7 @@ jsonpath "$.http_code" == 409
 # Wait for job to complete
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 015/wait-rapid-fire-job-complete
 [Options]
 retry: 60
 HTTP 200
@@ -159,6 +174,7 @@ jsonpath "$.status" != "initializing"
 # After completion, we should be able to create a new job
 POST {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 015/create-job-after-rapid-fire
 HTTP 202
 [Asserts]
 jsonpath "$.status" == "initializing"

@@ -4,6 +4,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: validation/global-001/login: get admin access token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -18,6 +19,7 @@ jsonpath "$.access_token_exp" isString
 
 POST {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: validation/global-001/test: request cluster status
 HTTP 202
 [Captures]
 status_request_id: jsonpath "$.request_id"
@@ -31,6 +33,7 @@ jsonpath "$.message" == "Status Request successfully created"
 #################################################################################
 GET {{host}}/api/v1/ocp-shared-clusters/status
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: validation/global-001/test: poll cluster status
 [Options]
 retry: 20
 HTTP 200

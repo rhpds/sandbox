@@ -4,6 +4,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: validation/local-999/login: get app access token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -14,6 +15,7 @@ access_token: jsonpath "$.access_token"
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: validation/local-999/login: get admin access token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -27,10 +29,12 @@ jsonpath "$.access_token_exp" isString
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-999/cleanup: delete placement
 HTTP *
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-999/cleanup: wait for placement deletion
 [Options]
 retry: 40
 HTTP 404

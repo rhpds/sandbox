@@ -4,6 +4,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 005/login-app-token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -17,6 +18,7 @@ jsonpath "$.access_token_exp" isString
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 005/login-admin-token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -30,12 +32,14 @@ jsonpath "$.access_token_exp" isString
 
 DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 005/cleanup-cluster-config
 [Options]
 retry: 2
 HTTP 404
 
 POST {{host}}/api/v1/ocp-shared-cluster-configurations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 005/create-cluster-config
 {
     "name": "ocp-cluster-test1",
     "api_url": "https://api.ocp-cluster-1.com:6443",
@@ -54,6 +58,7 @@ jsonpath "$.message" == "OCP shared cluster configuration created"
 
 GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 005/get-default-limit-range
 [Options]
 HTTP 200
 [Asserts]
@@ -65,6 +70,7 @@ jsonpath "$.limit_range.spec.limits[0].defaultRequest.memory" == "1Gi"
 
 PUT {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1/update
 Authorization: Bearer {{ access_token_admin }}
+X-Test-Description: 005/update-limit-range
 {
   "limit_range": {
     "apiVersion": "v1",
@@ -95,6 +101,7 @@ jsonpath "$.message" == "OCP shared cluster configuration updated"
 
 GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 005/verify-updated-limit-range
 HTTP 200
 [Asserts]
 jsonpath "$.limit_range.spec.limits[0].default.cpu" == "2"
@@ -104,6 +111,7 @@ jsonpath "$.limit_range.spec.limits[0].defaultRequest.memory" == "2Gi"
 
 DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 005/delete-cluster-config
 [Options]
 retry: 2
 HTTP 404
@@ -113,16 +121,19 @@ HTTP 404
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/cleanup-placement
 HTTP *
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/wait-placement-cleanup
 [Options]
 retry: 6
 HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/create-placement-default-limit-range
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -154,6 +165,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/wait-placement-default-limit-range-ready
 [Options]
 retry: 40
 HTTP 200
@@ -174,10 +186,12 @@ jsonpath "$.resources[0].limit_range.spec.limits[0].default.cpu" == "500m"
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/delete-placement-default-limit-range
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/check-deleting-default-limit-range
 [Options]
 HTTP 200
 [Asserts]
@@ -185,6 +199,7 @@ jsonpath "$.status" == "deleting"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/wait-delete-default-limit-range
 [Options]
 retry: 40
 HTTP 404
@@ -194,16 +209,19 @@ HTTP 404
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/cleanup-before-custom-limit-range
 HTTP *
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/wait-cleanup-before-custom-limit-range
 [Options]
 retry: 6
 HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/create-placement-custom-limit-range
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -252,6 +270,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/wait-placement-custom-limit-range-ready
 [Options]
 retry: 40
 HTTP 200
@@ -272,10 +291,12 @@ jsonpath "$.resources[0].limit_range.spec.limits[0].default.cpu" == "10"
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/delete-placement-custom-limit-range
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/check-deleting-custom-limit-range
 [Options]
 HTTP 200
 [Asserts]
@@ -283,6 +304,7 @@ jsonpath "$.status" == "deleting"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/wait-delete-custom-limit-range
 [Options]
 retry: 40
 HTTP 404
@@ -292,16 +314,19 @@ HTTP 404
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/cleanup-before-shorthand-limit-range
 HTTP *
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/wait-cleanup-before-shorthand-limit-range
 [Options]
 retry: 6
 HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/create-placement-shorthand-limit-range
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -343,6 +368,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/wait-placement-shorthand-limit-range-ready
 [Options]
 retry: 40
 HTTP 200
@@ -362,10 +388,12 @@ jsonpath "$.resources[0].limit_range.spec.limits[0].defaultRequest.memory" == "4
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/delete-placement-shorthand-limit-range
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/check-deleting-shorthand-limit-range
 [Options]
 HTTP 200
 [Asserts]
@@ -373,6 +401,7 @@ jsonpath "$.status" == "deleting"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 005/wait-delete-shorthand-limit-range
 [Options]
 retry: 40
 HTTP 404

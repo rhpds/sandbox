@@ -4,6 +4,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: validation/local-001/login: get app access token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -17,6 +18,7 @@ jsonpath "$.access_token_exp" isString
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: validation/local-001/login: get admin access token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -30,6 +32,7 @@ jsonpath "$.access_token_exp" isString
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/setup: ensure no placement exists
 HTTP 404
 
 #################################################################################
@@ -38,6 +41,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/test: create multi-sandbox placement
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -79,6 +83,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/test: wait for multi-sandbox placement
 [Options]
 retry: 60
 HTTP 200
@@ -110,6 +115,7 @@ jsonpath "$.resources[2].credentials[0].token" isString
 #################################################################################
 
 GET {{console_url}}
+X-Test-Description: validation/local-001/test: connect to web console
 HTTP 200
 [Asserts]
 body contains "Red Hat OpenShift"
@@ -120,10 +126,12 @@ body contains "Red Hat OpenShift"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/cleanup: delete multi-sandbox placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/cleanup: verify deleting status
 [Options]
 HTTP 200
 [Asserts]
@@ -131,6 +139,7 @@ jsonpath "$.status" == "deleting"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/cleanup: wait for multi-sandbox deletion
 [Options]
 retry: 40
 HTTP 404
@@ -141,6 +150,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/test: create single sandbox placement
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -172,6 +182,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/test: wait for single sandbox placement
 [Options]
 retry: 40
 HTTP 200
@@ -193,10 +204,12 @@ jsonpath "$.resources[0].credentials[0].token" isString
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/cleanup: delete single sandbox placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/cleanup: wait for single sandbox deletion
 [Options]
 retry: 40
 HTTP 404
@@ -207,6 +220,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/test: create namespace suffix placement
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -235,6 +249,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/test: wait for namespace suffix placement
 [Options]
 retry: 40
 HTTP 200
@@ -257,10 +272,12 @@ jsonpath "$.resources[?(@.annotations.namespace_suffix == 'prod')].namespace" co
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/cleanup: delete namespace suffix placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/cleanup: verify ns suffix deleting status
 [Options]
 HTTP 200
 [Asserts]
@@ -268,6 +285,7 @@ jsonpath "$.status" == "deleting"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/cleanup: wait for ns suffix deletion
 [Options]
 retry: 40
 HTTP 404
@@ -278,6 +296,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/test: create placement with quota
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -328,6 +347,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/test: wait for quota placement
 [Options]
 retry: 40
 HTTP 200
@@ -347,10 +367,12 @@ jsonpath "$.resources[0].limit_range.spec.limits[0].default.cpu" == "10"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/cleanup: delete quota placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: validation/local-001/cleanup: wait for quota placement deletion
 [Options]
 retry: 40
 HTTP 404

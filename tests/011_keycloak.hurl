@@ -4,6 +4,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 011/login-app-token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -17,6 +18,7 @@ jsonpath "$.access_token_exp" isString
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 011/login-admin-token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -30,6 +32,7 @@ jsonpath "$.access_token_exp" isString
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 011/create-keycloak-placement
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -61,6 +64,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 011/wait-keycloak-placement-ready
 [Options]
 retry: 40
 HTTP 200
@@ -83,10 +87,12 @@ jsonpath "$.resources[0].console_url" contains "https://"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 011/delete-keycloak-placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 011/wait-keycloak-placement-deleted
 [Options]
 retry: 40
 HTTP 404
@@ -98,6 +104,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 011/create-same-cluster-keycloak-placement
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -138,6 +145,7 @@ jsonpath "$.Placement.resources" count == 2
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 011/wait-same-cluster-keycloak-ready
 [Options]
 retry: 40
 HTTP 200
@@ -179,10 +187,12 @@ variable "keycloak_password_a" == "{{keycloak_password_b}}"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 011/delete-same-cluster-keycloak-placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 011/wait-same-cluster-keycloak-deleted
 [Options]
 retry: 40
 HTTP 404
