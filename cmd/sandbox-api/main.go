@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -113,6 +114,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	pgConfig.MaxConns = 10 // Default 10; override with DATABASE_MAX_CONNS
+	if v := os.Getenv("DATABASE_MAX_CONNS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			pgConfig.MaxConns = int32(n)
+		}
+	}
 	pgConfig.MaxConnIdleTime = 5 * time.Minute    // Close idle connections after 5 minutes
 	pgConfig.MaxConnLifetime = time.Hour          // Close connections after 1 hour
 	pgConfig.HealthCheckPeriod = 30 * time.Second // Check health every 30 seconds
