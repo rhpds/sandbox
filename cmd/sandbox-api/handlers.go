@@ -756,10 +756,21 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 		Results:          dryRunResults,
 	}
 
-	if overallAvailable {
-		finalResponse.OverallMessage = "All requested resources are available for placement."
-	} else {
+	// Check if any result would be queued
+	anyQueued := false
+	for _, r := range dryRunResults {
+		if r.Queued != nil && *r.Queued {
+			anyQueued = true
+			break
+		}
+	}
+
+	if !overallAvailable {
 		finalResponse.OverallMessage = "One or more requested resources are not available."
+	} else if anyQueued {
+		finalResponse.OverallMessage = "Resources are available but provisioning will be queued due to rate limiting."
+	} else {
+		finalResponse.OverallMessage = "All requested resources are available for placement."
 	}
 
 	render.Render(w, r, finalResponse)
