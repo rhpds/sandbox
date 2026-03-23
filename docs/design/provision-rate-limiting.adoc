@@ -38,6 +38,24 @@ A new `settings` JSONB column (`ClusterSettings` struct) cleanly separates **use
 
 *Why* ? Having a JSONB field is more flexible and doesn't require a DB migration everytime we want to add a field. We'll eventually migrate top-level settings like max_placements under that new settings
 
+== Monitoring
+
+`sandbox-cli cluster list` shows rate-limit configuration and available slots per cluster:
+
+[source]
+----
+❯ sandbox-cli cluster list
+NAME                VALID  API_URL                                                 CREATED_BY  PLACEMENTS   RATE LIMIT         LAST STATUS
+ocpv06              yes    https://api.ocpv06.dal10.infra.demo.redhat.com:6443                   40 /    ?  -                  ok    3d ago
+ocpv03              yes    https://api.ocpv03.dal10.infra.demo.redhat.com:6443                    0 /    ?  -                  ok    3d ago
+cnv-us-south-ocp-2  yes    https://api.cnv-us-south-ocp-2.rhdp.net:6443                          3 /    ?  2/2m (1 slots)     ok    1m ago
+ocpvdev01           yes    https://api.ocpvdev01.dal13.infra.demo.redhat.com:6443                 5 /    ?  20/10m (20 slots)  ok    3d ago
+----
+
+- `RATE LIMIT` column: `limit/window (N slots)` — shows the configured rate limit and current available slots
+- `-` means no rate limit configured (unlimited provisioning)
+- `(0 slots)` means the cluster is currently at its rate limit; new placements will be queued
+
 == Configuration
 
 Set via the cluster configuration PUT endpoint or `sandbox-cli cluster onboard`:
