@@ -215,6 +215,7 @@ type ClusterData struct {
 	DeployerAdminSATokenRotationCount int       `json:"deployer_admin_sa_token_rotation_count,omitempty"`
 	AllowedUpdateRoles                []string  `json:"allowed_update_roles,omitempty"`
 	CurrentPlacementCount             *int      `json:"current_placement_count,omitempty"`
+	AvailableSlots                    *int      `json:"available_slots,omitempty"`
 
 	// Connection tracking: updated whenever the API connects to this cluster.
 	// "ok" means the last connection succeeded, "error" means it failed.

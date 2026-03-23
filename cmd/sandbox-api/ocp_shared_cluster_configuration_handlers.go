@@ -206,7 +206,7 @@ func (h *BaseHandler) ListOcpSharedClusterConfigurationsHandler(w http.ResponseW
 		return
 	}
 
-	// Populate current placement counts
+	// Populate current placement counts and available rate-limit slots
 	for i := range ocpSharedClusterConfigurations {
 		count, err := ocpSharedClusterConfigurations[i].GetAccountCount()
 		if err != nil {
@@ -214,6 +214,13 @@ func (h *BaseHandler) ListOcpSharedClusterConfigurationsHandler(w http.ResponseW
 			continue
 		}
 		ocpSharedClusterConfigurations[i].Data.CurrentPlacementCount = &count
+
+		_, availableSlots, err := ocpSharedClusterConfigurations[i].IsRateLimited()
+		if err != nil {
+			log.Logger.Error("Error checking rate limit", "cluster", ocpSharedClusterConfigurations[i].Name, "error", err)
+		} else if availableSlots >= 0 {
+			ocpSharedClusterConfigurations[i].Data.AvailableSlots = &availableSlots
+		}
 	}
 
 	_, claims, _ := jwtauth.FromContext(r.Context())

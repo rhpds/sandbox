@@ -560,7 +560,8 @@ func formatPlacements(cluster map[string]any, max any) string {
 	return fmt.Sprintf("%4d /    ?", cur)
 }
 
-// formatRateLimit returns a summary of the cluster's rate limit settings.
+// formatRateLimit returns a summary of the cluster's rate limit settings
+// including available slots when rate limiting is configured.
 func formatRateLimit(cluster map[string]any) string {
 	settings, ok := cluster["settings"].(map[string]any)
 	if !ok {
@@ -571,7 +572,13 @@ func formatRateLimit(cluster map[string]any) string {
 	if !hasLimit || !hasWindow {
 		return "-"
 	}
-	return fmt.Sprintf("%d/%s", int(limit), window)
+	base := fmt.Sprintf("%d/%s", int(limit), window)
+	if data, ok := cluster["data"].(map[string]any); ok {
+		if slots, ok := data["available_slots"].(float64); ok {
+			return fmt.Sprintf("%s (%d slots)", base, int(slots))
+		}
+	}
+	return base
 }
 
 // formatConnectionStatus returns the cluster connection status and age from the data JSONB.
