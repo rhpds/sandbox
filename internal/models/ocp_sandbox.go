@@ -3800,6 +3800,17 @@ func (account *OcpSandboxWithCreds) Delete() error {
 			return errors.New("Resource is not in a final state, cannot delete")
 		}
 
+		if status == "queued" {
+			// Queued resources have no namespace or cluster — delete directly from DB
+			log.Logger.Info("Deleting queued resource", "name", account.Name)
+			_, err := account.Provider.DbPool.Exec(
+				context.Background(),
+				"DELETE FROM resources WHERE id = $1",
+				account.ID,
+			)
+			return err
+		}
+
 		if status == "success" || status == "error" {
 			break
 		}

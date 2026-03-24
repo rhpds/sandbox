@@ -36,6 +36,19 @@ Rate limit lifecycle (run_rate_limit_lifecycle_tests):
 19. Fill rate limit, wait for window expiry, verify new placements succeed
 20. Remove rate limit entirely — queued placements dequeue immediately
 
+Lifecycle on queued placement (run_lifecycle_queued_placement_tests):
+21. PUT stop/start on queued placement → 409 Conflict
+22. PUT status on queued placement → 202 Accepted
+23. GET status returns empty ocp_resources for the queued resource
+24. Same checks on per-resource endpoints
+
+Delete queued placement (run_delete_queued_placement_tests):
+25. Create a multi-resource placement with one queued and one provisioned resource
+26. Delete the placement (regular delete, not force)
+27. Verify queued resource is deleted from DB (GET account → 404)
+28. Verify provisioned resource is marked for cleanup (to_cleanup=true)
+29. Verify queue processor still works after the deletion
+
 Prerequisites:
   - SANDBOX_API_URL and SANDBOX_ADMIN_LOGIN_TOKEN must be set
   - The source cluster must already be configured in the sandbox API
@@ -2622,6 +2635,458 @@ def run_rescuer_tests():
         cleanup(admin_token, app_token, placement_uuids, [MOCK_CLUSTER_RESCUER])
 
 
+MOCK_CLUSTER_LIFECYCLE_QUEUED = "rl-test-lifecycle-queued"
+MOCK_CLUSTER_DELETE_QUEUED = "rl-test-delete-queued"
+MOCK_CLUSTER_DELETE_QUEUED_B = "rl-test-delete-queued-b"
+
+
+def get_ocp_sandbox_resource(token: str, resource_name: str) -> Optional[Dict[str, Any]]:
+    """Get an OcpSandbox resource by name via the accounts endpoint.
+
+    Returns the resource dict, or None if 404.
+    """
+    resp = api_request(
+        "GET",
+        f"/api/v1/accounts/OcpSandbox/{resource_name}",
+        token,
+        description=f"get OcpSandbox resource {resource_name}",
+    )
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    return resp.json()
+
+
+def run_lifecycle_queued_placement_tests():
+    """Test lifecycle actions (stop/start/status) on placements with queued resources.
+
+    Scenario:
+      - Set up a cluster with rate_limit=1
+      - Create a fill placement to consume the rate limit
+      - Create a 2nd placement → queued
+      - Verify: PUT stop → 409 Conflict
+      - Verify: PUT start → 409 Conflict
+      - Verify: PUT status → 202 Accepted (status is allowed on queued placements)
+      - Wait for the status job to complete
+      - Verify: GET status returns results with empty ocp_resources for the queued resource
+    """
+    admin_token = get_access_token(SANDBOX_API_URL, SANDBOX_ADMIN_LOGIN_TOKEN)
+    app_token = get_access_token(SANDBOX_API_URL, SANDBOX_LOGIN_TOKEN)
+    source = get_source_cluster(admin_token)
+
+    placement_uuids = []
+
+    try:
+        logger.info("=== Lifecycle on queued placement test ===")
+
+        selector = {
+            "cloud": "cnv-dedicated-shared",
+            "purpose": "dev",
+            "name": MOCK_CLUSTER_LIFECYCLE_QUEUED,
+        }
+
+        # Step 1: Set up cluster with rate_limit=1
+        setup_cluster(
+            admin_token,
+            source,
+            MOCK_CLUSTER_LIFECYCLE_QUEUED,
+            annotations={
+                "cloud": "cnv-dedicated-shared",
+                "purpose": "dev",
+                "name": MOCK_CLUSTER_LIFECYCLE_QUEUED,
+            },
+            rate_limit=1,
+            rate_window="10m",
+        )
+
+        # Step 2: Fill the rate limit
+        resp = create_placement(app_token, "lc-fill", cloud_selector=selector)
+        assert resp.status_code == 202, f"Fill placement failed: {resp.text}"
+        fill_uuid = make_service_uuid("lc-fill")
+        placement_uuids.append(fill_uuid)
+        status = resp.json().get("Placement", {}).get("status", "")
+        assert status != "queued", f"Fill placement should not be queued (status={status})"
+        logger.info(f"Fill placement created (status={status})")
+
+        # Step 3: Create a placement that will be queued
+        resp = create_placement(app_token, "lc-queued", cloud_selector=selector)
+        assert resp.status_code == 202, f"Queued placement failed: {resp.text}"
+        queued_uuid = make_service_uuid("lc-queued")
+        placement_uuids.append(queued_uuid)
+        status = resp.json().get("Placement", {}).get("status", "")
+        assert status == "queued", f"Expected queued, got status={status}"
+        logger.info(f"Placement correctly queued (status={status})")
+
+        # Pause queue processor to keep the placement queued
+        set_local_processor_paused(admin_token, True)
+        logger.info("Local queue processor paused")
+
+        # Step 4: PUT stop → should be rejected (409)
+        resp = api_request(
+            "PUT",
+            f"/api/v1/placements/{queued_uuid}/stop",
+            app_token,
+            description="stop queued placement (expect 409)",
+        )
+        assert resp.status_code == 409, (
+            f"Expected 409 for stop on queued placement, got {resp.status_code}: {resp.text}"
+        )
+        logger.info("PUT stop correctly rejected with 409")
+
+        # Step 5: PUT start → should be rejected (409)
+        resp = api_request(
+            "PUT",
+            f"/api/v1/placements/{queued_uuid}/start",
+            app_token,
+            description="start queued placement (expect 409)",
+        )
+        assert resp.status_code == 409, (
+            f"Expected 409 for start on queued placement, got {resp.status_code}: {resp.text}"
+        )
+        logger.info("PUT start correctly rejected with 409")
+
+        # Step 6: PUT status → should be accepted (202)
+        resp = api_request(
+            "PUT",
+            f"/api/v1/placements/{queued_uuid}/status",
+            app_token,
+            description="status queued placement (expect 202)",
+        )
+        assert resp.status_code == 202, (
+            f"Expected 202 for status on queued placement, got {resp.status_code}: {resp.text}"
+        )
+        request_id = resp.json().get("request_id", "")
+        logger.info(f"PUT status accepted (202), request_id={request_id}")
+
+        # Step 7: Wait for the status job to complete, then GET the result
+        time.sleep(5)
+
+        resp = api_request(
+            "GET",
+            f"/api/v1/placements/{queued_uuid}/status",
+            app_token,
+            description="get status of queued placement",
+        )
+        assert resp.status_code == 200, (
+            f"Expected 200 for GET status, got {resp.status_code}: {resp.text}"
+        )
+        status_data = resp.json()
+        statuses = status_data.get("status", [])
+        logger.info(f"GET status returned {len(statuses)} resource status(es)")
+
+        # Verify we got a status entry for the queued resource
+        assert len(statuses) >= 1, (
+            f"Expected at least 1 resource status, got {len(statuses)}"
+        )
+
+        # The queued resource should have an empty ocp_resources list
+        # (no namespace → nothing to report)
+        for s in statuses:
+            ocp_resources = s.get("ocp_resources", [])
+            logger.info(
+                f"Resource {s.get('account_name', '?')}: "
+                f"kind={s.get('account_kind', '?')}, "
+                f"ocp_resources={len(ocp_resources)}"
+            )
+            if s.get("account_kind") == "OcpSandbox":
+                assert ocp_resources == [] or ocp_resources is None, (
+                    f"Expected empty ocp_resources for queued OcpSandbox, "
+                    f"got {ocp_resources}"
+                )
+
+        logger.info("Status correctly returned empty ocp_resources for queued resource")
+
+        # Step 8: Also test per-resource lifecycle endpoints
+        res_statuses = get_resource_statuses(app_token, queued_uuid)
+        assert len(res_statuses) > 0, "Expected at least 1 resource"
+        resource_name = res_statuses[0]["name"]
+        logger.info(f"Testing per-resource lifecycle on: {resource_name}")
+
+        # PUT stop on queued resource → 409
+        resp = api_request(
+            "PUT",
+            f"/api/v1/accounts/OcpSandbox/{resource_name}/stop",
+            app_token,
+            description="stop queued resource (expect 409)",
+        )
+        assert resp.status_code == 409, (
+            f"Expected 409 for stop on queued resource, got {resp.status_code}: {resp.text}"
+        )
+        logger.info("Per-resource PUT stop correctly rejected with 409")
+
+        # PUT start on queued resource → 409
+        resp = api_request(
+            "PUT",
+            f"/api/v1/accounts/OcpSandbox/{resource_name}/start",
+            app_token,
+            description="start queued resource (expect 409)",
+        )
+        assert resp.status_code == 409, (
+            f"Expected 409 for start on queued resource, got {resp.status_code}: {resp.text}"
+        )
+        logger.info("Per-resource PUT start correctly rejected with 409")
+
+        # PUT status on queued resource → 202
+        resp = api_request(
+            "PUT",
+            f"/api/v1/accounts/OcpSandbox/{resource_name}/status",
+            app_token,
+            description="status queued resource (expect 202)",
+        )
+        assert resp.status_code == 202, (
+            f"Expected 202 for status on queued resource, got {resp.status_code}: {resp.text}"
+        )
+        logger.info("Per-resource PUT status accepted (202)")
+
+        logger.info("=== Lifecycle on queued placement test PASSED ===")
+
+    except Exception as e:
+        logger.error(f"Lifecycle on queued placement test failed: {e}")
+        raise
+    finally:
+        try:
+            set_local_processor_paused(admin_token, False)
+        except Exception:
+            logger.warning("Failed to resume local processor during cleanup")
+        cleanup(admin_token, app_token, placement_uuids, [MOCK_CLUSTER_LIFECYCLE_QUEUED])
+
+
+def run_delete_queued_placement_tests():
+    """Test that deleting a placement correctly handles queued vs provisioned resources.
+
+    Scenario:
+      - Cluster A has rate_limit=1, already consumed by a fill placement
+      - Cluster B has a high rate limit (effectively unlimited)
+      - Create a multi-resource placement: res-a targets cluster A (queued),
+        res-b targets cluster B (provisions immediately)
+      - Wait for res-b to reach success
+      - Pause the local queue processor (prevent dequeue during test)
+      - Delete the multi-resource placement
+      - Verify queued resource (res-a) is fully deleted from DB (GET → 404)
+      - Verify provisioned resource (res-b) is marked for cleanup (to_cleanup=true)
+      - Wait for placement to be fully deleted (404)
+      - Resume the queue processor
+      - Verify fill placement is unaffected
+    """
+    admin_token = get_access_token(SANDBOX_API_URL, SANDBOX_ADMIN_LOGIN_TOKEN)
+    app_token = get_access_token(SANDBOX_API_URL, SANDBOX_LOGIN_TOKEN)
+    source = get_source_cluster(admin_token)
+
+    placement_uuids = []
+    clusters = [MOCK_CLUSTER_DELETE_QUEUED, MOCK_CLUSTER_DELETE_QUEUED_B]
+
+    try:
+        logger.info("=== Delete queued placement test ===")
+
+        selector_a = {
+            "cloud": "cnv-dedicated-shared",
+            "purpose": "dev",
+            "name": MOCK_CLUSTER_DELETE_QUEUED,
+        }
+        selector_b = {
+            "cloud": "cnv-dedicated-shared",
+            "purpose": "dev",
+            "name": MOCK_CLUSTER_DELETE_QUEUED_B,
+        }
+
+        # Step 1: Set up cluster A with rate_limit=1 and cluster B with high limit
+        setup_cluster(
+            admin_token,
+            source,
+            MOCK_CLUSTER_DELETE_QUEUED,
+            annotations={
+                "cloud": "cnv-dedicated-shared",
+                "purpose": "dev",
+                "name": MOCK_CLUSTER_DELETE_QUEUED,
+            },
+            rate_limit=1,
+            rate_window="10m",  # Long window so it doesn't expire during the test
+        )
+        setup_cluster(
+            admin_token,
+            source,
+            MOCK_CLUSTER_DELETE_QUEUED_B,
+            annotations={
+                "cloud": "cnv-dedicated-shared",
+                "purpose": "dev",
+                "name": MOCK_CLUSTER_DELETE_QUEUED_B,
+            },
+            rate_limit=1000,  # effectively no limit
+            rate_window="10m",
+        )
+
+        # Step 2: Fill cluster A's rate limit
+        resp = create_placement(app_token, "delq-fill", cloud_selector=selector_a)
+        assert resp.status_code == 202, f"Fill placement failed: {resp.text}"
+        fill_uuid = make_service_uuid("delq-fill")
+        placement_uuids.append(fill_uuid)
+        status = resp.json().get("Placement", {}).get("status", "")
+        assert status != "queued", f"Fill placement should not be queued (status={status})"
+        logger.info(f"Fill placement created (status={status})")
+
+        # Step 3: Create a multi-resource placement:
+        #   - res-a targets cluster A (rate limited → queued)
+        #   - res-b targets cluster B (not rate limited → provisions)
+        resp = create_multi_resource_placement(
+            app_token,
+            "delq-mixed",
+            [
+                {"cloud_selector": selector_a, "alias": "res-a"},
+                {"cloud_selector": selector_b, "alias": "res-b"},
+            ],
+        )
+        assert resp.status_code == 202, f"Mixed placement failed: {resp.text}"
+        mixed_uuid = make_service_uuid("delq-mixed")
+        placement_uuids.append(mixed_uuid)
+        p_status = resp.json().get("Placement", {}).get("status", "")
+        assert p_status == "queued", (
+            f"Expected placement to be queued (res-a rate limited), got status={p_status}"
+        )
+        logger.info(f"Mixed placement created with status={p_status}")
+
+        # Step 4: Verify resource-level statuses and collect resource names
+        res_statuses = get_resource_statuses(app_token, mixed_uuid)
+        logger.info(f"Resource statuses: {res_statuses}")
+        assert len(res_statuses) == 2, f"Expected 2 resources, got {len(res_statuses)}"
+
+        queued_res = [r for r in res_statuses if r["status"] == "queued"]
+        non_queued_res = [r for r in res_statuses if r["status"] != "queued"]
+        assert len(queued_res) == 1, (
+            f"Expected 1 queued resource, got {len(queued_res)}: {res_statuses}"
+        )
+        assert len(non_queued_res) == 1, (
+            f"Expected 1 non-queued resource, got {len(non_queued_res)}: {res_statuses}"
+        )
+        queued_resource_name = queued_res[0]["name"]
+        provisioned_resource_name = non_queued_res[0]["name"]
+        logger.info(
+            f"Queued resource: {queued_resource_name}, "
+            f"Provisioned resource: {provisioned_resource_name}"
+        )
+
+        # Step 5: Wait for the provisioned resource to reach "success"
+        max_wait = 60
+        start = time.time()
+        while time.time() - start < max_wait:
+            res_data = get_ocp_sandbox_resource(app_token, provisioned_resource_name)
+            if res_data and res_data.get("status") == "success":
+                break
+            time.sleep(POLL_INTERVAL)
+        res_data = get_ocp_sandbox_resource(app_token, provisioned_resource_name)
+        assert res_data is not None, "Provisioned resource should exist"
+        assert res_data.get("status") == "success", (
+            f"Expected provisioned resource to reach success, got {res_data.get('status')}"
+        )
+        logger.info(f"Provisioned resource reached success")
+
+        # Step 6: Pause the queue processor so it doesn't dequeue during deletion
+        set_local_processor_paused(admin_token, True)
+        logger.info("Local queue processor paused")
+
+        # Step 7: Delete the mixed placement (regular delete, not force)
+        resp = api_request(
+            "DELETE",
+            f"/api/v1/placements/{mixed_uuid}",
+            app_token,
+            description="delete mixed placement with queued+provisioned resources",
+        )
+        assert resp.status_code == 202, (
+            f"Expected 202 for delete, got {resp.status_code}: {resp.text}"
+        )
+        logger.info("Delete request accepted (202)")
+
+        # Step 8: Poll until the queued resource is deleted (should be fast —
+        # queued resources have no external state and are deleted directly from DB)
+        max_wait = 30
+        start = time.time()
+        queued_gone = False
+        while time.time() - start < max_wait:
+            res_data = get_ocp_sandbox_resource(app_token, queued_resource_name)
+            if res_data is None:
+                queued_gone = True
+                break
+            logger.info(f"Waiting for queued resource deletion... status={res_data.get('status')}")
+            time.sleep(1)
+        assert queued_gone, (
+            f"Queued resource {queued_resource_name} was not deleted within {max_wait}s"
+        )
+        logger.info(f"Queued resource {queued_resource_name} correctly deleted (404)")
+
+        # Step 9: Check the provisioned resource — it should be marked for cleanup
+        # (to_cleanup=true) while its namespace is being deleted asynchronously.
+        # It may already be fully deleted if cleanup completed quickly, so we
+        # accept both to_cleanup=true and 404 as correct outcomes.
+        prov_data = get_ocp_sandbox_resource(app_token, provisioned_resource_name)
+        if prov_data is not None:
+            assert prov_data.get("to_cleanup") is True, (
+                f"Provisioned resource should be marked for cleanup, "
+                f"got to_cleanup={prov_data.get('to_cleanup')}"
+            )
+            logger.info(
+                f"Provisioned resource {provisioned_resource_name} correctly marked "
+                f"for cleanup (to_cleanup=true)"
+            )
+        else:
+            logger.info(
+                f"Provisioned resource {provisioned_resource_name} already fully "
+                f"cleaned up (404) — cleanup completed before we checked"
+            )
+
+        # Step 10: Wait for placement to be fully deleted (404)
+        max_wait = 60
+        start = time.time()
+        deleted = False
+        while time.time() - start < max_wait:
+            check = get_placement(app_token, mixed_uuid)
+            if check is None:
+                deleted = True
+                break
+            check_status = check.get("status", "")
+            logger.info(f"Waiting for placement deletion... current status={check_status}")
+            time.sleep(2)
+        assert deleted, (
+            f"Placement {mixed_uuid} was not deleted within {max_wait}s"
+        )
+        logger.info("Mixed placement successfully deleted (404)")
+
+        # Step 11: Resume the queue processor
+        set_local_processor_paused(admin_token, False)
+        logger.info("Local queue processor resumed")
+
+        # Step 12: Wait a bit and verify no errors
+        time.sleep(5)
+
+        # Verify the fill placement is still intact (not affected by the delete)
+        fill_data = get_placement(app_token, fill_uuid)
+        assert fill_data is not None, "Fill placement should still exist"
+        fill_status = fill_data.get("status", "")
+        logger.info(f"Fill placement still exists (status={fill_status})")
+
+        # Step 13: Create another placement to verify the queue still works
+        resp = create_placement(app_token, "delq-after", cloud_selector=selector_a)
+        assert resp.status_code == 202, f"Post-delete placement failed: {resp.text}"
+        after_uuid = make_service_uuid("delq-after")
+        placement_uuids.append(after_uuid)
+        status = resp.json().get("Placement", {}).get("status", "")
+        assert status == "queued", (
+            f"Expected post-delete placement to be queued (rate limit still "
+            f"consumed by fill), got status={status}"
+        )
+        logger.info(f"Post-delete placement correctly queued (status={status})")
+
+        logger.info("=== Delete queued placement test PASSED ===")
+
+    except Exception as e:
+        logger.error(f"Delete queued placement test failed: {e}")
+        raise
+    finally:
+        try:
+            set_local_processor_paused(admin_token, False)
+        except Exception:
+            logger.warning("Failed to resume local processor during cleanup")
+        cleanup(admin_token, app_token, placement_uuids, clusters)
+
+
 if __name__ == "__main__":
     run_tests()
     run_multi_resource_same_cluster_tests()
@@ -2635,6 +3100,8 @@ if __name__ == "__main__":
     run_child_cluster_relation_tests()
     run_child_cluster_with_rate_limit_tests()
     run_cli_dry_run_tests()
+    run_lifecycle_queued_placement_tests()
+    run_delete_queued_placement_tests()
     run_rescuer_tests()
 
     # Print rescuer activity metric to verify rescuers are not interfering

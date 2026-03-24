@@ -267,7 +267,7 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 		// Get the account from DynamoDB
 		sandbox, err := h.OcpSandboxProvider.FetchByName(accountName)
 		if err != nil {
-			if err == models.ErrAccountNotFound {
+			if err == models.ErrAccountNotFound || err == pgx.ErrNoRows {
 				log.Logger.Warn("GET account", "error", err)
 				w.WriteHeader(http.StatusNotFound)
 				render.Render(w, r, &v1.Error{
@@ -293,7 +293,7 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 	case "DNSSandbox", "dns":
 		sandbox, err := h.DNSSandboxProvider.FetchByName(accountName)
 		if err != nil {
-			if err == models.ErrAccountNotFound {
+			if err == models.ErrAccountNotFound || err == pgx.ErrNoRows {
 				log.Logger.Warn("GET account", "error", err)
 				w.WriteHeader(http.StatusNotFound)
 				render.Render(w, r, &v1.Error{
@@ -319,7 +319,7 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 	case "IBMResourceGroupSandbox", "ibmrg":
 		sandbox, err := h.IBMResourceGroupSandboxProvider.FetchByName(accountName)
 		if err != nil {
-			if err == models.ErrAccountNotFound {
+			if err == models.ErrAccountNotFound || err == pgx.ErrNoRows {
 				log.Logger.Warn("GET account", "error", err)
 				w.WriteHeader(http.StatusNotFound)
 				render.Render(w, r, &v1.Error{
@@ -425,7 +425,7 @@ func (h *BaseHandler) LifeCycleAccountHandler(action string) http.HandlerFunc {
 		case "OcpSandbox", "ocp":
 			sandbox, err := h.OcpSandboxProvider.FetchByName(accountName)
 			if err != nil {
-				if err == models.ErrAccountNotFound {
+				if err == models.ErrAccountNotFound || err == pgx.ErrNoRows {
 					log.Logger.Warn("GET account", "error", err)
 					w.WriteHeader(http.StatusNotFound)
 					render.Render(w, r, &v1.Error{
@@ -439,6 +439,14 @@ func (h *BaseHandler) LifeCycleAccountHandler(action string) http.HandlerFunc {
 				render.Render(w, r, &v1.Error{
 					HTTPStatusCode: 500,
 					Message:        "Error reading account",
+				})
+				return
+			}
+			if sandbox.Status == "queued" && action != "status" {
+				w.WriteHeader(http.StatusConflict)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusConflict,
+					Message:        "Cannot perform lifecycle actions on a queued resource",
 				})
 				return
 			}

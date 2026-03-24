@@ -1159,6 +1159,20 @@ func (h *BaseHandler) LifeCyclePlacementHandler(action string) http.HandlerFunc 
 		placement, err := models.GetPlacementByServiceUuid(h.dbpool, serviceUuid)
 
 		if err == nil {
+			// Reject stop/start on placements that still have queued resources.
+			// Queued resources have no namespace or cluster yet, so stop/start
+			// would be a no-op — and worse, the resource would later provision
+			// in a "running" state even though the user intended it to be stopped.
+			// Status queries are allowed — they return an empty resource list
+			// for queued resources (lightweight, no K8s API calls).
+			if placement.Status == "queued" && action != "status" {
+				w.WriteHeader(http.StatusConflict)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusConflict,
+					Message:        "Cannot perform lifecycle actions on a placement that is still queued",
+				})
+				return
+			}
 
 			lifecyclePlacementJob := models.LifecyclePlacementJob{
 				PlacementID: placement.ID,

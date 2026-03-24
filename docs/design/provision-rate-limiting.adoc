@@ -320,6 +320,48 @@ Placement:
 - HTTP response is the same *202 Accepted* as any new placement
 - `LoadActiveResources` skips status update when placement is `"queued"` (status is managed by the queue processor)
 
+=== Lifecycle Actions on Queued Placements
+
+Mutating lifecycle actions (`stop`, `start`) are **rejected with 409 Conflict** when the placement is still `"queued"` or the individual resource is `"queued"`.
+
+Queued resources have no namespace or cluster assigned yet, so stop/start would be a no-op. Worse, the resource would later provision in a "running" state even though the user intended it to be stopped — there is no mechanism to defer or replay the lifecycle intent after dequeue.
+
+The `status` action is **allowed** on queued placements and resources. `GetLifecycleStatus()` detects the empty namespace and returns an empty `ocp_resources` list without making any K8s API calls. This lets callers query status at any point in the lifecycle without errors.
+
+[cols="1,2"]
+|===
+| Endpoint | Behavior when queued
+
+| `PUT /placements/\{uuid}/stop`
+| Returns *409 Conflict* if placement status is `"queued"`
+
+| `PUT /placements/\{uuid}/start`
+| Returns *409 Conflict* if placement status is `"queued"`
+
+| `PUT /placements/\{uuid}/status`
+| Allowed — queued resources return an empty resource list
+
+| `PUT /accounts/\{kind}/\{name}/stop`
+| Returns *409 Conflict* if the OcpSandbox resource status is `"queued"`
+
+| `PUT /accounts/\{kind}/\{name}/start`
+| Returns *409 Conflict* if the OcpSandbox resource status is `"queued"`
+
+| `PUT /accounts/\{kind}/\{name}/status`
+| Allowed — queued resources return an empty resource list
+|===
+
+NOTE: `GET /placements/\{uuid}/status` and `GET /accounts/\{kind}/\{name}/status` (read-only status queries) are also not blocked — they return the current status, which includes the `"queued"` state.
+
+=== Deleting Queued Placements
+
+Deleting a placement that has both queued and provisioned resources handles each type differently:
+
+- **Queued resources**: Deleted directly from the database (no external state to clean up — no namespace, no cluster). `GET /accounts/OcpSandbox/\{name}` returns *404* immediately after deletion.
+- **Provisioned resources**: Marked for cleanup (`to_cleanup = true`), then namespace and RBAC are cleaned up asynchronously before the DB row is removed.
+
+The queue processor's fetch queries (`FetchQueuedResourcesByLocality`, `FetchStaleQueuedResources`) filter out resources with `to_cleanup = true` as defense-in-depth, preventing wasted processing cycles on resources that are being deleted.
+
 == Dry-Run
 
 The dry-run endpoint (`POST /api/v1/placements/dry-run`) shows per-cluster rate-limit state. It is read-only — no locks, no state changes, fast response.
@@ -583,6 +625,8 @@ This is a trade-off: strict FIFO vs throughput. For most production scenarios (r
   ** Uses `IsRateLimited()` (no locks — read-only, fast)
 - [x] `UpsertOcpSharedClusterConfigurationHandler`: take `Settings` from request
 - [x] Validate `provision_rate_limit` and `provision_rate_window` (both or neither)
+- [x] `LifeCyclePlacementHandler`: reject with 409 when placement is `"queued"`
+- [x] `LifeCycleAccountHandler`: reject with 409 when OcpSandbox resource is `"queued"`
 - [x] `main.go`: start queue processor goroutine
 
 === API Types (`internal/api/v1/v1.go`)
@@ -629,6 +673,13 @@ Child cluster relation tests:
 - [x] `child(A) && different(B)` — C lands on a different child cluster than B
 - [x] `child(A)` via `cluster_condition` DSL — same behavior as `cluster_relation` form
 - [x] `child(A) && different(B)` via `cluster_condition` DSL
+
+Deletion tests:
+
+- [x] Delete placement with mixed queued + provisioned resources
+- [x] Verify queued resources are deleted from DB (GET account → 404)
+- [x] Verify provisioned resources are marked for cleanup (`to_cleanup=true`)
+- [x] Verify queue processor still works after deletion
 
 Concurrent and ordering tests:
 
