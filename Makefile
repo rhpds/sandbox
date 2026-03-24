@@ -95,6 +95,7 @@ sandbox-cli-cross:
 	done
 	@echo "Done. Binaries:"
 	@ls -lh build/sandbox-cli-*
+	@sha256sum build/sandbox-cli-*
 
 sandbox-issue-jwt:
 	go build -o build/sandbox-issue-jwt ./cmd/sandbox-issue-jwt
