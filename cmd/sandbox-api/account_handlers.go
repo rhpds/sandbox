@@ -267,7 +267,7 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 		// Get the account from DynamoDB
 		sandbox, err := h.OcpSandboxProvider.FetchByName(accountName)
 		if err != nil {
-			if err == models.ErrAccountNotFound {
+			if err == models.ErrAccountNotFound || err == pgx.ErrNoRows {
 				log.Logger.Warn("GET account", "error", err)
 				w.WriteHeader(http.StatusNotFound)
 				render.Render(w, r, &v1.Error{
@@ -293,7 +293,7 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 	case "DNSSandbox", "dns":
 		sandbox, err := h.DNSSandboxProvider.FetchByName(accountName)
 		if err != nil {
-			if err == models.ErrAccountNotFound {
+			if err == models.ErrAccountNotFound || err == pgx.ErrNoRows {
 				log.Logger.Warn("GET account", "error", err)
 				w.WriteHeader(http.StatusNotFound)
 				render.Render(w, r, &v1.Error{
@@ -319,7 +319,7 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 	case "IBMResourceGroupSandbox", "ibmrg":
 		sandbox, err := h.IBMResourceGroupSandboxProvider.FetchByName(accountName)
 		if err != nil {
-			if err == models.ErrAccountNotFound {
+			if err == models.ErrAccountNotFound || err == pgx.ErrNoRows {
 				log.Logger.Warn("GET account", "error", err)
 				w.WriteHeader(http.StatusNotFound)
 				render.Render(w, r, &v1.Error{

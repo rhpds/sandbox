@@ -366,8 +366,31 @@ func (a *OcpSandboxProvider) processQueuedResourceList(queuedResources []OcpSand
 		}
 	}
 
+	// Collect the IDs of resources that are still queued (not selected for
+	// provisioning) so we can re-stamp them after each provision call.
+	// provisionDequeuedResource blocks on network I/O (namespace creation,
+	// RBAC setup, etc.), which can take longer than the rescuer's orphan
+	// threshold. Without re-stamping, the rescuer would pick up the
+	// remaining resources with its own claimedClusters map, breaking FIFO.
+	var remainingQueued []OcpSandboxWithCreds
+	provisionedIDs := make(map[int]bool, len(toProvision))
+	for _, r := range toProvision {
+		provisionedIDs[r.ID] = true
+	}
+	for _, r := range queuedResources {
+		if !provisionedIDs[r.ID] {
+			remainingQueued = append(remainingQueued, r)
+		}
+	}
+
 	for _, res := range toProvision {
 		a.provisionDequeuedResource(res)
+
+		// Re-stamp remaining queued resources to keep them fresh and
+		// prevent the rescuer from picking them up mid-cycle.
+		if len(remainingQueued) > 0 {
+			a.batchStampQueueCheckedAt(remainingQueued)
+		}
 	}
 
 	a.updateCompletedPlacements()
