@@ -285,21 +285,22 @@ func (p *ReservationResponse) Render(w http.ResponseWriter, r *http.Request) err
 }
 
 type UpdateOcpSharedConfigurationRequest struct {
-	DefaultSandboxQuota       *v1.ResourceQuota   `json:"default_sandbox_quota,omitempty"`
-	QuotaRequired             *bool               `json:"quota_required"`
-	StrictDefaultSandboxQuota *bool               `json:"strict_default_sandbox_quota"`
-	SkipQuota                 *bool               `json:"skip_quota,omitempty"`
-	Annotations               *models.Annotations `json:"annotations,omitempty"`
-	Token                     *string             `json:"token,omitempty"`
-	AdditionalVars            map[string]any      `json:"additional_vars,omitempty"`
-	MaxMemoryUsagePercentage  *float64            `json:"max_memory_usage_percentage,omitempty"`
-	MaxCpuUsagePercentage     *float64            `json:"max_cpu_usage_percentage,omitempty"`
-	UsageNodeSelector         *string             `json:"usage_node_selector,omitempty"`
-	LimitRange                *v1.LimitRange      `json:"limit_range,omitempty"`
-	MaxPlacements               *int                `json:"max_placements,omitempty"`
-	DeployerAdminSATokenTTL             *string             `json:"deployer_admin_sa_token_ttl,omitempty"`
-	DeployerAdminSATokenRefreshInterval *string             `json:"deployer_admin_sa_token_refresh_interval,omitempty"`
-	DeployerAdminSATokenTargetVar       *string             `json:"deployer_admin_sa_token_target_var,omitempty"`
+	DefaultSandboxQuota       *v1.ResourceQuota       `json:"default_sandbox_quota,omitempty"`
+	QuotaRequired             *bool                   `json:"quota_required"`
+	StrictDefaultSandboxQuota *bool                   `json:"strict_default_sandbox_quota"`
+	SkipQuota                 *bool                   `json:"skip_quota,omitempty"`
+	Annotations               *models.Annotations     `json:"annotations,omitempty"`
+	Token                     *string                 `json:"token,omitempty"`
+	AdditionalVars            map[string]any          `json:"additional_vars,omitempty"`
+	MaxMemoryUsagePercentage  *float64                `json:"max_memory_usage_percentage,omitempty"`
+	MaxCpuUsagePercentage     *float64                `json:"max_cpu_usage_percentage,omitempty"`
+	UsageNodeSelector         *string                 `json:"usage_node_selector,omitempty"`
+	LimitRange                *v1.LimitRange          `json:"limit_range,omitempty"`
+	MaxPlacements               *int                  `json:"max_placements,omitempty"`
+	DeployerAdminSATokenTTL             *string       `json:"deployer_admin_sa_token_ttl,omitempty"`
+	DeployerAdminSATokenRefreshInterval *string       `json:"deployer_admin_sa_token_refresh_interval,omitempty"`
+	DeployerAdminSATokenTargetVar       *string       `json:"deployer_admin_sa_token_target_var,omitempty"`
+	Settings                  *models.ClusterSettings `json:"settings,omitempty"`
 }
 
 func (j *UpdateOcpSharedConfigurationRequest) Bind(r *http.Request) error {
@@ -349,14 +350,23 @@ func (j *UpdateIBMResourceGroupSandboxConfigurationRequest) Bind(r *http.Request
 	return nil
 }
 
+// ClusterDryRunInfo holds per-cluster rate-limit info for dry-run responses.
+type ClusterDryRunInfo struct {
+	Name           string `json:"name"`
+	AvailableSlots *int   `json:"available_slots,omitempty"`
+}
+
 // ResourceDryRunResult holds the dry-run result for a single resource.
 type ResourceDryRunResult struct {
-	Kind                    string   `json:"kind"`
-	Available               bool     `json:"available"`
-	Message                 string   `json:"message"`
-	SchedulableClusterCount int      `json:"schedulable_cluster_count"`
-	SchedulableClusterNames []string `json:"schedulable_cluster_names,omitempty"`
-	Error                   string   `json:"error,omitempty"` // Optional: to report specific errors
+	Kind                    string              `json:"kind"`
+	Available               bool                `json:"available"`
+	Message                 string              `json:"message"`
+	SchedulableClusterCount int                 `json:"schedulable_cluster_count"`
+	SchedulableClusterNames []string            `json:"schedulable_cluster_names,omitempty"`
+	ClusterDetails          []ClusterDryRunInfo `json:"cluster_details,omitempty"`
+	Queued                  *bool               `json:"queued,omitempty"`
+	QueuePosition           *int                `json:"queue_position,omitempty"`
+	Error                   string              `json:"error,omitempty"`
 }
 
 // PlacementDryRunResponse is the consolidated response for a dry-run request.

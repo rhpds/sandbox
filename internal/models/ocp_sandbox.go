@@ -7,18 +7,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"net/http"
 	"regexp"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"strconv"
 
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/rhpds/sandbox/internal/config"
 	"github.com/rhpds/sandbox/internal/log"
+	"github.com/rhpds/sandbox/internal/metrics"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -55,6 +59,30 @@ type OcpSandboxProvider struct {
 	// RotateNow is a channel that signals the background rotation goroutine
 	// to wake up and run immediately (e.g. after a config update).
 	RotateNow chan struct{}
+
+	// QueueNotify signals the local queue processor that a resource was
+	// queued on this pod. The local processor handles it immediately
+	// instead of waiting for the next poll cycle.
+	QueueNotify chan string
+
+	// LocalProcessorPaused disables the local queue processor when set.
+	// Used in tests to verify rescuer behavior without local processor
+	// interference. Toggle via PUT /api/v1/admin/queue-processor.
+	LocalProcessorPaused atomic.Bool
+
+	// clusterLocks serializes CheckAndReserveSlot calls per cluster
+	// within this pod. This prevents multiple goroutines from holding
+	// pool connections while blocking on the same advisory lock in the DB,
+	// keeping the connection pool small. The DB advisory lock still
+	// protects cross-pod concurrency.
+	clusterLocks sync.Map
+}
+
+// clusterLock returns a mutex for the given cluster name, creating one
+// on first access. Used by CheckAndReserveSlot to serialize within a pod.
+func (p *OcpSandboxProvider) clusterLock(name string) *sync.Mutex {
+	v, _ := p.clusterLocks.LoadOrStore(name, &sync.Mutex{})
+	return v.(*sync.Mutex)
 }
 
 type OcpSharedClusterConfiguration struct {
@@ -143,9 +171,41 @@ type OcpSharedClusterConfiguration struct {
 	// Adding new fields here does not require a DB migration.
 	Data ClusterData `json:"data,omitempty"`
 
+	// Settings holds user-configurable settings stored as JSONB.
+	// Taken from request — user controls these values.
+	Settings ClusterSettings `json:"settings,omitempty"`
+
 	// CreatedBy records the JWT "name" claim of the user who created this cluster.
 	// Used for RBAC ownership checks (shared-cluster-manager can only offboard own clusters).
 	CreatedBy string `json:"created_by,omitempty"`
+}
+
+// ClusterSettings holds user-configurable settings for an OcpSharedClusterConfiguration.
+// Stored as JSONB in the 'settings' column. Taken from request — user controls these values.
+type ClusterSettings struct {
+	ProvisionRateLimit  *int   `json:"provision_rate_limit,omitempty"`
+	ProvisionRateWindow string `json:"provision_rate_window,omitempty"`
+}
+
+// ValidateRateLimit checks that provision_rate_limit and provision_rate_window are set together
+// and that the values are valid.
+func (s *ClusterSettings) ValidateRateLimit() error {
+	hasLimit := s.ProvisionRateLimit != nil
+	hasWindow := s.ProvisionRateWindow != ""
+
+	if hasLimit != hasWindow {
+		return errors.New("provision_rate_limit and provision_rate_window must be set together")
+	}
+	if !hasLimit {
+		return nil
+	}
+	if *s.ProvisionRateLimit <= 0 {
+		return errors.New("provision_rate_limit must be > 0")
+	}
+	if _, err := ParseHumanDuration(s.ProvisionRateWindow); err != nil {
+		return fmt.Errorf("invalid provision_rate_window: %w", err)
+	}
+	return nil
 }
 
 // ClusterData holds internal plumbing data for an OcpSharedClusterConfiguration.
@@ -155,6 +215,7 @@ type ClusterData struct {
 	DeployerAdminSATokenRotationCount int       `json:"deployer_admin_sa_token_rotation_count,omitempty"`
 	AllowedUpdateRoles                []string  `json:"allowed_update_roles,omitempty"`
 	CurrentPlacementCount             *int      `json:"current_placement_count,omitempty"`
+	AvailableSlots                    *int      `json:"available_slots,omitempty"`
 
 	// Connection tracking: updated whenever the API connects to this cluster.
 	// "ok" means the last connection succeeded, "error" means it failed.
@@ -220,6 +281,7 @@ func (p *OcpSharedClusterConfiguration) SharedView() OcpSharedClusterConfigurati
 		SkipQuota:                 p.SkipQuota,
 		LimitRange:                p.LimitRange,
 		MaxPlacements:             p.MaxPlacements,
+		Settings:                  p.Settings,
 		CreatedBy:                 p.CreatedBy,
 		Data: ClusterData{
 			AllowedUpdateRoles:    p.Data.AllowedUpdateRoles,
@@ -230,26 +292,42 @@ func (p *OcpSharedClusterConfiguration) SharedView() OcpSharedClusterConfigurati
 
 type OcpSharedClusterConfigurations []OcpSharedClusterConfiguration
 
+// QueuedRequestParams stores provisioning parameters for resources in
+// "queued" status. These are request-time fields not normally persisted
+// on the resource that the queue processor needs to trigger provisioning.
+type QueuedRequestParams struct {
+	CloudSelector       map[string]string `json:"cloud_selector"`
+	CloudPreference     map[string]string `json:"cloud_preference,omitempty"`
+	ClusterRelation     []ClusterRelation `json:"cluster_relation,omitempty"`
+	RequestedQuota      *v1.ResourceList  `json:"requested_quota,omitempty"`
+	RequestedLimitRange *v1.LimitRange    `json:"requested_limit_range,omitempty"`
+	KeycloakUserPrefix  string            `json:"keycloak_user_prefix,omitempty"`
+	Multiple            bool              `json:"multiple"`
+	LocalityID          string            `json:"locality_id,omitempty"`
+}
+
 type OcpSandbox struct {
 	Account
-	Name                              string            `json:"name"`
-	Kind                              string            `json:"kind"` // "OcpSandbox"
-	ServiceUuid                       string            `json:"service_uuid"`
-	OcpSharedClusterConfigurationName string            `json:"ocp_cluster"`
-	OcpIngressDomain                  string            `json:"ingress_domain"`
-	OcpApiUrl                         string            `json:"api_url"`
-	OcpConsoleUrl                     string            `json:"console_url,omitempty"`
-	Annotations                       map[string]string `json:"annotations"`
-	Status                            string            `json:"status"`
-	ErrorMessage                      string            `json:"error_message,omitempty"`
-	CleanupCount                      int               `json:"cleanup_count"`
-	Namespace                         string            `json:"namespace"`
-	ClusterAdditionalVars             map[string]any    `json:"cluster_additional_vars,omitempty"`
-	ToCleanup                         bool              `json:"to_cleanup"`
-	Quota                             v1.ResourceList   `json:"quota,omitempty"`
-	LimitRange                        *v1.LimitRange    `json:"limit_range,omitempty"`
-	Alias                             string            `json:"alias,omitempty"`
-	NoNamespace                       bool              `json:"no_namespace,omitempty"`
+	Name                              string               `json:"name"`
+	Kind                              string               `json:"kind"` // "OcpSandbox"
+	ServiceUuid                       string               `json:"service_uuid"`
+	OcpSharedClusterConfigurationName string               `json:"ocp_cluster"`
+	OcpIngressDomain                  string               `json:"ingress_domain"`
+	OcpApiUrl                         string               `json:"api_url"`
+	OcpConsoleUrl                     string               `json:"console_url,omitempty"`
+	Annotations                       map[string]string    `json:"annotations"`
+	Status                            string               `json:"status"`
+	ErrorMessage                      string               `json:"error_message,omitempty"`
+	CleanupCount                      int                  `json:"cleanup_count"`
+	Namespace                         string               `json:"namespace"`
+	ClusterAdditionalVars             map[string]any       `json:"cluster_additional_vars,omitempty"`
+	ToCleanup                         bool                 `json:"to_cleanup"`
+	Quota                             v1.ResourceList      `json:"quota,omitempty"`
+	LimitRange                        *v1.LimitRange       `json:"limit_range,omitempty"`
+	Alias                             string               `json:"alias,omitempty"`
+	NoNamespace                       bool                 `json:"no_namespace,omitempty"`
+	QueuedParams                      *QueuedRequestParams `json:"queued_params,omitempty"`
+	QueueCheckedAt                    *time.Time           `json:"queue_checked_at,omitempty"`
 }
 
 type OcpSandboxWithCreds struct {
@@ -529,8 +607,9 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 			deployer_admin_sa_token_target_var,
 			deployer_admin_sa_token,
 			data,
+			settings,
 			created_by)
-			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, pgp_sym_encrypt($22::text, $5), $23, $24)
+			VALUES ($1, $2, $3, pgp_sym_encrypt($4::text, $5), pgp_sym_encrypt($6::text, $5), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, pgp_sym_encrypt($22::text, $5), $23, $24, $25)
 			RETURNING id`,
 		p.Name,
 		p.ApiUrl,
@@ -555,6 +634,7 @@ func (p *OcpSharedClusterConfiguration) Save() error {
 		p.DeployerAdminSATokenTargetVar,
 		nilIfEmpty(p.DeployerAdminSAToken),
 		p.Data,
+		p.Settings,
 		p.CreatedBy,
 	).Scan(&p.ID); err != nil {
 		return err
@@ -592,7 +672,8 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 			 deployer_admin_sa_token_refresh_interval = $21,
 			 deployer_admin_sa_token_target_var = $22,
 			 deployer_admin_sa_token = pgp_sym_encrypt($23::text, $5),
-			 data = $24
+			 data = $24,
+			 settings = $25
 		 WHERE id = $10`,
 		p.Name,
 		p.ApiUrl,
@@ -618,6 +699,7 @@ func (p *OcpSharedClusterConfiguration) Update() error {
 		p.DeployerAdminSATokenTargetVar,
 		nilIfEmpty(p.DeployerAdminSAToken),
 		p.Data,
+		p.Settings,
 	); err != nil {
 		return err
 	}
@@ -660,6 +742,134 @@ func (p *OcpSharedClusterConfiguration) GetAccountCount() (int, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+// GetRecentProvisionCount returns the number of resources created on this cluster
+// within the given time window. Used for provision rate limiting.
+func (p *OcpSharedClusterConfiguration) GetRecentProvisionCount(window time.Duration) (int, error) {
+	var count int
+	if err := p.DbPool.QueryRow(
+		context.Background(),
+		`SELECT count(*) FROM resources
+		 WHERE resource_type = 'OcpSandbox'
+		 AND resource_data->>'ocp_cluster' = $1
+		 AND created_at > now() - $2::interval
+		 AND to_cleanup = false`,
+		p.Name, fmt.Sprintf("%d seconds", int(window.Seconds())),
+	).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// IsRateLimited checks whether the cluster has exhausted its provision rate limit.
+// Returns (limited, availableSlots, error). If no rate limit is configured, returns (false, -1, nil).
+func (p *OcpSharedClusterConfiguration) IsRateLimited() (bool, int, error) {
+	if p.Settings.ProvisionRateLimit == nil {
+		return false, -1, nil
+	}
+	window, err := ParseHumanDuration(p.Settings.ProvisionRateWindow)
+	if err != nil {
+		return false, 0, err
+	}
+	recentCount, err := p.GetRecentProvisionCount(window)
+	if err != nil {
+		return false, 0, err
+	}
+	available := *p.Settings.ProvisionRateLimit - recentCount
+	if available < 0 {
+		available = 0
+	}
+	return recentCount >= *p.Settings.ProvisionRateLimit, available, nil
+}
+
+// checkAllClustersRateLimited checks if ALL candidate clusters are rate-limited.
+// Uses a transaction with advisory locks to serialize concurrent checks and prevent
+// TOCTOU race conditions under burst load.
+func checkAllClustersRateLimited(dbpool *pgxpool.Pool, candidates OcpSharedClusterConfigurations) (bool, error) {
+	anyChecked := false
+	allLimited := true
+
+	tx, err := dbpool.Begin(context.Background())
+	if err != nil {
+		metrics.PreCheckTotal.WithLabelValues("error").Inc()
+		return false, err
+	}
+	defer tx.Rollback(context.Background())
+
+	// Acquire advisory locks for all candidate clusters (sorted by name to prevent deadlocks)
+	lockStart := time.Now()
+	for _, cluster := range candidates {
+		h := fnv.New32a()
+		h.Write([]byte(cluster.Name))
+		lockKey := int64(h.Sum32())
+		if _, err := tx.Exec(context.Background(),
+			"SELECT pg_advisory_xact_lock($1)", lockKey); err != nil {
+			metrics.PreCheckTotal.WithLabelValues("error").Inc()
+			return false, err
+		}
+	}
+	if len(candidates) > 0 {
+		metrics.RateLimitLockWaitSeconds.WithLabelValues("all_clusters", "precheck").Observe(time.Since(lockStart).Seconds())
+	}
+
+	for _, cluster := range candidates {
+		// Skip clusters at max_placements
+		if cluster.MaxPlacements != nil {
+			var currentCount int
+			if err := tx.QueryRow(context.Background(),
+				"SELECT count(*) FROM resources WHERE resource_type = 'OcpSandbox' AND resource_data->>'ocp_cluster' = $1",
+				cluster.Name,
+			).Scan(&currentCount); err != nil {
+				continue
+			}
+			if currentCount >= *cluster.MaxPlacements {
+				continue
+			}
+		}
+
+		if cluster.Settings.ProvisionRateLimit == nil {
+			allLimited = false
+			break
+		}
+
+		anyChecked = true
+		window, err := ParseHumanDuration(cluster.Settings.ProvisionRateWindow)
+		if err != nil {
+			continue
+		}
+
+		var count int
+		if err := tx.QueryRow(context.Background(),
+			`SELECT count(*) FROM resources
+			 WHERE resource_type = 'OcpSandbox'
+			 AND resource_data->>'ocp_cluster' = $1
+			 AND created_at > now() - $2::interval
+			 AND to_cleanup = false`,
+			cluster.Name, fmt.Sprintf("%d seconds", int(window.Seconds())),
+		).Scan(&count); err != nil {
+			continue
+		}
+
+		if count < *cluster.Settings.ProvisionRateLimit {
+			allLimited = false
+			break
+		}
+	}
+
+	// Commit releases the advisory locks
+	if err := tx.Commit(context.Background()); err != nil {
+		metrics.PreCheckTotal.WithLabelValues("error").Inc()
+		return false, err
+	}
+
+	result := allLimited && anyChecked
+	if result {
+		metrics.PreCheckTotal.WithLabelValues("all_limited").Inc()
+	} else {
+		metrics.PreCheckTotal.WithLabelValues("has_capacity").Inc()
+	}
+	return result, nil
 }
 
 // ClusterPlacementInfo describes a placement that has resources on a given cluster.
@@ -872,7 +1082,7 @@ func (a *OcpSandboxProvider) ExecuteOffboard(
 			continue
 		}
 
-		placement.Delete(awsProvider, *a, dnsProvider, ibmProvider)
+		placement.Delete(awsProvider, a, dnsProvider, ibmProvider)
 
 		report.PlacementsDeleted = append(report.PlacementsDeleted, OffboardPlacementInfo{
 			PlacementID: pi.PlacementID,
@@ -976,6 +1186,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 			deployer_admin_sa_token_target_var,
 			COALESCE(pgp_sym_decrypt(deployer_admin_sa_token, $1), ''),
 			data,
+			settings,
 			created_by
 		 FROM ocp_shared_cluster_configurations WHERE name = $2`,
 		p.VaultSecret, name,
@@ -1008,6 +1219,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByName(name string)
 		&cluster.DeployerAdminSATokenTargetVar,
 		&cluster.DeployerAdminSAToken,
 		&cluster.Data,
+		&cluster.Settings,
 		&cluster.CreatedBy,
 	); err != nil {
 		return OcpSharedClusterConfiguration{}, err
@@ -1050,6 +1262,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			deployer_admin_sa_token_target_var,
 			COALESCE(pgp_sym_decrypt(deployer_admin_sa_token, $1), ''),
 			data,
+			settings,
 			created_by
 		 FROM ocp_shared_cluster_configurations`,
 		p.VaultSecret,
@@ -1088,6 +1301,7 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 			&cluster.DeployerAdminSATokenTargetVar,
 			&cluster.DeployerAdminSAToken,
 			&cluster.Data,
+			&cluster.Settings,
 			&cluster.CreatedBy,
 		); err != nil {
 			return []OcpSharedClusterConfiguration{}, err
@@ -1115,18 +1329,21 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByAnnotations(annot
 		return []OcpSharedClusterConfiguration{}, err
 	}
 
+	var clusterNames []string
 	for rows.Next() {
 		var clusterName string
-
 		if err := rows.Scan(&clusterName); err != nil {
 			return []OcpSharedClusterConfiguration{}, err
 		}
+		clusterNames = append(clusterNames, clusterName)
+	}
+	rows.Close()
 
+	for _, clusterName := range clusterNames {
 		cluster, err := p.GetOcpSharedClusterConfigurationByName(clusterName)
 		if err != nil {
 			return []OcpSharedClusterConfiguration{}, err
 		}
-
 		clusters = append(clusters, cluster)
 	}
 
@@ -1215,6 +1432,109 @@ func (a *OcpSandboxWithCreds) SetStatus(status string) error {
 	return err
 }
 
+// reserveClusterSlot sets the ocp_cluster field on the resource in the database.
+// This lightweight update ensures concurrent rate limit checks (GetRecentProvisionCount)
+// can see in-flight cluster assignments before the full scheduling completes.
+// Use an empty string to clear the reservation when a cluster attempt fails.
+func (a *OcpSandboxWithCreds) reserveClusterSlot(clusterName string) error {
+	a.OcpSharedClusterConfigurationName = clusterName
+	_, err := a.Provider.DbPool.Exec(
+		context.Background(),
+		`UPDATE resources
+		 SET resource_data = jsonb_set(resource_data, '{ocp_cluster}', to_jsonb($1::text))
+		 WHERE id = $2`,
+		clusterName, a.ID,
+	)
+	return err
+}
+
+// CheckAndReserveSlot atomically checks the rate limit and reserves a slot on the cluster.
+// Uses a per-cluster Go mutex to serialize within this pod (avoiding pool
+// connection exhaustion) and pg_advisory_xact_lock to serialize across pods.
+// Returns (rateLimited bool, err error). If not rate limited, the slot is reserved.
+func (a *OcpSandboxWithCreds) CheckAndReserveSlot(cluster *OcpSharedClusterConfiguration) (bool, error) {
+	if cluster.Settings.ProvisionRateLimit == nil {
+		// No rate limit — just reserve the slot
+		metrics.SlotReservationTotal.WithLabelValues(cluster.Name).Inc()
+		return false, a.reserveClusterSlot(cluster.Name)
+	}
+
+	// Serialize within this pod: only one goroutine per cluster enters the
+	// DB transaction at a time. Others wait here in Go memory, not holding
+	// a pool connection. This keeps the pool small even under burst load.
+	mu := a.Provider.clusterLock(cluster.Name)
+	mu.Lock()
+	defer mu.Unlock()
+
+	window, err := ParseHumanDuration(cluster.Settings.ProvisionRateWindow)
+	if err != nil {
+		metrics.RateLimitCheckTotal.WithLabelValues(cluster.Name, "error").Inc()
+		return false, err
+	}
+
+	// Use a hash of the cluster name as the advisory lock key
+	h := fnv.New32a()
+	h.Write([]byte(cluster.Name))
+	lockKey := int64(h.Sum32())
+
+	tx, err := a.Provider.DbPool.Begin(context.Background())
+	if err != nil {
+		metrics.RateLimitCheckTotal.WithLabelValues(cluster.Name, "error").Inc()
+		return false, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(context.Background())
+
+	// Acquire an advisory lock scoped to this cluster (released on commit/rollback).
+	// This blocks until the lock is available, serializing concurrent rate-limit
+	// checks for the same cluster. The connection pool must be sized large enough
+	// (DATABASE_MAX_CONNS) to avoid exhaustion under concurrent burst load.
+	lockStart := time.Now()
+	if _, err := tx.Exec(context.Background(),
+		"SELECT pg_advisory_xact_lock($1)", lockKey); err != nil {
+		metrics.RateLimitCheckTotal.WithLabelValues(cluster.Name, "error").Inc()
+		return false, fmt.Errorf("advisory lock: %w", err)
+	}
+	metrics.RateLimitLockWaitSeconds.WithLabelValues(cluster.Name, "check_and_reserve").Observe(time.Since(lockStart).Seconds())
+
+	// Count recent provisions while holding the lock
+	// Exclude resources marked for cleanup (to_cleanup=true) so deletions
+	// in progress don't count against the rate limit.
+	var count int
+	if err := tx.QueryRow(context.Background(),
+		`SELECT count(*) FROM resources
+		 WHERE resource_type = 'OcpSandbox'
+		 AND resource_data->>'ocp_cluster' = $1
+		 AND created_at > now() - $2::interval
+		 AND to_cleanup = false`,
+		cluster.Name, fmt.Sprintf("%d seconds", int(window.Seconds())),
+	).Scan(&count); err != nil {
+		metrics.RateLimitCheckTotal.WithLabelValues(cluster.Name, "error").Inc()
+		return false, fmt.Errorf("count provisions: %w", err)
+	}
+
+	if count >= *cluster.Settings.ProvisionRateLimit {
+		// Rate limited — don't reserve, just return
+		metrics.RateLimitCheckTotal.WithLabelValues(cluster.Name, "denied").Inc()
+		return true, tx.Commit(context.Background())
+	}
+
+	// Reserve the slot within the same transaction
+	if _, err := tx.Exec(context.Background(),
+		`UPDATE resources
+		 SET resource_data = jsonb_set(resource_data, '{ocp_cluster}', to_jsonb($1::text))
+		 WHERE id = $2`,
+		cluster.Name, a.ID,
+	); err != nil {
+		metrics.RateLimitCheckTotal.WithLabelValues(cluster.Name, "error").Inc()
+		return false, fmt.Errorf("reserve slot: %w", err)
+	}
+	a.OcpSharedClusterConfigurationName = cluster.Name
+
+	metrics.RateLimitCheckTotal.WithLabelValues(cluster.Name, "allowed").Inc()
+	metrics.SlotReservationTotal.WithLabelValues(cluster.Name).Inc()
+	return false, tx.Commit(context.Background())
+}
+
 // SetStatusWithMessage sets both the status and error_message fields atomically.
 // This is useful for error states where we want to persist the reason for the failure.
 func (a *OcpSandboxWithCreds) SetStatusWithMessage(status string, message string) error {
@@ -1233,6 +1553,59 @@ func (a *OcpSandboxWithCreds) SetStatusWithMessage(status string, message string
 	}
 
 	return err
+}
+
+// createQueuedResource creates an OcpSandbox resource with status "queued".
+// The resource is saved to the DB with provisioning parameters stored in
+// QueuedParams so the queue processor can trigger provisioning later.
+// No async provisioning goroutine is started.
+func (a *OcpSandboxProvider) createQueuedResource(
+	serviceUuid string,
+	annotations map[string]string,
+	alias string,
+	noNamespace bool,
+	multiple bool,
+	ctx context.Context,
+	params *QueuedRequestParams,
+) (OcpSandboxWithCreds, error) {
+	guid, err := guessNextGuid(annotations["guid"], serviceUuid, a.DbPool, multiple, ctx)
+	if err != nil {
+		log.Logger.Error("Error guessing guid for queued resource", "error", err)
+		return OcpSandboxWithCreds{}, err
+	}
+
+	rnew := OcpSandboxWithCreds{
+		OcpSandbox: OcpSandbox{
+			Name:         guid + "-" + serviceUuid,
+			Kind:         "OcpSandbox",
+			Annotations:  annotations,
+			ServiceUuid:  serviceUuid,
+			Status:       "queued",
+			Alias:        alias,
+			NoNamespace:  noNamespace,
+			QueuedParams: params,
+		},
+		Provider: a,
+	}
+
+	rnew.Resource.CreatedAt = time.Now()
+	rnew.Resource.UpdatedAt = time.Now()
+
+	if err := rnew.Save(); err != nil {
+		log.Logger.Error("Error saving queued resource", "error", err)
+		return OcpSandboxWithCreds{}, err
+	}
+
+	log.Logger.Info("Created queued resource",
+		"name", rnew.Name,
+		"id", rnew.ID,
+		"alias", alias,
+		"serviceUuid", serviceUuid)
+
+	// Notify local queue processor
+	a.notifyQueue(serviceUuid)
+
+	return rnew, nil
 }
 
 func (a *OcpSandboxWithCreds) GetStatus() (string, error) {
@@ -1425,6 +1798,7 @@ func (a *OcpSandboxProvider) FetchAllByServiceUuidWithCreds(serviceUuid string) 
 }
 
 var ErrNoSchedule error = errors.New("No OCP shared cluster configuration found")
+var ErrRateLimited error = errors.New("all candidate clusters are at their provision rate limit")
 
 func (a *OcpSandboxProvider) GetSchedulableClusters(
 	cloudSelector map[string]string,
@@ -1463,7 +1837,6 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(
 	// Get resource from 'ocp_shared_cluster_configurations' table
 	var err error
 	var rows pgx.Rows
-	log.Logger.Info("possibleClusters", "type", possibleClusters)
 	if len(possibleClusters) == 0 && len(excludeClusters) == 0 && len(parentClusters) == 0 {
 		rows, err = a.DbPool.Query(
 			context.Background(),
@@ -1472,15 +1845,20 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(
 		)
 	} else {
 		if len(parentClusters) > 0 {
-			rows, err = a.DbPool.Query(
+			parentRows, parentErr := a.DbPool.Query(
 				context.Background(),
 				`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and annotations->>'parent' = ANY($2::text[]) and valid=true ORDER BY random()`,
 				cloudSelector, parentClusters,
 			)
-			for rows.Next() {
+			if parentErr != nil {
+				log.Logger.Error("Error querying child clusters", "error", parentErr)
+				return OcpSharedClusterConfigurations{}, parentErr
+			}
+			for parentRows.Next() {
 				var clusterName string
 
-				if err := rows.Scan(&clusterName); err != nil {
+				if err := parentRows.Scan(&clusterName); err != nil {
+					parentRows.Close()
 					return OcpSharedClusterConfigurations{}, err
 				}
 				if slices.Contains(possibleClusters, clusterName) {
@@ -1488,7 +1866,13 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(
 				}
 				possibleClusters = append(possibleClusters, clusterName)
 			}
-
+			parentRows.Close()
+			log.Logger.Info("Child clusters resolved from parent relation",
+				"alias", alias,
+				"parentClusters", parentClusters,
+				"resolvedChildren", possibleClusters,
+				"excludeClusters", excludeClusters,
+			)
 		}
 		if len(possibleClusters) > 0 && len(excludeClusters) == 0 {
 			rows, err = a.DbPool.Query(
@@ -1519,19 +1903,39 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(
 		return OcpSharedClusterConfigurations{}, err
 	}
 
+	// Collect cluster names first and close rows to release the pool
+	// connection. Calling GetOcpSharedClusterConfigurationByName inside the
+	// rows.Next() loop would hold one connection (for rows) while acquiring
+	// another (for the inner query), causing pool deadlock under burst load.
+	var clusterNames []string
 	for rows.Next() {
 		var clusterName string
-
 		if err := rows.Scan(&clusterName); err != nil {
 			return OcpSharedClusterConfigurations{}, err
 		}
+		clusterNames = append(clusterNames, clusterName)
+	}
+	rows.Close()
 
+	for _, clusterName := range clusterNames {
 		cluster, err := a.GetOcpSharedClusterConfigurationByName(clusterName)
 		if err != nil {
 			return OcpSharedClusterConfigurations{}, err
 		}
-
 		clusters = append(clusters, cluster)
+	}
+
+	if len(clusterRelation) > 0 {
+		clusterNames := make([]string, len(clusters))
+		for i, c := range clusters {
+			clusterNames[i] = c.Name
+		}
+		log.Logger.Info("GetSchedulableClusters result",
+			"alias", alias,
+			"resultClusters", clusterNames,
+			"possibleClusters", possibleClusters,
+			"excludeClusters", excludeClusters,
+		)
 	}
 
 	return clusters, nil
@@ -1892,6 +2296,34 @@ func (a *OcpSandboxProvider) Request(
 		}
 	}
 
+	// For resources WITH cluster relations, check if any referenced sibling
+	// is queued. If so, this resource must also be queued because it can't
+	// resolve its cluster dependency yet.
+	if hasRelations {
+		siblings, err := a.FetchAllByServiceUuid(serviceUuid)
+		if err == nil {
+			for _, rel := range clusterRelation {
+				for _, sibling := range siblings {
+					if sibling.Alias == rel.Reference && sibling.Status == "queued" {
+						log.Logger.Info("Referenced sibling is queued, resource will also be queued",
+							"alias", alias, "siblingAlias", rel.Reference)
+						return a.createQueuedResource(serviceUuid, annotations, alias, noNamespace, multiple, ctx,
+							&QueuedRequestParams{
+								CloudSelector:       cloudSelector,
+								CloudPreference:     cloudPreference,
+								ClusterRelation:     clusterRelation,
+								RequestedQuota:      requestedQuota,
+								RequestedLimitRange: requestedLimitRange,
+								KeycloakUserPrefix:  keycloakUserPrefix,
+								Multiple:            multiple,
+								LocalityID:          config.LocalityID,
+							})
+					}
+				}
+			}
+		}
+	}
+
 	// Determine guid, auto increment the guid if there are multiple resources
 	// for a serviceUuid
 	guid, err := guessNextGuid(annotations["guid"], serviceUuid, a.DbPool, multiple, ctx)
@@ -1919,6 +2351,56 @@ func (a *OcpSandboxProvider) Request(
 	if err := rnew.Save(); err != nil {
 		log.Logger.Error("Error saving OCP account", "error", err)
 		return OcpSandboxWithCreds{}, err
+	}
+
+	// For resources WITHOUT cluster relations, synchronously try to reserve
+	// a rate-limit slot. This serializes via advisory locks and prevents the
+	// TOCTOU race where concurrent prechecks all see count=0.
+	var preReservedCluster string
+	if !hasRelations {
+		allDenied := true
+		for i := range candidateClusters {
+			rateLimited, err := rnew.CheckAndReserveSlot(&candidateClusters[i])
+			if err != nil {
+				log.Logger.Error("Error checking rate limit (sync)",
+					"cluster", candidateClusters[i].Name, "error", err)
+				continue
+			}
+			if !rateLimited {
+				preReservedCluster = candidateClusters[i].Name
+				allDenied = false
+				break
+			}
+		}
+		if allDenied {
+			// All clusters are rate-limited — convert this resource to "queued"
+			log.Logger.Info("All clusters rate-limited, queuing resource",
+				"name", rnew.Name, "serviceUuid", serviceUuid)
+			rnew.Status = "queued"
+			rnew.QueuedParams = &QueuedRequestParams{
+				CloudSelector:       cloudSelector,
+				CloudPreference:     cloudPreference,
+				ClusterRelation:     clusterRelation,
+				RequestedQuota:      requestedQuota,
+				RequestedLimitRange: requestedLimitRange,
+				KeycloakUserPrefix:  keycloakUserPrefix,
+				Multiple:            multiple,
+				LocalityID:          config.LocalityID,
+			}
+			// Clear any partial cluster reservation
+			if rnew.OcpSharedClusterConfigurationName != "" {
+				if err := rnew.reserveClusterSlot(""); err != nil {
+					log.Logger.Error("Error clearing cluster reservation", "error", err)
+				}
+			}
+			if err := rnew.Save(); err != nil {
+				log.Logger.Error("Error saving queued resource", "error", err)
+				return OcpSandboxWithCreds{}, err
+			}
+			// Notify local queue processor
+			a.notifyQueue(serviceUuid)
+			return rnew, nil
+		}
 	}
 
 	//--------------------------------------------------
@@ -1975,30 +2457,65 @@ func (a *OcpSandboxProvider) Request(
 
 	providerLoop:
 		for _, cluster := range candidateClusters {
+			// If this cluster was pre-reserved synchronously, skip the
+			// rate-limit check — the slot is already ours.
+			if preReservedCluster != "" && cluster.Name == preReservedCluster {
+				// Use the pre-reserved slot; clear the flag so fallback
+				// iterations go through normal rate-limit checks.
+				preReservedCluster = ""
+			} else {
+				// Clear any cluster reservation from a previous failed iteration
+				// so GetRecentProvisionCount doesn't over-count.
+				if rnew.OcpSharedClusterConfigurationName != "" {
+					if err := rnew.reserveClusterSlot(""); err != nil {
+						log.Logger.Error("Error clearing cluster reservation", "error", err)
+					}
+				}
+
+				// Check max_placements limit before connecting to the cluster
+				if cluster.MaxPlacements != nil {
+					currentCount, err := cluster.GetAccountCount()
+					if err != nil {
+						log.Logger.Error("Error getting account count for cluster",
+							"cluster", cluster.Name,
+							"error", err)
+						continue providerLoop
+					}
+					if currentCount >= *cluster.MaxPlacements {
+						log.Logger.Info("Cluster at max_placements limit",
+							"cluster", cluster.Name,
+							"currentCount", currentCount,
+							"maxPlacements", *cluster.MaxPlacements,
+						)
+						continue providerLoop
+					}
+				}
+
+				// Atomically check rate limit and reserve a slot.
+				// Uses an advisory lock to prevent concurrent requests from
+				// exceeding the rate limit.
+				rateLimited, err := rnew.CheckAndReserveSlot(&cluster)
+				if err != nil {
+					log.Logger.Error("Error checking rate limit for cluster",
+						"cluster", cluster.Name,
+						"error", err)
+					continue providerLoop
+				}
+				if rateLimited {
+					log.Logger.Info("Cluster at provision rate limit",
+						"cluster", cluster.Name,
+						"rateLimit", *cluster.Settings.ProvisionRateLimit,
+						"rateWindow", cluster.Settings.ProvisionRateWindow,
+					)
+					continue providerLoop
+				}
+			}
+
 			rnew.SetStatus("scheduling")
 
 			log.Logger.Info("Cluster",
 				"name", cluster.Name,
 				"ApiUrl", cluster.ApiUrl)
-
-			// Check max_placements limit before connecting to the cluster
-			if cluster.MaxPlacements != nil {
-				currentCount, err := cluster.GetAccountCount()
-				if err != nil {
-					log.Logger.Error("Error getting account count for cluster",
-						"cluster", cluster.Name,
-						"error", err)
-					continue providerLoop
-				}
-				if currentCount >= *cluster.MaxPlacements {
-					log.Logger.Info("Cluster at max_placements limit",
-						"cluster", cluster.Name,
-						"currentCount", currentCount,
-						"maxPlacements", *cluster.MaxPlacements,
-					)
-					continue providerLoop
-				}
-			}
 
 			config, err := cluster.CreateRestConfig()
 			if err != nil {
@@ -2095,6 +2612,12 @@ func (a *OcpSandboxProvider) Request(
 		}
 
 		if selectedCluster.Name == "" {
+			// Clear any cluster reservation from the last failed iteration
+			if rnew.OcpSharedClusterConfigurationName != "" {
+				if err := rnew.reserveClusterSlot(""); err != nil {
+					log.Logger.Error("Error clearing cluster reservation", "error", err)
+				}
+			}
 			if len(candidateClusters) == 0 {
 				log.Logger.Error("No candidate clusters found",
 					"name", rnew.Name,
@@ -2894,7 +3417,8 @@ func (a *OcpSandboxProvider) Release(service_uuid string) error {
 			!account.NoNamespace &&
 			account.Status != "error" &&
 			account.Status != "scheduling" &&
-			account.Status != "initializing" {
+			account.Status != "initializing" &&
+			account.Status != "queued" {
 			// If the sandbox is not in error, not no_namespace, and the namespace is empty, throw an error
 			errorHappened = errors.New("Namespace not found for account")
 			log.Logger.Error("Namespace not found for account", "account", account)
@@ -2909,8 +3433,8 @@ func (a *OcpSandboxProvider) Release(service_uuid string) error {
 	return errorHappened
 }
 
-func NewOcpSandboxProvider(dbpool *pgxpool.Pool, vaultSecret string) OcpSandboxProvider {
-	return OcpSandboxProvider{
+func NewOcpSandboxProvider(dbpool *pgxpool.Pool, vaultSecret string) *OcpSandboxProvider {
+	return &OcpSandboxProvider{
 		DbPool:      dbpool,
 		VaultSecret: vaultSecret,
 		RotateNow:   make(chan struct{}, 1),
@@ -3106,6 +3630,65 @@ func (a *OcpSandboxProvider) TriggerRotation() {
 		// Already signalled, don't block
 	}
 }
+
+// FetchQueuedPlacements returns placements with status "queued" in FIFO order.
+func FetchQueuedPlacements(dbpool *pgxpool.Pool) (Placements, error) {
+	rows, err := dbpool.Query(
+		context.Background(),
+		`SELECT
+			id,
+			service_uuid,
+			request,
+			annotations,
+			status,
+			to_cleanup,
+			created_at,
+			updated_at
+		FROM placements
+		WHERE status = 'queued'
+		ORDER BY created_at ASC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var placements Placements
+	for rows.Next() {
+		var p Placement
+		if err := rows.Scan(
+			&p.ID,
+			&p.ServiceUuid,
+			&p.Request,
+			&p.Annotations,
+			&p.Status,
+			&p.ToCleanup,
+			&p.CreatedAt,
+			&p.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		p.DbPool = dbpool
+		placements = append(placements, p)
+	}
+	return placements, nil
+}
+
+// GetQueuePosition returns the total number of placements currently queued.
+// The queue processor evaluates each placement independently against its
+// target clusters, so this is a worst-case estimate — placements targeting
+// different clusters do not actually block each other.
+func GetQueuePosition(dbpool *pgxpool.Pool) (int, error) {
+	var count int
+	if err := dbpool.QueryRow(
+		context.Background(),
+		`SELECT count(*) FROM placements WHERE status = 'queued'`,
+	).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 
 // getDeployerAdminSATokenRefreshInterval returns the shortest deployer_admin_sa_token_refresh_interval
 // across all cluster configurations that have the feature enabled.

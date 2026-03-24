@@ -1,0 +1,648 @@
+= Placement Queue for Load Protection
+:toc:
+:toc-placement: preamble
+
+Protect shared clusters from provisioning storms by rate-limiting how many new placements can be scheduled within a configurable time window. When all clusters are at capacity, placements are queued and processed FIFO.
+
+== Problem
+
+When many placements start simultaneously on a shared cluster, the cluster cannot handle the load — not because of total capacity, but because of concurrent provisioning pressure. We need to spread provisioning over time.
+
+== Solution Overview
+
+Two new configuration fields per cluster, stored in a new `settings` JSONB column:
+
+- `provision_rate_limit` — maximum number of new placements allowed within the time window
+- `provision_rate_window` — the time window (e.g. `10m`, `1h`)
+
+If all candidate clusters have exhausted their rate limit, the placement enters a `"queued"` status and is processed later by a background goroutine (FIFO order).
+
+=== Introducing the `settings` column
+
+The existing `data` JSONB column (`ClusterData` struct) holds **system-managed internal state** — SA token rotation timestamps, connection status, placement counts. The upsert handler overwrites `Data` with the existing value on every update to protect these plumbing fields.
+
+A new `settings` JSONB column (`ClusterSettings` struct) cleanly separates **user-configurable settings** from internal plumbing:
+
+[cols="1,2,2"]
+|===
+| Column | Purpose | Update behavior
+
+| `data`
+| System-managed internal state (rotation timestamps, connection status, placement counts)
+| Preserved on update — handler overwrites with existing values
+
+| `settings`
+| User-configurable settings (rate limits, future settings)
+| Taken from request — user controls these values
+|===
+
+*Why* ? Having a JSONB field is more flexible and doesn't require a DB migration everytime we want to add a field. We'll eventually migrate top-level settings like max_placements under that new settings
+
+== Monitoring
+
+`sandbox-cli cluster list` shows rate-limit configuration and available slots per cluster:
+
+[source]
+----
+❯ sandbox-cli cluster list
+NAME                VALID  API_URL                                                 CREATED_BY  PLACEMENTS   RATE LIMIT         LAST STATUS
+ocpv06              yes    https://api.ocpv06.dal10.infra.demo.redhat.com:6443                   40 /    ?  -                  ok    3d ago
+ocpv03              yes    https://api.ocpv03.dal10.infra.demo.redhat.com:6443                    0 /    ?  -                  ok    3d ago
+cnv-us-south-ocp-2  yes    https://api.cnv-us-south-ocp-2.rhdp.net:6443                          3 /    ?  2/2m (1 slots)     ok    1m ago
+ocpvdev01           yes    https://api.ocpvdev01.dal13.infra.demo.redhat.com:6443                 5 /    ?  20/10m (20 slots)  ok    3d ago
+----
+
+- `RATE LIMIT` column: `limit/window (N slots)` — shows the configured rate limit and current available slots
+- `-` means no rate limit configured (unlimited provisioning)
+- `(0 slots)` means the cluster is currently at its rate limit; new placements will be queued
+
+== Configuration
+
+Set via the cluster configuration PUT endpoint or `sandbox-cli cluster onboard`:
+
+[source,json]
+----
+{
+  "name": "my-cluster",
+  "annotations": {"cloud": "aws"},
+  "max_placements": 30,
+  "settings": {
+    "provision_rate_limit": 50,
+    "provision_rate_window": "10m"
+  }
+}
+----
+
+[source,shell]
+----
+sandbox-cli cluster onboard \
+  --name my-cluster \
+  --annotations '{"cloud":"aws"}' \
+  --provision-rate-limit 50 \
+  --provision-rate-window 10m
+----
+
+Both rate-limit fields must be set together. When absent or null, no rate limiting is applied (backward compatible).
+
+== Scheduling Flow
+
+[source]
+----
+Placement request arrives
+│
+├─ For each resource in the placement:
+│   │
+│   ├─ Request() is called, which does everything below:
+│   │
+│   │  1. Find candidate clusters (cloud_selector annotations, max_placements)
+│   │
+│   │  2. Apply cloud_preference — sort candidates by priority weight
+│   │     (ApplyPriorityWeight). Preferred clusters are tried first in
+│   │     all subsequent steps.
+│   │
+│   │  3. Save resource to DB with status "initializing"
+│   │     (must exist before rate-limit count queries run)
+│   │
+│   │  4. Synchronous rate-limit check (resources WITHOUT cluster relations):
+│   │     └─ Loop through candidates (priority order) calling
+│   │         CheckAndReserveSlot() (Go mutex + pg_advisory_xact_lock)
+│   │     └─ If one cluster has capacity:
+│   │         └─ Slot is reserved (ocp_cluster set on the resource)
+│   │         └─ Launch async provisioning goroutine (step 5)
+│   │     └─ If ALL clusters rate-limited:
+│   │         └─ Convert resource to "queued", return — no goroutine
+│   │
+│   │  5. Async provisioning goroutine (only if step 4 reserved a slot):
+│   │     └─ Provisions on the reserved cluster (namespace, RBAC, quota, etc.)
+│   │     └─ No rate-limit re-check needed — slot was reserved in step 4
+│   │     └─ If the cluster fails (connectivity, node issues, etc.):
+│   │         └─ Slot is cleared (reserveClusterSlot(""))
+│   │         └─ Falls back to other candidates with CheckAndReserveSlot()
+│   │             (legacy resilience from pre-rate-limiting providerLoop)
+│   │
+│   └─ Resource ends up with status: "initializing", "scheduling", or "queued"
+│
+├─ Cluster relation handling (same_cluster_as, different_cluster_from):
+│   ├─ Resources WITH cluster relations skip steps 1-2 and 4 — candidate
+│   │   clusters can't be resolved until sibling resources provision.
+│   │   Steps 1-2 (cluster lookup + cloud_preference sort) and rate-limit
+│   │   checks happen inside the async goroutine (step 5) via
+│   │   CheckAndReserveSlot() after cluster relations are resolved.
+│   ├─ If a referenced sibling resource is "queued", the dependent
+│   │   resource is also created as "queued" (it can't resolve yet)
+│   └─ The queue processor dequeues them in dependency order
+│
+├─ Queue processing (dequeued resources):
+│   ├─ canDequeue() applies cloud_preference (ApplyPriorityWeight)
+│   │   before trying CheckAndReserveSlot on candidates
+│   ├─ provisionDequeuedResource() re-calls Request() which applies
+│   │   cloud_preference again in steps 1-2 above
+│   └─ Preferred clusters are respected throughout the full lifecycle
+│
+└─ After all resources processed:
+    ├─ Any resource "queued" → set placement status to "queued"
+    └─ All resources "initializing" → normal flow
+----
+
+=== Concurrency Safety (Advisory Locks)
+
+A naive implementation checks the rate limit and reserves the slot as two separate operations. Under concurrent burst load, multiple requests can all see count=0 and all pass through, exceeding the rate limit (TOCTOU race).
+
+The solution uses PostgreSQL advisory locks (`pg_advisory_xact_lock`) keyed on a hash of the cluster name:
+
+1. **Synchronous slot reservation (`CheckAndReserveSlot`):** After the resource is saved to the database, the `Request()` function synchronously loops through candidate clusters calling `CheckAndReserveSlot()`. A per-cluster Go mutex serializes access within each pod — only one goroutine per cluster enters the DB at a time, others wait in Go memory without holding a pool connection. The DB transaction acquires `pg_advisory_xact_lock` (for cross-pod safety), checks the count, and if under the limit, reserves the slot (updates `resource_data->>'ocp_cluster'`). The lock is released on commit/rollback.
+
+2. **Why synchronous?** The resource must exist in the database _before_ the rate-limit count check runs. This prevents the TOCTOU race where concurrent requests all see count=0 and all pass through. By saving first and then checking under an advisory lock, each concurrent request sees the correct count of existing resources.
+
+3. **Pre-reserved cluster in async goroutine:** When a slot is reserved synchronously, the cluster name is passed to the async provisioning goroutine. The goroutine skips `CheckAndReserveSlot` for this cluster and uses the pre-reserved slot directly. If the pre-reserved cluster fails (connectivity, etc.), the goroutine falls back to other candidates with normal rate-limit checks.
+
+These locks are lightweight (in-memory, no disk I/O) and scoped to the transaction lifetime.
+
+=== Dry-Run (No Locks)
+
+The dry-run endpoint uses the plain `IsRateLimited()` method, which is a simple `SELECT count(*)` query with no advisory locks. Dry-run is read-only and must stay fast — it never reserves slots or modifies state.
+
+=== Resource-Level Queuing (Why Not Placement-Level)
+
+The initial design queued entire placements. This breaks with multi-resource placements:
+
+[source]
+----
+Placement with 2 resources (A targets cluster X, B targets cluster Y):
+  1. Resource A: Request() → success, resource created, async provisioning starts
+  2. Resource B: Request() → ErrRateLimited (cluster Y at limit)
+  3. ❌ WRONG: Queue entire placement → Resource A is orphaned
+  4. ❌ WRONG: Dequeue later → tries to re-create A → conflict
+----
+
+Resource-level queuing solves this:
+
+[source]
+----
+  1. Resource A: Request() → cluster X available → "initializing" (provisions normally)
+  2. Resource B: Request() → cluster Y rate-limited → "queued" (waits)
+  3. Placement status = "queued" (because B is queued)
+  4. Queue processor dequeues B when cluster Y has capacity
+  5. B provisions → all resources done → placement status = "success"
+----
+
+Each resource is independently queued or provisioned. The placement status is derived from the aggregate state of its resources.
+
+== Queue Processing
+
+The queue processor uses a **local processor + rescuer** architecture. Exactly **1 + N goroutines** run per pod (1 local processor + N rescuers, default N=1).
+
+=== Local Processor (signal-driven, locality-scoped)
+
+Each pod runs a single local processor goroutine that handles resources queued by that pod. This is the **primary processing path** — all normal dequeuing happens here.
+
+- **Wake mechanism:** Listens on `QueueNotify` channel. When `Request()` queues a resource, it sends a signal → local processor wakes immediately (no polling delay).
+- **Retry:** After processing, if any resources remain queued (rate-limited), the local processor sets a retry timer (`QUEUE_POLL_INTERVAL`, default 5s). It re-evaluates every interval until the local queue is drained, then goes back to sleep waiting for the next `QueueNotify` signal.
+- **Scope:** Only processes resources matching `config.LocalityID` (stored in `QueuedRequestParams.LocalityID`). Each pod's nanoid is unique, so pods don't compete.
+- **No global lock:** Since each pod only processes its own resources, no advisory lock is needed.
+- **Pause support:** Can be paused at runtime via `PUT /api/v1/admin/queue-processor` (sets `LocalProcessorPaused` atomic flag). Used in tests to verify rescuer behavior without local processor interference.
+
+=== Rescuer (poll-based, orphan recovery only)
+
+The rescuer is a **safety net**, not a primary processor. It handles orphaned resources from dead/restarting pods. In normal operation, the rescuer should process zero resources.
+
+- **Interval:** `QUEUE_RESCUER_INTERVAL` (default 30s).
+- **Scope:** Processes ALL queued resources regardless of locality.
+- **Orphan threshold:** Resources must be untouched for `QUEUE_POLL_INTERVAL + QUEUE_ORPHAN_AGE` (default 5s + 30s = 35s) before the rescuer considers them. This keeps the rescuer out of the way during normal operation. For resources with no `queue_checked_at`, the `created_at` timestamp is used instead.
+- **Concurrency:** Uses `pg_try_advisory_xact_lock` — only one rescuer across all pods runs per cycle. Losers skip silently. Multiple rescuer goroutines can be spawned per pod via `QUEUE_RESCUERS` (default 1) for stress-testing the lock mechanism.
+- **Monitoring:** `sandbox_queue_rescuer_processed_total` Prometheus counter tracks rescuer activity. High values indicate pod instability or local processor issues.
+
+=== Shared Processing Logic
+
+Both processors call `processQueuedResourceList()`, which:
+
+1. Batch-stamps `queue_checked_at` on all resources with a single timestamp (critical for FIFO — see below)
+2. Checks cluster relation dependencies (referenced siblings must not be `queued`)
+3. Applies `ApplyPriorityWeight` for `cloud_preference` sorting
+4. Calls `CheckAndReserveSlot()` (atomic, per-cluster advisory lock) — NOT the read-only `IsRateLimited()`
+5. Uses `claimedClusters` map to skip clusters already reserved in the current cycle
+6. CAS update: `UPDATE ... WHERE status = 'queued'` to prevent double-dequeue
+7. Triggers `provisionDequeuedResource` for each dequeued resource
+
+=== Batch Stamping
+
+The `queue_checked_at` timestamp is set using a **single `time.Now()` call for the entire batch** via `batchStampQueueCheckedAt()`. This is critical for FIFO ordering: if resources were stamped individually with separate `time.Now()` calls, the millisecond gaps between timestamps would cause resources to cross the orphan threshold at slightly different times. Concurrent rescuers could each grab a subset of resources, each with its own `claimedClusters` map, breaking FIFO ordering. With batch stamping, all resources become stale simultaneously — the next rescuer gets ALL of them or NONE.
+
+=== Goroutine Count
+
+**1 + N goroutines** per pod (default N=1):
+
+1. **Local processor** — sleeps on channel, wakes on signal or retry timer
+2. **Rescuer(s)** — sleep on interval timer, acquire global advisory lock
+
+No per-resource goroutines are created. A single goroutine processes all queued resources in a batch loop.
+
+- **Order:** `created_at ASC` (FIFO)
+- **After provisioning a resource:** Check if all resources for the placement are done. If so, the placement status is updated by the normal `LoadActiveResources` flow.
+- **Startup:** Launched alongside existing background goroutines in `main.go`
+
+=== Environment Variables
+
+[cols="1,1,2"]
+|===
+| Variable | Default | Purpose
+
+| `QUEUE_POLL_INTERVAL`
+| `5s`
+| Local processor retry interval when resources remain queued
+
+| `QUEUE_RESCUER_INTERVAL`
+| `30s`
+| How often rescuers poll for orphaned resources
+
+| `QUEUE_ORPHAN_AGE`
+| `30s`
+| How long a resource must go unprocessed before the rescuer considers it orphaned. Actual threshold = `QUEUE_POLL_INTERVAL + QUEUE_ORPHAN_AGE`
+
+| `QUEUE_RESCUERS`
+| `1`
+| Number of rescuer goroutines per pod (>1 for stress-testing)
+
+| `DATABASE_MAX_CONNS`
+| `10`
+| Maximum database connection pool size per pod. The per-cluster Go mutex keeps actual usage low (1 connection per cluster at a time), but a higher pool allows headroom for non-rate-limit queries under load.
+|===
+
+=== FIFO Ordering Guarantees
+
+Maintaining FIFO order across dequeue cycles requires two mechanisms:
+
+1. **Cluster claiming (`claimedClusters` map):** The queue processor uses `CheckAndReserveSlot()` (atomic check+reserve with advisory lock) to decide which resources to dequeue. When a resource reserves a slot, ALL its candidate clusters are marked as claimed in a per-cycle `claimedClusters` map. Subsequent resources targeting claimed clusters are skipped (retried next cycle). This limits throughput to one dequeue per cluster per cycle, but preserves FIFO ordering.
+
+2. **`created_at` preservation on re-queue:** Even with cluster claiming, timing races at the rate-window boundary can cause `CheckAndReserveSlot` (in `Request()` during provisioning) to find the rate limit still exhausted. The resource is re-queued with a new `created_at`, jumping to the back of the queue. To prevent this, `provisionDequeuedResource` checks the status after `Request()` returns — if the resource was re-queued, it overwrites `created_at` with the original value.
+
+NOTE: FIFO ordering applies only among resources targeting the _same_ cluster. Resources targeting different clusters may complete in any order depending on each cluster's rate-limit state.
+
+== Resource and Placement Status: `"queued"`
+
+New status added to both enums:
+
+- `resource_status_enum`: `queued` added before `initializing` (migration 025)
+- `placement_status_enum`: `queued` added before `initializing` (migration 024)
+
+=== Resource lifecycle
+
+[source]
+----
+Resource created in DB with status "initializing":
+  ├─ Synchronous slot reservation succeeds
+  │   → "scheduling" → "success"
+  │                   → "error"
+  └─ All clusters rate-limited (synchronous check)
+      → converted to "queued" (status + queued_params saved)
+      → (queue processor dequeues) → re-enters Request() → "initializing" → ...
+----
+
+- Resource is always created first as `"initializing"`, then converted to `"queued"` if all clusters are rate-limited. This ensures the resource exists in the DB before rate-limit count queries run, preventing TOCTOU races.
+- Provisioning parameters (cloud_selector, quota, limit_range, cluster_relation, etc.) are stored in `resource_data` JSONB as `queued_params`
+- No async provisioning goroutine runs until the resource is dequeued
+- Queued resources have no namespace — `Release()` skips the namespace check for `status = "queued"`
+- Rate-limit count queries exclude resources marked `to_cleanup = true` (deleted resources don't count against the limit)
+- When a dequeued resource is re-queued (timing race at rate-window boundary), `created_at` is preserved to maintain FIFO position
+
+=== Placement lifecycle
+
+[source]
+----
+Placement:
+  ├─ All resources "initializing" → normal flow → "success"
+  ├─ Any resource "queued"        → "queued" → (resources dequeue) → "success"
+  └─                                                                → "error"
+----
+
+- Placement `status = "queued"` is set by the handler when any OcpSandbox resource is queued
+- Anarchy sees `"queued"` and reports "in queue" to the user
+- HTTP response is the same *202 Accepted* as any new placement
+- `LoadActiveResources` skips status update when placement is `"queued"` (status is managed by the queue processor)
+
+== Dry-Run
+
+The dry-run endpoint (`POST /api/v1/placements/dry-run`) shows per-cluster rate-limit state. It is read-only — no locks, no state changes, fast response.
+
+=== Capacity available (immediate scheduling)
+
+[source,json]
+----
+{
+  "kind": "OcpSandbox",
+  "available": true,
+  "message": "Matching OCP shared clusters found",
+  "schedulable_cluster_count": 3,
+  "schedulable_cluster_names": ["cluster1", "cluster2", "cluster3"],
+  "cluster_details": [
+    {"name": "cluster1", "available_slots": 50},
+    {"name": "cluster2", "available_slots": 8},
+    {"name": "cluster3", "available_slots": 35}
+  ]
+}
+----
+
+=== All clusters at rate limit (would be queued)
+
+[source,json]
+----
+{
+  "kind": "OcpSandbox",
+  "available": true,
+  "message": "Matching OCP shared clusters found (placement would be queued)",
+  "schedulable_cluster_count": 3,
+  "schedulable_cluster_names": ["cluster1", "cluster2", "cluster3"],
+  "cluster_details": [
+    {"name": "cluster1", "available_slots": 0},
+    {"name": "cluster2", "available_slots": 0},
+    {"name": "cluster3", "available_slots": 0}
+  ],
+  "queued": true,
+  "queue_position": 5
+}
+----
+
+- `available` is `true` — the placement _will_ happen, just not immediately
+- `available_slots` = `provision_rate_limit - recent_provisions_in_window`
+  * 0 = cluster is at its rate limit
+  * Equals `provision_rate_limit` during quiet periods
+- Clusters without rate limiting configured omit `available_slots` (unlimited)
+- `queue_position` = number of existing queued placements ahead (for the same cloud selector)
+- `available` is `false` — no matching cluster, or all cluster at max capacity (max_placements)
+
+== API Changes
+
+=== Cluster Configuration
+
+`PUT /api/v1/ocp-shared-cluster-configurations/{name}`
+
+New `settings` JSONB field (replaces per-field approach):
+
+[cols="2,1,3"]
+|===
+| Field | Type | Description
+
+| `settings.provision_rate_limit`
+| integer (nullable)
+| Max new placements within the rate window. Must be > 0.
+
+| `settings.provision_rate_window`
+| string (nullable)
+| Duration string (e.g. `10m`, `1h`, `30s`). Must be set with `provision_rate_limit`.
+|===
+
+=== Placement Creation
+
+`POST /api/v1/placements`
+
+No change to HTTP status codes — new placements already return *202 Accepted*. The only difference is the placement `status` field:
+
+[cols="1,3"]
+|===
+| Placement status | Meaning
+
+| `"initializing"`
+| Placement scheduled immediately (existing behavior)
+
+| `"queued"`
+| All candidate clusters at rate limit — will be processed later (FIFO)
+|===
+
+The existing *200 OK* response for identical duplicate requests is unchanged.
+
+=== Dry-Run
+
+`POST /api/v1/placements/dry-run`
+
+New fields in `ResourceDryRunResult`:
+
+[cols="2,1,3"]
+|===
+| Field | Type | Description
+
+| `cluster_details`
+| array (optional)
+| Per-cluster rate-limit info. Only present for OcpSandbox resources.
+
+| `cluster_details[].name`
+| string
+| Cluster name
+
+| `cluster_details[].available_slots`
+| integer (optional)
+| Remaining capacity in the rate window. Omitted if no rate limit configured.
+
+| `queued`
+| boolean (optional)
+| `true` if the placement would be queued. Only present when all clusters are rate-limited.
+
+| `queue_position`
+| integer (optional)
+| Position in the queue. Only present when `queued` is `true`.
+|===
+
+== Critical Implementation Challenges
+
+These issues were discovered during implementation and testing. They represent ongoing maintenance concerns due to their subtle, timing-dependent nature.
+
+=== 1. TOCTOU Race Under Concurrent Burst
+
+**Problem:** A naive rate-limit implementation checks the count and reserves the slot as two separate operations. Under concurrent burst load (e.g. 50 placements arriving simultaneously), multiple requests all see count=0 and all pass through, exceeding the rate limit.
+
+**Fix:** `CheckAndReserveSlot()` performs the count check AND the slot reservation (`resource_data->>'ocp_cluster'` update) within a single transaction, serialized by a per-cluster Go mutex (within-pod) and `pg_advisory_xact_lock(FNV32a(clusterName))` (cross-pod). The Go mutex prevents pool connection exhaustion under burst load by ensuring only one goroutine per cluster holds a DB connection at a time. The resource must be saved to DB _before_ the check (save as `"initializing"` first) so it's visible to count queries.
+
+**Maintenance risk:** The synchronous-first design (save → check under lock → queue or proceed) is load-bearing. Any refactor that moves the save after the check reintroduces the TOCTOU race.
+
+=== 2. Resource-Level Queuing (Why Not Placement-Level)
+
+**Problem:** The initial design queued entire placements. This broke multi-resource placements: if Resource A provisions on cluster X (success) and Resource B is rate-limited on cluster Y, queuing the _placement_ orphans A's running namespace. Dequeuing later tries to re-create A, causing a conflict.
+
+**Fix:** Each resource is independently queued or provisioned. Only the rate-limited resource gets `status = "queued"`. The placement status is derived from the aggregate: any resource queued → placement queued. The queue processor dequeues individual resources, not placements.
+
+**Maintenance risk:** Resource-level queuing requires `QueuedRequestParams` to store all provisioning parameters in `resource_data` JSONB. Any new parameter added to `Request()` must also be added to `QueuedRequestParams` or it will be lost on dequeue.
+
+=== 3. FIFO Ordering Preservation
+
+**Problem:** When multiple queued resources target the same cluster, the queue processor could dequeue them all in one cycle. But `provisionDequeuedResource` deletes the old resource and calls `Request()` which creates a new one. If `CheckAndReserveSlot` in `Request()` denies the slot (timing race at window boundary), the resource is re-queued with a **new `created_at`** timestamp, pushing it to the back of the queue.
+
+**Fix:** Two guards:
+
+1. `claimedClusters` map in `processQueuedResourceList` — the queue processor uses `CheckAndReserveSlot()` (atomic) directly. After a resource reserves a slot, ALL its candidate clusters are marked claimed. Subsequent resources targeting claimed clusters are skipped (retried next cycle).
+2. `created_at` preservation — `provisionDequeuedResource` saves the original `created_at` before calling `Request()`. If the new resource ends up re-queued, it overwrites `created_at` with the original value.
+
+**Maintenance risk:** Any change to `processQueuedResourceList`, `provisionDequeuedResource`, or `Request()` must consider FIFO ordering. The delete-old-resource + create-new-resource pattern in `provisionDequeuedResource` is inherently fragile — the new resource gets fresh timestamps and a new ID.
+
+=== 4. `reserveClusterSlot("")` Clearing After Failed Provisioning
+
+**Problem:** In `providerLoop`, when a cluster attempt fails (connectivity, node issues), `reserveClusterSlot("")` clears the `ocp_cluster` field so the slot doesn't count against the rate limit. This is correct (no deployment happened, the slot should be freed), but it means the rate-limit count can drop mid-provisioning, potentially allowing the queue processor to dequeue resources prematurely.
+
+**Maintenance risk:** The slot clearing is scattered across multiple `continue providerLoop` paths. Missing a clear or adding one incorrectly can either leak slots (count stays inflated) or release them too early.
+
+=== 5. Advisory Lock Scope
+
+**Design:** Three different locking scopes co-exist:
+
+* `CheckAndReserveSlot`: per-cluster Go mutex (within-pod, `sync.Map` of `*sync.Mutex`) + `pg_advisory_xact_lock(FNV32a(clusterName))` (cross-pod). The Go mutex ensures only one goroutine per cluster holds a pool connection, preventing exhaustion under burst load. Used by both `Request()` (synchronous path) and `processQueuedResourceList` (queue processor).
+* Rescuer: `pg_try_advisory_xact_lock(queueProcessorLockID)` — global lock, ensures single-instance execution across pods. The local processor does NOT use this lock (locality-scoped, no contention).
+* `IsRateLimited()`: no lock — read-only, used by dry-run only.
+
+The queue processor previously used `IsRateLimited()` (read-only) as a pre-check before `CheckAndReserveSlot` in `Request()`, creating a TOCTOU gap. This was fixed by having the queue processor call `CheckAndReserveSlot` directly, eliminating the gap.
+
+**Maintenance risk:** Adding new code paths that check or modify rate-limit state must consider which lock (if any) is held.
+
+=== 6. Cross-Test Interference via Rate-Limit Count
+
+**Problem:** The rate-limit count query (`GetRecentProvisionCount`) counts resources by `ocp_cluster` name and `created_at` window. Regular `DELETE /placements/{uuid}` only marks `to_cleanup=true` — resources are cleaned up asynchronously by `Release()`. If a subsequent test reuses the same cluster name before cleanup completes, stale resources with `to_cleanup=false` inflate the count and cause unexpected rate-limiting. This manifested as tests passing in isolation but failing when run sequentially.
+
+**Fix:** Functional tests use force-delete (`DELETE /placements/{uuid}/force`) which synchronously removes resources from the DB.
+
+**Maintenance risk:** New tests must use force-delete in cleanup. The `to_cleanup=false` filter in the count query means any resource that exists with a matching `ocp_cluster` and hasn't been cleaned up counts against the rate limit.
+
+=== 7. Resource Leak in `GetSchedulableClusters`
+
+**Problem:** When resolving child cluster relations, the original code reused the `rows, err` variables for both the main query and the parent-cluster query. This leaked the first `pgx.Rows` cursor (no `Close()` call before reassignment), eventually exhausting the connection pool under load.
+
+**Fix:** Use distinct variables (`parentRows, parentErr`) for the parent query with explicit `parentRows.Close()` after iteration.
+
+**Maintenance risk:** Any new query branch in `GetSchedulableClusters` must use its own `rows` variable or close the previous one first.
+
+=== 8. Queue Processor Throughput
+
+The `claimedClusters` guard limits dequeue throughput to **one resource per cluster per cycle**. The local processor retries every `QUEUE_POLL_INTERVAL` (default 5s) when resources remain queued, so a cluster with `rate_limit=50` and 200 queued placements would take ~1000s (~17 minutes) to drain (one per 5s). The rescuer only handles orphaned resources and does not contribute to normal throughput.
+
+This is a trade-off: strict FIFO vs throughput. For most production scenarios (rate limits of 10-50, moderate queue depths), this is acceptable.
+
+=== 9. Local Processor + Rescuer Coordination
+
+**Design:** The local processor handles resources queued by its own pod (primary path). The rescuer is purely for orphan recovery — it should process zero resources during normal operation. To avoid duplicate work:
+
+* `queue_checked_at` is batch-stamped (single timestamp for all resources in a batch) when evaluated by either processor
+* The rescuer only considers resources orphaned after `QUEUE_POLL_INTERVAL + QUEUE_ORPHAN_AGE` (default 35s) without being processed. For resources with no `queue_checked_at`, `created_at` is checked instead
+* If a pod dies, its resources have stale `queue_checked_at` values (or NULL) → the rescuer picks them up after the orphan threshold
+* Batch stamping is critical: individual stamps with separate `time.Now()` calls create millisecond gaps that let concurrent rescuers split resources across separate `claimedClusters` maps, breaking FIFO ordering
+
+**Maintenance risk:** The `queue_checked_at` field lives in `resource_data` JSONB (not a top-level column), so it's updated via `jsonb_set`. If `resource_data` is overwritten elsewhere without preserving this field, the rescuer may re-process resources prematurely (harmless but wasteful due to CAS protection).
+
+**Testing:** The local processor can be paused at runtime via `PUT /api/v1/admin/queue-processor {"local_processor_paused": true}`. The rescuer test uses this to verify orphan recovery without local processor interference.
+
+== Implementation Checklist
+
+=== DB Migrations (`db/migrations/`)
+
+- [x] `023_cluster_settings.up.sql`: add `settings` JSONB column to `ocp_shared_cluster_configurations`
+- [x] `023_cluster_settings.down.sql`: drop `settings` column
+- [x] `024_placement_queued_status.up.sql`: add `queued` to `placement_status_enum`
+- [x] `024_placement_queued_status.down.sql`: no-op (can't remove enum values)
+- [x] `025_resource_queued_status.up.sql`: add `queued` to `resource_status_enum`
+- [x] `025_resource_queued_status.down.sql`: no-op
+
+=== Model Layer (`internal/models/ocp_sandbox.go`)
+
+- [x] Add `ClusterSettings` struct with `ProvisionRateLimit`, `ProvisionRateWindow`
+- [x] Add `Settings ClusterSettings` field to `OcpSharedClusterConfiguration`
+- [x] Update `Save()`, `Update()`, and all `Scan()` calls to include `settings` column
+- [x] Add `GetRecentProvisionCount(window time.Duration) (int, error)` method
+- [x] Add `IsRateLimited() (bool, int, error)` method (read-only, used by dry-run and queue processor)
+- [x] Add `reserveClusterSlot()` for setting `ocp_cluster` on a resource
+- [x] Add `CheckAndReserveSlot()` — per-cluster Go mutex (`clusterLocks sync.Map`) + `pg_advisory_xact_lock` for atomic check + reserve
+- [x] Define `ErrRateLimited` sentinel error
+- [x] Add `StartQueueProcessor(ctx context.Context)` on `OcpSandboxProvider`
+  ** Local processor (signal-driven via `QueueNotify`, locality-scoped, retries on `QUEUE_POLL_INTERVAL`)
+  ** Rescuer (polls every `QUEUE_RESCUER_INTERVAL`, orphan threshold = `QUEUE_POLL_INTERVAL + QUEUE_ORPHAN_AGE`, `pg_try_advisory_xact_lock`)
+  ** 1 + N goroutines per pod (default N=1)
+- [x] Add `LocalProcessorPaused` atomic flag + `PUT /api/v1/admin/queue-processor` endpoint
+- [x] Refactor `Request()`: synchronous slot reservation after resource creation
+  ** Save resource as `"initializing"` first (so it exists for count queries)
+  ** Synchronously loop `CheckAndReserveSlot()` through candidate clusters
+  ** If one succeeds → pass pre-reserved cluster to async goroutine (skips re-check)
+  ** If ALL deny → convert resource to `"queued"` with `queued_params` in `resource_data`
+  ** For resources with cluster relations: if referenced sibling is `queued`, also queue
+- [x] Implement `processQueuedResourceList()` (shared logic for both processors)
+  ** Batch-stamps `queue_checked_at` (single timestamp), checks cluster relations + rate limits via `CheckAndReserveSlot`
+  ** Applies `ApplyPriorityWeight` for `cloud_preference` sorting
+  ** Uses `claimedClusters` map + CAS update, triggers provisioning for dequeued resources
+- [x] Add `FetchQueuedResources()` query function
+- [x] Add `FetchQueuedResourcesByLocality(localityID)` — filters by `queued_params.locality_id`
+- [x] Add `FetchStaleQueuedResources(staleAfter)` — filters by `queue_checked_at` staleness AND `created_at` for NULL stamps
+- [x] Add `QueueNotify chan string` on `OcpSandboxProvider` — signal channel for local processor
+- [x] Add `LocalityID` to `QueuedRequestParams` — stores `config.LocalityID` at queue time
+- [x] Add `QueueCheckedAt` to `OcpSandbox` — tracks last evaluation time per resource
+- [x] Add `GetQueuePosition()` query function for dry-run
+- [x] `Release()`: skip namespace check for `status = "queued"` (queued resources have no namespace)
+
+=== Placement Handling (`internal/models/placements.go`)
+
+- [x] `LoadActiveResourcesWithCreds`: skip status update when placement is `"queued"`
+  ** Queued placement status is managed by resource dequeuing, not by resource aggregation
+
+=== API Handlers (`cmd/sandbox-api/`)
+
+- [x] `PostPlacementHandler`: after processing all resources, check if any are `queued`
+  ** If any queued: set placement status to `"queued"`, return 202
+- [x] `PostDryRunPlacementHandler`: compute `cluster_details`, `queued`, `queue_position`
+  ** Uses `IsRateLimited()` (no locks — read-only, fast)
+- [x] `UpsertOcpSharedClusterConfigurationHandler`: take `Settings` from request
+- [x] Validate `provision_rate_limit` and `provision_rate_window` (both or neither)
+- [x] `main.go`: start queue processor goroutine
+
+=== API Types (`internal/api/v1/v1.go`)
+
+- [x] Add `ClusterDryRunInfo` struct
+- [x] Add `ClusterDetails`, `Queued`, `QueuePosition` fields to `ResourceDryRunResult`
+
+=== CLI (`internal/cli/`)
+
+- [x] `cluster list`: display rate-limit info
+- [x] `cluster get`: display `provision_rate_limit` and `provision_rate_window`
+- [x] `cluster onboard`: add `--provision-rate-limit` and `--provision-rate-window` flags
+- [x] `placement dry-run`: display `cluster_details` and queue info
+
+=== Documentation
+
+- [x] Update `docs/api-reference/swagger.yaml`
+
+=== Tests (`tests/functional/test_provision_rate_limit.py`)
+
+Single-resource tests:
+
+- [x] Configure rate limit, create placements up to limit → all succeed
+- [x] Overflow → resource `status = "queued"`, placement `status = "queued"`
+- [x] Dry-run shows `available_slots: 0` and `queued: true`
+- [x] Wait for window → queued resource dequeued, placement becomes `success`
+
+Multi-resource tests:
+
+- [x] 2 resources on same cluster (rate_limit=2) → both consume slots, overflow queued
+- [x] 2 resources on different clusters (rate_limit=1 each) → independent rate tracking
+- [x] Multi-resource placement: 1 resource rate-limited, 1 not → only the rate-limited resource queued, placement `queued`
+- [x] Queued resource dequeues → placement transitions to `success`
+
+Cluster relation tests:
+
+- [x] Resource B has `same_cluster_as(A)`: A rate-limited → both queued
+- [x] A dequeues first → B dequeues next cycle and lands on same cluster as A
+- [x] `different_cluster_from` with rate limiting: verify correct cluster exclusion after dequeue
+
+Child cluster relation tests:
+
+- [x] `child(A)` via `cluster_relation` — B lands on a child cluster of A's cluster
+- [x] `child(A) && different(B)` — C lands on a different child cluster than B
+- [x] `child(A)` via `cluster_condition` DSL — same behavior as `cluster_relation` form
+- [x] `child(A) && different(B)` via `cluster_condition` DSL
+
+Concurrent and ordering tests:
+
+- [x] Concurrent burst: 5 placements, rate_limit=2 → exactly 2 pass, 3 queued
+- [x] FIFO ordering: queued resources dequeued in creation order
+- [x] Rate limit lifecycle: window expiry frees slots, rate limit removal dequeues immediately
+
+=== Observability (`cmd/sandbox-api/metrics.go`, `internal/metrics/metrics.go`)
+
+- [x] Prometheus `/metrics` endpoint
+- [x] Rate-limit gauges: `sandbox_ratelimit_provision_count`, `sandbox_ratelimit_max`, `sandbox_ratelimit_available_slots` (per cluster)
+- [x] Queue gauges: `sandbox_queued_resources_total`, `sandbox_queued_placements_total`
+- [x] Operational counters: `sandbox_ratelimit_check_total` (allowed/denied/error), `sandbox_ratelimit_slot_reservations_total`, `sandbox_queue_dequeue_total`
+- [x] Lock wait histogram: `sandbox_ratelimit_lock_wait_seconds` (per cluster, per operation)
+- [x] PostgreSQL lock visibility: `sandbox_pg_advisory_locks_held/waiting` (with cluster name reverse lookup via FNV32a hash), `sandbox_pg_locks_total` (by locktype/mode/granted)
+- [x] Connection pool metrics: `sandbox_pg_pool_total_conns`, `sandbox_pg_pool_idle_conns`, `sandbox_pg_pool_max_conns`
+- [x] Background metrics collector (10s refresh interval)

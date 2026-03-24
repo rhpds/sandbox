@@ -14,7 +14,7 @@ import (
 type Resolver struct {
 	DbPool      *pgxpool.Pool
 	AwsProvider models.AwsAccountProvider
-	OcpProvider models.OcpSandboxProvider
+	OcpProvider *models.OcpSandboxProvider
 	DnsProvider models.DNSSandboxProvider
 	IbmProvider models.IBMResourceGroupSandboxProvider
 }

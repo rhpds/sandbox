@@ -12,12 +12,14 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: fixture/create: get app access token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: fixture/create: create placement
 {
   "service_uuid": "{{uuid}}",
   "resources": [

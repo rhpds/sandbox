@@ -4,6 +4,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 008/login-app-token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -17,6 +18,7 @@ jsonpath "$.access_token_exp" isString
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 008/login-admin-token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -30,16 +32,19 @@ jsonpath "$.access_token_exp" isString
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 008/cleanup-placement-before-create
 HTTP *
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 008/wait-placement-deleted
 [Options]
 retry: 40
 HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 008/create-placement-same-cluster-relation
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -87,6 +92,7 @@ jsonpath "$.Placement.resources[1].alias" == "B"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 008/wait-placement-success
 [Options]
 retry: 40
 HTTP 200
@@ -108,10 +114,12 @@ variable "cluster1" ==  "{{cluster2}}"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 008/delete-placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 008/wait-placement-deleted-final
 [Options]
 retry: 40
 HTTP 404

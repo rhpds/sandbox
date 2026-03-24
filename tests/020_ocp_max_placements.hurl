@@ -8,6 +8,7 @@
 #################################################################################
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 020/login: get app access token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -19,6 +20,7 @@ jsonpath "$.access_token" isString
 #################################################################################
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 020/login: get admin access token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -30,6 +32,7 @@ jsonpath "$.access_token" isString
 #################################################################################
 DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-max-placements-test
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 020/setup: delete test cluster if exists
 HTTP *
 
 #################################################################################
@@ -37,6 +40,7 @@ HTTP *
 #################################################################################
 POST {{host}}/api/v1/ocp-shared-cluster-configurations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 020/setup: create test cluster config
 {
     "name": "ocp-max-placements-test",
     "api_url": "https://api.max-placements-test.com:6443",
@@ -56,6 +60,7 @@ jsonpath "$.message" == "OCP shared cluster configuration created"
 #################################################################################
 GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-max-placements-test
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 020/test: verify cluster created without max_placements
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "ocp-max-placements-test"
@@ -67,6 +72,7 @@ jsonpath "$.max_placements" not exists
 #################################################################################
 POST {{host}}/api/v1/placements/dry-run
 Authorization: Bearer {{access_token}}
+X-Test-Description: 020/test: dry-run no limit
 {
   "resources": [
     {
@@ -89,6 +95,7 @@ jsonpath "$.results[0].schedulable_cluster_count" >= 1
 #################################################################################
 PUT {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-max-placements-test/update
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 020/test: set max_placements to 0
 {
   "max_placements": 0
 }
@@ -101,6 +108,7 @@ jsonpath "$.message" == "OCP shared cluster configuration updated"
 #################################################################################
 GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-max-placements-test
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 020/test: verify max_placements is 0
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "ocp-max-placements-test"
@@ -111,6 +119,7 @@ jsonpath "$.max_placements" == 0
 #################################################################################
 POST {{host}}/api/v1/placements/dry-run
 Authorization: Bearer {{access_token}}
+X-Test-Description: 020/test: dry-run blocked by max_placements 0
 {
   "resources": [
     {
@@ -133,6 +142,7 @@ jsonpath "$.results[0].message" == "All matching OCP shared clusters are at thei
 #################################################################################
 PUT {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-max-placements-test/update
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 020/test: set max_placements to 100
 {
   "max_placements": 100
 }
@@ -145,6 +155,7 @@ jsonpath "$.message" == "OCP shared cluster configuration updated"
 #################################################################################
 GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-max-placements-test
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 020/test: verify max_placements is 100
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "ocp-max-placements-test"
@@ -155,6 +166,7 @@ jsonpath "$.max_placements" == 100
 #################################################################################
 POST {{host}}/api/v1/placements/dry-run
 Authorization: Bearer {{access_token}}
+X-Test-Description: 020/test: dry-run allowed with max_placements 100
 {
   "resources": [
     {
@@ -177,6 +189,7 @@ jsonpath "$.results[0].schedulable_cluster_count" >= 1
 #################################################################################
 PUT {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-max-placements-test/update
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 020/test: clear max_placements limit
 {
   "max_placements": -1
 }
@@ -189,6 +202,7 @@ jsonpath "$.message" == "OCP shared cluster configuration updated"
 #################################################################################
 GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-max-placements-test
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 020/test: verify max_placements cleared
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "ocp-max-placements-test"
@@ -199,6 +213,7 @@ jsonpath "$.max_placements" not exists
 #################################################################################
 POST {{host}}/api/v1/placements/dry-run
 Authorization: Bearer {{access_token}}
+X-Test-Description: 020/test: dry-run after clearing limit
 {
   "resources": [
     {
@@ -220,6 +235,7 @@ jsonpath "$.results[0].available" == true
 #################################################################################
 DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-max-placements-test
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 020/cleanup: delete test cluster config
 [Options]
 retry: 2
 HTTP *

@@ -8,6 +8,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 019/login: get app access token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -19,10 +20,12 @@ jsonpath "$.access_token" isString
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 019/setup: delete placement before starting
 HTTP *
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 019/setup: wait for placement deletion
 [Options]
 retry: 60
 HTTP 404
@@ -33,6 +36,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 019/test: create placement with fail_book annotation
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -62,6 +66,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 019/test: wait for error status with custom message
 [Options]
 retry: 30
 retry-interval: 1000
@@ -79,6 +84,7 @@ jsonpath "$.resources[0].error_message" == "Test booking failure: cluster unreac
 
 GET {{host}}/api/v1/accounts/OcpSandbox/{{sandbox_name}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 019/test: verify error_message on ocp sandbox directly
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "{{sandbox_name}}"
@@ -92,10 +98,12 @@ jsonpath "$.error_message" == "Test booking failure: cluster unreachable"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 019/cleanup: delete failed placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 019/cleanup: wait for failed placement deletion
 [Options]
 retry: 40
 HTTP 404
@@ -106,6 +114,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 019/test: create placement with default fail_book message
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -131,6 +140,7 @@ jsonpath "$.message" == "Placement Created"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 019/test: wait for error status with default message
 [Options]
 retry: 30
 retry-interval: 1000
@@ -146,10 +156,12 @@ jsonpath "$.resources[0].error_message" == "Simulated booking failure for testin
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 019/cleanup: delete placement final
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 019/cleanup: wait for placement deletion final
 [Options]
 retry: 40
 HTTP 404

@@ -4,6 +4,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 006/login-app-token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -17,6 +18,7 @@ jsonpath "$.access_token_exp" isString
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 006/login-admin-token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -29,6 +31,7 @@ jsonpath "$.access_token_exp" isString
 #################################################################################
 POST {{host}}/api/v1/ibm-resource-group-configurations
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/create-ibm-rg-config-unauthorized
 {
     "name": "devaccount",
     "apikey": "abcd...",
@@ -42,12 +45,14 @@ jsonpath "$.message" == "Unauthorized"
 
 DELETE {{host}}/api/v1/ibm-resource-group-configurations/devaccount
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 006/cleanup-ibm-rg-config
 [Options]
 retry: 2
 HTTP 404
 
 POST {{host}}/api/v1/ibm-resource-group-configurations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 006/create-ibm-rg-config-missing-annotations
 {
     "name": "devaccount",
     "apikey": "abcd..."
@@ -58,6 +63,7 @@ jsonpath "$.message" == "Bad request: payload doesn't pass OpenAPI spec"
 
 POST {{host}}/api/v1/ibm-resource-group-configurations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 006/create-ibm-rg-config
 {
     "name": "devaccount",
     "apikey": "abcd...",
@@ -71,6 +77,7 @@ jsonpath "$.message" == "IBM resource group account configuration created"
 
 POST {{host}}/api/v1/ibm-resource-group-configurations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 006/create-ibm-rg-config-duplicate
 {
     "name": "devaccount",
     "apikey": "abcd...",
@@ -85,6 +92,7 @@ jsonpath "$.error_multiline[0]" contains "duplicate key value violates unique co
 
 GET {{host}}/api/v1/ibm-resource-group-configurations/devaccount
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 006/get-ibm-rg-config
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "devaccount"
@@ -93,12 +101,14 @@ jsonpath "$.valid" == true
 
 PUT {{host}}/api/v1/ibm-resource-group-configurations/devaccount/disable
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 006/disable-ibm-rg-config
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "IBM resource group account configuration is disabled"
 
 GET {{host}}/api/v1/ibm-resource-group-configurations/devaccount
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 006/verify-ibm-rg-config-disabled
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "devaccount"
@@ -108,12 +118,14 @@ jsonpath "$.valid" == false
 # Enable cluster
 PUT {{host}}/api/v1/ibm-resource-group-configurations/devaccount/enable
 Authorization: Bearer {{ access_token_admin }}
+X-Test-Description: 006/enable-ibm-rg-config
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "IBM resource group account configuration is enabled"
 
 GET {{host}}/api/v1/ibm-resource-group-configurations/devaccount
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 006/verify-ibm-rg-config-enabled
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "devaccount"
@@ -143,6 +155,7 @@ jsonpath "$.valid" == true
 
 DELETE {{host}}/api/v1/ibm-resource-group-configurations/devaccount
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 006/delete-ibm-rg-config
 [Options]
 retry: 2
 HTTP 404
@@ -152,10 +165,12 @@ HTTP 404
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/cleanup-placement
 HTTP *
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/wait-placement-cleanup
 [Options]
 retry: 40
 HTTP 404
@@ -166,6 +181,7 @@ HTTP 404
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/ensure-no-placement
 HTTP 404
 
 #################################################################################
@@ -174,6 +190,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/create-placement-cloud-selector-too-restrictive
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -200,6 +217,7 @@ jsonpath "$.message" == "No IBM resource group account configuration found"
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/create-placement-multiple-ibm
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -241,6 +259,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/wait-placement-multiple-ibm-ready
 [Options]
 retry: 40
 HTTP 200
@@ -259,10 +278,12 @@ jsonpath "$.resources[2].status" == "success"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/delete-placement-multiple-ibm
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/check-deleting-multiple-ibm
 [Options]
 HTTP 200
 [Asserts]
@@ -270,6 +291,7 @@ jsonpath "$.status" == "deleting"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/wait-delete-multiple-ibm
 [Options]
 retry: 40
 HTTP 404
@@ -280,6 +302,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/create-placement-multiple-ibm-one-unschedulable
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -311,6 +334,7 @@ jsonpath "$.message" == "No IBM resource group account configuration found"
 #################################################################################
 GET {{host}}/api/v1/accounts/IBMResourceGroupSandbox
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/ensure-no-ibm-rg-sandbox
 [QueryStringParams]
 service_uuid: {{uuid}}
 [Options]
@@ -325,6 +349,7 @@ jsonpath "$" count == 0
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/create-placement-single-ibm
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -354,6 +379,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/create-placement-duplicate-identical
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -379,6 +405,7 @@ jsonpath "$.Placement.resources" count == 1
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/create-placement-different-same-uuid
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -402,6 +429,7 @@ jsonpath "$.message" == "UUID already in use by another placement"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/wait-placement-single-ibm-ready
 [Options]
 retry: 40
 HTTP 200
@@ -417,6 +445,7 @@ jsonpath "$.resources[0].status" == "success"
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/create-placement-conflict-409
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -437,6 +466,7 @@ HTTP 409
 #################################################################################
 GET {{host}}/api/v1/accounts/IBMResourceGroupSandbox
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/get-all-ibm-rg-sandboxes
 HTTP 200
 [Asserts]
 jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 1
@@ -446,6 +476,7 @@ jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 1
 #################################################################################
 GET {{host}}/api/v1/accounts/IBMResourceGroupSandbox
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/get-ibm-rg-sandboxes-by-uuid
 [QueryStringParams]
 service_uuid: {{uuid}}
 HTTP 200
@@ -457,6 +488,7 @@ jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 1
 #################################################################################
 GET {{host}}/api/v1/accounts/IBMResourceGroupSandbox/{{sandbox_name}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/get-ibm-rg-sandbox-by-name
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "{{sandbox_name}}"
@@ -468,10 +500,12 @@ jsonpath "$.service_uuid" == "{{uuid}}"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/delete-placement-single-ibm
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/wait-delete-single-ibm
 [Options]
 retry: 40
 HTTP 404
@@ -482,6 +516,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/create-placement-with-rg-suffix
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -510,6 +545,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/wait-placement-rg-suffix-ready
 [Options]
 retry: 40
 HTTP 200
@@ -529,6 +565,7 @@ jsonpath "$.resources[?(@.annotations.resourcegroup_suffix == 'prod')].resourceg
 #################################################################################
 GET {{host}}/api/v1/accounts/IBMResourceGroupSandbox
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/get-ibm-rg-sandboxes-by-uuid-rg-suffix
 [QueryStringParams]
 service_uuid: {{uuid}}
 HTTP 200
@@ -541,10 +578,12 @@ jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 3
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/delete-placement-rg-suffix
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/wait-delete-rg-suffix
 [Options]
 retry: 40
 HTTP 404
@@ -555,6 +594,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/create-placement-aws-plus-ibm
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -582,6 +622,7 @@ jsonpath "$.Placement.resources[0].annotations.purpose" == "dev"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/wait-placement-aws-plus-ibm-ready
 [Options]
 retry: 40
 HTTP 200
@@ -601,10 +642,12 @@ jsonpath "$.resources[?(@.annotations.purpose == 'aws')].kind" contains "AwsSand
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/delete-placement-aws-plus-ibm
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/check-deleting-aws-plus-ibm
 [Options]
 HTTP 200
 [Asserts]
@@ -612,6 +655,7 @@ jsonpath "$.status" == "deleting"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 006/wait-delete-aws-plus-ibm
 [Options]
 retry: 40
 HTTP 404

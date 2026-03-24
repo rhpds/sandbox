@@ -44,7 +44,7 @@ func (p *PlacementWithCreds) Render(w http.ResponseWriter, r *http.Request) erro
 	return nil
 }
 
-func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) error {
+func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider *OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) error {
 
 	accounts, err := awsProvider.FetchAllByServiceUuid(p.ServiceUuid)
 
@@ -97,7 +97,7 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
-	if p.Status != "error" && p.Status != "deleting" {
+	if p.Status != "error" && p.Status != "deleting" && p.Status != "queued" {
 		if err := p.SetStatus(status); err != nil {
 			return err
 		}
@@ -149,7 +149,7 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
-	if p.Status != "error" && p.Status != "deleting" {
+	if p.Status != "error" && p.Status != "deleting" && p.Status != "queued" {
 		if err := p.SetStatus(status); err != nil {
 			return err
 		}
@@ -158,7 +158,7 @@ func (p *Placement) LoadResources(awsProvider AwsAccountProvider, ocpProvider Oc
 	return nil
 }
 
-func (p *PlacementWithCreds) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) error {
+func (p *PlacementWithCreds) LoadResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider *OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) error {
 
 	accounts, err := awsProvider.FetchAllByServiceUuidWithCreds(p.ServiceUuid)
 
@@ -227,7 +227,7 @@ func (p *PlacementWithCreds) LoadResourcesWithCreds(awsProvider AwsAccountProvid
 
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
-	if p.Status != "error" && p.Status != "deleting" {
+	if p.Status != "error" && p.Status != "deleting" && p.Status != "queued" {
 		if err := p.SetStatus(status); err != nil {
 			return err
 		}
@@ -252,7 +252,7 @@ func (p *Placement) LoadActiveResources(awsProvider AwsAccountProvider) error {
 	return nil
 }
 
-func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) error {
+func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider, ocpProvider *OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) error {
 
 	accounts, err := awsProvider.FetchAllActiveByServiceUuidWithCreds(p.ServiceUuid)
 
@@ -339,7 +339,7 @@ func (p *Placement) LoadActiveResourcesWithCreds(awsProvider AwsAccountProvider,
 
 	// If the placement is already an error, don't update the status
 	// If the placement is deleting, don't update the status here neither
-	if p.Status != "error" && p.Status != "deleting" {
+	if p.Status != "error" && p.Status != "deleting" && p.Status != "queued" {
 		if err := p.SetStatus(status); err != nil {
 			return err
 		}
@@ -395,7 +395,7 @@ func (p *Placement) Create() error {
 }
 
 // Delete deletes a placement
-func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) {
+func (p *Placement) Delete(accountProvider AwsAccountProvider, ocpProvider *OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider) {
 	if err := p.SetStatus("deleting"); err != nil {
 		log.Logger.Error("error setting status for placement",
 			"serviceUuid", p.ServiceUuid,
@@ -731,7 +731,7 @@ func GetPlacementByServiceUuid(dbpool *pgxpool.Pool, serviceUuid string) (*Place
 }
 
 // DeletePlacementByServiceUuid deletes a placement by ServiceUuid
-func DeletePlacementByServiceUuid(dbpool *pgxpool.Pool, awsProvider AwsAccountProvider, ocpProvider OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider, serviceUuid string) error {
+func DeletePlacementByServiceUuid(dbpool *pgxpool.Pool, awsProvider AwsAccountProvider, ocpProvider *OcpSandboxProvider, dnsProvider DNSSandboxProvider, ibmProvider IBMResourceGroupSandboxProvider, serviceUuid string) error {
 	placement, err := GetPlacementByServiceUuid(dbpool, serviceUuid)
 	if err != nil {
 		return err

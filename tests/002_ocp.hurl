@@ -4,6 +4,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 002/login: get app access token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -17,6 +18,7 @@ jsonpath "$.access_token_exp" isString
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 002/admin-login: get admin access token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -29,6 +31,7 @@ jsonpath "$.access_token_exp" isString
 #################################################################################
 POST {{host}}/api/v1/ocp-shared-cluster-configurations
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/create-cluster-unauth: non-admin create cluster
 {
     "name": "ocp-cluster-test1",
     "api_url": "https://api.ocp-cluster-1.com:6443",
@@ -41,12 +44,14 @@ jsonpath "$.message" == "Unauthorized"
 
 DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 002/delete-cluster-cleanup: ensure cluster deleted before test
 [Options]
 retry: 2
 HTTP 404
 
 POST {{host}}/api/v1/ocp-shared-cluster-configurations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 002/create-cluster-no-annotations: missing required annotations
 {
     "name": "ocp-cluster-test1",
     "api_url": "https://api.ocp-cluster-1.com:6443",
@@ -59,6 +64,7 @@ jsonpath "$.message" == "Bad request: payload doesn't pass OpenAPI spec"
 
 POST {{host}}/api/v1/ocp-shared-cluster-configurations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 002/create-cluster: add ocp shared cluster config
 {
     "name": "ocp-cluster-test1",
     "api_url": "https://api.ocp-cluster-1.com:6443",
@@ -77,6 +83,7 @@ jsonpath "$.message" == "OCP shared cluster configuration created"
 
 POST {{host}}/api/v1/ocp-shared-cluster-configurations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 002/create-cluster-duplicate: duplicate cluster config
 {
     "name": "ocp-cluster-test1",
     "api_url": "https://api.ocp-cluster-1.com:6443",
@@ -95,6 +102,7 @@ jsonpath "$.error_multiline[0]" contains "duplicate key value violates unique co
 
 GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 002/get-cluster: verify cluster config
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "ocp-cluster-test1"
@@ -108,12 +116,14 @@ jsonpath "$.skip_quota" == true
 
 PUT {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1/disable
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 002/disable-cluster: disable cluster config
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "OCP shared cluster configuration is disabled"
 
 GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 002/get-cluster-disabled: verify cluster is disabled
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "ocp-cluster-test1"
@@ -123,12 +133,14 @@ jsonpath "$.valid" == false
 # Enable cluster
 PUT {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1/enable
 Authorization: Bearer {{ access_token_admin }}
+X-Test-Description: 002/enable-cluster: enable cluster config
 HTTP 200
 [Asserts]
 jsonpath "$.message" == "OCP shared cluster configuration is enabled"
 
 GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 002/get-cluster-enabled: verify cluster is enabled
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "ocp-cluster-test1"
@@ -137,6 +149,7 @@ jsonpath "$.valid" == true
 # Update a bunch of parameters
 PUT {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1/update
 Authorization: Bearer {{ access_token_admin }}
+X-Test-Description: 002/update-cluster: update cluster parameters
 {
   "quota_required": true,
   "strict_default_sandbox_quota": true,
@@ -149,6 +162,7 @@ jsonpath "$.message" == "OCP shared cluster configuration updated"
 
 GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 002/get-cluster-updated: verify updated parameters
 HTTP 200
 [Asserts]
 jsonpath "$.strict_default_sandbox_quota" == true
@@ -158,12 +172,14 @@ jsonpath "$.skip_quota" == false
 
 DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 002/delete-cluster-before-recreate: cleanup before recreate
 [Options]
 retry: 2
 HTTP 404
 
 POST {{host}}/api/v1/ocp-shared-cluster-configurations
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 002/create-cluster-with-quota: create cluster with custom quota
 {
     "name": "ocp-cluster-test1",
     "api_url": "https://api.ocp-cluster-1.com:6443",
@@ -193,6 +209,7 @@ jsonpath "$.message" == "OCP shared cluster configuration created"
 
 GET {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 002/get-cluster-with-quota: verify custom quota config
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "ocp-cluster-test1"
@@ -202,6 +219,7 @@ jsonpath "$.default_sandbox_quota.spec.hard['requests.memory']" == "30Gi"
 
 DELETE {{host}}/api/v1/ocp-shared-cluster-configurations/ocp-cluster-test1
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 002/delete-cluster-final: final cluster cleanup
 [Options]
 retry: 2
 HTTP 404
@@ -211,10 +229,12 @@ HTTP 404
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/delete-placement-pre-cleanup: ensure placement deleted before test
 HTTP *
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/get-placement-pre-cleanup: wait for placement deletion
 [Options]
 retry: 40
 HTTP 404
@@ -225,6 +245,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/create-placement-no-match: cloud selector too restrictive
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -250,10 +271,12 @@ jsonpath "$.message" == "No OCP shared cluster configuration found"
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/delete-placement-pre-multi: cleanup before multi ocp test
 HTTP *
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/get-placement-pre-multi: wait for placement deletion
 [Options]
 retry: 40
 HTTP 404
@@ -264,6 +287,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/create-placement-multi: multi ocp sandboxes
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -305,6 +329,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/wait-placement-multi: wait for multi ocp placement success
 [Options]
 retry: 60
 HTTP 200
@@ -336,6 +361,7 @@ jsonpath "$.resources[2].credentials[0].token" isString
 #################################################################################
 
 GET {{console_url}}
+X-Test-Description: 002/check-console: connect to web console
 HTTP 200
 [Asserts]
 body contains "Red Hat OpenShift"
@@ -346,10 +372,12 @@ body contains "Red Hat OpenShift"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/delete-placement-multi: delete multi ocp placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/get-placement-deleting: verify placement is deleting
 [Options]
 HTTP 200
 [Asserts]
@@ -357,6 +385,7 @@ jsonpath "$.status" == "deleting"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/wait-placement-deleted-multi: wait for multi placement deletion
 [Options]
 retry: 40
 HTTP 404
@@ -367,6 +396,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/create-placement-fail: failed multi ocp with unschedulable
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -398,6 +428,7 @@ jsonpath "$.message" == "No OCP shared cluster configuration found"
 #################################################################################
 GET {{host}}/api/v1/accounts/OcpSandbox
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/get-accounts-no-match: ensure no ocp sandbox for uuid
 [QueryStringParams]
 service_uuid: {{uuid}}
 [Options]
@@ -412,6 +443,7 @@ jsonpath "$" count == 0
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/create-placement: simple ocp sandbox placement
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -440,6 +472,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/create-placement-duplicate: same placement returns 200
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -464,6 +497,7 @@ jsonpath "$.Placement.service_uuid" == "{{uuid}}"
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/create-placement-conflict: different placement returns 409
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -487,6 +521,7 @@ jsonpath "$.message" == "UUID already in use by another placement"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/wait-placement-single: wait for single placement success
 [Options]
 retry: 40
 HTTP 200
@@ -508,6 +543,7 @@ jsonpath "$.resources[0].credentials[0].token" isString
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/create-placement-conflict-after-success: same placement 409 after success
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -528,6 +564,7 @@ HTTP 409
 #################################################################################
 GET {{host}}/api/v1/accounts/OcpSandbox
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/get-all-sandboxes: get all ocp sandboxes
 HTTP 200
 [Asserts]
 jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 1
@@ -537,6 +574,7 @@ jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 1
 #################################################################################
 GET {{host}}/api/v1/accounts/OcpSandbox
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/get-sandboxes-by-uuid: get ocp sandboxes by service uuid
 [QueryStringParams]
 service_uuid: {{uuid}}
 HTTP 200
@@ -548,6 +586,7 @@ jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 1
 #################################################################################
 GET {{host}}/api/v1/accounts/OcpSandbox/{{sandbox_name}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/get-sandbox-by-name: get ocp sandbox by name
 HTTP 200
 [Asserts]
 jsonpath "$.name" == "{{sandbox_name}}"
@@ -559,10 +598,12 @@ jsonpath "$.service_uuid" == "{{uuid}}"
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/delete-placement-single: delete single ocp placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/wait-placement-deleted-single: wait for single placement deletion
 [Options]
 retry: 40
 HTTP 404
@@ -573,6 +614,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/create-placement-ns-suffix: placement with namespace suffix
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -601,6 +643,7 @@ jsonpath "$.Placement.resources[0].status" == "initializing"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/wait-placement-ns-suffix: wait for ns suffix placement success
 [Options]
 retry: 40
 HTTP 200
@@ -623,6 +666,7 @@ jsonpath "$.resources[?(@.annotations.namespace_suffix == 'prod')].namespace" co
 #################################################################################
 GET {{host}}/api/v1/accounts/OcpSandbox
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/get-sandboxes-ns-suffix: get sandboxes for ns suffix placement
 [QueryStringParams]
 service_uuid: {{uuid}}
 HTTP 200
@@ -635,10 +679,12 @@ jsonpath "$[?(@.service_uuid=='{{uuid}}')]" count == 3
 
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/delete-placement-ns-suffix: delete ns suffix placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/wait-placement-deleted-ns-suffix: wait for ns suffix deletion
 [Options]
 retry: 40
 HTTP 404
@@ -649,6 +695,7 @@ HTTP 404
 
 POST {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/create-placement-aws-ocp: placement with aws and ocp
 {
   "service_uuid": "{{uuid}}",
   "resources": [
@@ -676,6 +723,7 @@ jsonpath "$.Placement.resources[0].annotations.purpose" == "ocp"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/wait-placement-aws-ocp: wait for aws ocp placement success
 [Options]
 retry: 40
 HTTP 200
@@ -695,10 +743,12 @@ jsonpath "$.resources[?(@.annotations.purpose == 'aws')].kind" contains "AwsSand
 #################################################################################
 DELETE {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/delete-placement-aws-ocp: delete aws ocp placement
 HTTP 202
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/get-placement-deleting-final: verify placement is deleting
 [Options]
 HTTP 200
 [Asserts]
@@ -706,6 +756,7 @@ jsonpath "$.status" == "deleting"
 
 GET {{host}}/api/v1/placements/{{uuid}}
 Authorization: Bearer {{access_token}}
+X-Test-Description: 002/wait-placement-deleted-final: wait for final placement deletion
 [Options]
 retry: 40
 HTTP 404

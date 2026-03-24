@@ -8,6 +8,7 @@
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token_admin}}
+X-Test-Description: 017/login-admin-access-token
 HTTP 200
 [Captures]
 access_token_admin: jsonpath "$.access_token"
@@ -20,6 +21,7 @@ jsonpath "$.access_token" isString
 
 GET {{host}}/api/v1/login
 Authorization: Bearer {{login_token}}
+X-Test-Description: 017/login-regular-access-token
 HTTP 200
 [Captures]
 access_token: jsonpath "$.access_token"
@@ -31,6 +33,7 @@ jsonpath "$.access_token" isString
 #################################################################################
 
 GET {{host}}/api/v1/placements
+X-Test-Description: 017/placements-no-auth
 HTTP 401
 
 #################################################################################
@@ -39,6 +42,7 @@ HTTP 401
 
 GET {{host}}/api/v1/placements
 Authorization: Bearer {{access_token}}
+X-Test-Description: 017/placements-regular-token-denied
 HTTP 401
 
 #################################################################################
@@ -47,6 +51,7 @@ HTTP 401
 
 GET {{host}}/api/v1/placements
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 017/placements-no-filters
 HTTP 200
 [Asserts]
 jsonpath "$" isCollection
@@ -57,6 +62,7 @@ jsonpath "$" isCollection
 
 GET {{host}}/api/v1/placements?limit=5
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 017/placements-with-limit
 HTTP 200
 [Asserts]
 jsonpath "$" isCollection
@@ -67,6 +73,7 @@ jsonpath "$" isCollection
 
 GET {{host}}/api/v1/placements?status=success
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 017/placements-status-filter
 HTTP 200
 [Asserts]
 jsonpath "$" isCollection
@@ -77,6 +84,7 @@ jsonpath "$" isCollection
 
 GET {{host}}/api/v1/placements?to_cleanup=false
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 017/placements-to-cleanup-filter
 HTTP 200
 [Asserts]
 jsonpath "$" isCollection
@@ -87,6 +95,7 @@ jsonpath "$" isCollection
 
 GET {{host}}/api/v1/placements?limit=10&offset=0
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 017/placements-pagination
 HTTP 200
 [Asserts]
 jsonpath "$" isCollection
@@ -97,6 +106,7 @@ jsonpath "$" isCollection
 
 GET {{host}}/api/v1/placements?annotations[env_type]=graphql-test
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 017/placements-annotations-filter
 HTTP 200
 [Asserts]
 jsonpath "$" isCollection
@@ -107,6 +117,7 @@ jsonpath "$" isCollection
 
 GET {{host}}/api/v1/placements?annotations[env_type]=graphql-test&annotations[created_by]=fixture
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 017/placements-multiple-annotations
 HTTP 200
 [Asserts]
 jsonpath "$" isCollection
@@ -117,6 +128,7 @@ jsonpath "$" isCollection
 
 GET {{host}}/api/v1/placements?status=success&limit=5&to_cleanup=false
 Authorization: Bearer {{access_token_admin}}
+X-Test-Description: 017/placements-combined-filters
 HTTP 200
 [Asserts]
 jsonpath "$" isCollection

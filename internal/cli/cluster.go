@@ -43,18 +43,19 @@ var clusterListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tVALID\tAPI_URL\tCREATED_BY\tPLACEMENTS\tLAST STATUS")
+		fmt.Fprintln(w, "NAME\tVALID\tAPI_URL\tCREATED_BY\tPLACEMENTS\tRATE LIMIT\tLAST STATUS")
 		for _, c := range clusters {
 			valid := "NO"
 			if v, ok := c["valid"].(bool); ok && v {
 				valid = "yes"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				jsonStr(c["name"]),
 				valid,
 				jsonStr(c["api_url"]),
 				jsonStr(c["created_by"]),
 				formatPlacements(c, c["max_placements"]),
+				formatRateLimit(c),
 				formatConnectionStatus(c),
 			)
 		}
@@ -552,10 +553,32 @@ func formatPlacements(cluster map[string]any, max any) string {
 			cur = int(c)
 		}
 	}
-	if m, ok := max.(float64); ok {
-		return fmt.Sprintf("%4d / %4d", cur, int(m))
+	if m, ok := max.(float64); ok && int(m) > 0 {
+		pct := float64(cur) * 100.0 / m
+		return fmt.Sprintf("%4d / %4d (%2.0f%%)", cur, int(m), pct)
 	}
 	return fmt.Sprintf("%4d /    ?", cur)
+}
+
+// formatRateLimit returns a summary of the cluster's rate limit settings
+// including available slots when rate limiting is configured.
+func formatRateLimit(cluster map[string]any) string {
+	settings, ok := cluster["settings"].(map[string]any)
+	if !ok {
+		return "-"
+	}
+	limit, hasLimit := settings["provision_rate_limit"].(float64)
+	window, hasWindow := settings["provision_rate_window"].(string)
+	if !hasLimit || !hasWindow {
+		return "-"
+	}
+	base := fmt.Sprintf("%d/%s", int(limit), window)
+	if data, ok := cluster["data"].(map[string]any); ok {
+		if slots, ok := data["available_slots"].(float64); ok {
+			return fmt.Sprintf("%s (%d slots)", base, int(slots))
+		}
+	}
+	return base
 }
 
 // formatConnectionStatus returns the cluster connection status and age from the data JSONB.

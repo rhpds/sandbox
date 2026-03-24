@@ -27,7 +27,7 @@ type Worker struct {
 	AwsAccountProvider models.AwsAccountProvider
 
 	// OcpSandbox provider to interact with OCP sandboxes
-	OcpSandboxProvider models.OcpSandboxProvider
+	OcpSandboxProvider *models.OcpSandboxProvider
 
 	// DNS sandbox provider
 	DNSSandboxProvider models.DNSSandboxProvider
@@ -133,7 +133,7 @@ func (w Worker) Execute(j *models.LifecycleResourceJob) error {
 		// Create OcpSandboxWithCreds and reload to get credentials
 		sandbox := &models.OcpSandboxWithCreds{
 			OcpSandbox: ocpSandbox,
-			Provider:   &w.OcpSandboxProvider,
+			Provider:   w.OcpSandboxProvider,
 		}
 		if err := sandbox.Reload(); err != nil {
 			log.Logger.Error("Error reloading OcpSandbox with creds", "error", err, "name", j.ResourceName)

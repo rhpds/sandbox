@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/go-chi/httplog/v2"
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/rhpds/sandbox/cmd/sandbox-api/graph"
@@ -112,6 +114,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	pgConfig.MaxConns = 10 // Default 10; override with DATABASE_MAX_CONNS
+	if v := os.Getenv("DATABASE_MAX_CONNS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			pgConfig.MaxConns = int32(n)
+		}
+	}
 	pgConfig.MaxConnIdleTime = 5 * time.Minute    // Close idle connections after 5 minutes
 	pgConfig.MaxConnLifetime = time.Hour          // Close connections after 1 hour
 	pgConfig.HealthCheckPeriod = 30 * time.Second // Check health every 30 seconds
@@ -215,6 +223,14 @@ func main() {
 
 	// Start background admin SA token rotation for OCP clusters
 	OcpSandboxProvider.StartDeployerAdminSATokenRotation(ctx)
+
+	// Start background queue processor for rate-limited placements
+	OcpSandboxProvider.StartQueueProcessor(ctx)
+
+	// Start Prometheus metrics collector for rate-limit and lock state
+	startMetricsCollector(ctx, dbPool, OcpSandboxProvider)
+	// Register queue collector (queries DB on each /metrics scrape for real-time values)
+	registerQueueCollector(dbPool)
 
 	// Start background audit log purge
 	auditRetentionStr := os.Getenv("AUDIT_LOG_RETENTION")
@@ -368,6 +384,7 @@ func main() {
 		r.Put("/api/v1/reservations/{name}", baseHandler.UpdateReservationHandler)
 		r.Delete("/api/v1/reservations/{name}", baseHandler.DeleteReservationHandler)
 		r.Put("/api/v1/reservations/{name}/rename", baseHandler.RenameReservationHandler)
+
 	})
 
 	// ---------------------------------------------------------------------
@@ -407,6 +424,9 @@ func main() {
 		r.Get("/debug/pprof/trace", pprof.Trace)
 		r.Get("/debug/pprof/cmdline", pprof.Cmdline)
 		r.Get("/debug/pprof/symbol", pprof.Symbol)
+
+		// Queue processor control (testing)
+		r.Put("/api/v1/admin/queue-processor", baseHandler.PutQueueProcessorHandler)
 	})
 
 	// ---------------------------------------------------------------------
@@ -453,6 +473,9 @@ func main() {
 	// ---------------------------------------------------------------------
 	// Public Routes
 	// ---------------------------------------------------------------------
+
+	// Prometheus metrics — no auth, no OpenAPI validation
+	router.Handle("/metrics", promhttp.Handler())
 
 	// ---------------------------------------------------------------------
 	// Main server loop
