@@ -267,7 +267,7 @@ func (a *OcpSandboxProvider) processRescuerQueue(orphanThreshold time.Duration) 
 // ordered by creation time (FIFO).
 func (a *OcpSandboxProvider) FetchQueuedResources() ([]OcpSandboxWithCreds, error) {
 	return a.fetchQueuedResources(
-		`WHERE resource_type = 'OcpSandbox' AND status = 'queued'`,
+		`WHERE resource_type = 'OcpSandbox' AND status = 'queued' AND to_cleanup = false`,
 	)
 }
 
@@ -277,6 +277,7 @@ func (a *OcpSandboxProvider) FetchQueuedResourcesByLocality(localityID string) (
 	return a.fetchQueuedResources(
 		`WHERE resource_type = 'OcpSandbox'
 		   AND status = 'queued'
+		   AND to_cleanup = false
 		   AND resource_data->'queued_params'->>'locality_id' = $1`,
 		localityID,
 	)
@@ -292,6 +293,7 @@ func (a *OcpSandboxProvider) FetchStaleQueuedResources(staleAfter time.Duration)
 	return a.fetchQueuedResources(
 		`WHERE resource_type = 'OcpSandbox'
 		   AND status = 'queued'
+		   AND to_cleanup = false
 		   AND (
 		     (resource_data->>'queue_checked_at' IS NULL AND created_at < now() - $1::interval)
 		     OR (resource_data->>'queue_checked_at')::timestamptz < now() - $1::interval
