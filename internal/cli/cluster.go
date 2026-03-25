@@ -43,7 +43,7 @@ var clusterListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tVALID\tAPI_URL\tCREATED_BY\tPLACEMENTS\tRATE LIMIT\tLAST STATUS")
+		fmt.Fprintln(w, "NAME\tALTNAME\tVALID\tCREATED_BY\tPLACEMENTS\tRATE LIMIT\tLAST STATUS")
 		for _, c := range clusters {
 			valid := "NO"
 			if v, ok := c["valid"].(bool); ok && v {
@@ -51,8 +51,8 @@ var clusterListCmd = &cobra.Command{
 			}
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				jsonStr(c["name"]),
+				clusterAltname(c),
 				valid,
-				jsonStr(c["api_url"]),
 				jsonStr(c["created_by"]),
 				formatPlacements(c, c["max_placements"]),
 				formatRateLimit(c),
@@ -541,6 +541,21 @@ func suppressAnnotations(clusters []map[string]any) {
 		delete(c, "kubeconfig")
 		delete(c, "token")
 	}
+}
+
+// clusterAltname extracts the altname annotation from a cluster JSON object,
+// falling back to lab then demo annotations if altname is not set.
+func clusterAltname(c map[string]any) string {
+	annotations, ok := c["annotations"].(map[string]any)
+	if !ok {
+		return "-"
+	}
+	for _, key := range []string{"altname", "lab", "demo"} {
+		if s := jsonStr(annotations[key]); s != "" {
+			return s
+		}
+	}
+	return "-"
 }
 
 // formatPlacements formats "current / max" with 4-digit padding.
