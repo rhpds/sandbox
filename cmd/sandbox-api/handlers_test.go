@@ -233,6 +233,21 @@ func TestKeycloakUserPrefixBind(t *testing.T) {
 			expectedPrefix:   "lab-",
 			expectedUsername: "lab-g1234",
 		},
+		{
+			name: "pipe-separated cloud_selector values normalized per segment",
+			requestJSON: `{
+				"service_uuid": "13a8b15c-e752-4727-ac78-600e8833e575",
+				"resources": [{
+					"kind": "OcpSandbox",
+					"count": 1,
+					"cloud_selector": {"keycloak": "true|false", "purpose": "prod|event"},
+					"keycloak_user_prefix": "pipe-"
+				}],
+				"annotations": {"guid": "ptest"}
+			}`,
+			expectedPrefix:   "pipe-",
+			expectedUsername: "pipe-ptest",
+		},
 	}
 
 	for _, tc := range tests {
@@ -265,8 +280,9 @@ func TestKeycloakUserPrefixBind(t *testing.T) {
 			}
 
 			// Step 4: Verify Bind() normalized cloud_selector ("true"->"yes", "false"->"no")
+			// Also handles pipe-separated values: "true|false" -> "yes|no"
 			if keycloak, exists := resource.CloudSelector["keycloak"]; exists {
-				if keycloak != "yes" && keycloak != "no" {
+				if keycloak != "yes" && keycloak != "no" && keycloak != "yes|no" {
 					t.Errorf("cloud_selector[keycloak] should be normalized, got %q", keycloak)
 				}
 			}

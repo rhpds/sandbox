@@ -3515,7 +3515,26 @@ components:
               reference:
                 type: string
         cloud_selector:
-          $ref: "#/components/schemas/Annotations"
+          description: |
+            Annotations used to match clusters. All key-value pairs must match
+            the cluster's annotations (AND logic across keys).
+
+            Values may contain pipe-separated alternatives for OR logic within
+            a single key. For example, `purpose: prod|event` matches clusters
+            whose `purpose` annotation is either `prod` or `event`.
+
+            When multiple keys use pipes, all combinations are tried (cartesian
+            product). For example:
+            ```yaml
+            cloud_selector:
+              purpose: prod|event
+              cpuType: amd|intel
+            ```
+            matches clusters with (`purpose=prod` AND `cpuType=amd`) OR
+            (`purpose=prod` AND `cpuType=intel`) OR (`purpose=event` AND
+            `cpuType=amd`) OR (`purpose=event` AND `cpuType=intel`).
+          allOf:
+            - $ref: "#/components/schemas/Annotations"
         cloud_preference:
           $ref: "#/components/schemas/Annotations"
         keycloak_user_prefix:

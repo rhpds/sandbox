@@ -1336,14 +1336,21 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 	return clusters, nil
 }
 
-// GetOcpSharedClusterConfigurationByAnnotations returns a list of OcpSharedClusterConfiguration by annotations
+// GetOcpSharedClusterConfigurationByAnnotations returns a list of OcpSharedClusterConfiguration by annotations.
+// Values may contain pipe-separated alternatives (e.g. "prod|event") which are
+// expanded into OR conditions.
 func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByAnnotations(annotations map[string]string) ([]OcpSharedClusterConfiguration, error) {
 	clusters := []OcpSharedClusterConfiguration{}
+
+	selectors := ExpandCloudSelector(annotations)
+	condition, args := BuildAnnotationMatchCondition(selectors, 1)
+	query := `SELECT name FROM ocp_shared_cluster_configurations WHERE ` + condition
+
 	// Get resource from above 'ocp_shared_cluster_configurations' table
 	rows, err := p.DbPool.Query(
 		context.Background(),
-		`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1`,
-		annotations,
+		query,
+		args...,
 	)
 
 	if err != nil {
@@ -1855,21 +1862,31 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(
 	)
 
 	clusters := OcpSharedClusterConfigurations{}
+	// Expand pipe-separated OR values in cloudSelector into all combinations.
+	selectors := ExpandCloudSelector(cloudSelector)
+	annotCondition, annotArgs := BuildAnnotationMatchCondition(selectors, 1)
+	nextParam := 1 + len(selectors)
+
 	// Get resource from 'ocp_shared_cluster_configurations' table
 	var err error
 	var rows pgx.Rows
 	if len(possibleClusters) == 0 && len(excludeClusters) == 0 && len(parentClusters) == 0 {
 		rows, err = a.DbPool.Query(
 			context.Background(),
-			`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true ORDER BY random()`,
-			cloudSelector,
+			`SELECT name FROM ocp_shared_cluster_configurations WHERE `+annotCondition+` and valid=true ORDER BY random()`,
+			annotArgs...,
 		)
 	} else {
 		if len(parentClusters) > 0 {
+			parentQuery := fmt.Sprintf(
+				`SELECT name FROM ocp_shared_cluster_configurations WHERE %s and annotations->>'parent' = ANY($%d::text[]) and valid=true ORDER BY random()`,
+				annotCondition, nextParam,
+			)
+			parentArgs := append(append([]interface{}{}, annotArgs...), parentClusters)
 			parentRows, parentErr := a.DbPool.Query(
 				context.Background(),
-				`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and annotations->>'parent' = ANY($2::text[]) and valid=true ORDER BY random()`,
-				cloudSelector, parentClusters,
+				parentQuery,
+				parentArgs...,
 			)
 			if parentErr != nil {
 				log.Logger.Error("Error querying child clusters", "error", parentErr)
@@ -1896,24 +1913,35 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(
 			)
 		}
 		if len(possibleClusters) > 0 && len(excludeClusters) == 0 {
+			query := fmt.Sprintf(
+				`SELECT name FROM ocp_shared_cluster_configurations WHERE %s and valid=true and name = ANY($%d::text[]) ORDER BY random()`,
+				annotCondition, nextParam,
+			)
 			rows, err = a.DbPool.Query(
 				context.Background(),
-				`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and name = ANY($2::text[]) ORDER BY random()`,
-				cloudSelector, possibleClusters,
+				query,
+				append(append([]interface{}{}, annotArgs...), possibleClusters)...,
 			)
 		} else {
 			if len(possibleClusters) == 0 && len(excludeClusters) > 0 {
-				rows, err = a.DbPool.Query(
-					context.Background(),
-					`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and name != ALL($2::text[]) ORDER BY random()`,
-					cloudSelector, excludeClusters,
+				query := fmt.Sprintf(
+					`SELECT name FROM ocp_shared_cluster_configurations WHERE %s and valid=true and name != ALL($%d::text[]) ORDER BY random()`,
+					annotCondition, nextParam,
 				)
-
-			} else {
 				rows, err = a.DbPool.Query(
 					context.Background(),
-					`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and name = ANY($2::text[]) and name != ALL($3::text[]) ORDER BY random()`,
-					cloudSelector, possibleClusters, excludeClusters,
+					query,
+					append(append([]interface{}{}, annotArgs...), excludeClusters)...,
+				)
+			} else {
+				query := fmt.Sprintf(
+					`SELECT name FROM ocp_shared_cluster_configurations WHERE %s and valid=true and name = ANY($%d::text[]) and name != ALL($%d::text[]) ORDER BY random()`,
+					annotCondition, nextParam, nextParam+1,
+				)
+				rows, err = a.DbPool.Query(
+					context.Background(),
+					query,
+					append(append([]interface{}{}, annotArgs...), possibleClusters, excludeClusters)...,
 				)
 			}
 		}
