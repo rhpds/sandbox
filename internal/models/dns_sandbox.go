@@ -353,7 +353,9 @@ func (p *DNSSandboxProvider) GetDNSAccountConfigurations() (DNSAccountConfigurat
 func (p *DNSSandboxProvider) GetDNSAccountConfigurationByAnnotations(annotations map[string]string) ([]DNSAccountConfiguration, error) {
 	accounts := []DNSAccountConfiguration{}
 
-	query, args := BuildAnnotationLookupQuery("dns_account_configurations", annotations)
+	selectors := ExpandCloudSelector(annotations)
+	condition, args := BuildAnnotationMatchCondition(selectors, 1)
+	query := `SELECT name FROM dns_account_configurations WHERE ` + condition
 
 	// Get resource from above 'dns_account_configurations' table
 	rows, err := p.DbPool.Query(
@@ -627,7 +629,10 @@ var DNSErrNoSchedule error = errors.New("No DNS account configuration found")
 
 func (a *DNSSandboxProvider) GetSchedulableAccounts(cloud_selector map[string]string) (DNSAccountConfigurations, error) {
 	accounts := DNSAccountConfigurations{}
-	query, args := BuildSchedulableQuery("dns_account_configurations", cloud_selector, nil, nil)
+	// Expand pipe-separated OR values in cloud_selector.
+	selectors := ExpandCloudSelector(cloud_selector)
+	condition, args := BuildAnnotationMatchCondition(selectors, 1)
+	query := `SELECT name FROM dns_account_configurations WHERE ` + condition + ` and valid=true ORDER BY random()`
 
 	// Get resource from 'dns_account_configurations' table
 	rows, err := a.DbPool.Query(

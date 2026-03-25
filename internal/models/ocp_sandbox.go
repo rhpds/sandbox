@@ -1342,7 +1342,9 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByAnnotations(annotations map[string]string) ([]OcpSharedClusterConfiguration, error) {
 	clusters := []OcpSharedClusterConfiguration{}
 
-	query, args := BuildAnnotationLookupQuery("ocp_shared_cluster_configurations", annotations)
+	selectors := ExpandCloudSelector(annotations)
+	condition, args := BuildAnnotationMatchCondition(selectors, 1)
+	query := `SELECT name FROM ocp_shared_cluster_configurations WHERE ` + condition
 
 	// Get resource from above 'ocp_shared_cluster_configurations' table
 	rows, err := p.DbPool.Query(
@@ -1860,6 +1862,10 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(
 	)
 
 	clusters := OcpSharedClusterConfigurations{}
+	// Expand pipe-separated OR values in cloudSelector into all combinations.
+	selectors := ExpandCloudSelector(cloudSelector)
+	annotCondition, annotArgs := BuildAnnotationMatchCondition(selectors, 1)
+	nextParam := 1 + len(selectors)
 
 	// Get resource from 'ocp_shared_cluster_configurations' table
 	var err error
@@ -1869,19 +1875,76 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(
 		parentQuery, parentArgs := BuildChildClusterQuery(cloudSelector, parentClusters)
 		parentRows, parentErr := a.DbPool.Query(
 			context.Background(),
-			parentQuery,
-			parentArgs...,
+			`SELECT name FROM ocp_shared_cluster_configurations WHERE `+annotCondition+` and valid=true ORDER BY random()`,
+			annotArgs...,
 		)
-		if parentErr != nil {
-			log.Logger.Error("Error querying child clusters", "error", parentErr)
-			return OcpSharedClusterConfigurations{}, parentErr
-		}
-		for parentRows.Next() {
-			var clusterName string
+	} else {
+		if len(parentClusters) > 0 {
+			parentQuery := fmt.Sprintf(
+				`SELECT name FROM ocp_shared_cluster_configurations WHERE %s and annotations->>'parent' = ANY($%d::text[]) and valid=true ORDER BY random()`,
+				annotCondition, nextParam,
+			)
+			parentArgs := append(append([]interface{}{}, annotArgs...), parentClusters)
+			parentRows, parentErr := a.DbPool.Query(
+				context.Background(),
+				parentQuery,
+				parentArgs...,
+			)
+			if parentErr != nil {
+				log.Logger.Error("Error querying child clusters", "error", parentErr)
+				return OcpSharedClusterConfigurations{}, parentErr
+			}
+			for parentRows.Next() {
+				var clusterName string
 
-			if err := parentRows.Scan(&clusterName); err != nil {
-				parentRows.Close()
-				return OcpSharedClusterConfigurations{}, err
+				if err := parentRows.Scan(&clusterName); err != nil {
+					parentRows.Close()
+					return OcpSharedClusterConfigurations{}, err
+				}
+				if slices.Contains(possibleClusters, clusterName) {
+					continue
+				}
+				possibleClusters = append(possibleClusters, clusterName)
+			}
+			parentRows.Close()
+			log.Logger.Info("Child clusters resolved from parent relation",
+				"alias", alias,
+				"parentClusters", parentClusters,
+				"resolvedChildren", possibleClusters,
+				"excludeClusters", excludeClusters,
+			)
+		}
+		if len(possibleClusters) > 0 && len(excludeClusters) == 0 {
+			query := fmt.Sprintf(
+				`SELECT name FROM ocp_shared_cluster_configurations WHERE %s and valid=true and name = ANY($%d::text[]) ORDER BY random()`,
+				annotCondition, nextParam,
+			)
+			rows, err = a.DbPool.Query(
+				context.Background(),
+				query,
+				append(append([]interface{}{}, annotArgs...), possibleClusters)...,
+			)
+		} else {
+			if len(possibleClusters) == 0 && len(excludeClusters) > 0 {
+				query := fmt.Sprintf(
+					`SELECT name FROM ocp_shared_cluster_configurations WHERE %s and valid=true and name != ALL($%d::text[]) ORDER BY random()`,
+					annotCondition, nextParam,
+				)
+				rows, err = a.DbPool.Query(
+					context.Background(),
+					query,
+					append(append([]interface{}{}, annotArgs...), excludeClusters)...,
+				)
+			} else {
+				query := fmt.Sprintf(
+					`SELECT name FROM ocp_shared_cluster_configurations WHERE %s and valid=true and name = ANY($%d::text[]) and name != ALL($%d::text[]) ORDER BY random()`,
+					annotCondition, nextParam, nextParam+1,
+				)
+				rows, err = a.DbPool.Query(
+					context.Background(),
+					query,
+					append(append([]interface{}{}, annotArgs...), possibleClusters, excludeClusters)...,
+				)
 			}
 			if slices.Contains(possibleClusters, clusterName) {
 				continue
