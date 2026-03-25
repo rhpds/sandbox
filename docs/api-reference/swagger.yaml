@@ -3615,11 +3615,40 @@ components:
           enum: [dev, prod, events]
           description: The intended purpose of the cluster.
           example: dev
+        altname:
+          type: string
+          minLength: 1
+          description: |-
+            Per-cluster human-readable override for the ALTNAME column
+            in sandbox-cli cluster list. Takes precedence over lab and
+            demo annotations. Use this when a cluster needs a distinct
+            label that differs from its group.
+            Fallback chain: altname -> lab -> demo.
+          example: agentic-xlarge
+        lab:
+          type: string
+          minLength: 1
+          description: |-
+            Lab identifier grouping one or more clusters that serve the
+            same lab. Multiple clusters typically share the same lab
+            annotation. Used as fallback for the ALTNAME column when
+            altname annotation is not set.
+          example: lb2645-agentic
+        demo:
+          type: string
+          minLength: 1
+          description: |-
+            Demo identifier grouping one or more clusters that serve the
+            same demo. Multiple clusters typically share the same demo
+            annotation. Used as last fallback for the ALTNAME column
+            when neither altname nor lab is set.
+          example: demo42-gpu
       additionalProperties:
         type: string
         minLength: 1
       example:
         purpose: dev
+        lab: lb2645-agentic
         cloud: cnv-shared
         name: my-cluster
 
