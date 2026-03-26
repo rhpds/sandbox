@@ -1875,13 +1875,13 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(
 		parentQuery, parentArgs := BuildChildClusterQuery(cloudSelector, parentClusters)
 		parentRows, parentErr := a.DbPool.Query(
 			context.Background(),
-			`SELECT name FROM ocp_shared_cluster_configurations WHERE `+annotCondition+` and valid=true ORDER BY random()`,
+			`SELECT name FROM ocp_shared_cluster_configurations WHERE valid=true AND `+annotCondition+` ORDER BY random()`,
 			annotArgs...,
 		)
 	} else {
 		if len(parentClusters) > 0 {
 			parentQuery := fmt.Sprintf(
-				`SELECT name FROM ocp_shared_cluster_configurations WHERE %s and annotations->>'parent' = ANY($%d::text[]) and valid=true ORDER BY random()`,
+				`SELECT name FROM ocp_shared_cluster_configurations WHERE valid=true AND %s AND annotations->>'parent' = ANY($%d::text[]) ORDER BY random()`,
 				annotCondition, nextParam,
 			)
 			parentArgs := append(append([]interface{}{}, annotArgs...), parentClusters)
@@ -1916,7 +1916,7 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(
 		}
 		if len(possibleClusters) > 0 && len(excludeClusters) == 0 {
 			query := fmt.Sprintf(
-				`SELECT name FROM ocp_shared_cluster_configurations WHERE %s and valid=true and name = ANY($%d::text[]) ORDER BY random()`,
+				`SELECT name FROM ocp_shared_cluster_configurations WHERE valid=true AND %s AND name = ANY($%d::text[]) ORDER BY random()`,
 				annotCondition, nextParam,
 			)
 			rows, err = a.DbPool.Query(
@@ -1927,7 +1927,7 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(
 		} else {
 			if len(possibleClusters) == 0 && len(excludeClusters) > 0 {
 				query := fmt.Sprintf(
-					`SELECT name FROM ocp_shared_cluster_configurations WHERE %s and valid=true and name != ALL($%d::text[]) ORDER BY random()`,
+					`SELECT name FROM ocp_shared_cluster_configurations WHERE valid=true AND %s AND name != ALL($%d::text[]) ORDER BY random()`,
 					annotCondition, nextParam,
 				)
 				rows, err = a.DbPool.Query(
@@ -1937,7 +1937,7 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(
 				)
 			} else {
 				query := fmt.Sprintf(
-					`SELECT name FROM ocp_shared_cluster_configurations WHERE %s and valid=true and name = ANY($%d::text[]) and name != ALL($%d::text[]) ORDER BY random()`,
+					`SELECT name FROM ocp_shared_cluster_configurations WHERE valid=true AND %s AND name = ANY($%d::text[]) AND name != ALL($%d::text[]) ORDER BY random()`,
 					annotCondition, nextParam, nextParam+1,
 				)
 				rows, err = a.DbPool.Query(

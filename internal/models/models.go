@@ -197,10 +197,6 @@ func ExpandCloudSelector(selector map[string]string) []map[string]string {
 // Returns the SQL fragment (e.g., "(annotations @> $1 OR annotations @> $2)")
 // and the corresponding query arguments.
 func BuildAnnotationMatchCondition(selectors []map[string]string, startParam int) (string, []interface{}) {
-	if len(selectors) == 1 {
-		return fmt.Sprintf("annotations @> $%d", startParam), []interface{}{selectors[0]}
-	}
-
 	parts := make([]string, len(selectors))
 	args := make([]interface{}, len(selectors))
 	for i, sel := range selectors {
@@ -212,16 +208,20 @@ func BuildAnnotationMatchCondition(selectors []map[string]string, startParam int
 }
 
 // NormalizeCloudSelectorValue normalizes a single cloud_selector value,
-// handling pipe-separated OR values. Each segment is normalized
-// independently: "true" → "yes", "false" → "no".
+// handling pipe-separated OR values. Each segment is trimmed of
+// whitespace and normalized: "true" → "yes", "false" → "no".
+// For example, "prod | events" becomes "prod|events".
 func NormalizeCloudSelectorValue(v string) string {
 	parts := strings.Split(v, "|")
 	for i, p := range parts {
+		p = strings.TrimSpace(p)
 		switch p {
 		case "true":
 			parts[i] = "yes"
 		case "false":
 			parts[i] = "no"
+		default:
+			parts[i] = p
 		}
 	}
 	return strings.Join(parts, "|")

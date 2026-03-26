@@ -152,7 +152,7 @@ func TestBuildAnnotationMatchCondition(t *testing.T) {
 			name:       "single selector",
 			selectors:  []map[string]string{{"cloud": "cnv"}},
 			startParam: 1,
-			wantSQL:    "annotations @> $1",
+			wantSQL:    "(annotations @> $1)",
 			wantLen:    1,
 		},
 		{
@@ -205,6 +205,12 @@ func TestNormalizeCloudSelectorValue(t *testing.T) {
 		{"true|something", "yes|something"},
 		{"prod|event", "prod|event"},
 		{"true|false|maybe", "yes|no|maybe"},
+		// Whitespace trimming
+		{"prod | events", "prod|events"},
+		{" prod | events ", "prod|events"},
+		{"prod\t|\tevents", "prod|events"},
+		{"  true | false  ", "yes|no"},
+		{"prod |  events | dev", "prod|events|dev"},
 	}
 
 	for _, tt := range tests {
