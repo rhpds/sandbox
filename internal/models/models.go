@@ -207,6 +207,60 @@ func BuildAnnotationMatchCondition(selectors []map[string]string, startParam int
 	return "(" + strings.Join(parts, " OR ") + ")", args
 }
 
+// BuildSchedulableQuery builds a SQL query and args for finding schedulable
+// resources by cloud_selector annotations, with optional include/exclude name
+// filters.
+//
+// table is the table name (e.g. "ocp_shared_cluster_configurations").
+// cloudSelector is the annotation map (may contain pipe-separated OR values).
+// possibleClusters restricts results to these names (ANY). Pass nil to skip.
+// excludeClusters excludes these names (ALL). Pass nil to skip.
+func BuildSchedulableQuery(table string, cloudSelector map[string]string, possibleClusters, excludeClusters []string) (string, []interface{}) {
+	selectors := ExpandCloudSelector(cloudSelector)
+	annotCondition, args := BuildAnnotationMatchCondition(selectors, 1)
+	nextParam := 1 + len(selectors)
+
+	query := fmt.Sprintf(`SELECT name FROM %s WHERE valid=true AND %s`, table, annotCondition)
+
+	if len(possibleClusters) > 0 {
+		query += fmt.Sprintf(` AND name = ANY($%d::text[])`, nextParam)
+		args = append(args, possibleClusters)
+		nextParam++
+	}
+	if len(excludeClusters) > 0 {
+		query += fmt.Sprintf(` AND name != ALL($%d::text[])`, nextParam)
+		args = append(args, excludeClusters)
+		nextParam++
+	}
+
+	query += ` ORDER BY random()`
+	return query, args
+}
+
+// BuildChildClusterQuery builds a SQL query and args for finding child
+// clusters whose 'parent' annotation matches any of the given parent names.
+func BuildChildClusterQuery(cloudSelector map[string]string, parentClusters []string) (string, []interface{}) {
+	selectors := ExpandCloudSelector(cloudSelector)
+	annotCondition, args := BuildAnnotationMatchCondition(selectors, 1)
+	nextParam := 1 + len(selectors)
+
+	query := fmt.Sprintf(
+		`SELECT name FROM ocp_shared_cluster_configurations WHERE valid=true AND %s AND annotations->>'parent' = ANY($%d::text[]) ORDER BY random()`,
+		annotCondition, nextParam,
+	)
+	args = append(args, parentClusters)
+	return query, args
+}
+
+// BuildAnnotationLookupQuery builds a simple query to find resources by
+// annotation match (no valid check). Used by GetXByAnnotations functions.
+func BuildAnnotationLookupQuery(table string, cloudSelector map[string]string) (string, []interface{}) {
+	selectors := ExpandCloudSelector(cloudSelector)
+	condition, args := BuildAnnotationMatchCondition(selectors, 1)
+	query := fmt.Sprintf(`SELECT name FROM %s WHERE %s`, table, condition)
+	return query, args
+}
+
 // NormalizeCloudSelectorValue normalizes a single cloud_selector value,
 // handling pipe-separated OR values. Each segment is trimmed of
 // whitespace and normalized: "true" → "yes", "false" → "no".

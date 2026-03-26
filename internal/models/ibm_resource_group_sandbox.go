@@ -301,9 +301,7 @@ func (p *IBMResourceGroupSandboxProvider) GetIBMResourceGroupSandboxConfiguratio
 func (p *IBMResourceGroupSandboxProvider) GetIBMResourceGroupSandboxConfigurationByAnnotations(annotations map[string]string) ([]IBMResourceGroupSandboxConfiguration, error) {
 	clusters := []IBMResourceGroupSandboxConfiguration{}
 
-	selectors := ExpandCloudSelector(annotations)
-	condition, args := BuildAnnotationMatchCondition(selectors, 1)
-	query := `SELECT name FROM ibm_resource_group_account_configurations WHERE ` + condition
+	query, args := BuildAnnotationLookupQuery("ibm_resource_group_account_configurations", annotations)
 
 	// Get resource from above 'ibm_resource_group_account_configurations' table
 	rows, err := p.DbPool.Query(
@@ -563,10 +561,8 @@ var IBMErrNoSchedule error = errors.New("No IBM resource group account configura
 
 func (a *IBMResourceGroupSandboxProvider) GetSchedulableAccounts(cloud_selector map[string]string) (IBMResourceGroupSandboxConfigurations, error) {
 	clusters := IBMResourceGroupSandboxConfigurations{}
-	// Expand pipe-separated OR values in cloud_selector.
-	selectors := ExpandCloudSelector(cloud_selector)
-	condition, args := BuildAnnotationMatchCondition(selectors, 1)
-	query := `SELECT name FROM ibm_resource_group_account_configurations WHERE valid=true AND ` + condition + ` ORDER BY random() limit 1`
+	query, args := BuildSchedulableQuery("ibm_resource_group_account_configurations", cloud_selector, nil, nil)
+	query += " limit 1"
 
 	// Get resource from 'ibm_resource_group_account_configurations' table
 	rows, err := a.DbPool.Query(
