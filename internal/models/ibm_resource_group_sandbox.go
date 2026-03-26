@@ -566,7 +566,7 @@ func (a *IBMResourceGroupSandboxProvider) GetSchedulableAccounts(cloud_selector 
 	// Expand pipe-separated OR values in cloud_selector.
 	selectors := ExpandCloudSelector(cloud_selector)
 	condition, args := BuildAnnotationMatchCondition(selectors, 1)
-	query := `SELECT name FROM ibm_resource_group_account_configurations WHERE ` + condition + ` and valid=true ORDER BY random() limit 1`
+	query := `SELECT name FROM ibm_resource_group_account_configurations WHERE valid=true AND ` + condition + ` ORDER BY random() limit 1`
 
 	// Get resource from 'ibm_resource_group_account_configurations' table
 	rows, err := a.DbPool.Query(

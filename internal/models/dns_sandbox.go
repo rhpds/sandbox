@@ -632,7 +632,7 @@ func (a *DNSSandboxProvider) GetSchedulableAccounts(cloud_selector map[string]st
 	// Expand pipe-separated OR values in cloud_selector.
 	selectors := ExpandCloudSelector(cloud_selector)
 	condition, args := BuildAnnotationMatchCondition(selectors, 1)
-	query := `SELECT name FROM dns_account_configurations WHERE ` + condition + ` and valid=true ORDER BY random()`
+	query := `SELECT name FROM dns_account_configurations WHERE valid=true AND ` + condition + ` ORDER BY random()`
 
 	// Get resource from 'dns_account_configurations' table
 	rows, err := a.DbPool.Query(
