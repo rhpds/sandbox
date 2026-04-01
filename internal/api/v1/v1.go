@@ -329,6 +329,14 @@ func (r *OffboardReport) Render(w http.ResponseWriter, rr *http.Request) error {
 	return nil
 }
 
+type ClusterPlacementsResponse struct {
+	Placements []models.ClusterPlacementInfo `json:"placements"`
+}
+
+func (r *ClusterPlacementsResponse) Render(w http.ResponseWriter, rr *http.Request) error {
+	return nil
+}
+
 type UpdateDNSAccountConfigurationRequest struct {
 	Annotations        *models.Annotations `json:"annotations,omitempty"`
 	AwsAccessKeyID     string              `json:"aws_access_key_id"`
