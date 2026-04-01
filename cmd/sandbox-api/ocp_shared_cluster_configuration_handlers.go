@@ -37,6 +37,9 @@ func (h *BaseHandler) CreateOcpSharedClusterConfigurationHandler(w http.Response
 		ocpSharedClusterConfiguration.CreatedBy = name
 	}
 
+	// Apply default rate limit settings if not provided
+	ocpSharedClusterConfiguration.Settings.ApplyDefaults()
+
 	if err := ocpSharedClusterConfiguration.Save(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
@@ -639,6 +642,9 @@ func (h *BaseHandler) UpsertOcpSharedClusterConfigurationHandler(w http.Response
 		if newConfig.MaxPlacements != nil && *newConfig.MaxPlacements < 0 {
 			newConfig.MaxPlacements = nil
 		}
+
+		// Apply default rate limit settings if not provided
+		newConfig.Settings.ApplyDefaults()
 
 		if err := newConfig.Save(); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)

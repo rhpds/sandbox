@@ -2613,16 +2613,18 @@ paths:
                   type: object
                   description: |-
                     User-configurable settings. Both rate limit fields must be set together.
-                    When absent or null, no rate limiting is applied.
+                    Defaults to 10/1m when creating a cluster without explicit settings.
                   properties:
                     provision_rate_limit:
                       type: integer
                       description: Max new placements within the rate window. Must be > 0.
-                      example: 50
+                      default: 10
+                      example: 10
                     provision_rate_window:
                       type: string
                       description: Duration string (e.g. "10m", "1h", "30s").
-                      example: "10m"
+                      default: "1m"
+                      example: "1m"
             example:
               strict_default_sandbox_quota: true
               quota_required: true
@@ -4563,14 +4565,15 @@ components:
               description: |-
                 Maximum number of new placements allowed within the rate window.
                 Must be > 0. Must be set together with provision_rate_window.
-                When absent or null, no rate limiting is applied.
-              example: 50
+              default: 10
+              example: 10
             provision_rate_window:
               type: string
               description: |-
                 Duration string for the rate limiting window (e.g. "10m", "1h", "30s").
                 Must be set together with provision_rate_limit.
-              example: "10m"
+              default: "1m"
+              example: "1m"
         deployer_admin_sa_token_ttl:
           type: string
           description: |-

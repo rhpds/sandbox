@@ -187,6 +187,21 @@ type ClusterSettings struct {
 	ProvisionRateWindow string `json:"provision_rate_window,omitempty"`
 }
 
+// Default rate limit applied when creating a cluster without explicit settings.
+var (
+	DefaultProvisionRateLimit  = 10
+	DefaultProvisionRateWindow = "1m"
+)
+
+// ApplyDefaults sets default rate limit settings if none are configured.
+func (s *ClusterSettings) ApplyDefaults() {
+	if s.ProvisionRateLimit == nil {
+		limit := DefaultProvisionRateLimit
+		s.ProvisionRateLimit = &limit
+		s.ProvisionRateWindow = DefaultProvisionRateWindow
+	}
+}
+
 // ValidateRateLimit checks that provision_rate_limit and provision_rate_window are set together
 // and that the values are valid.
 func (s *ClusterSettings) ValidateRateLimit() error {

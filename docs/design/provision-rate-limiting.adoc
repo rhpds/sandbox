@@ -67,8 +67,8 @@ Set via the cluster configuration PUT endpoint or `sandbox-cli cluster onboard`:
   "annotations": {"cloud": "aws"},
   "max_placements": 30,
   "settings": {
-    "provision_rate_limit": 50,
-    "provision_rate_window": "10m"
+    "provision_rate_limit": 10,
+    "provision_rate_window": "1m"
   }
 }
 ----
@@ -425,12 +425,12 @@ New `settings` JSONB field (replaces per-field approach):
 | Field | Type | Description
 
 | `settings.provision_rate_limit`
-| integer (nullable)
-| Max new placements within the rate window. Must be > 0.
+| integer
+| Max new placements within the rate window. Must be > 0. Defaults to 10 on cluster creation.
 
 | `settings.provision_rate_window`
-| string (nullable)
-| Duration string (e.g. `10m`, `1h`, `30s`). Must be set with `provision_rate_limit`.
+| string
+| Duration string (e.g. `1m`, `1h`, `30s`). Must be set with `provision_rate_limit`. Defaults to `1m` on cluster creation.
 |===
 
 === Placement Creation
