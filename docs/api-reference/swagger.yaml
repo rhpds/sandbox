@@ -4956,11 +4956,17 @@ components:
             status: "success"
             cluster_names: ["ocp-cluster-1"]
             only_this_cluster: true
+            annotations:
+              guid: "fpwk7"
+              owner: "user@redhat.com"
           - placement_id: 43
             service_uuid: "660e8400-e29b-41d4-a716-446655440001"
             status: "success"
             cluster_names: ["ocp-cluster-1", "ocp-cluster-2"]
             only_this_cluster: false
+            annotations:
+              guid: "abc12"
+              owner: "other@redhat.com"
 
     ClusterPlacementInfo:
       description: Information about a placement targeting a cluster
@@ -4983,3 +4989,10 @@ components:
         only_this_cluster:
           type: boolean
           example: true
+        annotations:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            guid: "fpwk7"
+            owner: "user@redhat.com"

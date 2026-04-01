@@ -498,7 +498,7 @@ var clusterPlacementsCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-		fmt.Fprintln(w, "PLACEMENT_ID\tSERVICE_UUID\tSTATUS\tCLUSTERS\tONLY_THIS")
+		fmt.Fprintln(w, "GUID\tSERVICE_UUID\tSTATUS\tOWNER\tCLUSTERS\tONLY_THIS")
 		for _, p := range result.Placements {
 			clusterNames := []string{}
 			if names, ok := p["cluster_names"].([]any); ok {
@@ -506,10 +506,20 @@ var clusterPlacementsCmd = &cobra.Command{
 					clusterNames = append(clusterNames, fmt.Sprint(name))
 				}
 			}
-			fmt.Fprintf(w, "%v\t%s\t%s\t%s\t%v\n",
-				p["placement_id"],
+			ann, _ := p["annotations"].(map[string]any)
+			guid := jsonStr(ann["guid"])
+			if guid == "" {
+				guid = "-"
+			}
+			owner := jsonStr(ann["owner"])
+			if owner == "" {
+				owner = "-"
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\n",
+				guid,
 				jsonStr(p["service_uuid"]),
 				jsonStr(p["status"]),
+				owner,
 				strings.Join(clusterNames, ","),
 				p["only_this_cluster"],
 			)
