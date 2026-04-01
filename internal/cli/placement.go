@@ -64,8 +64,8 @@ Examples:
 }
 
 var placementGetCmd = &cobra.Command{
-	Use:   "get <service_uuid>",
-	Short: "Get a placement by service UUID",
+	Use:   "get <placement_uuid>",
+	Short: "Get a placement by UUID",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireRole("admin", "app"); err != nil {
@@ -95,9 +95,9 @@ var placementGetCmd = &cobra.Command{
 var placementDeleteForce bool
 
 var placementDeleteCmd = &cobra.Command{
-	Use:   "delete <service_uuid>",
-	Short: "Delete a placement by service UUID",
-	Long: `Delete a placement by service UUID.
+	Use:   "delete <placement_uuid>",
+	Short: "Delete a placement by UUID",
+	Long: `Delete a placement by UUID.
 
 By default, this triggers a graceful deletion that cleans up all
 resources on the target clusters before removing the placement.

@@ -465,6 +465,77 @@ func runHealthAll(client *Client, out io.Writer) error {
 	return nil
 }
 
+// --- cluster placements ---
+
+var clusterPlacementsCmd = &cobra.Command{
+	Use:   "placements <name>",
+	Short: "List placements targeting a cluster",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireRole("admin", "shared-cluster-manager"); err != nil {
+			return err
+		}
+		client, err := requireClient()
+		if err != nil {
+			return err
+		}
+
+		resp, err := client.Get("/api/v1/ocp-shared-cluster-configurations/" + args[0] + "/placements")
+		if err != nil {
+			return err
+		}
+
+		var result struct {
+			Placements []map[string]any `json:"placements"`
+		}
+		if err := ReadJSON(resp, &result); err != nil {
+			return err
+		}
+
+		if len(result.Placements) == 0 {
+			fmt.Fprintln(cmd.OutOrStdout(), "No placements found.")
+			return nil
+		}
+
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+		fmt.Fprintln(w, "GUID\tPLACEMENT_UUID\tSTATUS\tAGE\tOWNER\tCLUSTERS\tONLY_THIS")
+		for _, p := range result.Placements {
+			clusterNames := []string{}
+			if names, ok := p["cluster_names"].([]any); ok {
+				for _, name := range names {
+					clusterNames = append(clusterNames, fmt.Sprint(name))
+				}
+			}
+			ann, _ := p["annotations"].(map[string]any)
+			guid := jsonStr(ann["guid"])
+			if guid == "" {
+				guid = "-"
+			}
+			owner := jsonStr(ann["owner"])
+			if owner == "" {
+				owner = "-"
+			}
+			age := "-"
+			if ca, ok := p["created_at"].(string); ok && ca != "" {
+				if t, err := time.Parse(time.RFC3339Nano, ca); err == nil {
+					age = formatAge(time.Since(t))
+				}
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%v\n",
+				guid,
+				jsonStr(p["service_uuid"]),
+				jsonStr(p["status"]),
+				age,
+				owner,
+				strings.Join(clusterNames, ","),
+				p["only_this_cluster"],
+			)
+		}
+		w.Flush()
+		return nil
+	},
+}
+
 // --- cluster delete ---
 
 var clusterDeleteCmd = &cobra.Command{
@@ -519,6 +590,7 @@ func init() {
 	clusterHealthCmd.Flags().BoolVarP(&clusterHealthAll, "all", "a", false, "Check all clusters")
 	clusterCmd.AddCommand(clusterHealthCmd)
 	clusterCmd.AddCommand(clusterDeleteCmd)
+	clusterCmd.AddCommand(clusterPlacementsCmd)
 }
 
 // stripReadOnlyFields removes server-managed fields (id, created_at, updated_at,

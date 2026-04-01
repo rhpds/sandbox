@@ -316,6 +316,50 @@ func (h *BaseHandler) GetOcpSharedClusterConfigurationHandler(w http.ResponseWri
 	render.Render(w, r, &ocpSharedClusterConfiguration)
 }
 
+// GetClusterPlacementsHandler returns all placements targeting a given cluster.
+func (h *BaseHandler) GetClusterPlacementsHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	// Verify the cluster exists
+	_, err := h.OcpSandboxProvider.GetOcpSharedClusterConfigurationByName(name)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "OCP shared cluster configuration not found",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to get OCP shared cluster configuration",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	placements, err := h.OcpSandboxProvider.GetPlacementsByClusterName(name)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to get placements for cluster",
+			ErrorMultiline: []string{err.Error()},
+		})
+		log.Logger.Error("GetClusterPlacementsHandler", "error", err)
+		return
+	}
+
+	if placements == nil {
+		placements = []models.ClusterPlacementInfo{}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &v1.ClusterPlacementsResponse{Placements: placements})
+}
+
 // DeleteOcpSharedClusterConfigurationHandler deletes an OCP shared cluster configuration
 func (h *BaseHandler) DeleteOcpSharedClusterConfigurationHandler(w http.ResponseWriter, r *http.Request) {
 	// Get the name of the OCP shared cluster configuration from the URL

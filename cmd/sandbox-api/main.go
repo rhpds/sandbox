@@ -407,6 +407,7 @@ func main() {
 		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}", baseHandler.UpsertOcpSharedClusterConfigurationHandler)
 		r.Delete("/api/v1/ocp-shared-cluster-configurations/{name}/offboard", baseHandler.OffboardOcpSharedClusterConfigurationHandler)
 		r.Get("/api/v1/ocp-shared-cluster-configurations/{name}/offboard", baseHandler.GetOffboardOcpSharedClusterConfigurationHandler)
+		r.Get("/api/v1/ocp-shared-cluster-configurations/{name}/placements", baseHandler.GetClusterPlacementsHandler)
 	})
 
 	// ---------------------------------------------------------------------
