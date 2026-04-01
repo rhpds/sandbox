@@ -880,6 +880,7 @@ type ClusterPlacementInfo struct {
 	ClusterNames    []string          `json:"cluster_names"`
 	OnlyThisCluster bool              `json:"only_this_cluster"`
 	Annotations     map[string]string `json:"annotations,omitempty"`
+	CreatedAt       time.Time         `json:"created_at"`
 }
 
 // GetPlacementsByClusterName returns all placements that have OcpSandbox resources
@@ -894,14 +895,15 @@ func (p *OcpSandboxProvider) GetPlacementsByClusterName(clusterName string) ([]C
 			p.service_uuid,
 			p.status,
 			array_agg(DISTINCT r2.resource_data->>'ocp_cluster') AS cluster_names,
-			p.annotations
+			p.annotations,
+			p.created_at
 		FROM placements p
 		JOIN resources r ON r.service_uuid = p.service_uuid
 			AND r.resource_type = 'OcpSandbox'
 			AND r.resource_data->>'ocp_cluster' = $1
 		JOIN resources r2 ON r2.service_uuid = p.service_uuid
 			AND r2.resource_type = 'OcpSandbox'
-		GROUP BY p.id, p.service_uuid, p.status, p.annotations`,
+		GROUP BY p.id, p.service_uuid, p.status, p.annotations, p.created_at`,
 		clusterName,
 	)
 	if err != nil {
@@ -918,6 +920,7 @@ func (p *OcpSandboxProvider) GetPlacementsByClusterName(clusterName string) ([]C
 			&info.Status,
 			&info.ClusterNames,
 			&info.Annotations,
+			&info.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("error scanning placement row: %w", err)
 		}
