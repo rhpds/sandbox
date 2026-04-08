@@ -380,6 +380,17 @@ RUN_RATE_LIMIT_LOAD_TESTS="${RUN_RATE_LIMIT_LOAD_TESTS:-${run_rate_limit_load_te
 
 echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS RUN_NO_NAMESPACE_TESTS=$RUN_NO_NAMESPACE_TESTS RUN_ONBOARD_TESTS=$RUN_ONBOARD_TESTS RUN_RBAC_TESTS=$RUN_RBAC_TESTS RUN_CLI_TESTS=$RUN_CLI_TESTS RUN_RATE_LIMIT_TESTS=$RUN_RATE_LIMIT_TESTS RUN_RATE_LIMIT_LOAD_TESTS=$RUN_RATE_LIMIT_LOAD_TESTS"
 
+# Raise the rate limit on ocpvdev01 so hurl tests don't get throttled
+echo "Raising provision rate limit on ocpvdev01..."
+admin_access_token_setup=$(curl -s -H "Authorization: Bearer $admintoken" \
+    "http://localhost:$PORT/api/v1/login" | jq -r '.access_token')
+curl -s -X PUT \
+    -H "Authorization: Bearer $admin_access_token_setup" \
+    -H "Content-Type: application/json" \
+    -d '{"settings": {"provision_rate_limit": 1000, "provision_rate_window": "1m"}}' \
+    "http://localhost:$PORT/api/v1/ocp-shared-cluster-configurations/ocpvdev01/update"
+echo ""
+
 if [ "$RUN_HURL_TESTS" != "false" ] && [ "$RUN_HURL_TESTS" != "no" ]; then
     tests=$1
     if [ -z "$tests" ]; then
