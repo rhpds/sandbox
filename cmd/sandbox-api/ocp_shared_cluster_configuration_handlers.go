@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -82,6 +83,12 @@ func (h *BaseHandler) DisableOcpSharedClusterConfigurationHandler(w http.Respons
 		return
 	}
 
+	// Lock guard
+	if ocpSharedClusterConfiguration.IsLocked() {
+		renderLockError(w, r, ocpSharedClusterConfiguration)
+		return
+	}
+
 	// Disable the OCP shared cluster configuration
 	if err := ocpSharedClusterConfiguration.Disable(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -158,6 +165,12 @@ func (h *BaseHandler) EnableOcpSharedClusterConfigurationHandler(w http.Response
 			Message:        "Failed to get OCP shared cluster configuration",
 			ErrorMultiline: []string{err.Error()},
 		})
+		return
+	}
+
+	// Lock guard
+	if ocpSharedClusterConfiguration.IsLocked() {
+		renderLockError(w, r, ocpSharedClusterConfiguration)
 		return
 	}
 
@@ -389,6 +402,12 @@ func (h *BaseHandler) DeleteOcpSharedClusterConfigurationHandler(w http.Response
 		return
 	}
 
+	// Lock guard
+	if ocpSharedClusterConfiguration.IsLocked() {
+		renderLockError(w, r, ocpSharedClusterConfiguration)
+		return
+	}
+
 	count, err := ocpSharedClusterConfiguration.GetAccountCount()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -448,6 +467,12 @@ func (h *BaseHandler) UpdateOcpSharedClusterConfigurationHandler(w http.Response
 			Message:        "Failed to get OCP shared cluster configuration",
 			ErrorMultiline: []string{err.Error()},
 		})
+		return
+	}
+
+	// Lock guard
+	if ocpSharedClusterConfiguration.IsLocked() {
+		renderLockError(w, r, ocpSharedClusterConfiguration)
 		return
 	}
 
@@ -679,6 +704,12 @@ func (h *BaseHandler) UpsertOcpSharedClusterConfigurationHandler(w http.Response
 			return
 		}
 
+		// Lock guard (update path only — create is not affected)
+		if existing.IsLocked() {
+			renderLockError(w, r, existing)
+			return
+		}
+
 		// Update: preserve the DB ID so Save() calls Update()
 		newConfig.ID = existing.ID
 
@@ -774,6 +805,12 @@ func (h *BaseHandler) OffboardOcpSharedClusterConfigurationHandler(w http.Respon
 			HTTPStatusCode: http.StatusForbidden,
 			Message:        "You are not allowed to offboard this cluster",
 		})
+		return
+	}
+
+	// Lock guard
+	if cluster.IsLocked() {
+		renderLockError(w, r, cluster)
 		return
 	}
 
@@ -1036,6 +1073,172 @@ func (h *BaseHandler) PostOcpSharedClustersStatusHandler(w http.ResponseWriter, 
 		RequestID: job.RequestID,
 		Status:    job.Status,
 		Message:   "Status Request successfully created",
+	})
+}
+
+// renderLockError writes a 409 Conflict response when a locked configuration rejects an operation.
+func renderLockError(w http.ResponseWriter, r *http.Request, cluster models.OcpSharedClusterConfiguration) {
+	w.WriteHeader(http.StatusConflict)
+	render.Render(w, r, &v1.Error{
+		HTTPStatusCode: http.StatusConflict,
+		Message:        cluster.LockError(),
+	})
+}
+
+// LockOcpSharedClusterConfigurationHandler locks a shared cluster configuration.
+func (h *BaseHandler) LockOcpSharedClusterConfigurationHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	cluster, err := h.OcpSandboxProvider.GetOcpSharedClusterConfigurationByName(name)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "OCP shared cluster configuration not found",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to get OCP shared cluster configuration",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	// Authorization check
+	_, claims, _ := jwtauth.FromContext(r.Context())
+	role, _ := claims["role"].(string)
+	callerName, _ := claims["name"].(string)
+	if !cluster.CanModify(role, callerName) {
+		w.WriteHeader(http.StatusForbidden)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusForbidden,
+			Message:        "You are not allowed to lock this cluster",
+		})
+		return
+	}
+
+	// Parse optional body for message and auto_lock_after
+	var body struct {
+		Message       string `json:"message"`
+		AutoLockAfter string `json:"auto_lock_after"`
+	}
+	// Ignore decode errors — body is optional
+	json.NewDecoder(r.Body).Decode(&body)
+
+	cluster.Settings.Locked = true
+	if body.Message != "" {
+		cluster.Settings.LockMessage = body.Message
+	}
+	if body.AutoLockAfter != "" {
+		cluster.Settings.AutoLockAfter = body.AutoLockAfter
+	}
+
+	// Validate auto_lock_after if set
+	if err := cluster.Settings.ValidateAutoLockAfter(); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusBadRequest,
+			Message:        err.Error(),
+		})
+		return
+	}
+
+	// Clear unlocked_at on explicit lock
+	cluster.Data.UnlockedAt = nil
+
+	if err := cluster.Save(); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to lock OCP shared cluster configuration",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	log.Logger.Info("Cluster configuration locked",
+		"cluster", name,
+		"by", callerName,
+		"message", cluster.Settings.LockMessage)
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &v1.SimpleMessage{
+		Message: "OCP shared cluster configuration locked",
+	})
+}
+
+// UnlockOcpSharedClusterConfigurationHandler unlocks a shared cluster configuration.
+func (h *BaseHandler) UnlockOcpSharedClusterConfigurationHandler(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	cluster, err := h.OcpSandboxProvider.GetOcpSharedClusterConfigurationByName(name)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: http.StatusNotFound,
+				Message:        "OCP shared cluster configuration not found",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to get OCP shared cluster configuration",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	// Authorization check
+	_, claims, _ := jwtauth.FromContext(r.Context())
+	role, _ := claims["role"].(string)
+	callerName, _ := claims["name"].(string)
+	if !cluster.CanModify(role, callerName) {
+		w.WriteHeader(http.StatusForbidden)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusForbidden,
+			Message:        "You are not allowed to unlock this cluster",
+		})
+		return
+	}
+
+	cluster.Settings.Locked = false
+	cluster.Settings.LockMessage = ""
+
+	// Set unlocked_at for auto-lock tracking (if auto_lock_after is configured)
+	now := time.Now()
+	cluster.Data.UnlockedAt = &now
+
+	if err := cluster.Save(); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		render.Render(w, r, &v1.Error{
+			HTTPStatusCode: http.StatusInternalServerError,
+			Message:        "Failed to unlock OCP shared cluster configuration",
+			ErrorMultiline: []string{err.Error()},
+		})
+		return
+	}
+
+	log.Logger.Info("Cluster configuration unlocked",
+		"cluster", name,
+		"by", callerName)
+
+	msg := "OCP shared cluster configuration unlocked"
+	if cluster.Settings.AutoLockAfter != "" {
+		if d, err := models.ParseHumanDuration(cluster.Settings.AutoLockAfter); err == nil {
+			autoLockAt := now.Add(d).UTC().Format(time.RFC3339)
+			msg = fmt.Sprintf("OCP shared cluster configuration unlocked (will auto-lock at %s)", autoLockAt)
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	render.Render(w, r, &v1.SimpleMessage{
+		Message: msg,
 	})
 }
 

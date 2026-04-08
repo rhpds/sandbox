@@ -3,6 +3,7 @@ deploy/lambda/*.zip
 .dev.*
 tmp/*
 backups
+hivemind
 backups/*
 sandbox-api-configs
 db_dump.sql*

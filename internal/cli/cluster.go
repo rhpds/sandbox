@@ -43,16 +43,23 @@ var clusterListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tALTNAME\tVALID\tCREATED_BY\tPLACEMENTS\tRATE LIMIT\tLAST STATUS")
+		fmt.Fprintln(w, "NAME\tALTNAME\tVALID\tLOCKED\tCREATED_BY\tPLACEMENTS\tRATE LIMIT\tLAST STATUS")
 		for _, c := range clusters {
 			valid := "NO"
 			if v, ok := c["valid"].(bool); ok && v {
 				valid = "yes"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			locked := "-"
+			if settings, ok := c["settings"].(map[string]any); ok {
+				if l, ok := settings["locked"].(bool); ok && l {
+					locked = "yes"
+				}
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				jsonStr(c["name"]),
 				clusterAltname(c),
 				valid,
+				locked,
 				jsonStr(c["created_by"]),
 				formatPlacements(c, c["max_placements"]),
 				formatRateLimit(c),
@@ -570,6 +577,89 @@ var clusterDeleteCmd = &cobra.Command{
 	},
 }
 
+// --- cluster lock ---
+
+var clusterLockMessage string
+var clusterLockAutoLockAfter string
+
+var clusterLockCmd = &cobra.Command{
+	Use:   "lock <name>",
+	Short: "Lock a shared cluster configuration",
+	Long:  `Lock a shared cluster configuration to prevent all write operations (update, delete, offboard, disable, enable). Unlock the configuration first to make changes.`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireRole("admin", "shared-cluster-manager"); err != nil {
+			return err
+		}
+		name := args[0]
+
+		client, err := requireClient()
+		if err != nil {
+			return err
+		}
+
+		body := map[string]string{}
+		if clusterLockMessage != "" {
+			body["message"] = clusterLockMessage
+		}
+		if clusterLockAutoLockAfter != "" {
+			body["auto_lock_after"] = clusterLockAutoLockAfter
+		}
+
+		var bodyReader io.Reader
+		if len(body) > 0 {
+			b, _ := json.Marshal(body)
+			bodyReader = bytes.NewReader(b)
+		}
+
+		resp, err := client.Put("/api/v1/ocp-shared-cluster-configurations/"+name+"/lock", bodyReader)
+		if err != nil {
+			return err
+		}
+
+		var result map[string]any
+		if err := ReadJSON(resp, &result); err != nil {
+			return err
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), jsonStr(result["message"]))
+		return nil
+	},
+}
+
+// --- cluster unlock ---
+
+var clusterUnlockCmd = &cobra.Command{
+	Use:   "unlock <name>",
+	Short: "Unlock a shared cluster configuration",
+	Long:  `Unlock a shared cluster configuration to allow write operations. If auto_lock_after is configured, the configuration will automatically re-lock after the specified duration.`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireRole("admin", "shared-cluster-manager"); err != nil {
+			return err
+		}
+		name := args[0]
+
+		client, err := requireClient()
+		if err != nil {
+			return err
+		}
+
+		resp, err := client.Put("/api/v1/ocp-shared-cluster-configurations/"+name+"/unlock", nil)
+		if err != nil {
+			return err
+		}
+
+		var result map[string]any
+		if err := ReadJSON(resp, &result); err != nil {
+			return err
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), jsonStr(result["message"]))
+		return nil
+	},
+}
+
 // --- init ---
 
 func init() {
@@ -591,6 +681,11 @@ func init() {
 	clusterCmd.AddCommand(clusterHealthCmd)
 	clusterCmd.AddCommand(clusterDeleteCmd)
 	clusterCmd.AddCommand(clusterPlacementsCmd)
+
+	clusterLockCmd.Flags().StringVar(&clusterLockMessage, "message", "", "Reason for locking")
+	clusterLockCmd.Flags().StringVar(&clusterLockAutoLockAfter, "auto-lock-after", "", "Duration after unlock before auto-relock (e.g. 1h, 30m)")
+	clusterCmd.AddCommand(clusterLockCmd)
+	clusterCmd.AddCommand(clusterUnlockCmd)
 }
 
 // stripReadOnlyFields removes server-managed fields (id, created_at, updated_at,

@@ -224,6 +224,9 @@ func main() {
 	// Start background admin SA token rotation for OCP clusters
 	OcpSandboxProvider.StartDeployerAdminSATokenRotation(ctx)
 
+	// Start background auto-lock checker for shared cluster configurations
+	OcpSandboxProvider.StartAutoLockChecker(ctx)
+
 	// Start background queue processor for rate-limited placements
 	OcpSandboxProvider.StartQueueProcessor(ctx)
 
@@ -408,6 +411,8 @@ func main() {
 		r.Delete("/api/v1/ocp-shared-cluster-configurations/{name}/offboard", baseHandler.OffboardOcpSharedClusterConfigurationHandler)
 		r.Get("/api/v1/ocp-shared-cluster-configurations/{name}/offboard", baseHandler.GetOffboardOcpSharedClusterConfigurationHandler)
 		r.Get("/api/v1/ocp-shared-cluster-configurations/{name}/placements", baseHandler.GetClusterPlacementsHandler)
+		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/lock", baseHandler.LockOcpSharedClusterConfigurationHandler)
+		r.Put("/api/v1/ocp-shared-cluster-configurations/{name}/unlock", baseHandler.UnlockOcpSharedClusterConfigurationHandler)
 	})
 
 	// ---------------------------------------------------------------------
