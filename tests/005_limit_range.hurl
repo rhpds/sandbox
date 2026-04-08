@@ -50,6 +50,10 @@ X-Test-Description: 005/create-cluster-config
         "virt": "no",
         "cloud": "ibmcloud-shared",
         "purpose": "dev"
+    },
+    "settings": {
+        "provision_rate_limit": 1000,
+        "provision_rate_window": "1m"
     }
 }
 HTTP 201
