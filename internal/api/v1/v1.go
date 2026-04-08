@@ -224,16 +224,10 @@ func (p *BasePlacement) Bind(r *http.Request) error {
 		}
 		if resourceRequest.CloudSelector != nil {
 			for k, v := range resourceRequest.CloudSelector {
-				// We work with string and not bool
-				// This is a convention to automatically convert "yes" and "no"
-				// instead of "true" and "false"
-				// That will help match clusters that have 'yes' when the client sends the cloud.selector to 'true'
-				if v == "true" {
-					resourceRequest.CloudSelector[k] = "yes"
-				}
-				if v == "false" {
-					resourceRequest.CloudSelector[k] = "no"
-				}
+				// Normalize "true"→"yes" and "false"→"no" per segment.
+				// Pipe-separated OR values (e.g. "true|something") are
+				// normalized per segment.
+				resourceRequest.CloudSelector[k] = models.NormalizeCloudSelectorValue(v)
 			}
 		}
 

@@ -300,11 +300,14 @@ func (p *IBMResourceGroupSandboxProvider) GetIBMResourceGroupSandboxConfiguratio
 // GetIBMResourceGroupSandboxConfigurationByAnnotations returns a list of IBMResourceGroupSandboxConfiguration by annotations
 func (p *IBMResourceGroupSandboxProvider) GetIBMResourceGroupSandboxConfigurationByAnnotations(annotations map[string]string) ([]IBMResourceGroupSandboxConfiguration, error) {
 	clusters := []IBMResourceGroupSandboxConfiguration{}
+
+	query, args := BuildAnnotationLookupQuery("ibm_resource_group_account_configurations", annotations)
+
 	// Get resource from above 'ibm_resource_group_account_configurations' table
 	rows, err := p.DbPool.Query(
 		context.Background(),
-		`SELECT name FROM ibm_resource_group_account_configurations WHERE annotations @> $1`,
-		annotations,
+		query,
+		args...,
 	)
 
 	if err != nil {
@@ -558,11 +561,14 @@ var IBMErrNoSchedule error = errors.New("No IBM resource group account configura
 
 func (a *IBMResourceGroupSandboxProvider) GetSchedulableAccounts(cloud_selector map[string]string) (IBMResourceGroupSandboxConfigurations, error) {
 	clusters := IBMResourceGroupSandboxConfigurations{}
+	query, args := BuildSchedulableQuery("ibm_resource_group_account_configurations", cloud_selector, nil, nil)
+	query += " limit 1"
+
 	// Get resource from 'ibm_resource_group_account_configurations' table
 	rows, err := a.DbPool.Query(
 		context.Background(),
-		`SELECT name FROM ibm_resource_group_account_configurations WHERE annotations @> $1 and valid=true ORDER BY random() limit 1`,
-		cloud_selector,
+		query,
+		args...,
 	)
 
 	if err != nil {

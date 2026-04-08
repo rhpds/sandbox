@@ -75,6 +75,10 @@ X-Test-Description: 002/create-cluster: add ocp shared cluster config
         "virt": "no",
         "cloud": "ibmcloud-shared",
         "purpose": "dev"
+    },
+    "settings": {
+        "provision_rate_limit": 1000,
+        "provision_rate_window": "1m"
     }
 }
 HTTP 201
@@ -192,6 +196,10 @@ X-Test-Description: 002/create-cluster-with-quota: create cluster with custom qu
     },
     "strict_default_sandbox_quota": true,
     "quota_required": true,
+    "settings": {
+        "provision_rate_limit": 1000,
+        "provision_rate_window": "1m"
+    },
     "default_sandbox_quota": {
         "metadata": {
             "name": "sandbox-quota"

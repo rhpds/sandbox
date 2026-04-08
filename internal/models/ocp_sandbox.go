@@ -1336,14 +1336,19 @@ func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurations() (OcpSharedClust
 	return clusters, nil
 }
 
-// GetOcpSharedClusterConfigurationByAnnotations returns a list of OcpSharedClusterConfiguration by annotations
+// GetOcpSharedClusterConfigurationByAnnotations returns a list of OcpSharedClusterConfiguration by annotations.
+// Values may contain pipe-separated alternatives (e.g. "prod|event") which are
+// expanded into OR conditions.
 func (p *OcpSandboxProvider) GetOcpSharedClusterConfigurationByAnnotations(annotations map[string]string) ([]OcpSharedClusterConfiguration, error) {
 	clusters := []OcpSharedClusterConfiguration{}
+
+	query, args := BuildAnnotationLookupQuery("ocp_shared_cluster_configurations", annotations)
+
 	// Get resource from above 'ocp_shared_cluster_configurations' table
 	rows, err := p.DbPool.Query(
 		context.Background(),
-		`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1`,
-		annotations,
+		query,
+		args...,
 	)
 
 	if err != nil {
@@ -1855,69 +1860,49 @@ func (a *OcpSandboxProvider) GetSchedulableClusters(
 	)
 
 	clusters := OcpSharedClusterConfigurations{}
+
 	// Get resource from 'ocp_shared_cluster_configurations' table
 	var err error
 	var rows pgx.Rows
-	if len(possibleClusters) == 0 && len(excludeClusters) == 0 && len(parentClusters) == 0 {
-		rows, err = a.DbPool.Query(
+
+	if len(parentClusters) > 0 {
+		parentQuery, parentArgs := BuildChildClusterQuery(cloudSelector, parentClusters)
+		parentRows, parentErr := a.DbPool.Query(
 			context.Background(),
-			`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true ORDER BY random()`,
-			cloudSelector,
+			parentQuery,
+			parentArgs...,
 		)
-	} else {
-		if len(parentClusters) > 0 {
-			parentRows, parentErr := a.DbPool.Query(
-				context.Background(),
-				`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and annotations->>'parent' = ANY($2::text[]) and valid=true ORDER BY random()`,
-				cloudSelector, parentClusters,
-			)
-			if parentErr != nil {
-				log.Logger.Error("Error querying child clusters", "error", parentErr)
-				return OcpSharedClusterConfigurations{}, parentErr
-			}
-			for parentRows.Next() {
-				var clusterName string
-
-				if err := parentRows.Scan(&clusterName); err != nil {
-					parentRows.Close()
-					return OcpSharedClusterConfigurations{}, err
-				}
-				if slices.Contains(possibleClusters, clusterName) {
-					continue
-				}
-				possibleClusters = append(possibleClusters, clusterName)
-			}
-			parentRows.Close()
-			log.Logger.Info("Child clusters resolved from parent relation",
-				"alias", alias,
-				"parentClusters", parentClusters,
-				"resolvedChildren", possibleClusters,
-				"excludeClusters", excludeClusters,
-			)
+		if parentErr != nil {
+			log.Logger.Error("Error querying child clusters", "error", parentErr)
+			return OcpSharedClusterConfigurations{}, parentErr
 		}
-		if len(possibleClusters) > 0 && len(excludeClusters) == 0 {
-			rows, err = a.DbPool.Query(
-				context.Background(),
-				`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and name = ANY($2::text[]) ORDER BY random()`,
-				cloudSelector, possibleClusters,
-			)
-		} else {
-			if len(possibleClusters) == 0 && len(excludeClusters) > 0 {
-				rows, err = a.DbPool.Query(
-					context.Background(),
-					`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and name != ALL($2::text[]) ORDER BY random()`,
-					cloudSelector, excludeClusters,
-				)
+		for parentRows.Next() {
+			var clusterName string
 
-			} else {
-				rows, err = a.DbPool.Query(
-					context.Background(),
-					`SELECT name FROM ocp_shared_cluster_configurations WHERE annotations @> $1 and valid=true and name = ANY($2::text[]) and name != ALL($3::text[]) ORDER BY random()`,
-					cloudSelector, possibleClusters, excludeClusters,
-				)
+			if err := parentRows.Scan(&clusterName); err != nil {
+				parentRows.Close()
+				return OcpSharedClusterConfigurations{}, err
 			}
+			if slices.Contains(possibleClusters, clusterName) {
+				continue
+			}
+			possibleClusters = append(possibleClusters, clusterName)
 		}
+		parentRows.Close()
+		log.Logger.Info("Child clusters resolved from parent relation",
+			"alias", alias,
+			"parentClusters", parentClusters,
+			"resolvedChildren", possibleClusters,
+			"excludeClusters", excludeClusters,
+		)
 	}
+
+	query, args := BuildSchedulableQuery("ocp_shared_cluster_configurations", cloudSelector, possibleClusters, excludeClusters)
+	rows, err = a.DbPool.Query(
+		context.Background(),
+		query,
+		args...,
+	)
 
 	if err != nil {
 		log.Logger.Error("Error querying ocp clusters", "error", err)
