@@ -1481,10 +1481,10 @@ func (a *OcpSandboxWithCreds) Save() error {
 func (a *OcpSandboxWithCreds) SetStatus(status string) error {
 	_, err := a.Provider.DbPool.Exec(
 		context.Background(),
-		fmt.Sprintf(`UPDATE resources
+		`UPDATE resources
 		 SET status = $1,
-			 resource_data['status'] = to_jsonb('%s'::text)
-		 WHERE id = $2`, status),
+			 resource_data['status'] = to_jsonb($1::text)
+		 WHERE id = $2`,
 		status, a.ID,
 	)
 

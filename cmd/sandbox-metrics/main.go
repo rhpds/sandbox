@@ -34,7 +34,7 @@ func parseFlags() {
 func serve() {
 	log.Out.Println("promhttp Listening on port 2112")
 	http.Handle("/metrics", promhttp.Handler())
-	http.ListenAndServe(":2112", nil)
+	log.Out.Fatal(http.ListenAndServe(":2112", nil))
 }
 
 func createMetrics(dbPool *pgxpool.Pool) {

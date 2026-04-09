@@ -454,9 +454,11 @@ func runHealthAll(client *Client, out io.Writer) error {
 			failed = append(failed, name)
 			continue
 		}
+
+		statusCode := resp.StatusCode
 		resp.Body.Close()
 
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if statusCode >= 200 && statusCode < 300 {
 			fmt.Fprintf(out, "OK: %s\n", name)
 		} else {
 			fmt.Fprintf(out, "ERROR: %s (HTTP %d)\n", name, resp.StatusCode)

@@ -506,7 +506,7 @@ func (p *Placement) GetLastStatus() ([]*LifecycleResourceJob, error) {
 	}
 
 	if rows.Err() != nil {
-		return result, err
+		return result, rows.Err()
 	}
 
 	return result, nil
