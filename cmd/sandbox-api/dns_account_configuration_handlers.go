@@ -291,6 +291,14 @@ func (h *BaseHandler) UpdateDNSAccountConfigurationHandler(w http.ResponseWriter
 		dnsAccountConfiguration.AdditionalVars = input.AdditionalVars
 	}
 
+	if input.Endpoint != "" {
+		dnsAccountConfiguration.Endpoint = input.Endpoint
+	}
+
+	if input.Token != "" {
+		dnsAccountConfiguration.Token = input.Token
+	}
+
 	if err := dnsAccountConfiguration.Save(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{

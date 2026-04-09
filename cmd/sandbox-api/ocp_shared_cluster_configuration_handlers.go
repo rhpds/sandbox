@@ -918,6 +918,7 @@ func (h *BaseHandler) OffboardOcpSharedClusterConfigurationHandler(w http.Respon
 		h.awsAccountProvider,
 		h.DNSSandboxProvider,
 		h.IBMResourceGroupSandboxProvider,
+		h.SSLSandboxProvider,
 	)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)

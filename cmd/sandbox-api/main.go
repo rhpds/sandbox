@@ -183,6 +183,11 @@ func main() {
 	IBMResourceGroupSandboxProvider := models.NewIBMResourceGroupSandboxProvider(dbPool, vaultSecret)
 
 	// ---------------------------------------------------------------------
+	// SSL
+	// ---------------------------------------------------------------------
+	SSLSandboxProvider := models.NewSSLSandboxProvider(dbPool, vaultSecret)
+
+	// ---------------------------------------------------------------------
 	// Setup JWT
 	// ---------------------------------------------------------------------
 
@@ -202,10 +207,10 @@ func main() {
 	// to the handler maker.
 	// When we need to migrate to Postgresql, we can pass a different "Provider" which will
 	// implement the same interface.
-	accountHandler := NewAccountHandler(awsAccountProvider, OcpSandboxProvider, DNSSandboxProvider, IBMResourceGroupSandboxProvider)
+	accountHandler := NewAccountHandler(awsAccountProvider, OcpSandboxProvider, DNSSandboxProvider, IBMResourceGroupSandboxProvider, SSLSandboxProvider)
 
 	// Factory for handlers which need connections to both databases
-	baseHandler := NewBaseHandler(awsAccountProvider.Svc, dbPool, doc, oaRouter, awsAccountProvider, OcpSandboxProvider, DNSSandboxProvider, IBMResourceGroupSandboxProvider)
+	baseHandler := NewBaseHandler(awsAccountProvider.Svc, dbPool, doc, oaRouter, awsAccountProvider, OcpSandboxProvider, DNSSandboxProvider, IBMResourceGroupSandboxProvider, SSLSandboxProvider)
 
 	// Admin handler adds tokenAuth to the baseHandler
 	adminHandler := NewAdminHandler(baseHandler, tokenAuth)
@@ -379,6 +384,17 @@ func main() {
 		r.Put("/api/v1/ibm-resource-group-configurations/{name}/update", baseHandler.UpdateIBMResourceGroupSandboxConfigurationHandler)
 		r.Delete("/api/v1/ibm-resource-group-configurations/{name}", baseHandler.DeleteIBMResourceGroupSandboxConfigurationHandler)
 
+		// ---------------------------------
+		// SSL
+		// ---------------------------------
+		r.Post("/api/v1/ssl-account-configurations", baseHandler.CreateSSLAccountConfigurationHandler)
+		r.Get("/api/v1/ssl-account-configurations", baseHandler.GetSSLAccountConfigurationsHandler)
+		r.Get("/api/v1/ssl-account-configurations/{name}", baseHandler.GetSSLAccountConfigurationHandler)
+		r.Put("/api/v1/ssl-account-configurations/{name}/disable", baseHandler.DisableSSLAccountConfigurationHandler)
+		r.Put("/api/v1/ssl-account-configurations/{name}/enable", baseHandler.EnableSSLAccountConfigurationHandler)
+		r.Put("/api/v1/ssl-account-configurations/{name}/update", baseHandler.UpdateSSLAccountConfigurationHandler)
+		r.Delete("/api/v1/ssl-account-configurations/{name}", baseHandler.DeleteSSLAccountConfigurationHandler)
+
 		// Reservations
 		r.Post("/api/v1/reservations", baseHandler.CreateReservationHandler)
 		r.Put("/api/v1/reservations/{name}", baseHandler.UpdateReservationHandler)
@@ -449,6 +465,7 @@ func main() {
 				OcpProvider: OcpSandboxProvider,
 				DnsProvider: DNSSandboxProvider,
 				IbmProvider: IBMResourceGroupSandboxProvider,
+				SslProvider: SSLSandboxProvider,
 			},
 		}))
 		r.Handle("/api/v1/graphql", graphqlServer)

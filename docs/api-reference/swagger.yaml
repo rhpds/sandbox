@@ -714,6 +714,8 @@ paths:
             - DNSSandbox
             - ibmrg
             - IBMResourceGroupSandbox
+            - ssl
+            - SSLSandbox
       - name: available
         in: query
         description: Boolean to filter if available or taken.
@@ -784,6 +786,8 @@ paths:
             - DNSSandbox
             - ibmrg
             - IBMResourceGroupSandbox
+            - ssl
+            - SSLSandbox
       - name: name
         in: path
         required: true
@@ -927,6 +931,8 @@ paths:
             - DNSSandbox
             - ibmrg
             - IBMResourceGroupSandbox
+            - ssl
+            - SSLSandbox
       - name: name
         in: path
         required: true
@@ -988,6 +994,8 @@ paths:
             - DNSSandbox
             - ibmrg
             - IBMResourceGroupSandbox
+            - ssl
+            - SSLSandbox
       - name: name
         in: path
         required: true
@@ -1054,6 +1062,8 @@ paths:
             - DNSSandbox
             - ibmrg
             - IBMResourceGroupSandbox
+            - ssl
+            - SSLSandbox
       - name: name
         in: path
         required: true
@@ -1120,6 +1130,8 @@ paths:
             - DNSSandbox
             - ibmrg
             - IBMResourceGroupSandbox
+            - ssl
+            - SSLSandbox
       - name: name
         in: path
         required: true
@@ -3114,6 +3126,14 @@ paths:
                 aws_secret_access_key:
                   type: string
                   example: secret...
+                endpoint:
+                  type: string
+                  description: URL of the BIND TSIG key API (for ddns)
+                  example: https://ddns.example.com:8080
+                token:
+                  type: string
+                  description: Bearer auth token for the BIND TSIG key API (for ddns)
+                  example: my-secret-token
                 annotations:
                   $ref: "#/components/schemas/Annotations"
                 additional_vars:
@@ -3419,6 +3439,292 @@ paths:
                 $ref: "#/components/schemas/Error"
         default:
           description: updateIBMResourceGroupSandboxConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /ssl-account-configurations:
+    post:
+      summary: Create a new SSLAccountConfiguration
+      operationId: createSSLAccountConfiguration
+      tags:
+        - admin
+      requestBody:
+        description: JSON object to specify the SSLAccountConfiguration.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SSLAccountConfiguration"
+            example:
+              name: letsencrypt-prod
+              domain: workshops.example.com
+              main_provider: google
+              main_provider_url: https://acme-gw.example.com/acme/google/directory
+              fallback_provider: zerosslapi
+              fallback_provider_url: https://acme-gw.example.com/acme/zerosslapi/directory
+              endpoint: https://acme-gw.example.com
+              token: my-admin-token
+              annotations:
+                purpose: production
+      responses:
+        '201':
+          description: SSLAccountConfiguration created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: SSL account configuration created
+        '400':
+          description: Wrong request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: Bad request
+                http_code: 400
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                message: unauthorized
+                http_code: 401
+        default:
+          description: createSSLAccountConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      summary: Get all SSLAccountConfigurations
+      operationId: getSSLAccountConfigurations
+      tags:
+        - admin
+      responses:
+        '200':
+          description: The list of SSLAccountConfigurations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SSLAccountConfigurations"
+        default:
+          description: getSSLAccountConfigurations unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ssl-account-configurations/{name}:
+    get:
+      summary: Get information about an SSLAccountConfiguration
+      operationId: getSSLAccountConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the SSLAccountConfiguration
+          schema:
+            type: string
+          example: letsencrypt-prod
+      responses:
+        '200':
+          description: The SSLAccountConfiguration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SSLAccountConfiguration"
+        '404':
+          description: getSSLAccountConfiguration SSLAccountConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: getSSLAccountConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete an SSLAccountConfiguration
+      operationId: deleteSSLAccountConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the SSLAccountConfiguration
+          schema:
+            type: string
+          example: letsencrypt-prod
+      responses:
+        '200':
+          description: The SSLAccountConfiguration is deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: SSL account configuration deleted
+        '404':
+          description: deleteSSLAccountConfiguration SSLAccountConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: SSLAccountConfiguration has accounts associated with it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: deleteSSLAccountConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /ssl-account-configurations/{name}/enable:
+    put:
+      summary: Enable an SSLAccountConfiguration
+      operationId: enableSSLAccountConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the SSLAccountConfiguration
+          schema:
+            type: string
+          example: letsencrypt-prod
+      responses:
+        '200':
+          description: The SSLAccountConfiguration is enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: SSL account configuration is enabled
+        '404':
+          description: enableSSLAccountConfiguration SSLAccountConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: enableSSLAccountConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ssl-account-configurations/{name}/disable:
+    put:
+      summary: Disable an SSLAccountConfiguration
+      operationId: disableSSLAccountConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the SSLAccountConfiguration
+          schema:
+            type: string
+            example: letsencrypt-prod
+          example: letsencrypt-prod
+      responses:
+        '200':
+          description: The SSLAccountConfiguration is disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: SSL account configuration disabled
+        '404':
+          description: disableSSLAccountConfiguration SSLAccountConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: disableSSLAccountConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ssl-account-configurations/{name}/update:
+    put:
+      summary: Update an SSLAccountConfiguration
+      operationId: updateSSLAccountConfiguration
+      tags:
+        - admin
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the SSLAccountConfiguration
+          schema:
+            type: string
+            example: letsencrypt-prod
+      requestBody:
+        description: JSON object to update the SSLAccountConfiguration.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                endpoint:
+                  type: string
+                  example: https://acme-gw.example.com
+                token:
+                  type: string
+                  example: my-secret-token
+                main_provider_url:
+                  type: string
+                  example: https://acme-gw.example.com/acme/google/directory
+                fallback_provider_url:
+                  type: string
+                  example: https://acme-gw.example.com/acme/zerosslapi/directory
+                annotations:
+                  $ref: "#/components/schemas/Annotations"
+                additional_vars:
+                  type: object
+                  example:
+                    fordeployer: "..."
+            example:
+              endpoint: https://acme-gw.example.com
+              token: updated-token
+              annotations:
+                purpose: production
+      responses:
+        '200':
+          description: The SSLAccountConfiguration is updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: SSL account configuration updated
+        '404':
+          description: updateSSLAccountConfiguration SSLAccountConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: updateSSLAccountConfiguration unexpected error
           content:
             application/json:
               schema:
@@ -4326,6 +4632,7 @@ components:
         - OcpSandbox
         - DNSSandbox
         - IBMResourceGroupSandbox
+        - SSLSandbox
 
     Reservation:
       description: Reservation record
@@ -4704,14 +5011,13 @@ components:
         $ref: '#/components/schemas/OcpSharedClusterConfiguration'
 
     DNSAccountConfiguration:
-      description: DNSAccountConfiguration is a record of an DNS Account
+      description: >
+        DNSAccountConfiguration is a record of a DNS Account.
+        provider_type determines the backend: 'route53' (AWS) or 'ddns' (BIND TSIG key API).
       type: object
       required:
         - name
-        - aws_access_key_id
-        - aws_secret_access_key
         - zone
-        - hosted_zone_id
         - annotations
       additionalProperties: false
       properties:
@@ -4719,13 +5025,19 @@ components:
           type: string
           description: The name of the account, must be alphanumeric or dash
           example: devaccount
+        provider_type:
+          type: string
+          description: Backend provider type
+          enum: [route53, ddns]
+          default: route53
+          example: route53
         aws_access_key_id:
           type: string
-          description: The access key id to access the AWS Account
+          description: The access key id to access the AWS Account (required for route53)
           example: AKI..
         aws_secret_access_key:
           type: string
-          description: The secret access key to access the AWS Account
+          description: The secret access key to access the AWS Account (required for route53)
           example: ey..
         valid:
           type: boolean
@@ -4737,7 +5049,16 @@ components:
           example: dev.domain
         hosted_zone_id:
           type: string
+          description: AWS hosted zone id (required for route53)
           example: Z0
+        endpoint:
+          type: string
+          description: URL of the BIND TSIG key API (required for ddns)
+          example: https://ddns.example.com:8080
+        token:
+          type: string
+          description: Bearer auth token for the BIND TSIG key API (required for ddns)
+          example: my-secret-token
         annotations:
           $ref: "#/components/schemas/Annotations"
         additional_vars:
@@ -4749,6 +5070,7 @@ components:
               openshift_cnv_nfs_server: fsf-region.domain.com
       example:
         name: devaccount
+        provider_type: route53
         aws_access_key_id: REDACTED
         aws_secret_access_key: REDACTED
         zone: dev.domain.com
@@ -4802,6 +5124,83 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/IBMResourceGroupSandboxConfiguration'
+
+    SSLAccountConfiguration:
+      description: >
+        SSLAccountConfiguration stores the ACME gateway endpoint and provider
+        information used to provision SSL/TLS webhook credentials (kid + secret).
+      type: object
+      required:
+        - name
+        - domain
+        - main_provider
+        - main_provider_url
+        - endpoint
+        - token
+        - annotations
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: Unique identifier, must be alphanumeric or dash
+          example: letsencrypt-prod
+        domain:
+          type: string
+          description: The domain managed by this configuration
+          example: workshops.example.com
+        main_provider:
+          type: string
+          description: Primary ACME CA provider name
+          example: google
+        main_provider_url:
+          type: string
+          description: ACME directory URL for the main provider
+          example: https://acme-gw.example.com/acme/google/directory
+        fallback_provider:
+          type: string
+          description: Fallback ACME CA provider name
+          example: zerosslapi
+        fallback_provider_url:
+          type: string
+          description: ACME directory URL for the fallback provider
+          example: https://acme-gw.example.com/acme/zerosslapi/directory
+        endpoint:
+          type: string
+          description: Base URL of the ACME gateway admin API
+          example: https://acme-gw.example.com
+        token:
+          type: string
+          description: Bearer auth token for the ACME gateway admin API
+          example: my-admin-token
+        valid:
+          type: boolean
+          description: Whether this configuration is enabled
+          default: true
+          example: true
+        annotations:
+          $ref: "#/components/schemas/Annotations"
+        additional_vars:
+          type: object
+          description: Additional variables
+          example:
+            fordeployer: "..."
+      example:
+        name: letsencrypt-prod
+        domain: workshops.example.com
+        main_provider: google
+        main_provider_url: https://acme-gw.example.com/acme/google/directory
+        fallback_provider: zerosslapi
+        fallback_provider_url: https://acme-gw.example.com/acme/zerosslapi/directory
+        endpoint: https://acme-gw.example.com
+        token: REDACTED
+        annotations:
+          purpose: production
+
+    SSLAccountConfigurations:
+      description: The list of SSLAccountConfigurations
+      type: array
+      items:
+        $ref: '#/components/schemas/SSLAccountConfiguration'
 
     PlacementDryRunResponse:
       description: >-

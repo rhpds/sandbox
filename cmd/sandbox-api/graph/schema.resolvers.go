@@ -24,7 +24,7 @@ func (r *placementResolver) Resources(ctx context.Context, obj *model.Placement)
 	}
 
 	// Load resources from all providers (also updates placement status in DB)
-	if err := placement.LoadResources(r.AwsProvider, r.OcpProvider, r.DnsProvider, r.IbmProvider); err != nil {
+	if err := placement.LoadResources(r.AwsProvider, r.OcpProvider, r.DnsProvider, r.IbmProvider, r.SslProvider); err != nil {
 		return nil, err
 	}
 

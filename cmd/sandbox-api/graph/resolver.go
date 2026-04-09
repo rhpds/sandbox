@@ -17,4 +17,5 @@ type Resolver struct {
 	OcpProvider *models.OcpSandboxProvider
 	DnsProvider models.DNSSandboxProvider
 	IbmProvider models.IBMResourceGroupSandboxProvider
+	SslProvider models.SSLSandboxProvider
 }

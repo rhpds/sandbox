@@ -21,14 +21,16 @@ type AccountHandler struct {
 	OcpSandboxProvider              *models.OcpSandboxProvider
 	DNSSandboxProvider              models.DNSSandboxProvider
 	IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider
+	SSLSandboxProvider              models.SSLSandboxProvider
 }
 
-func NewAccountHandler(awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider *models.OcpSandboxProvider, DNSSandboxProvider models.DNSSandboxProvider, IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider) *AccountHandler {
+func NewAccountHandler(awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider *models.OcpSandboxProvider, DNSSandboxProvider models.DNSSandboxProvider, IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider, SSLSandboxProvider models.SSLSandboxProvider) *AccountHandler {
 	return &AccountHandler{
 		awsAccountProvider:              awsAccountProvider,
 		OcpSandboxProvider:              OcpSandboxProvider,
 		DNSSandboxProvider:              DNSSandboxProvider,
 		IBMResourceGroupSandboxProvider: IBMResourceGroupSandboxProvider,
+		SSLSandboxProvider:              SSLSandboxProvider,
 	}
 }
 
@@ -142,6 +144,27 @@ func (h *AccountHandler) GetAccountsHandler(w http.ResponseWriter, r *http.Reque
 
 		accountlist = make([]interface{}, len(accounts))
 		for i, acc := range accounts {
+			accountlist[i] = acc
+		}
+
+	case "SSLSandbox", "ssl":
+		var sslAccounts []models.SSLSandbox
+		if available != "" && available == "true" {
+			w.WriteHeader(http.StatusBadRequest)
+			enc.Encode(v1.Error{
+				HTTPStatusCode: http.StatusBadRequest,
+				Message:        "Bad request, SSL sandboxes are created on the fly",
+			})
+			return
+		}
+		if serviceUuid != "" {
+			sslAccounts, err = h.SSLSandboxProvider.FetchAllByServiceUuid(serviceUuid)
+		} else {
+			sslAccounts, err = h.SSLSandboxProvider.FetchAll()
+		}
+
+		accountlist = make([]interface{}, len(sslAccounts))
+		for i, acc := range sslAccounts {
 			accountlist[i] = acc
 		}
 	}
@@ -341,6 +364,30 @@ func (h *AccountHandler) GetAccountHandler(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusOK)
 		render.Render(w, r, &sandbox)
 		return
+
+	case "SSLSandbox", "ssl":
+		sandbox, err := h.SSLSandboxProvider.FetchByName(accountName)
+		if err != nil {
+			if err == models.ErrAccountNotFound || err == pgx.ErrNoRows {
+				log.Logger.Warn("GET account", "error", err)
+				w.WriteHeader(http.StatusNotFound)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusNotFound,
+					Message:        "Account not found",
+				})
+				return
+			}
+			log.Logger.Error("GET account", "error", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				HTTPStatusCode: 500,
+				Message:        "Error reading account",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		render.Render(w, r, &sandbox)
+		return
 	}
 }
 func (h *AccountHandler) CleanupAccountHandler(w http.ResponseWriter, r *http.Request) {
@@ -480,6 +527,29 @@ func (h *BaseHandler) LifeCycleAccountHandler(action string) http.HandlerFunc {
 			sandbox, err := h.IBMResourceGroupSandboxProvider.FetchByName(accountName)
 			if err != nil {
 				if err == models.ErrAccountNotFound {
+					log.Logger.Warn("GET account", "error", err)
+					w.WriteHeader(http.StatusNotFound)
+					render.Render(w, r, &v1.Error{
+						HTTPStatusCode: http.StatusNotFound,
+						Message:        "Account not found",
+					})
+					return
+				}
+				log.Logger.Error("GET account", "error", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: 500,
+					Message:        "Error reading account",
+				})
+				return
+			}
+			resourceType = sandbox.Kind
+			resourceName = sandbox.Name
+
+		case "SSLSandbox", "ssl":
+			sandbox, err := h.SSLSandboxProvider.FetchByName(accountName)
+			if err != nil {
+				if err == models.ErrAccountNotFound || err == pgx.ErrNoRows {
 					log.Logger.Warn("GET account", "error", err)
 					w.WriteHeader(http.StatusNotFound)
 					render.Render(w, r, &v1.Error{
@@ -802,6 +872,45 @@ func (h *BaseHandler) DeleteAccountHandler(w http.ResponseWriter, r *http.Reques
 		render.Render(w, r, &v1.SimpleMessage{
 			Message: "DNS sandbox deleted",
 		})
+
+	case "ssl", "SSLSandbox":
+		account, err := h.SSLSandboxProvider.FetchByName(accountName)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				w.WriteHeader(http.StatusNotFound)
+				render.Render(w, r, &v1.Error{
+					HTTPStatusCode: http.StatusNotFound,
+					Message:        "SSL sandbox not found",
+				})
+				return
+			}
+
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				Err:            err,
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Error getting SSL sandbox",
+			})
+			log.Logger.Error("DeleteSslSandboxHandler", "error", err)
+			return
+		}
+
+		if err := account.Delete(); err != nil {
+			log.Logger.Error("Error deleting SSL sandbox", "error", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			render.Render(w, r, &v1.Error{
+				Err:            err,
+				HTTPStatusCode: http.StatusInternalServerError,
+				Message:        "Error deleting SSL sandbox",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		render.Render(w, r, &v1.SimpleMessage{
+			Message: "SSL sandbox deleted",
+		})
+
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		render.Render(w, r, &v1.Error{

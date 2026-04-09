@@ -336,6 +336,8 @@ type UpdateDNSAccountConfigurationRequest struct {
 	AwsAccessKeyID     string              `json:"aws_access_key_id"`
 	AwsSecretAccessKey string              `json:"aws_secret_access_key"`
 	AdditionalVars     map[string]any      `json:"additional_vars,omitempty"`
+	Endpoint           string              `json:"endpoint"`
+	Token              string              `json:"token"`
 }
 
 func (j *UpdateDNSAccountConfigurationRequest) Bind(r *http.Request) error {
@@ -349,6 +351,19 @@ type UpdateIBMResourceGroupSandboxConfigurationRequest struct {
 }
 
 func (j *UpdateIBMResourceGroupSandboxConfigurationRequest) Bind(r *http.Request) error {
+	return nil
+}
+
+type UpdateSSLAccountConfigurationRequest struct {
+	Annotations         *models.Annotations `json:"annotations,omitempty"`
+	Endpoint            string              `json:"endpoint"`
+	Token               string              `json:"token"`
+	MainProviderURL     string              `json:"main_provider_url"`
+	FallbackProviderURL string              `json:"fallback_provider_url"`
+	AdditionalVars      map[string]any      `json:"additional_vars,omitempty"`
+}
+
+func (j *UpdateSSLAccountConfigurationRequest) Bind(r *http.Request) error {
 	return nil
 }
 
