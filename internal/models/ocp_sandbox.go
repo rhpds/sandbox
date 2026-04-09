@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net/http"
+	"os"
 	"regexp"
 	"slices"
 	"strings"
@@ -185,6 +186,10 @@ type OcpSharedClusterConfiguration struct {
 type ClusterSettings struct {
 	ProvisionRateLimit  *int   `json:"provision_rate_limit,omitempty"`
 	ProvisionRateWindow string `json:"provision_rate_window,omitempty"`
+
+	Locked        bool   `json:"locked,omitempty"`
+	LockMessage   string `json:"lock_message,omitempty"`
+	AutoLockAfter string `json:"auto_lock_after,omitempty"`
 }
 
 // Default rate limit applied when creating a cluster without explicit settings.
@@ -238,6 +243,10 @@ type ClusterData struct {
 	ConnectionStatusAt      time.Time `json:"connection_status_at,omitempty"`
 	ConnectionErrorCount    int       `json:"connection_error_count,omitempty"`
 	ConnectionLastSuccessAt time.Time `json:"connection_last_success_at,omitempty"`
+
+	// UnlockedAt is set when a locked configuration is unlocked.
+	// Used with Settings.AutoLockAfter to auto-relock after a duration.
+	UnlockedAt *time.Time `json:"unlocked_at,omitempty"`
 }
 
 // CanModify checks whether the given role and caller name are allowed to modify
@@ -258,6 +267,30 @@ func (p *OcpSharedClusterConfiguration) CanModify(role, callerName string) bool 
 		}
 	}
 	return false
+}
+
+// IsLocked returns true if the shared cluster configuration is locked.
+func (p *OcpSharedClusterConfiguration) IsLocked() bool {
+	return p.Settings.Locked
+}
+
+// LockError returns a 409-style error message for a locked configuration.
+func (p *OcpSharedClusterConfiguration) LockError() string {
+	if p.Settings.LockMessage != "" {
+		return fmt.Sprintf("cluster %q is locked: %s. Unlock the cluster first.", p.Name, p.Settings.LockMessage)
+	}
+	return fmt.Sprintf("cluster %q is locked. Unlock the cluster first.", p.Name)
+}
+
+// ValidateAutoLockAfter checks that auto_lock_after is a valid duration string if set.
+func (s *ClusterSettings) ValidateAutoLockAfter() error {
+	if s.AutoLockAfter == "" {
+		return nil
+	}
+	if _, err := ParseHumanDuration(s.AutoLockAfter); err != nil {
+		return fmt.Errorf("invalid auto_lock_after: %w", err)
+	}
+	return nil
 }
 
 // WithoutCredentials Method to return the OcpSharedClusterConfiguration without any credentials
@@ -3634,6 +3667,88 @@ func (a *OcpSandboxProvider) TriggerRotation() {
 	case a.RotateNow <- struct{}{}:
 	default:
 		// Already signalled, don't block
+	}
+}
+
+// StartAutoLockChecker starts a background goroutine that periodically checks for
+// unlocked configurations whose auto_lock_after duration has expired and re-locks them.
+// The tick interval defaults to 30s but can be overridden with AUTO_LOCK_CHECK_INTERVAL (e.g. "2s").
+func (a *OcpSandboxProvider) StartAutoLockChecker(ctx context.Context) {
+	interval := 30 * time.Second
+	if v := os.Getenv("AUTO_LOCK_CHECK_INTERVAL"); v != "" {
+		if d, err := ParseHumanDuration(v); err == nil {
+			interval = d
+			log.Logger.Info("AutoLockChecker: using custom interval", "interval", interval)
+		} else {
+			log.Logger.Error("AutoLockChecker: invalid AUTO_LOCK_CHECK_INTERVAL, using default", "value", v, "error", err)
+		}
+	}
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				log.Logger.Info("AutoLockChecker: context cancelled, stopping")
+				return
+			case <-ticker.C:
+				a.autoLockExpiredConfigurations()
+			}
+		}
+	}()
+}
+
+// autoLockExpiredConfigurations finds unlocked configurations where
+// unlocked_at + auto_lock_after < now and re-locks them.
+func (a *OcpSandboxProvider) autoLockExpiredConfigurations() {
+	clusters, err := a.GetOcpSharedClusterConfigurations()
+	if err != nil {
+		log.Logger.Error("AutoLockChecker: failed to fetch configurations", "error", err)
+		return
+	}
+
+	now := time.Now()
+	for _, cluster := range clusters {
+		// Skip if locked, no auto_lock_after, or no unlocked_at timestamp
+		if cluster.Settings.Locked {
+			continue
+		}
+		if cluster.Settings.AutoLockAfter == "" {
+			continue
+		}
+		if cluster.Data.UnlockedAt == nil {
+			continue
+		}
+
+		duration, err := ParseHumanDuration(cluster.Settings.AutoLockAfter)
+		if err != nil {
+			log.Logger.Error("AutoLockChecker: invalid auto_lock_after",
+				"cluster", cluster.Name,
+				"auto_lock_after", cluster.Settings.AutoLockAfter,
+				"error", err)
+			continue
+		}
+
+		expiry := cluster.Data.UnlockedAt.Add(duration)
+		if now.Before(expiry) {
+			continue
+		}
+
+		// Re-lock the configuration
+		log.Logger.Info("AutoLockChecker: auto-locking configuration",
+			"cluster", cluster.Name,
+			"unlocked_at", cluster.Data.UnlockedAt,
+			"auto_lock_after", cluster.Settings.AutoLockAfter)
+
+		cluster.Settings.Locked = true
+		cluster.Data.UnlockedAt = nil
+		if err := cluster.Save(); err != nil {
+			log.Logger.Error("AutoLockChecker: failed to re-lock configuration",
+				"cluster", cluster.Name,
+				"error", err)
+		}
 	}
 }
 

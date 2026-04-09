@@ -2200,6 +2200,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        '409':
+          description: Configuration is locked (update path only)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         default:
           description: upsertOcpSharedClusterConfiguration unexpected error
           content:
@@ -2236,8 +2242,8 @@ paths:
                 $ref: "#/components/schemas/Error"
         '409':
           description: |-
-            OcpSharedClusterConfiguration is not deletable. Usually because it has
-            resources attached to it.
+            OcpSharedClusterConfiguration is not deletable. Either the configuration
+            is locked or it has resources attached to it.
           content:
             application/json:
               schema:
@@ -2349,6 +2355,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        '409':
+          description: Configuration is locked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         default:
           description: enableOcpSharedClusterConfiguration unexpected error
           content:
@@ -2385,8 +2397,108 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        '409':
+          description: Configuration is locked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         default:
           description: disableOcpSharedClusterConfiguration unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ocp-shared-cluster-configurations/{name}/lock:
+    put:
+      summary: Lock a shared cluster configuration
+      description: |-
+        Locks the shared cluster configuration, preventing all write operations
+        (update, delete, offboard, disable, enable). Use unlock to re-enable
+        modifications. Accepts an optional JSON body with message and auto_lock_after.
+      operationId: lockOcpSharedClusterConfiguration
+      tags:
+        - shared-cluster-manager
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration
+          schema:
+            type: string
+          example: ocpv08
+      requestBody:
+        required: false
+        description: Optional lock message and auto-lock duration.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                  description: Human-readable reason for locking
+                  example: "infra production cluster - RHDP"
+                auto_lock_after:
+                  type: string
+                  description: Duration after unlock before auto-relock (e.g. "1h", "30m")
+                  example: "1h"
+      responses:
+        '200':
+          description: The configuration is locked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: OCP shared cluster configuration locked
+        '404':
+          description: OcpSharedClusterConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ocp-shared-cluster-configurations/{name}/unlock:
+    put:
+      summary: Unlock a shared cluster configuration
+      description: |-
+        Unlocks the shared cluster configuration, re-enabling write operations.
+        If auto_lock_after is configured, the configuration will automatically
+        re-lock after the specified duration.
+      operationId: unlockOcpSharedClusterConfiguration
+      tags:
+        - shared-cluster-manager
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the OcpSharedClusterConfiguration
+          schema:
+            type: string
+          example: ocpv08
+      responses:
+        '200':
+          description: The configuration is unlocked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: OCP shared cluster configuration unlocked
+        '404':
+          description: OcpSharedClusterConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          description: unexpected error
           content:
             application/json:
               schema:
@@ -2455,7 +2567,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         '409':
-          description: Conflict - multi-cluster placements exist or cluster unreachable without force
+          description: Conflict - configuration is locked, multi-cluster placements exist, or cluster unreachable without force
           content:
             application/json:
               schema:
@@ -2671,6 +2783,12 @@ paths:
                 message: OCP shared cluster configuration updated
         '404':
           description: updateOcpSharedClusterConfiguration OcpSharedClusterConfiguration not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: Configuration is locked
           content:
             application/json:
               schema:
@@ -4593,6 +4711,23 @@ components:
                 Must be set together with provision_rate_limit.
               default: "1m"
               example: "1m"
+            locked:
+              type: boolean
+              description: |-
+                When true, the shared cluster configuration is protected from all
+                write operations. Use the lock/unlock endpoints to change this value.
+              default: false
+            lock_message:
+              type: string
+              description: |-
+                Human-readable reason for locking the configuration.
+              example: "infra production cluster - RHDP"
+            auto_lock_after:
+              type: string
+              description: |-
+                Duration after unlock before the configuration automatically re-locks
+                (e.g. "1h", "30m"). When set, unlocking starts a countdown.
+              example: "1h"
         deployer_admin_sa_token_ttl:
           type: string
           description: |-

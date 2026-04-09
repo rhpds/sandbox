@@ -120,6 +120,8 @@ run_api() {
     # Short orphan age for the rescuer test (default 30s). Resources must be
     # unprocessed for poll_interval + orphan_age before rescuer picks them up.
     export QUEUE_ORPHAN_AGE=10s
+    # Fast auto-lock check for functional tests (default 30s).
+    export AUTO_LOCK_CHECK_INTERVAL=2s
 
     echo "Running sandbox API on port $PORT (QUEUE_POLL_INTERVAL=$QUEUE_POLL_INTERVAL, QUEUE_RESCUER_INTERVAL=$QUEUE_RESCUER_INTERVAL, QUEUE_RESCUERS=$QUEUE_RESCUERS, QUEUE_ORPHAN_AGE=$QUEUE_ORPHAN_AGE)"
     setsid make run-api &>$apilog &
@@ -377,8 +379,9 @@ RUN_RBAC_TESTS="${RUN_RBAC_TESTS:-${run_rbac_tests:-true}}"
 RUN_CLI_TESTS="${RUN_CLI_TESTS:-${run_cli_tests:-true}}"
 RUN_RATE_LIMIT_TESTS="${RUN_RATE_LIMIT_TESTS:-${run_rate_limit_tests:-true}}"
 RUN_RATE_LIMIT_LOAD_TESTS="${RUN_RATE_LIMIT_LOAD_TESTS:-${run_rate_limit_load_tests:-false}}"
+RUN_CLUSTER_LOCK_TESTS="${RUN_CLUSTER_LOCK_TESTS:-${run_cluster_lock_tests:-true}}"
 
-echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS RUN_NO_NAMESPACE_TESTS=$RUN_NO_NAMESPACE_TESTS RUN_ONBOARD_TESTS=$RUN_ONBOARD_TESTS RUN_RBAC_TESTS=$RUN_RBAC_TESTS RUN_CLI_TESTS=$RUN_CLI_TESTS RUN_RATE_LIMIT_TESTS=$RUN_RATE_LIMIT_TESTS RUN_RATE_LIMIT_LOAD_TESTS=$RUN_RATE_LIMIT_LOAD_TESTS"
+echo "Test flags: RUN_HURL_TESTS=$RUN_HURL_TESTS RUN_LIFECYCLE_TESTS=$RUN_LIFECYCLE_TESTS RUN_LIMIT_RANGE_TESTS=$RUN_LIMIT_RANGE_TESTS RUN_ADMIN_SA_TESTS=$RUN_ADMIN_SA_TESTS RUN_NO_NAMESPACE_TESTS=$RUN_NO_NAMESPACE_TESTS RUN_ONBOARD_TESTS=$RUN_ONBOARD_TESTS RUN_RBAC_TESTS=$RUN_RBAC_TESTS RUN_CLI_TESTS=$RUN_CLI_TESTS RUN_RATE_LIMIT_TESTS=$RUN_RATE_LIMIT_TESTS RUN_RATE_LIMIT_LOAD_TESTS=$RUN_RATE_LIMIT_LOAD_TESTS RUN_CLUSTER_LOCK_TESTS=$RUN_CLUSTER_LOCK_TESTS"
 
 # Raise the rate limit on ocpvdev01 so hurl tests don't get throttled
 echo "Raising provision rate limit on ocpvdev01..."
@@ -603,6 +606,25 @@ if [ "${RUN_RBAC_TESTS}" != "false" ] && [ "${RUN_RBAC_TESTS}" != "no" ]; then
         python3 tests/functional/test_rbac.py
 else
     echo "Skipping RBAC tests (RUN_RBAC_TESTS=${RUN_RBAC_TESTS})"
+fi
+
+# Run cluster lock tests if requested
+if [ "${RUN_CLUSTER_LOCK_TESTS}" != "false" ] && [ "${RUN_CLUSTER_LOCK_TESTS}" != "no" ]; then
+    echo ""
+    echo "=========================================="
+    echo "Running cluster lock tests"
+    echo "=========================================="
+    cd $jobdir
+
+    # Install Python dependencies if needed
+    pip3 install -q requests urllib3 2>/dev/null || true
+
+    # Run the Python cluster lock test
+    SANDBOX_API_URL="http://localhost:$PORT" \
+        SANDBOX_ADMIN_LOGIN_TOKEN="$admintoken" \
+        python3 tests/functional/test_cluster_lock.py
+else
+    echo "Skipping cluster lock tests (RUN_CLUSTER_LOCK_TESTS=${RUN_CLUSTER_LOCK_TESTS})"
 fi
 
 # Run sandbox-cli functional tests if requested

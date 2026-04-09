@@ -1,0 +1,95 @@
+= Shared Cluster Configuration Lock — Implementation Checklist
+
+Back to link:cluster-lock.adoc[design document].
+
+== Model Layer (`internal/models/ocp_sandbox.go`)
+
+- [x] Add `Locked bool`, `LockMessage string`, and `AutoLockAfter string` to `ClusterSettings` struct
+- [x] Add `UnlockedAt *time.Time` to `ClusterData` struct
+- [x] Add `IsLocked() bool` method on `OcpSharedClusterConfiguration`
+- [x] Add `LockError() string` helper that formats the 409 error message
+- [x] Add `ValidateAutoLockAfter()` for auto_lock_after validation
+- [x] `SharedView()` already copies full `Settings` — `locked`, `lock_message`, `auto_lock_after` included automatically
+
+== API Handlers (`cmd/sandbox-api/ocp_shared_cluster_configuration_handlers.go`)
+
+- [x] Add `LockOcpSharedClusterConfigurationHandler` — sets `settings.locked = true`, optional `lock_message` and `auto_lock_after`, clears `data.unlocked_at`
+- [x] Add `UnlockOcpSharedClusterConfigurationHandler` — sets `settings.locked = false`, sets `data.unlocked_at` to now
+- [x] Add `renderLockError()` helper for consistent 409 responses
+- [x] Add lock guard to `UpsertOcpSharedClusterConfigurationHandler` (update path only, not create)
+- [x] Add lock guard to `UpdateOcpSharedClusterConfigurationHandler`
+- [x] Add lock guard to `DeleteOcpSharedClusterConfigurationHandler`
+- [x] Add lock guard to `OffboardOcpSharedClusterConfigurationHandler`
+- [x] Add lock guard to `DisableOcpSharedClusterConfigurationHandler`
+- [x] Add lock guard to `EnableOcpSharedClusterConfigurationHandler`
+- [x] Register lock/unlock routes in `main.go` (shared-cluster-manager group)
+
+== Auto-Lock (background goroutine)
+
+- [x] Add auto-lock check as dedicated goroutine (`StartAutoLockChecker`)
+- [x] On each tick: query unlocked configurations where `unlocked_at + auto_lock_after < now`
+- [x] Re-lock matching configurations: set `settings.locked = true`, clear `data.unlocked_at`
+- [x] Log auto-lock events
+
+== API Specification (`docs/api-reference/swagger.yaml`)
+
+- [x] Add lock/unlock endpoints
+- [x] Add `locked`, `lock_message`, and `auto_lock_after` to `ClusterSettings` schema
+- [x] Document 409 responses for locked configurations on affected endpoints
+
+== CLI (`internal/cli/cluster.go`)
+
+- [x] Add `cluster lock` command with `--message` and `--auto-lock-after` flags
+- [x] Add `cluster unlock` command (shows auto-lock time if configured)
+- [x] Add `LOCKED` column to `cluster list` output
+- [x] Display lock info in `cluster get` (JSON output already includes `settings.locked`, `lock_message`, `auto_lock_after`)
+
+== Functional Tests (`tests/functional/test_cluster_lock.py`)
+
+=== Lock/unlock lifecycle
+
+- [x] Lock a configuration, verify GET returns `settings.locked = true`
+- [x] Unlock a configuration, verify GET returns `settings.locked = false`
+- [x] Lock with `--message`, verify message is returned in GET
+- [x] Lock an already-locked configuration — 200 (no-op)
+- [x] Unlock an already-unlocked configuration — 200 (no-op)
+
+=== All write endpoints return 409 when locked
+
+- [x] `PUT /{name}` (upsert update path) → 409
+- [x] `PUT /{name}/update` (partial update) → 409
+- [x] `DELETE /{name}` → 409
+- [x] `DELETE /{name}/offboard` → 409
+- [x] `PUT /{name}/disable` → 409
+- [x] `PUT /{name}/enable` → 409
+
+=== Allowed operations on locked configuration
+
+- [x] `PUT /{name}/lock` → 200
+- [x] `PUT /{name}/unlock` → 200
+- [x] `GET /{name}` → 200
+- [x] `GET /{name}/placements` → 200
+- [ ] `GET /{name}/health` → 200 (skipped — requires reachable cluster)
+
+=== Error message validation
+
+- [x] 409 response includes cluster name and lock message
+- [x] 409 response without lock message omits it cleanly
+
+=== Scheduling
+
+- [x] Locked configuration with `valid=true` still accepts new placements (tested via dry-run)
+
+=== Create path not blocked
+
+- [x] Upsert on a non-existing configuration (create path) succeeds even with `locked` in settings
+
+=== SharedView
+
+- [x] `SharedView()` includes `locked`, `lock_message`, and `auto_lock_after` (via list endpoint)
+
+=== Auto-lock
+
+- [x] Lock with `auto_lock_after`, verify value stored in settings
+- [x] Auto-lock timer fires after duration (polls every 5s for up to 60s)
+- [x] Full unlock → modify → re-lock workflow

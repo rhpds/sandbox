@@ -1,0 +1,273 @@
+= Shared Cluster Configuration Lock
+:toc:
+:toc-placement: preamble
+
+Prevent accidental deletion or modification of shared cluster configurations by allowing cluster owners and admins to lock them. A locked configuration is protected from all write operations. To modify it, unlock it first.
+
+== Problem
+
+As the number of shared clusters grows, accidental updates or deletions of their configurations in sandbox API become a risk. Cluster owners need a way to signal "this configuration is in production use — don't touch it" that is enforced by the API, visible in the CLI, and requires an explicit unlock before any changes can be made.
+
+== Solution Overview
+
+A new `locked` boolean field in the `ClusterSettings` JSONB column. When `true`, all write operations on the shared cluster configuration are rejected with 409 Conflict. The only write operations allowed on a locked configuration are `lock` (no-op) and `unlock`.
+
+To modify a locked configuration: unlock it, make changes, re-lock.
+
+No `--force` or `?force=true` bypass. The unlock step _is_ the explicit intent.
+
+=== Why `settings` and not `data`?
+
+Configuration lock is a user-controlled intent, not system-managed state. It follows the same pattern as `provision_rate_limit` — the user sets it, the API respects it. The `settings` column is the right home.
+
+No DB migration is needed — `settings` is already a JSONB column (migration 023).
+
+== Data Model
+
+=== ClusterSettings (JSONB)
+
+New fields added to the existing `ClusterSettings` struct:
+
+[cols="2,1,3"]
+|===
+| Field | Type | Description
+
+| `locked`
+| boolean
+| When `true`, the shared cluster configuration is protected from all write operations. Default: `false` (omitted from JSON when false).
+
+| `lock_message`
+| string (optional)
+| Human-readable reason for locking (e.g. "production cluster — do not modify").
+
+| `auto_lock_after`
+| string (optional)
+| Duration after unlock before the configuration automatically re-locks (e.g. `1h`, `30m`). When set, unlocking starts a countdown — if the configuration is not manually re-locked within this window, the API re-locks it automatically. Cleared on explicit `lock`. Not set by default.
+|===
+
+Example cluster configuration body:
+
+[source,json]
+----
+{
+  "name": "ocpv08",
+  "settings": {
+    "provision_rate_limit": 20,
+    "provision_rate_window": "1m",
+    "locked": true,
+    "lock_message": "infra production cluster - RHDP",
+    "auto_lock_after": "1h"
+  }
+}
+----
+
+== API Endpoints
+
+=== Lock a configuration
+
+`PUT /api/v1/ocp-shared-cluster-configurations/{name}/lock`
+
+Locks the shared cluster configuration. Accepts an optional JSON body:
+
+[source,json]
+----
+{
+  "message": "infra production cluster - RHDP"
+}
+----
+
+**Response:** 200 OK with updated cluster configuration.
+
+**Authorization:** Must pass `CanModify()` (owner or allowed role).
+
+=== Unlock a configuration
+
+`PUT /api/v1/ocp-shared-cluster-configurations/{name}/unlock`
+
+Removes the lock. No request body required.
+
+If `auto_lock_after` is configured, the response includes the time at which the configuration will automatically re-lock.
+
+**Response:** 200 OK with updated cluster configuration.
+
+**Authorization:** Must pass `CanModify()` (owner or allowed role).
+
+=== Behavior of existing endpoints when locked
+
+[cols="2,1"]
+|===
+| Endpoint | Locked behavior
+
+| `PUT /{name}` (upsert — update path)
+| 409 Conflict
+
+| `PUT /{name}/update` (partial update)
+| 409 Conflict
+
+| `DELETE /{name}`
+| 409 Conflict
+
+| `DELETE /{name}/offboard`
+| 409 Conflict
+
+| `PUT /{name}/disable`
+| 409 Conflict
+
+| `PUT /{name}/enable`
+| 409 Conflict
+
+| `PUT /{name}/lock`
+| Allowed (no-op if already locked)
+
+| `PUT /{name}/unlock`
+| Allowed
+
+| `GET /{name}`
+| Allowed
+
+| `GET /{name}/placements`
+| Allowed
+
+| `GET /{name}/health`
+| Allowed
+|===
+
+All read operations are always allowed. All write operations are blocked — no exceptions, no force override. Unlock first.
+
+=== Error response
+
+When a locked configuration rejects an operation:
+
+[source,json]
+----
+{
+  "status_code": 409,
+  "error": "cluster \"ocpv08\" is locked: infra production cluster - RHDP. Unlock the cluster first."
+}
+----
+
+If no `lock_message` is set:
+
+[source,json]
+----
+{
+  "status_code": 409,
+  "error": "cluster \"ocpv08\" is locked. Unlock the cluster first."
+}
+----
+
+== CLI
+
+=== New commands
+
+[source,shell]
+----
+# Lock a cluster
+sandbox-cli cluster lock ocpv08 --message "infra production cluster - RHDP"
+
+# Unlock a cluster
+sandbox-cli cluster unlock ocpv08
+----
+
+=== Existing commands
+
+Existing commands that hit locked endpoints will fail with the lock error message:
+
+[source,shell]
+----
+❯ sandbox-cli cluster offboard ocpv08
+Error: cluster "ocpv08" is locked: infra production cluster - RHDP. Unlock the cluster first.
+
+❯ sandbox-cli cluster unlock ocpv08
+OCP shared cluster configuration unlocked
+
+❯ sandbox-cli cluster create ocpv08 < ocpv08.json
+OCP shared cluster configuration updated
+
+❯ sandbox-cli cluster lock ocpv08
+OCP shared cluster configuration locked
+----
+
+=== List output
+
+New `LOCKED` column between `VALID` and `CREATED_BY`:
+
+[source]
+----
+❯ sandbox-cli cluster list
+NAME                ALTNAME                              VALID  LOCKED  CREATED_BY  PLACEMENTS         RATE LIMIT        LAST STATUS
+ocpv08              -                                    yes    yes                   324 /    ?        -                 ok    2s ago
+ocpv03              -                                    yes    -                      68 /    ?        -                 ok    1m ago
+cluster-dmqzw       lb1216-demystifying-aap              yes    -       gucore          7 /   40 (18%)  20/1m (20 slots)  ok    30m ago
+cluster-rw7lf       lb2236-ansible-dev-tools             yes    -       jboeselm        2 /   30 ( 7%)  -                 ok    30m ago
+----
+
+- `yes` (yellow) — cluster is locked
+- `-` — cluster is not locked
+
+=== Get output
+
+The JSON output from `cluster get` includes the `settings.locked` and `settings.lock_message` fields when set.
+
+== Auto-Lock
+
+When `auto_lock_after` is set (e.g. `1h`), the shared cluster configuration automatically re-locks after being unlocked. This prevents someone from unlocking a configuration, making changes, and forgetting to re-lock.
+
+=== How it works
+
+1. Configuration is locked with `auto_lock_after: "1h"`
+2. User unlocks the configuration — API records `unlocked_at` in `ClusterData` (system-managed)
+3. User makes changes
+4. If the user doesn't re-lock within 1 hour, the background goroutine detects that `unlocked_at + auto_lock_after` has passed and re-locks the configuration
+5. Explicit `lock` clears `unlocked_at`
+
+=== Data fields
+
+[cols="2,1,3"]
+|===
+| Field | Column | Description
+
+| `auto_lock_after`
+| `settings` (user-controlled)
+| Duration string. Set by the user at lock time or via cluster config.
+
+| `unlocked_at`
+| `data` (system-managed)
+| Timestamp set when the configuration is unlocked. Cleared on explicit lock. Used to compute when auto-lock should fire.
+|===
+
+=== CLI
+
+[source,shell]
+----
+# Lock with auto-relock after 1 hour
+sandbox-cli cluster lock ocpv08 --message "infra production cluster - RHDP" --auto-lock-after 1h
+
+# Unlock — output shows when it will re-lock
+❯ sandbox-cli cluster unlock ocpv08
+OCP shared cluster configuration unlocked (will auto-lock at 2026-04-08T15:30:00Z)
+----
+
+=== Edge cases
+
+- If `auto_lock_after` is not set, unlock is permanent until manually re-locked.
+- Locking a configuration that is already locked updates `lock_message` and `auto_lock_after` but is otherwise a no-op.
+- If the configuration is re-locked manually before the timer fires, `unlocked_at` is cleared — no auto-lock fires.
+
+== Scheduling
+
+Locking does **not** affect scheduling. A locked shared cluster configuration that is `valid=true` continues to accept new placements. Lock protects the _configuration_ from changes, not the shared cluster from workload.
+
+If the intent is to stop new placements, unlock the configuration first, then disable it.
+
+== Audit Log
+
+Lock and unlock operations are recorded in the `audit_log` table, same as other cluster mutations:
+
+- Action: `lock_cluster` / `unlock_cluster`
+- Subject: cluster name
+- Actor: JWT caller name
+
+== Implementation Checklist
+
+See link:cluster-lock-checklist.adoc[cluster-lock-checklist.adoc].
