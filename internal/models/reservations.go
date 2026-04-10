@@ -281,11 +281,15 @@ func (r *Reservation) Initialize(dbpool *pgxpool.Pool, a AwsAccountProvider) {
 		case "AwsSandbox", "AwsAccount", "aws_account":
 			_, err := a.Reserve(r.Name, resource.Count)
 			if err != nil {
-				r.UpdateStatus(dbpool, "error")
+				if err := r.UpdateStatus(dbpool, "error"); err != nil {
+					log.Logger.Error("Error updating reservation status", "error", err, "reservation", r.Name)
+				}
 				return
 			}
 
-			r.UpdateStatus(dbpool, "success")
+			if err := r.UpdateStatus(dbpool, "success"); err != nil {
+				log.Logger.Error("Error updating reservation status", "error", err, "reservation", r.Name)
+			}
 		}
 	}
 }
@@ -302,12 +306,16 @@ func (r *Reservation) Remove(dbpool *pgxpool.Pool, a AwsAccountProvider) {
 		switch resource.Kind {
 		case "AwsSandbox", "AwsAccount", "aws_account":
 			if err := a.ScaleDownReservation(r.Name, 0); err != nil {
-				r.UpdateStatus(dbpool, "error")
+				if err := r.UpdateStatus(dbpool, "error"); err != nil {
+					log.Logger.Error("Error updating reservation status", "error", err, "reservation", r.Name)
+				}
 				return
 			}
 
 			if err := r.Delete(dbpool); err != nil {
-				r.UpdateStatus(dbpool, "error")
+				if err := r.UpdateStatus(dbpool, "error"); err != nil {
+					log.Logger.Error("Error updating reservation status", "error", err, "reservation", r.Name)
+				}
 				return
 			}
 		}
@@ -316,7 +324,9 @@ func (r *Reservation) Remove(dbpool *pgxpool.Pool, a AwsAccountProvider) {
 
 // Update is an async operation to update a reservation from a reservationRequest
 func (r *Reservation) Update(dbpool *pgxpool.Pool, a AwsAccountProvider, req ReservationRequest) {
-	r.UpdateStatus(dbpool, "updating")
+	if err := r.UpdateStatus(dbpool, "updating"); err != nil {
+		log.Logger.Error("Error updating reservation status", "error", err, "reservation", r.Name)
+	}
 	// Loop through the Request.Resources and try to update the resources
 	// by removing the reservation.
 	for i, resource := range r.Request.Resources {
@@ -326,24 +336,40 @@ func (r *Reservation) Update(dbpool *pgxpool.Pool, a AwsAccountProvider, req Res
 				if resource.Count <= reqResource.Count {
 					// scale up
 					if _, err := a.Reserve(r.Name, reqResource.Count); err != nil {
-						r.UpdateStatus(dbpool, "error")
+						if err := r.UpdateStatus(dbpool, "error"); err != nil {
+							log.Logger.Error("Error updating reservation status", "error", err, "reservation", r.Name)
+						}
 					} else {
 						r.Request.Resources[i].Count = reqResource.Count
-						r.Save(dbpool)
+						if err := r.Save(dbpool); err != nil {
+							log.Logger.Error("Error saving reservation after scale up", "error", err, "reservation", r.Name)
+							if err := r.UpdateStatus(dbpool, "error"); err != nil {
+								log.Logger.Error("Error updating reservation status", "error", err, "reservation", r.Name)
+							}
+						}
 					}
 				} else {
 					// scale down
 					if err := a.ScaleDownReservation(r.Name, reqResource.Count); err != nil {
-						r.UpdateStatus(dbpool, "error")
+						if err := r.UpdateStatus(dbpool, "error"); err != nil {
+							log.Logger.Error("Error updating reservation status", "error", err, "reservation", r.Name)
+						}
 					} else {
 						r.Request.Resources[i].Count = reqResource.Count
-						r.Save(dbpool)
+						if err := r.Save(dbpool); err != nil {
+							log.Logger.Error("Error saving reservation after scale down", "error", err, "reservation", r.Name)
+							if err := r.UpdateStatus(dbpool, "error"); err != nil {
+								log.Logger.Error("Error updating reservation status", "error", err, "reservation", r.Name)
+							}
+						}
 					}
 				}
 			}
 		}
 	}
-	r.UpdateStatus(dbpool, "success")
+	if err := r.UpdateStatus(dbpool, "success"); err != nil {
+		log.Logger.Error("Error updating reservation status", "error", err, "reservation", r.Name)
+	}
 }
 
 // Rename renames a reservation
@@ -362,7 +388,9 @@ func (r *Reservation) Rename(dbpool *pgxpool.Pool, a AwsAccountProvider, name st
 		return
 	}
 
-	r.UpdateStatus(dbpool, "updating")
+	if err := r.UpdateStatus(dbpool, "updating"); err != nil {
+		log.Logger.Error("rename reservation, update status", "error", err, "reservation", r.Name)
+	}
 
 	// Check if the new name is already taken
 	var id int
@@ -374,7 +402,9 @@ func (r *Reservation) Rename(dbpool *pgxpool.Pool, a AwsAccountProvider, name st
 
 	if err != nil && err != pgx.ErrNoRows {
 		log.Logger.Error("rename reservation", "error", err)
-		r.UpdateStatus(dbpool, "error")
+		if err := r.UpdateStatus(dbpool, "error"); err != nil {
+			log.Logger.Error("rename reservation, update status", "error", err, "reservation", r.Name)
+		}
 		return
 	}
 
@@ -385,7 +415,9 @@ func (r *Reservation) Rename(dbpool *pgxpool.Pool, a AwsAccountProvider, name st
 
 	if err := a.RenameReservation(r.Name, name); err != nil {
 		log.Logger.Error("rename reservation", "error", err)
-		r.UpdateStatus(dbpool, "error")
+		if err := r.UpdateStatus(dbpool, "error"); err != nil {
+			log.Logger.Error("rename reservation, update status", "error", err, "reservation", r.Name)
+		}
 		return
 	}
 
@@ -393,7 +425,9 @@ func (r *Reservation) Rename(dbpool *pgxpool.Pool, a AwsAccountProvider, name st
 	r.Request.Name = name
 	if err := r.Save(dbpool); err != nil {
 		log.Logger.Error("rename reservation", "error", err)
-		r.UpdateStatus(dbpool, "error")
+		if err := r.UpdateStatus(dbpool, "error"); err != nil {
+			log.Logger.Error("rename reservation, update status", "error", err, "reservation", r.Name)
+		}
 		return
 	}
 

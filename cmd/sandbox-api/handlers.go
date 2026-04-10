@@ -869,6 +869,9 @@ func (h *BaseHandler) GetPlacementsHandler(w http.ResponseWriter, r *http.Reques
 
 	if limitStr := query.Get("limit"); limitStr != "" {
 		if limit, err := strconv.Atoi(limitStr); err == nil {
+			if limit > 1000 {
+				limit = 1000
+			}
 			filter.Limit = &limit
 		}
 	}
@@ -1698,6 +1701,9 @@ func (h *BaseHandler) GetTokenActivityHandler(w http.ResponseWriter, r *http.Req
 	limit := 50
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			if parsed > 1000 {
+				parsed = 1000
+			}
 			limit = parsed
 		}
 	}
