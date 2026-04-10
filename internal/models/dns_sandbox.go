@@ -1,10 +1,19 @@
 package models
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -15,11 +24,6 @@ import (
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/rhpds/sandbox/internal/log"
-	"net/http"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
 )
 
 type DNSSandboxProvider struct {
@@ -30,15 +34,18 @@ type DNSSandboxProvider struct {
 type DNSAccountConfiguration struct {
 	ID                 int               `json:"id"`
 	Name               string            `json:"name"`
-	AwsAccessKeyID     string            `json:"aws_access_key_id"`
-	AwsSecretAccessKey string            `json:"aws_secret_access_key"`
+	AwsAccessKeyID     string            `json:"aws_access_key_id,omitempty"`
+	AwsSecretAccessKey string            `json:"aws_secret_access_key,omitempty"`
 	Zone               string            `json:"zone"`
-	HostedZoneID       string            `json:"hosted_zone_id"`
+	HostedZoneID       string            `json:"hosted_zone_id,omitempty"`
 	CreatedAt          time.Time         `json:"created_at"`
 	UpdatedAt          time.Time         `json:"updated_at"`
 	Annotations        map[string]string `json:"annotations"`
 	Valid              bool              `json:"valid"`
 	AdditionalVars     map[string]any    `json:"additional_vars,omitempty"`
+	ProviderType       string            `json:"provider_type"`
+	Endpoint           string            `json:"endpoint,omitempty"`
+	Token              string            `json:"token,omitempty"`
 	DbPool             *pgxpool.Pool     `json:"-"`
 	VaultSecret        string            `json:"-"`
 }
@@ -66,13 +73,23 @@ type DNSSandboxWithCreds struct {
 	Provider    *DNSSandboxProvider `json:"-"`
 }
 
-// Credential for service account
+// Credential for Route53 service account
 type DNSServiceAccount struct {
-	Kind               string `json:"kind"` // "DNSServiceAccount"
+	Kind               string `json:"kind"` // "Route53"
 	AwsAccessKeyID     string `json:"aws_access_key_id"`
 	AwsSecretAccessKey string `json:"aws_secret_access_key"`
 	Zone               string `json:"zone"`
 	HostedZoneID       string `json:"hosted_zone_id"`
+}
+
+// Credential for DDNS (BIND TSIG key) service account
+type DDNSServiceAccount struct {
+	Kind      string `json:"kind"`      // "DDNS"
+	Name      string `json:"name"`      // TSIG key name
+	Secret    string `json:"secret"`    // TSIG base64 secret
+	Algorithm string `json:"algorithm"` // e.g. hmac-sha256
+	Zone      string `json:"zone"`      // DNS zone
+	Server    string `json:"server"`    // DNS server for nsupdate
 }
 
 type DNSSandboxes []DNSSandbox
@@ -85,6 +102,7 @@ func MakeDNSAccountConfiguration() *DNSAccountConfiguration {
 	p := &DNSAccountConfiguration{}
 
 	p.Valid = true
+	p.ProviderType = "route53"
 	return p
 }
 
@@ -110,33 +128,43 @@ func isNoSuchEntityErrorIam(err error) bool {
 
 // Bind and Render
 func (p *DNSAccountConfiguration) Bind(r *http.Request) error {
-	// Ensure the name is not empty
 	if p.Name == "" {
 		return errors.New("name is required")
 	}
 
-	// Ensure the name is valid
 	if !DNSnameRegex.MatchString(p.Name) {
 		return errors.New("name is invalid, must be only alphanumeric and '-'")
 	}
 
-	// Ensure zone is not empty
 	if p.Zone == "" {
 		return errors.New("zone is required")
 	}
 
-	// Ensure HostedZoneID is not empty
-	if p.HostedZoneID == "" {
-		return errors.New("HostedZoneID is required")
-	}
-
-	// Ensure AwsAccessKeyID and AwsSecretAccessKey are not empty
-	if p.AwsAccessKeyID == "" || p.AwsSecretAccessKey == "" {
-		return errors.New("AwsAccessKeyID and AwsSecretAccessKey must be defined")
-	}
-
 	if len(p.Annotations) == 0 {
 		return errors.New("annotations is required")
+	}
+
+	if p.ProviderType == "" {
+		p.ProviderType = "route53"
+	}
+
+	switch p.ProviderType {
+	case "route53":
+		if p.HostedZoneID == "" {
+			return errors.New("hosted_zone_id is required for route53 provider")
+		}
+		if p.AwsAccessKeyID == "" || p.AwsSecretAccessKey == "" {
+			return errors.New("aws_access_key_id and aws_secret_access_key must be defined for route53 provider")
+		}
+	case "ddns":
+		if p.Endpoint == "" {
+			return errors.New("endpoint is required for ddns provider")
+		}
+		if p.Token == "" {
+			return errors.New("token is required for ddns provider")
+		}
+	default:
+		return fmt.Errorf("invalid provider_type: %s (must be 'route53' or 'ddns')", p.ProviderType)
 	}
 
 	return nil
@@ -156,19 +184,15 @@ func (p *DNSAccountConfiguration) Save() error {
 		return p.Update()
 	}
 
-	// Insert resource and get Id
 	if err := p.DbPool.QueryRow(
 		context.Background(),
 		`INSERT INTO dns_account_configurations
-			(name,
-			aws_access_key_id,
-			aws_secret_access_key,
-			zone,
-			hosted_zone_id,
-			annotations,
-			valid,
-			additional_vars)
-			VALUES ($1, $2, pgp_sym_encrypt($3::text, $4), $5, $6, $7, $8, $9)
+			(name, aws_access_key_id, aws_secret_access_key, zone, hosted_zone_id,
+			 annotations, valid, additional_vars, provider_type, endpoint, token)
+			VALUES ($1, $2,
+				CASE WHEN $3 = '' THEN NULL ELSE pgp_sym_encrypt($3::text, $4) END,
+				$5, $6, $7, $8, $9, $10, $11,
+				CASE WHEN $12 = '' THEN NULL ELSE pgp_sym_encrypt($12::text, $4) END)
 			RETURNING id`,
 		p.Name,
 		p.AwsAccessKeyID,
@@ -179,6 +203,9 @@ func (p *DNSAccountConfiguration) Save() error {
 		p.Annotations,
 		p.Valid,
 		p.AdditionalVars,
+		p.ProviderType,
+		p.Endpoint,
+		p.Token,
 	).Scan(&p.ID); err != nil {
 		return err
 	}
@@ -190,17 +217,19 @@ func (p *DNSAccountConfiguration) Update() error {
 		return errors.New("id must be > 0")
 	}
 
-	// Update resource
 	if _, err := p.DbPool.Exec(
 		context.Background(),
 		`UPDATE dns_account_configurations
 		 SET name = $1,
 			 aws_access_key_id = $2,
-			 aws_secret_access_key = pgp_sym_encrypt($3::text, $4),
+			 aws_secret_access_key = CASE WHEN $3 = '' THEN NULL ELSE pgp_sym_encrypt($3::text, $4) END,
 			 annotations = $5,
 			 valid = $6,
-			 additional_vars = $7
-		 WHERE id = $8`,
+			 additional_vars = $7,
+			 provider_type = $8,
+			 endpoint = $9,
+			 token = CASE WHEN $10 = '' THEN NULL ELSE pgp_sym_encrypt($10::text, $4) END
+		 WHERE id = $11`,
 		p.Name,
 		p.AwsAccessKeyID,
 		p.AwsSecretAccessKey,
@@ -208,6 +237,9 @@ func (p *DNSAccountConfiguration) Update() error {
 		p.Annotations,
 		p.Valid,
 		p.AdditionalVars,
+		p.ProviderType,
+		p.Endpoint,
+		p.Token,
 		p.ID,
 	); err != nil {
 		return err
@@ -255,21 +287,23 @@ func (p *DNSAccountConfiguration) GetAccountCount() (int, error) {
 
 // GetDNSAccountConfigurationByName returns an DNSAccountConfiguration by name
 func (p *DNSSandboxProvider) GetDNSAccountConfigurationByName(name string) (DNSAccountConfiguration, error) {
-	// Get resource from above 'dns_account_configurations' table
 	row := p.DbPool.QueryRow(
 		context.Background(),
 		`SELECT
 			id,
 			name,
-			aws_access_key_id,
-			pgp_sym_decrypt(aws_secret_access_key::bytea, $1),
+			COALESCE(aws_access_key_id, ''),
+			COALESCE(pgp_sym_decrypt(aws_secret_access_key, $1), ''),
 			zone,
-			hosted_zone_id,
+			COALESCE(hosted_zone_id, ''),
 			created_at,
 			updated_at,
 			annotations,
 			valid,
-			additional_vars
+			additional_vars,
+			provider_type,
+			COALESCE(endpoint, ''),
+			COALESCE(pgp_sym_decrypt(token, $1), '')
 		 FROM dns_account_configurations WHERE name = $2`,
 		p.VaultSecret, name,
 	)
@@ -287,6 +321,9 @@ func (p *DNSSandboxProvider) GetDNSAccountConfigurationByName(name string) (DNSA
 		&account.Annotations,
 		&account.Valid,
 		&account.AdditionalVars,
+		&account.ProviderType,
+		&account.Endpoint,
+		&account.Token,
 	); err != nil {
 		return DNSAccountConfiguration{}, err
 	}
@@ -299,21 +336,23 @@ func (p *DNSSandboxProvider) GetDNSAccountConfigurationByName(name string) (DNSA
 func (p *DNSSandboxProvider) GetDNSAccountConfigurations() (DNSAccountConfigurations, error) {
 	accounts := []DNSAccountConfiguration{}
 
-	// Get resource from 'dns_account_configurations' table
 	rows, err := p.DbPool.Query(
 		context.Background(),
 		`SELECT
 			id,
 			name,
-			aws_access_key_id,
-			pgp_sym_decrypt(aws_secret_access_key::bytea, $1),
+			COALESCE(aws_access_key_id, ''),
+			COALESCE(pgp_sym_decrypt(aws_secret_access_key, $1), ''),
 			zone,
-			hosted_zone_id,
+			COALESCE(hosted_zone_id, ''),
 			created_at,
 			updated_at,
 			annotations,
 			valid,
-			additional_vars
+			additional_vars,
+			provider_type,
+			COALESCE(endpoint, ''),
+			COALESCE(pgp_sym_decrypt(token, $1), '')
 		 FROM dns_account_configurations`,
 		p.VaultSecret,
 	)
@@ -337,6 +376,9 @@ func (p *DNSSandboxProvider) GetDNSAccountConfigurations() (DNSAccountConfigurat
 			&account.Annotations,
 			&account.Valid,
 			&account.AdditionalVars,
+			&account.ProviderType,
+			&account.Endpoint,
+			&account.Token,
 		); err != nil {
 			return []DNSAccountConfiguration{}, err
 		}
@@ -659,12 +701,84 @@ func (a *DNSSandboxProvider) GetSchedulableAccounts(cloud_selector map[string]st
 	return accounts, nil
 }
 
+// --- DDNS HTTP client helpers ------------------------------------------------
+
+func ddnsCreateKey(endpoint, token, keyName string) (secret string, algorithm string, err error) {
+	body, _ := json.Marshal(map[string]string{"name": keyName, "algorithm": "hmac-sha256"})
+
+	req, err := http.NewRequest("POST", strings.TrimRight(endpoint, "/")+"/keys", bytes.NewReader(body))
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("ddns API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", "", fmt.Errorf("ddns API returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Name      string `json:"name"`
+		Secret    string `json:"secret"`
+		Algorithm string `json:"algorithm"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", "", fmt.Errorf("ddns API response decode error: %w", err)
+	}
+
+	return result.Secret, result.Algorithm, nil
+}
+
+func ddnsDeleteKey(endpoint, token, keyName string) error {
+	req, err := http.NewRequest("DELETE", strings.TrimRight(endpoint, "/")+"/keys/"+url.PathEscape(keyName), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("ddns API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+
+	respBody, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("ddns API returned status %d: %s", resp.StatusCode, string(respBody))
+}
+
+func ddnsServerFromEndpoint(endpoint string, additionalVars map[string]any) string {
+	if s, ok := additionalVars["ddns_server"]; ok {
+		if str, ok := s.(string); ok && str != "" {
+			return str
+		}
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return endpoint
+	}
+	return u.Hostname()
+}
+
+// --- Request -----------------------------------------------------------------
+
 func (a *DNSSandboxProvider) Request(serviceUuid string, cloud_selector map[string]string, annotations map[string]string, multiple bool, ctx context.Context) (DNSSandboxWithCreds, error) {
 	if _, exists := annotations["guid"]; !exists {
 		return DNSSandboxWithCreds{}, errors.New("guid not found in annotations")
 	}
 
-	// Version with DNSAccountConfiguration methods
 	candidateAccounts, err := a.GetSchedulableAccounts(cloud_selector)
 	if err != nil {
 		log.Logger.Error("Error getting schedulable accounts", "error", err)
@@ -675,10 +789,8 @@ func (a *DNSSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 		return DNSSandboxWithCreds{}, DNSErrNoSchedule
 	}
 
-	var selectedAccount = candidateAccounts[0]
+	selectedAccount := candidateAccounts[0]
 
-	// Determine guid, auto increment the guid if there are multiple resources
-	// for a serviceUuid
 	guid, err := DNSguessNextGuid(annotations["guid"], serviceUuid, a.DbPool, multiple, ctx)
 	if err != nil {
 		log.Logger.Error("Error guessing guid", "error", err)
@@ -689,7 +801,7 @@ func (a *DNSSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 	if suffix != "" {
 		guid = guid + "-" + suffix
 	}
-	// Return the Placement with a status 'initializing'
+
 	rnew := DNSSandboxWithCreds{
 		DNSSandbox: DNSSandbox{
 			Name:        guid,
@@ -703,6 +815,59 @@ func (a *DNSSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 	rnew.DNSAccountConfigurationName = selectedAccount.Name
 	rnew.Resource.CreatedAt = time.Now()
 	rnew.Resource.UpdatedAt = time.Now()
+
+	switch selectedAccount.ProviderType {
+	case "ddns":
+		return a.requestDDNS(rnew, selectedAccount, guid, annotations, cloud_selector)
+	default:
+		return a.requestRoute53(rnew, selectedAccount, guid, ctx)
+	}
+}
+
+func (a *DNSSandboxProvider) requestDDNS(rnew DNSSandboxWithCreds, account DNSAccountConfiguration, guid string, annotations map[string]string, cloudSelector map[string]string) (DNSSandboxWithCreds, error) {
+	domain := cloudSelector["domain"]
+	if domain == "" {
+		return DNSSandboxWithCreds{}, errors.New("cloud_selector 'domain' is required for ddns provider")
+	}
+
+	prefix := annotations["prefix"]
+	if prefix == "" {
+		prefix = "ddns"
+	}
+
+	keyName := prefix + "-" + guid + "." + domain
+	rnew.Name = keyName
+
+	secret, algorithm, err := ddnsCreateKey(account.Endpoint, account.Token, keyName)
+	if err != nil {
+		log.Logger.Error("Error creating DDNS key", "error", err, "keyName", keyName)
+		return DNSSandboxWithCreds{}, err
+	}
+
+	server := ddnsServerFromEndpoint(account.Endpoint, account.AdditionalVars)
+
+	rnew.Credentials = []any{
+		DDNSServiceAccount{
+			Kind:      "DDNS",
+			Name:      keyName,
+			Secret:    secret,
+			Algorithm: algorithm,
+			Zone:      domain,
+			Server:    server,
+		},
+	}
+	rnew.Status = "success"
+
+	if err := rnew.Save(); err != nil {
+		log.Logger.Error("Error saving DDNS account, cleaning up key", "error", err)
+		_ = ddnsDeleteKey(account.Endpoint, account.Token, guid)
+		return DNSSandboxWithCreds{}, err
+	}
+
+	return rnew, nil
+}
+
+func (a *DNSSandboxProvider) requestRoute53(rnew DNSSandboxWithCreds, selectedAccount DNSAccountConfiguration, guid string, ctx context.Context) (DNSSandboxWithCreds, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		log.Logger.Error("Error loading config", "error", err)
@@ -1055,7 +1220,6 @@ func (sandbox *DNSSandboxWithCreds) Delete() error {
 	}
 
 	sandbox.SetStatus("deleting")
-	// In case anything goes wrong, we'll know it can safely be deleted
 	sandbox.MarkForCleanup()
 	sandbox.IncrementCleanupCount()
 
@@ -1065,6 +1229,38 @@ func (sandbox *DNSSandboxWithCreds) Delete() error {
 		sandbox.SetStatus("error")
 		return err
 	}
+
+	switch dnsaccount.ProviderType {
+	case "ddns":
+		return sandbox.deleteDDNS(dnsaccount)
+	default:
+		return sandbox.deleteRoute53(dnsaccount)
+	}
+}
+
+func (sandbox *DNSSandboxWithCreds) deleteDDNS(dnsaccount DNSAccountConfiguration) error {
+	if len(sandbox.Credentials) > 0 {
+		credsSandbox, ok := sandbox.Credentials[0].(map[string]interface{})
+		if ok {
+			if keyName, ok := credsSandbox["name"].(string); ok && keyName != "" {
+				if err := ddnsDeleteKey(dnsaccount.Endpoint, dnsaccount.Token, keyName); err != nil {
+					log.Logger.Error("Error deleting DDNS key", "error", err, "keyName", keyName)
+					sandbox.SetStatus("error")
+					return err
+				}
+			}
+		}
+	}
+
+	_, err := sandbox.Provider.DbPool.Exec(
+		context.Background(),
+		"DELETE FROM resources WHERE id = $1",
+		sandbox.ID,
+	)
+	return err
+}
+
+func (sandbox *DNSSandboxWithCreds) deleteRoute53(dnsaccount DNSAccountConfiguration) error {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		log.Logger.Error("Error loading config", "error", err)
@@ -1153,14 +1349,12 @@ func (sandbox *DNSSandboxWithCreds) Delete() error {
 					continue
 				}
 
-				// Prepare a delete change for each record
 				changes = append(changes, route53types.Change{
 					Action:            route53types.ChangeActionDelete,
 					ResourceRecordSet: &record,
 				})
 			}
 
-			// Pagination logic
 			if !resp.IsTruncated {
 				break
 			}

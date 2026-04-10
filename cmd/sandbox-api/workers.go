@@ -35,6 +35,9 @@ type Worker struct {
 	// IBM Resource Group sandbox provider
 	IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider
 
+	// SSL sandbox provider
+	SSLSandboxProvider models.SSLSandboxProvider
+
 	// AWS client to manage the accounts
 	StsClient *sts.Client
 }
@@ -309,7 +312,7 @@ WorkerLoop:
 				}
 
 				// Get all accounts in the placement
-				if err := placement.LoadActiveResourcesWithCreds(w.AwsAccountProvider, w.OcpSandboxProvider, w.DNSSandboxProvider, w.IBMResourceGroupSandboxProvider); err != nil {
+				if err := placement.LoadActiveResourcesWithCreds(w.AwsAccountProvider, w.OcpSandboxProvider, w.DNSSandboxProvider, w.IBMResourceGroupSandboxProvider, w.SSLSandboxProvider); err != nil {
 					log.Logger.Error("Error loading resources", "error", err, "placement", placement)
 					job.SetStatus("error")
 					continue WorkerLoop
@@ -486,6 +489,7 @@ func NewWorker(baseHandler BaseHandler) Worker {
 		OcpSandboxProvider:              baseHandler.OcpSandboxProvider,
 		DNSSandboxProvider:              baseHandler.DNSSandboxProvider,
 		IBMResourceGroupSandboxProvider: baseHandler.IBMResourceGroupSandboxProvider,
+		SSLSandboxProvider:              baseHandler.SSLSandboxProvider,
 		StsClient:                        stsClient,
 	}
 }

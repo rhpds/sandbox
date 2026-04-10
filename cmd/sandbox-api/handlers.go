@@ -38,6 +38,7 @@ type BaseHandler struct {
 	OcpSandboxProvider              *models.OcpSandboxProvider
 	DNSSandboxProvider              models.DNSSandboxProvider
 	IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider
+	SSLSandboxProvider              models.SSLSandboxProvider
 }
 
 type AdminHandler struct {
@@ -45,7 +46,7 @@ type AdminHandler struct {
 	tokenAuth *jwtauth.JWTAuth
 }
 
-func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider *models.OcpSandboxProvider, DNSSandboxProvider models.DNSSandboxProvider, IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider) *BaseHandler {
+func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.T, oaRouter oarouters.Router, awsAccountProvider models.AwsAccountProvider, OcpSandboxProvider *models.OcpSandboxProvider, DNSSandboxProvider models.DNSSandboxProvider, IBMResourceGroupSandboxProvider models.IBMResourceGroupSandboxProvider, SSLSandboxProvider models.SSLSandboxProvider) *BaseHandler {
 	return &BaseHandler{
 		svc:                             svc,
 		dbpool:                          dbpool,
@@ -55,6 +56,7 @@ func NewBaseHandler(svc *dynamodb.DynamoDB, dbpool *pgxpool.Pool, doc *openapi3.
 		OcpSandboxProvider:              OcpSandboxProvider,
 		DNSSandboxProvider:              DNSSandboxProvider,
 		IBMResourceGroupSandboxProvider: IBMResourceGroupSandboxProvider,
+		SSLSandboxProvider:              SSLSandboxProvider,
 	}
 }
 
@@ -217,6 +219,7 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 				h.OcpSandboxProvider,
 				h.DNSSandboxProvider,
 				h.IBMResourceGroupSandboxProvider,
+				h.SSLSandboxProvider,
 			); err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				render.Render(w, r, &v1.Error{
@@ -472,6 +475,50 @@ func (h *BaseHandler) PostPlacementHandler(w http.ResponseWriter, r *http.Reques
 					ErrorMultiline: []string{err.Error()},
 					HTTPStatusCode: http.StatusInternalServerError,
 					Message:        "Error creating placement in IBM resource group",
+				})
+				log.Logger.Error("PostPlacementHandler", "error", err)
+				return
+			}
+			tocleanup = append(tocleanup, &account)
+			resources = append(resources, account)
+
+		case "SSLSandbox":
+			account, err := h.SSLSandboxProvider.Request(
+				placementRequest.ServiceUuid,
+				request.CloudSelector,
+				placementRequest.Annotations.Merge(request.Annotations),
+				r.Context(),
+			)
+			if err != nil {
+				cleanupResources(tocleanup)
+
+				if strings.Contains(err.Error(), "already exists") {
+					w.WriteHeader(http.StatusConflict)
+					render.Render(w, r, &v1.Error{
+						Err:            err,
+						HTTPStatusCode: http.StatusConflict,
+						Message:        "SSL sandbox already exists",
+						ErrorMultiline: []string{err.Error()},
+					})
+					return
+				}
+
+				if err == models.SSLErrNoSchedule {
+					w.WriteHeader(http.StatusNotFound)
+					render.Render(w, r, &v1.Error{
+						Err:            err,
+						HTTPStatusCode: http.StatusNotFound,
+						Message:        "No SSL account configuration found",
+						ErrorMultiline: []string{err.Error()},
+					})
+					return
+				}
+
+				w.WriteHeader(http.StatusInternalServerError)
+				render.Render(w, r, &v1.Error{
+					ErrorMultiline: []string{err.Error()},
+					HTTPStatusCode: http.StatusInternalServerError,
+					Message:        "Error creating placement in SSL",
 				})
 				log.Logger.Error("PostPlacementHandler", "error", err)
 				return
@@ -735,11 +782,14 @@ func (h *BaseHandler) PostDryRunPlacementHandler(w http.ResponseWriter, r *http.
 			result.Message = "Dry-run check for DNSSandbox is not implemented; assuming available."
 
 		case "IBMResourceGroupSandbox":
-			// Assuming a similar check exists for IBM
-			// _, err := h.IBMResourceGroupSandboxProvider.GetCandidates(...)
 			log.Logger.Warn("Dry-run for IBMResourceGroupSandbox not implemented, assuming available")
 			result.Available = true
 			result.Message = "Dry-run check for IBMResourceGroupSandbox is not implemented; assuming available."
+
+		case "SSLSandbox":
+			log.Logger.Warn("Dry-run for SSLSandbox not implemented, assuming available")
+			result.Available = true
+			result.Message = "Dry-run check for SSLSandbox is not implemented; assuming available."
 
 		default:
 			log.Logger.Error("Dry-run: Invalid resource type", "type", request.Kind)
@@ -948,7 +998,7 @@ func (h *BaseHandler) GetPlacementHandler(w http.ResponseWriter, r *http.Request
 		Placement: *placement,
 	}
 
-	if err := placementWithCreds.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider); err != nil {
+	if err := placementWithCreds.LoadActiveResourcesWithCreds(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider, h.SSLSandboxProvider); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		render.Render(w, r, &v1.Error{
 			Err:            err,
@@ -1025,7 +1075,7 @@ func (h *BaseHandler) DeletePlacementHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	placement.SetStatus("deleting")
-	go placement.Delete(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider)
+	go placement.Delete(h.awsAccountProvider, h.OcpSandboxProvider, h.DNSSandboxProvider, h.IBMResourceGroupSandboxProvider, h.SSLSandboxProvider)
 
 	w.WriteHeader(http.StatusAccepted)
 	render.Render(w, r, &v1.SimpleMessage{

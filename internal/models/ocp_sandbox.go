@@ -1054,6 +1054,7 @@ func (a *OcpSandboxProvider) CreateOffboardJob(
 	awsProvider AwsAccountProvider,
 	dnsProvider DNSSandboxProvider,
 	ibmProvider IBMResourceGroupSandboxProvider,
+	sslProvider SSLSandboxProvider,
 ) (*Job, error) {
 	store := NewJobStore(a.DbPool)
 
@@ -1080,7 +1081,7 @@ func (a *OcpSandboxProvider) CreateOffboardJob(
 		return nil, err
 	}
 
-	go a.ExecuteOffboard(job, clusterName, singleClusterPlacements, awsProvider, dnsProvider, ibmProvider)
+	go a.ExecuteOffboard(job, clusterName, singleClusterPlacements, awsProvider, dnsProvider, ibmProvider, sslProvider)
 
 	return job, nil
 }
@@ -1094,6 +1095,7 @@ func (a *OcpSandboxProvider) ExecuteOffboard(
 	awsProvider AwsAccountProvider,
 	dnsProvider DNSSandboxProvider,
 	ibmProvider IBMResourceGroupSandboxProvider,
+	sslProvider SSLSandboxProvider,
 ) {
 	ctx := context.Background()
 	store := NewJobStore(a.DbPool)
@@ -1136,7 +1138,7 @@ func (a *OcpSandboxProvider) ExecuteOffboard(
 			continue
 		}
 
-		placement.Delete(awsProvider, a, dnsProvider, ibmProvider)
+		placement.Delete(awsProvider, a, dnsProvider, ibmProvider, sslProvider)
 
 		report.PlacementsDeleted = append(report.PlacementsDeleted, OffboardPlacementInfo{
 			PlacementID: pi.PlacementID,
