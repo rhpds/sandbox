@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -24,6 +25,137 @@ var (
 	dryRunCloudPreference string
 	dryRunAgnosticVConfig string
 )
+
+var (
+	placementListStatus      string
+	placementListServiceUuid string
+	placementListGuid        string
+	placementListToCleanup   string
+	placementListLimit       int
+	placementListOffset      int
+)
+
+var placementListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List placements (admin only)",
+	Long: `List all placements with optional filtering.
+
+Examples:
+  # List all placements
+  sandbox-cli placement list
+
+  # Filter by status
+  sandbox-cli placement list --status error
+
+  # Filter by GUID
+  sandbox-cli placement list --guid abc12
+
+  # Filter by service UUID
+  sandbox-cli placement list --service-uuid 123e4567-e89b-12d3-a456-426614174000
+
+  # Filter placements marked for cleanup
+  sandbox-cli placement list --to-cleanup true
+
+  # Paginate results
+  sandbox-cli placement list --limit 10 --offset 20
+
+  # Combine filters
+  sandbox-cli placement list --status error --limit 5`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireRole("admin"); err != nil {
+			return err
+		}
+		client, err := requireClient()
+		if err != nil {
+			return err
+		}
+
+		// Build query parameters
+		params := []string{}
+		if placementListStatus != "" {
+			params = append(params, "status="+placementListStatus)
+		}
+		if placementListServiceUuid != "" {
+			params = append(params, "service_uuid="+placementListServiceUuid)
+		}
+		if placementListGuid != "" {
+			params = append(params, "annotations[guid]="+placementListGuid)
+		}
+		if placementListToCleanup != "" {
+			params = append(params, "to_cleanup="+placementListToCleanup)
+		}
+		if cmd.Flags().Changed("limit") {
+			params = append(params, fmt.Sprintf("limit=%d", placementListLimit))
+		}
+		if cmd.Flags().Changed("offset") {
+			params = append(params, fmt.Sprintf("offset=%d", placementListOffset))
+		}
+
+		path := "/api/v1/placements"
+		if len(params) > 0 {
+			path += "?" + strings.Join(params, "&")
+		}
+
+		resp, err := client.Get(path)
+		if err != nil {
+			return err
+		}
+
+		var placements []map[string]any
+		if err := ReadJSON(resp, &placements); err != nil {
+			return err
+		}
+
+		if len(placements) == 0 {
+			fmt.Fprintln(cmd.OutOrStdout(), "No placements found.")
+			return nil
+		}
+
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+		fmt.Fprintln(w, "GUID\tSERVICE_UUID\tSTATUS\tCLEANUP\tAGE\tOWNER\tCOUNT\tTYPES")
+		for _, p := range placements {
+			ann, _ := p["annotations"].(map[string]any)
+			guid := jsonStr(ann["guid"])
+			if guid == "" {
+				guid = "-"
+			}
+			owner := jsonStr(ann["owner"])
+			if owner == "" {
+				owner = "-"
+			}
+			cleanup := "-"
+			if tc, ok := p["to_cleanup"].(bool); ok && tc {
+				cleanup = "yes"
+			}
+			age := "-"
+			if ca, ok := p["created_at"].(string); ok && ca != "" {
+				if t, err := time.Parse(time.RFC3339Nano, ca); err == nil {
+					age = formatAge(time.Since(t))
+				}
+			}
+			types := "-"
+			if rt, ok := p["resource_types"].([]any); ok && len(rt) > 0 {
+				typeStrs := make([]string, 0, len(rt))
+				for _, t := range rt {
+					typeStrs = append(typeStrs, jsonStr(t))
+				}
+				types = strings.Join(typeStrs, ",")
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				guid,
+				jsonStr(p["service_uuid"]),
+				jsonStr(p["status"]),
+				cleanup,
+				age,
+				owner,
+				jsonNum(p["resource_count"]),
+				types,
+			)
+		}
+		w.Flush()
+		return nil
+	},
+}
 
 var placementDryRunCmd = &cobra.Command{
 	Use:   "dry-run",
@@ -200,6 +332,14 @@ func init() {
 	placementDryRunCmd.Flags().StringVar(&dryRunCloudPreference, "preference", "", "Cloud preference as key=value pairs (comma-separated)")
 	placementDryRunCmd.Flags().StringVarP(&dryRunAgnosticVConfig, "agnosticv-config", "f", "", "AgnosticV catalog item config file (- for stdin)")
 	placementDryRunCmd.MarkFlagsMutuallyExclusive("selector", "agnosticv-config")
+
+	placementListCmd.Flags().StringVar(&placementListStatus, "status", "", "Filter by placement status (e.g., error, success)")
+	placementListCmd.Flags().StringVar(&placementListServiceUuid, "service-uuid", "", "Filter by service UUID")
+	placementListCmd.Flags().StringVar(&placementListGuid, "guid", "", "Filter by GUID in annotations")
+	placementListCmd.Flags().StringVar(&placementListToCleanup, "to-cleanup", "", "Filter by cleanup flag (true/false)")
+	placementListCmd.Flags().IntVar(&placementListLimit, "limit", 0, "Limit number of results")
+	placementListCmd.Flags().IntVar(&placementListOffset, "offset", 0, "Pagination offset")
+	placementCmd.AddCommand(placementListCmd)
 
 	placementCmd.AddCommand(placementDryRunCmd)
 	placementCmd.AddCommand(placementGetCmd)
