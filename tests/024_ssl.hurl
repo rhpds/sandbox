@@ -303,6 +303,7 @@ jsonpath "$.resources[0].credentials[0].kind" == "SSL"
 jsonpath "$.resources[0].credentials[0].kid" == "{{guid}}"
 jsonpath "$.resources[0].credentials[0].secret" isString
 jsonpath "$.resources[0].credentials[0].domain" == "workshops.example.com"
+jsonpath "$.resources[0].credentials[0].gateway" isString
 jsonpath "$.resources[0].credentials[0].main_provider" == "google"
 jsonpath "$.resources[0].credentials[0].main_provider_url" == "https://acme-gw.example.com/acme/google/directory"
 

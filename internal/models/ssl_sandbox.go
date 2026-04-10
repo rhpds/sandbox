@@ -68,6 +68,7 @@ type SSLServiceAccount struct {
 	KID                 string `json:"kid"`
 	Secret              string `json:"secret"`
 	Domain              string `json:"domain"`
+	Gateway             string `json:"gateway"`
 	MainProvider        string `json:"main_provider"`
 	MainProviderURL     string `json:"main_provider_url"`
 	FallbackProvider    string `json:"fallback_provider,omitempty"`
@@ -664,6 +665,7 @@ func (a *SSLSandboxProvider) Request(serviceUuid string, cloud_selector map[stri
 			KID:                 kid,
 			Secret:              secret,
 			Domain:              selectedAccount.Domain,
+			Gateway:             selectedAccount.Endpoint,
 			MainProvider:        selectedAccount.MainProvider,
 			MainProviderURL:     selectedAccount.MainProviderURL,
 			FallbackProvider:    selectedAccount.FallbackProvider,
