@@ -12,6 +12,7 @@ var (
 	// Persistent flags
 	flagServer string
 	flagToken  string
+	flagDebug  bool
 
 	// Build info, set via SetBuildInfo()
 	clientVersion     = "development"
@@ -37,6 +38,7 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.PersistentFlags().StringVar(&flagServer, "server", "", "Sandbox API URL (or set SANDBOX_API_ROUTE)")
 	rootCmd.PersistentFlags().StringVar(&flagToken, "token", "", "Login token (or set SANDBOX_LOGIN_TOKEN)")
+	rootCmd.PersistentFlags().BoolVar(&flagDebug, "debug", false, "Enable debug output (shows full request/response details)")
 }
 
 // Execute runs the root command.
