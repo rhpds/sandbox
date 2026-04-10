@@ -105,12 +105,22 @@ func (c *Client) do(method, path string, body io.Reader) (*http.Response, error)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
+
+	if flagDebug {
+		fmt.Fprintf(os.Stderr, "[DEBUG] %s %s\n", method, url)
+	}
+
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		if hint := connectionErrorHint(err); hint != "" {
 			return nil, fmt.Errorf("%w%s", err, hint)
 		}
 	}
+
+	if flagDebug && resp != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Response: %d %s\n", resp.StatusCode, resp.Status)
+	}
+
 	return resp, err
 }
 
@@ -201,8 +211,8 @@ func ReadJSON(resp *http.Response, v any) error {
 			return fmt.Errorf("HTTP %d: server returned an HTML error page (service may be down or unreachable)", resp.StatusCode)
 		}
 
-		// Truncate long non-JSON responses
-		if len(msg) > 200 {
+		// Truncate long non-JSON responses (unless debug mode is enabled)
+		if !flagDebug && len(msg) > 200 {
 			msg = msg[:200] + "..."
 		}
 
