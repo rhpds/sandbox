@@ -177,6 +177,9 @@ paths:
                   updated_at: "2023-04-17T13:19:11.835373+02:00"
                   service_uuid: "6548dc97-5799-4bfe-8843-8d1793996593"
                   resources: []
+                  resource_types:
+                    - AwsSandbox
+                  resource_count: 2
                   annotations:
                     guid: testguid
                   request:
@@ -3865,6 +3868,16 @@ components:
           example: 2023-03-13T09:42:33+01:00
         annotations:
           $ref: "#/components/schemas/Annotations"
+        resource_types:
+          type: array
+          description: Distinct resource types in this placement (populated in list responses)
+          items:
+            type: string
+          example: ["OcpSandbox", "AwsSandbox"]
+        resource_count:
+          type: integer
+          description: Number of resources in this placement (populated in list responses)
+          example: 3
 
     PlacementWithCreds:
       description: A placement with credentials

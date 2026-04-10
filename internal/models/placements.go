@@ -16,14 +16,16 @@ import (
 type Placement struct {
 	Model
 
-	ServiceUuid  string            `json:"service_uuid"`
-	Status       string            `json:"status"`
-	ToCleanup    bool              `json:"to_cleanup"`
-	Annotations  map[string]string `json:"annotations"`
-	Resources    []any             `json:"resources,omitempty"`
-	Request      any               `json:"request"`
-	DbPool       *pgxpool.Pool     `json:"-"`
-	FailOnDelete bool              `json:"-"` // plumbing for testing
+	ServiceUuid   string            `json:"service_uuid"`
+	Status        string            `json:"status"`
+	ToCleanup     bool              `json:"to_cleanup"`
+	Annotations   map[string]string `json:"annotations"`
+	Resources     []any             `json:"resources,omitempty"`
+	ResourceTypes []string          `json:"resource_types,omitempty"`
+	ResourceCount int               `json:"resource_count,omitempty"`
+	Request       any               `json:"request"`
+	DbPool        *pgxpool.Pool     `json:"-"`
+	FailOnDelete  bool              `json:"-"` // plumbing for testing
 }
 
 type PlacementWithCreds struct {
@@ -607,15 +609,17 @@ type PlacementFilter struct {
 // GetPlacementsFiltered returns placements matching the given filters
 func GetPlacementsFiltered(dbpool *pgxpool.Pool, filter PlacementFilter) (Placements, error) {
 	query := `SELECT
-		id,
-		service_uuid,
-		request,
-		annotations,
-		status,
-		to_cleanup,
-		created_at,
-		updated_at
-	FROM placements
+		p.id,
+		p.service_uuid,
+		p.request,
+		p.annotations,
+		p.status,
+		p.to_cleanup,
+		p.created_at,
+		p.updated_at,
+		COALESCE((SELECT array_agg(DISTINCT r.resource_type) FROM resources r WHERE r.placement_id = p.id), '{}'),
+		(SELECT count(*) FROM resources r WHERE r.placement_id = p.id)
+	FROM placements p
 	WHERE 1=1`
 
 	args := []any{}
@@ -649,7 +653,7 @@ func GetPlacementsFiltered(dbpool *pgxpool.Pool, filter PlacementFilter) (Placem
 		argNum++
 	}
 
-	query += " ORDER BY created_at DESC"
+	query += " ORDER BY p.created_at DESC"
 
 	if filter.Limit != nil {
 		query += fmt.Sprintf(" LIMIT $%d", argNum)
@@ -681,7 +685,9 @@ func GetPlacementsFiltered(dbpool *pgxpool.Pool, filter PlacementFilter) (Placem
 			&p.Status,
 			&p.ToCleanup,
 			&p.CreatedAt,
-			&p.UpdatedAt)
+			&p.UpdatedAt,
+			&p.ResourceTypes,
+			&p.ResourceCount)
 		if err != nil {
 			return nil, err
 		}

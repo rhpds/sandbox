@@ -111,6 +111,7 @@ auto-detection.
 | `cluster disable <name>` | Disable scheduling on a cluster |
 | `cluster health <name>` | Run cluster health check |
 | `cluster delete <name>` | Delete a cluster configuration |
+| `placement list` | List placements with optional filters (admin only) |
 | `placement get <uuid>` | Get placement details |
 | `placement delete <uuid>` | Delete a placement |
 | `placement dry-run` | Test cloud selectors against available clusters |
@@ -205,6 +206,39 @@ sandbox-cli placement dry-run -f catalog-item/common.yaml
 ```
 
 >>>>>>> 25d0b56 (docs: move config.json before onboard steps so order is clear)
+### placement list
+
+List placements with optional filtering. Admin only.
+
+```bash
+# List all placements
+sandbox-cli placement list
+
+# Filter by status
+sandbox-cli placement list --status error
+
+# Filter by GUID
+sandbox-cli placement list --guid abc12
+
+# Filter by service UUID
+sandbox-cli placement list --service-uuid 123e4567-e89b-12d3-a456-426614174000
+
+# Filter placements marked for cleanup
+sandbox-cli placement list --to-cleanup true
+
+# Paginate results
+sandbox-cli placement list --limit 10 --offset 20
+```
+
+| Flag | Description |
+|------|-------------|
+| `--status` | Filter by placement status (e.g., `error`, `success`) |
+| `--service-uuid` | Filter by service UUID |
+| `--guid` | Filter by GUID in annotations |
+| `--to-cleanup` | Filter by cleanup flag (`true`/`false`) |
+| `--limit` | Limit number of results |
+| `--offset` | Pagination offset |
+
 ### placement dry-run
 
 Simulate a placement to check which clusters match your cloud selectors.
